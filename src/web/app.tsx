@@ -28,7 +28,7 @@ export function App() {
   const [diffReturnModal, setDiffReturnModal] = useState<Modal>(null);
   const [logPath, setLogPath] = useState<string | undefined>(undefined);
   const [configUser, setConfigUser] = useState('');
-  // toast：跟随鼠标位置悬浮提示，1.7 秒后淡出（不用底部固定条）
+  // toast：跟随鼠标位置悬浮提示，1.5 秒后淡出（不用底部固定条）
   const mouseRef = useRef({ x: window.innerWidth / 2, y: 60 });
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -39,7 +39,7 @@ export function App() {
   }, []);
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(''), 1200);
+    const t = setTimeout(() => setToast(''), 1500);
     return () => clearTimeout(t);
   }, [toast]);
   const [updateResult, setUpdateResult] = useState<{
@@ -442,7 +442,8 @@ export function App() {
         const items = st.items
           // 未版本化（?）文件不在提交列表（需先"添加到版本库"）
           .filter((i) => i.code !== '?')
-          .filter((i) => (prefix ? i.path.startsWith(prefix) : !i.path.includes('/')))
+          // 指定目录 → 该目录及其子目录；根目录 → 全部修改文件（含子目录）
+          .filter((i) => (prefix ? i.path.startsWith(prefix) : true))
           .map((i) => ({ path: i.path, code: i.code, isDir: i.isDir }));
         if (items.length === 0) {
           setToast('当前目录下没有变更文件');
