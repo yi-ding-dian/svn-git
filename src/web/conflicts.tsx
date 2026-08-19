@@ -4,6 +4,7 @@ import { get, post } from './api.js';
 import { highlightLine, langOf } from './highlight.js';
 import { parseUnifiedDiff, type DiffLine } from './diff.js';
 import { IconFolder } from './icons.js';
+import { ConfirmModal } from './modals.js';
 import { ResizableModal } from './modal-shell.js';
 
 interface Conflict {
@@ -165,15 +166,14 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
     else scrollByRatio(oursPane.current, (b.theirs !== MAX ? b.theirs : b.ours) / Math.max(oursRows.length, 1));
   };
 
+  // 二次确认：避免误覆盖丢失内容（工具风格弹窗）
+  const [confirmMode, setConfirmMode] = useState<'ours' | 'theirs' | 'manual' | null>(null);
   const resolve = async (mode: 'ours' | 'theirs' | 'manual') => {
     if (!cur) return;
-    // 二次确认：避免误覆盖丢失内容
-    const tips: Record<string, string> = {
-      ours: '将用【你的版本】覆盖冲突文件，对方的修改会丢失。\n确认采用本地？',
-      theirs: '将用【对方的版本】覆盖冲突文件，你的修改会丢失。\n确认采用对方？',
-      manual: '将用你编辑的内容覆盖冲突文件。\n确认保存？',
-    };
-    if (!window.confirm(tips[mode])) return;
+    setConfirmMode(mode);
+  };
+  const doResolve = async (mode: 'ours' | 'theirs' | 'manual') => {
+    setConfirmMode(null);
     setBusy(true);
     try {
       const r = await post.resolveConflict(cur.path, mode, mode === 'manual' ? manual : '');
@@ -364,6 +364,22 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
           <button onClick={props.onClose} disabled={busy}>关闭</button>
         </div>
       </ResizableModal>
+      {/* 解决方式二次确认（工具风格） */}
+      {confirmMode && (
+        <ConfirmModal
+          title="⚠ 确认解决冲突"
+          message={
+            {
+              ours: '将用【你的版本】覆盖冲突文件，对方的修改会丢失。确认采用本地？',
+              theirs: '将用【对方的版本】覆盖冲突文件，你的修改会丢失。确认采用对方？',
+              manual: '将用你编辑的内容覆盖冲突文件。确认保存？',
+            }[confirmMode]
+          }
+          confirmLabel="确认"
+          onConfirm={() => void doResolve(confirmMode)}
+          onCancel={() => setConfirmMode(null)}
+        />
+      )}
     </div>
   );
 }

@@ -16,6 +16,7 @@ export type Modal =
   | { type: 'stash' }
   | { type: 'create-repo' }
   | { type: 'git-info' }
+  | { type: 'git-push-auth'; authType: 'github' | 'server' | 'ssh' }
   | { type: 'clean' }
   | { type: 'env' }
   | { type: 'conflicts' }

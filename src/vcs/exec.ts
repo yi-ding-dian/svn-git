@@ -10,6 +10,8 @@ export interface RunOptions {
   maxBuffer?: number;
   /** 取消信号（如前端请求断开），触发后杀掉子进程 */
   signal?: AbortSignal;
+  /** 额外环境变量（合并到 process.env，如 GIT_ASKPASS） */
+  env?: Record<string, string>;
 }
 
 export interface RunResult {
@@ -29,7 +31,7 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
+      env: opts.env ? { ...process.env, ...opts.env } : process.env,
     });
 
     const maxBuffer = opts.maxBuffer ?? 64 * 1024 * 1024;

@@ -6,7 +6,7 @@ import { DiffView, type DiffTarget } from './diff.js';
 import { FsView } from './fs.js';
 import { OpenView, OpenModal } from './open.js';
 import { CommitModal, LoginModal, ConfirmModal, CommitSelectModal, UpdateResultModal, EnvInstallModal, type Modal } from './modals.js';
-import { BranchDialog, TagDialog, StashDialog, CreateRepoDialog, CleanDialog, GitInfoModal } from './vcs-dialogs.js';
+import { BranchDialog, TagDialog, StashDialog, CreateRepoDialog, CleanDialog, GitInfoModal, GitPushAuthModal } from './vcs-dialogs.js';
 import { ConflictResolverModal } from './conflicts.js';
 import { RemoteConflictModal } from './remote-conflicts.js';
 import { AppHeader, THEMES, FONT_SIZES } from './header.js';
@@ -204,6 +204,89 @@ export function App() {
     [refresh]
   );
 
+  // 推送：进度窗口(转圈可取消) + 认证引导（GitHub token / 服务器密码）；定义在 handleAction 之前供其依赖
+  const [pushing, setPushing] = useState(false);
+  const pushAbortRef = useRef<AbortController | null>(null);
+  const [pushAuth, setPushAuth] = useState<{ type: 'github' | 'server' | 'ssh'; error?: string } | null>(null);
+  // 实际执行推送（进度窗口 + 认证引导）
+  const pushNow = useCallback(async () => {
+    setPushing(true);
+    const ac = new AbortController();
+    pushAbortRef.current = ac;
+    try {
+      const r = await post.push(ac.signal);
+      if (r.ok) {
+        setToast(r.message);
+        refresh();
+      } else if (r.authType) {
+        // 认证失败 → 弹认证引导（带上失败原因，避免用户不明所以）
+        setPushAuth({ type: r.authType, error: r.message });
+      } else {
+        // 其他失败：弹窗明确显示错误（避免 toast 一闪而过"没反应"）
+        setModal({
+          type: 'confirm',
+          title: '❌ 推送失败',
+          message: <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{r.message}</span>,
+          confirmLabel: '知道了',
+          action: () => setModal(null),
+        });
+      }
+    } catch (e) {
+      setToast((e as Error).message === '已取消' ? '已取消推送' : `推送失败: ${(e as Error).message}`);
+    } finally {
+      setPushing(false);
+      pushAbortRef.current = null;
+    }
+  }, [refresh]);
+  const cancelPush = () => pushAbortRef.current?.abort();
+  // 推送入口：点击立即弹推送窗口，落后检查在窗口内进行（网络慢也有反馈，不让人干等）
+  const doPush = useCallback(() => {
+    void (async () => {
+      setPushing(true);
+      const ac = new AbortController();
+      pushAbortRef.current = ac;
+      try {
+        // 落后检查（窗口内，15 秒超时，超时视为无落后直接推）
+        const pac = new AbortController();
+        const pt = setTimeout(() => pac.abort(), 15_000);
+        const pf = await get.preflight(pac.signal).catch(() => null);
+        clearTimeout(pt);
+        if (pf && pf.behind > 0) {
+          setPushing(false);
+          setModal({
+            type: 'confirm',
+            title: '⚠ 推送前需要拉取',
+            message: (
+              <>
+                远程有 <b>{pf.behind}</b> 个新提交，当前分支落后。直接推送会被拒绝，建议先拉取合并。
+                {pf.conflictRisk.length > 0 && (
+                  <div className="error mt8">
+                    ⚠ 以下文件双方都有修改，拉取时可能冲突：{pf.conflictRisk.map((f) => f.path).join('、')}
+                  </div>
+                )}
+              </>
+            ),
+            confirmLabel: '仍然推送',
+            secondaryLabel: '先拉取',
+            action: () => void pushNow(),
+            secondaryAction: () => {
+              setModal(null);
+              void doUpdateDir('');
+            },
+          });
+          return;
+        }
+        // 实际推送（pushNow 负责进度窗口/认证引导/失败弹窗）
+        await pushNow();
+      } catch (e) {
+        setToast((e as Error).message === '已取消' ? '已取消推送' : `推送失败: ${(e as Error).message}`);
+      } finally {
+        setPushing(false);
+        pushAbortRef.current = null;
+      }
+    })();
+  }, [pushNow]);
+
   // 跳转 diff 视图（提交冲突提示"双击查看差异"使用；定义在 handleAction 之前供其依赖）
   const gotoDiff = useCallback(
     (path?: string, a?: string, b?: string) => {
@@ -307,39 +390,8 @@ export function App() {
           }
         })();
       } else if (op === 'push') {
-        // 推送前检查：落后则提示先拉取
-        void (async () => {
-          try {
-            const pf = await get.preflight();
-            if (pf.behind > 0) {
-              setModal({
-                type: 'confirm',
-                title: '⚠ 推送前需要拉取',
-                message: (
-                  <>
-                    远程有 <b>{pf.behind}</b> 个新提交，当前分支落后。直接推送会被拒绝，建议先拉取合并。
-                    {pf.conflictRisk.length > 0 && (
-                      <div className="error mt8">
-                        ⚠ 以下文件双方都有修改，拉取时可能冲突：{pf.conflictRisk.map((f) => f.path).join('、')}
-                      </div>
-                    )}
-                  </>
-                ),
-                confirmLabel: '仍然推送',
-                secondaryLabel: '先拉取',
-                action: () => void runOp('push', paths),
-                secondaryAction: () => {
-                  setModal(null);
-                  void runOp('update', []);
-                },
-              });
-            } else {
-              void runOp('push', paths);
-            }
-          } catch {
-            void runOp('push', paths);
-          }
-        })();
+        // 统一走 doPush（落后检查 + 进度窗口 + 认证引导）
+        doPush();
       } else if (op === 'revert') {
         setModal({
           type: 'confirm',
@@ -367,7 +419,7 @@ export function App() {
         void runOp(op, paths);
       }
     },
-    [runOp, gotoDiff]
+    [runOp, gotoDiff, doPush]
   );
 
   const doCommit = useCallback(
@@ -451,14 +503,14 @@ export function App() {
     [refresh, checkRemote]
   );
   const cancelUpdate = () => updateAbortRef.current?.abort();
-  // 更新耗时（秒）：更新中每秒刷新
+  // 耗时（秒）：更新/推送中每秒刷新
   const [updateElapsed, setUpdateElapsed] = useState(0);
   useEffect(() => {
-    if (!updating) return;
+    if (!updating && !pushing) return;
     setUpdateElapsed(0);
     const t = setInterval(() => setUpdateElapsed((s) => s + 1), 1000);
     return () => clearInterval(t);
-  }, [updating]);
+  }, [updating, pushing]);
 
   const [diffFrom, setDiffFrom] = useState<View>('browse');
 
@@ -481,6 +533,7 @@ export function App() {
         onRefresh={refresh}
         setModal={setModal}
         onToast={setToast}
+        onPush={doPush}
       />
 
       {/* 远程更新提示条：含"你修改的文件被他人先提交"预警 */}
@@ -650,6 +703,22 @@ export function App() {
           onClose={() => setModal(null)}
         />
       )}
+      {/* 推送中：转圈提示，可取消 */}
+      {pushing && (
+        <div className="modal-mask">
+          <div className="modal" style={{ width: 380 }}>
+            <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
+              <div className="spinner" />
+              <div style={{ marginTop: 14, fontWeight: 600 }}>正在推送…</div>
+              <div className="dim small" style={{ marginTop: 6 }}>视网络情况可能需要一些时间，可随时取消</div>
+              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>已耗时 {updateElapsed}s</div>
+              <button className="mini danger" style={{ marginTop: 18 }} onClick={cancelPush}>
+                取消推送
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 更新中：转圈提示，可取消 */}
       {updating && (
         <div className="modal-mask">
@@ -733,6 +802,18 @@ export function App() {
         <RemoteConflictModal riskFiles={modal.files} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'git-info' && <GitInfoModal onClose={() => setModal(null)} onToast={setToast} />}
+      {pushAuth && (
+        <GitPushAuthModal
+          type={pushAuth.type}
+          error={pushAuth.error}
+          onClose={() => setPushAuth(null)}
+          onToast={setToast}
+          onSaved={() => {
+            setPushAuth(null);
+            void doPush(); // 保存凭据后自动重试推送（后端用 GIT_ASKPASS 携带凭据）
+          }}
+        />
+      )}
       {modal?.type === 'create-repo' && (
         <CreateRepoDialog
           home={info?.home}

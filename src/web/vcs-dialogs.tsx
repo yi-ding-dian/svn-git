@@ -4,6 +4,7 @@ import { get, post, type BranchInfo, type StashItem, type VcsResult } from './ap
 import { ResizableModal } from './modal-shell.js';
 import { DirPicker } from './dir-picker.js';
 import { HelpNote, FormRow } from './ui.js';
+import { ConfirmModal } from './modals.js';
 
 function ModalShell(props: { title: string; icon?: string; width?: number; children: React.ReactNode; onClose: () => void }) {
   return (
@@ -56,6 +57,8 @@ export function BranchDialog(props: {
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 工具风格二次确认
+  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void } | null>(null);
 
   const load = () => {
     get
@@ -137,11 +140,13 @@ export function BranchDialog(props: {
                 <button
                   className="mini danger"
                   disabled={busy}
-                  onClick={() => {
-                    if (window.confirm(`确认删除分支 ${b.name}？未合并的改动会丢失（可强制删除）。`)) {
-                      act('delete', b.name, false);
-                    }
-                  }}
+                  onClick={() =>
+                    setCfm({
+                      title: '删除分支',
+                      msg: `确认删除分支 ${b.name}？未合并的改动会丢失（可强制删除）。`,
+                      action: () => act('delete', b.name, false),
+                    })
+                  }
                 >
                   删除
                 </button>
@@ -151,7 +156,21 @@ export function BranchDialog(props: {
         ))}
       </div>
       <ResultLine msg={msg} err={msgErr} />
-    </ModalShell>
+          {/* 二次确认（工具风格） */}
+      {cfm && (
+        <ConfirmModal
+          title={cfm.title}
+          message={cfm.msg}
+          confirmLabel="确认"
+          onConfirm={() => {
+            const a = cfm.action;
+            setCfm(null);
+            a();
+          }}
+          onCancel={() => setCfm(null)}
+        />
+      )}
+</ModalShell>
   );
 }
 
@@ -221,6 +240,8 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 工具风格二次确认
+  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void } | null>(null);
 
   const load = () => {
     get
@@ -279,9 +300,13 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
             <button
               className="mini danger"
               disabled={busy}
-              onClick={() => {
-                if (window.confirm(`确认删除标签 ${t}？`)) act('delete', t);
-              }}
+              onClick={() =>
+                setCfm({
+                  title: '删除标签',
+                  msg: `确认删除标签 ${t}？`,
+                  action: () => act('delete', t),
+                })
+              }
             >
               删除
             </button>
@@ -291,6 +316,20 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
       <ResultLine msg={msg} err={msgErr} />
       {/* 远程仓库（git） */}
       {props.repoType === 'git' && <RemoteList />}
+      {/* 二次确认（工具风格） */}
+      {cfm && (
+        <ConfirmModal
+          title={cfm.title}
+          message={cfm.msg}
+          confirmLabel="确认"
+          onConfirm={() => {
+            const a = cfm.action;
+            setCfm(null);
+            a();
+          }}
+          onCancel={() => setCfm(null)}
+        />
+      )}
     </ModalShell>
   );
 }
@@ -326,6 +365,8 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 工具风格二次确认
+  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void } | null>(null);
 
   const load = () => {
     get
@@ -385,9 +426,13 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
             <button
               className="mini danger"
               disabled={busy}
-              onClick={() => {
-                if (window.confirm(`确认丢弃 stash@{${it.index}}？改动将丢失。`)) act('drop', it.index);
-              }}
+              onClick={() =>
+                setCfm({
+                  title: '丢弃 Stash',
+                  msg: `确认丢弃 stash@{${it.index}}？改动将丢失。`,
+                  action: () => act('drop', it.index),
+                })
+              }
             >
               丢弃
             </button>
@@ -395,6 +440,20 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
         ))}
       </div>
       <ResultLine msg={msg} err={msgErr} />
+      {/* 二次确认（工具风格） */}
+      {cfm && (
+        <ConfirmModal
+          title={cfm.title}
+          message={cfm.msg}
+          confirmLabel="确认"
+          onConfirm={() => {
+            const a = cfm.action;
+            setCfm(null);
+            a();
+          }}
+          onCancel={() => setCfm(null)}
+        />
+      )}
     </ModalShell>
   );
 }
@@ -488,6 +547,105 @@ export function GitInfoModal(props: { onClose: () => void; onToast: (m: string) 
         </div>
         <div className="foot">
           <button onClick={props.onClose}>关闭</button>
+        </div>
+      </ResizableModal>
+    </div>
+  );
+}
+
+// ==================== Git 推送认证 ====================
+
+/** 推送认证弹窗：GitHub 用户名+Token / 服务器用户名+密码 / SSH 提示 */
+export function GitPushAuthModal(props: {
+  type: 'github' | 'server' | 'ssh';
+  username?: string;
+  /** 上次推送失败的认证错误（显示在窗口内提示用户检查） */
+  error?: string;
+  onClose: () => void;
+  onSaved: () => void;
+  onToast: (m: string) => void;
+}) {
+  const [username, setUsername] = useState(props.username ?? '');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const isGithub = props.type === 'github';
+  // 打开时预填已保存的用户名（token 不回传，需重新输入）
+  useEffect(() => {
+    if (props.username) return;
+    get
+      .gitAuth()
+      .then((r) => r.username && setUsername(r.username))
+      .catch(() => {});
+  }, [props.username]);
+
+  const save = () => {
+    if (!username.trim() || !password) {
+      props.onToast('请填写用户名和密码');
+      return;
+    }
+    setBusy(true);
+    void post
+      .gitAuthSave(username.trim(), password)
+      .then((r) => {
+        props.onToast(r.message);
+        if (r.ok) props.onSaved();
+      })
+      .catch((e: Error) => props.onToast(`保存失败: ${(e as Error).message}`))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="modal-mask">
+      <ResizableModal width={460} minWidth={420}>
+        <h3>{isGithub ? '🔑 GitHub 推送认证' : props.type === 'ssh' ? '🔑 SSH 推送提示' : '🔑 Git 服务器推送认证'}</h3>
+        <div className="body">
+          {props.error && (
+            <div className="error" style={{ marginBottom: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              ⚠ 认证失败：{props.error}
+            </div>
+          )}
+          {props.type === 'ssh' ? (
+            <HelpNote>
+              当前远程地址使用 <b>SSH</b>(git@…)。请确认本机已配置 SSH 密钥并已加入 ssh-agent
+              （<span className="mono">ssh-keygen -t ed25519</span> 生成、<span className="mono">ssh-add</span> 加入、
+              <span className="mono">ssh -T git@github.com</span> 验证）。
+              如需使用用户名密码推送，请改用 <b>HTTPS</b> 地址（可在「Git 信息」中修改远程地址）。
+            </HelpNote>
+          ) : (
+            <>
+              <div className="form-row">
+                <label>{isGithub ? 'GitHub 用户名' : '用户名'}</label>
+                <input type="text" placeholder={isGithub ? 'your-github-username' : '服务器用户名'} value={username} onChange={(e) => setUsername(e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label>{isGithub ? 'Personal Access Token' : '密码 / Token'}</label>
+                <input
+                  type="password"
+                  placeholder={isGithub ? 'ghp_xxx（Settings → Developer settings → Tokens）' : '密码或访问令牌'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') save();
+                  }}
+                />
+              </div>
+              {isGithub && (
+                <div className="dim small">
+                  在 GitHub 的 Settings → Developer settings → Personal access tokens 生成，勾选
+                  <b> repo </b> 权限即可推送。
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="foot">
+          <button onClick={props.onClose}>取消</button>
+          {props.type !== 'ssh' && (
+            <button className="primary" disabled={busy} onClick={save}>
+              {busy ? '保存中…' : '保存并推送'}
+            </button>
+          )}
         </div>
       </ResizableModal>
     </div>

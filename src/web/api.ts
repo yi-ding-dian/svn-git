@@ -39,6 +39,8 @@ export interface VcsResult {
   authError?: boolean;
   /** svn 命令输出警告行（如 W205011 外部定义失败） */
   warnings?: string[];
+  /** git 推送认证失败类型（github / server / ssh），前端据此引导认证 */
+  authType?: 'github' | 'server' | 'ssh';
 }
 
 export interface BrowseResult {
@@ -136,7 +138,7 @@ export const get = {
   search: (query: string, dir = '') =>
     api<{ paths: string[] }>(`/api/search?query=${encodeURIComponent(query)}&dir=${encodeURIComponent(dir)}`),
   envCheck: () => api<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } }>('/api/env-check'),
-  preflight: () =>
+  preflight: (signal?: AbortSignal) =>
     api<{
       remoteHasUpdate: boolean;
       behind: number;
@@ -144,7 +146,7 @@ export const get = {
       conflictRisk: { path: string; lines: number[] }[];
       lockedByOthers: string[];
       updatedFiles: string[];
-    }>('/api/preflight'),
+    }>('/api/preflight', { signal }),
   conflicts: () =>
     api<{ conflicts: { path: string; ours: string; theirs: string; base: string; work: string }[] }>('/api/conflicts'),
   ignoreRules: (path: string) => api<{ rules: string[] }>(`/api/ignore?path=${encodeURIComponent(path)}`),
@@ -160,6 +162,7 @@ export const get = {
     api<{ branch: string; remote: string; upstream: string; lastCommit: { hash: string; author: string; date: string; msg: string } | null }>(
       '/api/git-info',
     ),
+  gitAuth: () => api<{ username: string; hasPassword: boolean }>('/api/git-auth'),
 };
 
 export interface BranchInfo {
@@ -181,7 +184,7 @@ export const post = {
     api<VcsResult & { path?: string; files?: { path: string; status: string; code?: string }[] }>('/api/update', json({ path, signal })),
   revert: (paths: string[]) => api<VcsResult>('/api/revert', json({ paths })),
   delete: (paths: string[]) => api<VcsResult>('/api/delete', json({ paths })),
-  push: () => api<VcsResult>('/api/push', json({})),
+  push: (signal?: AbortSignal) => api<VcsResult>('/api/push', json({}, signal)),
   branch: (action: 'create' | 'switch' | 'delete' | 'merge', name: string, force = false) =>
     api<VcsResult>('/api/branch', json({ action, name, force })),
   tag: (action: 'create' | 'delete', name: string) => api<VcsResult>('/api/tag', json({ action, name })),
@@ -204,6 +207,7 @@ export const post = {
   mkdir: (path: string) => api<{ ok: boolean }>('/api/mkdir', json({ path })),
   rename: (from: string, to: string) => api<{ ok: boolean }>('/api/rename', json({ from, to })),
   gitConfig: (remoteUrl: string) => api<VcsResult>('/api/git-config', json({ remoteUrl })),
+  gitAuthSave: (username: string, password: string) => api<VcsResult>('/api/git-auth', json({ username, password })),
   shutdown: () => api<{ ok: boolean }>('/api/shutdown', json({})),
 };
 

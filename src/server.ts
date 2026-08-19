@@ -706,6 +706,27 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
+      if (p === '/api/git-auth' && req.method === 'GET') {
+        // Git 推送认证信息（不回传密码本体）
+        const cfg = loadConfig();
+        sendJson(res, 200, { username: cfg.git?.username ?? '', hasPassword: Boolean(cfg.git?.password) });
+        return;
+      }
+      if (p === '/api/git-auth' && req.method === 'POST') {
+        // 保存 Git 推送认证（GitHub token / 服务器密码），base64 存储 600 权限
+        const body = await readBody(req);
+        const username = String(body.username ?? '').trim();
+        const password = String(body.password ?? '');
+        if (!username || !password) {
+          sendJson(res, 400, { error: '用户名和密码不能为空' });
+          return;
+        }
+        const cfg = loadConfig();
+        cfg.git = { username, password };
+        saveConfig(cfg);
+        sendJson(res, 200, { ok: true, message: '推送认证已保存' });
+        return;
+      }
       if (p === '/api/config' && req.method === 'GET') {
         const cfg = loadConfig();
         sendJson(res, 200, { username: cfg.svn.username, trustServerCert: cfg.svn.trustServerCert });

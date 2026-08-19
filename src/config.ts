@@ -10,12 +10,17 @@ export interface AppConfig {
     /** https 自签名证书信任（svn --trust-server-cert） */
     trustServerCert: boolean;
   };
+  /** Git 推送认证（GitHub token / 自建服务器用户名密码），base64 存储 */
+  git?: {
+    username: string;
+    password: string;
+  };
 }
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'svnkit');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
-const DEFAULTS: AppConfig = { svn: { username: '', password: '', trustServerCert: false } };
+const DEFAULTS: AppConfig = { svn: { username: '', password: '', trustServerCert: false }, git: { username: '', password: '' } };
 
 function encode(pw: string): string {
   return Buffer.from(pw, 'utf8').toString('base64');
@@ -40,6 +45,10 @@ export function loadConfig(): AppConfig {
         password: data?.svn?.password ? decode(String(data.svn.password)) : '',
         trustServerCert: Boolean(data?.svn?.trustServerCert),
       },
+      git: {
+        username: String(data?.git?.username ?? ''),
+        password: data?.git?.password ? decode(String(data.git.password)) : '',
+      },
     };
   } catch {
     return { ...DEFAULTS };
@@ -54,6 +63,10 @@ export function saveConfig(cfg: AppConfig): void {
         username: cfg.svn.username,
         password: cfg.svn.password ? encode(cfg.svn.password) : '',
         trustServerCert: cfg.svn.trustServerCert,
+      },
+      git: {
+        username: cfg.git?.username ?? '',
+        password: cfg.git?.password ? encode(cfg.git.password) : '',
       },
     };
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(out, null, 2));

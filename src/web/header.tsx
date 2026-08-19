@@ -18,23 +18,15 @@ export const THEMES = [
 /** 字号档位 */
 export const FONT_SIZES = [12, 14, 16, 18];
 
-/** 顶部工具按钮（图标 + 文字，统一样式；可选二次确认） */
+/** 顶部工具按钮（图标 + 文字，统一样式） */
 function ToolBtn(props: {
   icon: React.ReactNode;
   label: React.ReactNode;
   title?: string;
-  confirmMsg?: string;
   onClick: () => void;
 }) {
   return (
-    <button
-      className="tool-btn"
-      title={props.title}
-      onClick={() => {
-        if (props.confirmMsg && !window.confirm(props.confirmMsg)) return;
-        props.onClick();
-      }}
-    >
+    <button className="tool-btn" title={props.title} onClick={props.onClick}>
       {props.icon} {props.label}
     </button>
   );
@@ -52,6 +44,8 @@ export function AppHeader(props: {
   onRefresh: () => void;
   setModal: (m: Modal) => void;
   onToast: (m: string) => void;
+  /** 推送（含进度窗口与认证引导） */
+  onPush: () => void;
 }) {
   const repo = props.repo;
   return (
@@ -78,14 +72,8 @@ export function AppHeader(props: {
           <ToolBtn
             icon={<IconCommit />}
             label="推送"
-            title="推送（git push）"
-            confirmMsg="推送当前分支到远程仓库（git push）？"
-            onClick={() => {
-              void post
-                .push()
-                .then((r) => props.onToast(r.message))
-                .catch((e: Error) => props.onToast((e as Error).message));
-            }}
+            title="推送（git push，含进度与认证引导）"
+            onClick={props.onPush}
           />
           <ToolBtn icon={<IconClean />} label="清理" title="清理未跟踪文件" onClick={() => props.setModal({ type: 'clean' })} />
         </>
@@ -98,13 +86,20 @@ export function AppHeader(props: {
           icon={<IconClean />}
           label="清理"
           title="svn cleanup"
-          confirmMsg="执行 svn cleanup（清理中断操作遗留的锁）？"
-          onClick={() => {
-            void post
-              .svnExtra('cleanup')
-              .then((r) => props.onToast(r.message))
-              .catch((e: Error) => props.onToast((e as Error).message));
-          }}
+          onClick={() =>
+            props.setModal({
+              type: 'confirm',
+              title: 'svn cleanup',
+              message: '执行 svn cleanup（清理中断操作遗留的锁）？',
+              confirmLabel: '执行',
+              action: () => {
+                void post
+                  .svnExtra('cleanup')
+                  .then((r) => props.onToast(r.message))
+                  .catch((e: Error) => props.onToast((e as Error).message));
+              },
+            })
+          }
         />
       )}
       <button
