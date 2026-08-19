@@ -1,0 +1,47 @@
+# 跨平台构建：Linux AppImage + Windows 安装包（tag 或手动触发）
+name: Build Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建前端与后端
+        run: npm run build
+
+      - name: 打包 Linux AppImage
+        if: runner.os == 'Linux'
+        run: npx electron-builder --linux AppImage -c.electronDist=
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+
+      - name: 打包 Windows 安装包
+        if: runner.os == 'Windows'
+        run: npx electron-builder --win nsis -c.electronDist=
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: svnkit-${{ runner.os }}
+          path: dist-appimage/*
+          if-no-files-found: error

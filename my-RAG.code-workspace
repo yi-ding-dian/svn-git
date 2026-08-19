@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "../my-RAG"
+		},
+		{
+			"path": "../PiAgent/my-Agent"
+		}
+	],
+	"settings": {}
+}

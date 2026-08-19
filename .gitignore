@@ -1,0 +1,26 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist-appimage/
+.build/
+
+# 日志与临时
+*.log
+npm-debug.log*
+
+# 编辑器/系统
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 本地配置
+*.local.json
+
+# 内部开发记录（含个人项目路径，开源不公开）
+record.md
+
+# 测试遗留/临时文件
+svn-untracked.txt

@@ -1,0 +1,18 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#242c3a"/>
+      <stop offset="1" stop-color="#0d1117"/>
+    </linearGradient>
+  </defs>
+  <!-- 圆角深色底 -->
+  <rect width="512" height="512" rx="100" fill="url(#bg)"/>
+  <!-- SVN 紫块（左） -->
+  <rect x="40" y="72" width="204" height="368" rx="52" fill="#8a2be2"/>
+  <!-- GIT 橙块（右） -->
+  <rect x="268" y="72" width="204" height="368" rx="52" fill="#e85d26"/>
+  <!-- 字母 S -->
+  <text x="142" y="356" font-family="'DejaVu Sans', Arial, sans-serif" font-size="220" font-weight="bold" fill="#ffffff" text-anchor="middle">S</text>
+  <!-- 字母 G -->
+  <text x="370" y="356" font-family="'DejaVu Sans', Arial, sans-serif" font-size="220" font-weight="bold" fill="#ffffff" text-anchor="middle">G</text>
+</svg>

@@ -1,0 +1,602 @@
+/** 版本管理对话框：分支 / 标签 / Stash / 创建仓库（git + svn 通用） */
+import React, { useEffect, useState } from 'react';
+import { get, post, type BranchInfo, type StashItem, type VcsResult } from './api.js';
+import { ResizableModal } from './modal-shell.js';
+import { DirPicker } from './dir-picker.js';
+import { HelpNote, FormRow } from './ui.js';
+
+function ModalShell(props: { title: string; icon?: string; width?: number; children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="modal-mask">
+      <ResizableModal width={props.width ?? 560}>
+        <h3>
+          {props.icon && <span style={{ marginRight: 8 }}>{props.icon}</span>}
+          {props.title}
+        </h3>
+        <div className="body">{props.children}</div>
+        <div className="foot">
+          <button onClick={props.onClose}>关闭</button>
+        </div>
+      </ResizableModal>
+    </div>
+  );
+}
+
+/** 操作结果提示行 */
+function ResultLine(props: { msg: string; err?: boolean }) {
+  if (!props.msg) return null;
+  return <div className={props.err ? 'error mt8' : 'mt8 small'} style={props.err ? undefined : { color: 'var(--ok)' }}>{props.msg}</div>;
+}
+
+/** 执行并刷新列表的通用逻辑 */
+async function runAction(
+  fn: () => Promise<VcsResult>,
+  onMsg: (msg: string, err?: boolean) => void,
+  afterOk?: () => void
+) {
+  try {
+    const r = await fn();
+    onMsg(r.message, !r.ok);
+    if (r.ok) afterOk?.();
+  } catch (e) {
+    onMsg((e as Error).message, true);
+  }
+}
+
+// ==================== 分支管理 ====================
+
+export function BranchDialog(props: {
+  repoType: 'svn' | 'git';
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [data, setData] = useState<BranchInfo | null>(null);
+  const [sel, setSel] = useState('');
+  const [newName, setNewName] = useState('');
+  const [msg, setMsg] = useState('');
+  const [msgErr, setMsgErr] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    get
+      .branches()
+      .then((r) => {
+        setData(r);
+        if (!sel && r.current) setSel(r.current);
+      })
+      .catch((e: Error) => {
+        setMsg(e.message);
+        setMsgErr(true);
+      });
+  };
+  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = (action: 'create' | 'switch' | 'delete' | 'merge', name: string, force = false) => {
+    setBusy(true);
+    void runAction(
+      () => post.branch(action, name, force),
+      (m, err) => {
+        setMsg(m);
+        setMsgErr(Boolean(err));
+      },
+      () => {
+        load();
+        props.onChanged();
+      }
+    ).finally(() => setBusy(false));
+  };
+
+  return (
+    <ModalShell icon="🪵" title={`分支管理 (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={640}>
+      <HelpNote>
+        {props.repoType === 'git'
+          ? '分支是独立的开发线，互不干扰。用法：在上方输入名称回车 = 从当前提交新建分支；点选列表中的分支后，可「切换」到它、「合并」到当前分支（把该分支改动带过来）、或「删除」它。绿色标记 = 当前所在分支。'
+          : 'SVN 分支是版本库里的目录复制（branches/）。用法：输入名称回车 = 复制 trunk（或当前目录）创建分支；「切换」= 工作副本指向该分支；「合并」= 把该分支的改动并入当前工作副本（合并前请先更新）。绿色标记 = 当前分支。'}
+      </HelpNote>
+      {/* 新建分支 */}
+      <div className="row" style={{ margin: '12px 0' }}>
+        <input
+          type="text"
+          placeholder="新分支名称…（回车创建）"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && newName.trim()) act('create', newName.trim());
+          }}
+          style={{ flex: 1 }}
+        />
+        <button className="primary" disabled={busy || !newName.trim()} onClick={() => act('create', newName.trim())}>
+          ➕ 新建分支
+        </button>
+        {props.repoType === 'svn' && data?.current && data.current !== 'trunk' && (
+          <button className="mini" disabled={busy} onClick={() => act('switch', 'trunk')} title="切回 trunk（无 trunk 时切回仓库根）">
+            ↩ 切回主干
+          </button>
+        )}
+      </div>
+      {/* 分支列表 */}
+      <div className="vcs-list" style={{ maxHeight: 280 }}>
+        {!data && <div className="dim" style={{ padding: '10px 6px' }}>加载中…</div>}
+        {data && data.branches.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>暂无分支{props.repoType === 'svn' ? '（仓库根下没有 branches/ 目录）' : ''}</div>}
+        {data?.branches.map((b) => (
+          <div
+            key={b.name}
+            className={`vcs-row ${sel === b.name ? 'selected' : ''}`}
+            onClick={() => setSel(b.name)}
+            title={b.name === data.current ? '当前分支' : '点击选中，再操作右侧按钮'}
+          >
+            <span className="vcs-current" style={{ visibility: b.name === data.current ? 'visible' : 'hidden' }}>●</span>
+            <span className="badge" style={{ background: b.remote ? 'var(--dim)' : 'var(--ok)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>
+              {b.name === data.current ? '当前' : b.remote ? '远程' : '本地'}
+            </span>
+            <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
+            {!b.remote && b.name !== data.current && (
+              <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                <button className="mini primary" disabled={busy} onClick={() => act('switch', b.name)}>切换</button>
+                <button className="mini" disabled={busy} onClick={() => act('merge', b.name)}>合并</button>
+                <button
+                  className="mini danger"
+                  disabled={busy}
+                  onClick={() => {
+                    if (window.confirm(`确认删除分支 ${b.name}？未合并的改动会丢失（可强制删除）。`)) {
+                      act('delete', b.name, false);
+                    }
+                  }}
+                >
+                  删除
+                </button>
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      <ResultLine msg={msg} err={msgErr} />
+    </ModalShell>
+  );
+}
+
+// ==================== git 清理未跟踪（预览+确认） ====================
+
+export function CleanDialog(props: { onClose: () => void; onDone: () => void }) {
+  const [files, setFiles] = useState<string[] | null>(null);
+  const [msg, setMsg] = useState('');
+  const [msgErr, setMsgErr] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    get
+      .gitClean()
+      .then((r) => setFiles(r.files))
+      .catch((e: Error) => {
+        setMsg(e.message);
+        setMsgErr(true);
+      });
+  };
+  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const doClean = () => {
+    setBusy(true);
+    void runAction(
+      () => post.gitClean(),
+      (m, err) => {
+        setMsg(m);
+        setMsgErr(Boolean(err));
+      },
+      props.onDone
+    ).finally(() => setBusy(false));
+  };
+
+  return (
+    <ModalShell title="清理未跟踪文件 (GIT)" onClose={props.onClose} width={520}>
+      <div className="dim small" style={{ marginBottom: 8 }}>
+        以下文件将被永久删除（含忽略文件），不可恢复：
+      </div>
+      {files === null && !msgErr && <div className="dim" style={{ padding: '10px 6px' }}>扫描中…</div>}
+      {files && (
+        <div className="changed" style={{ maxHeight: 260, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6 }}>
+          {files.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>没有未跟踪文件 🎉</div>}
+          {files.map((f) => (
+            <div key={f} className="changed-row">
+              <span style={{ color: 'var(--err)' }}>✗</span>
+              <span className="mono small">{f}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <ResultLine msg={msg} err={msgErr} />
+      <div className="foot" style={{ padding: '12px 0 0', borderTop: 'none' }}>
+        <button className="danger" disabled={busy || !files || files.length === 0} onClick={doClean}>
+          {busy ? '清理中…' : '确认清理'}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ==================== 标签管理 ====================
+
+export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void; onChanged: () => void }) {
+  const [tags, setTags] = useState<string[]>([]);
+  const [newName, setNewName] = useState('');
+  const [msg, setMsg] = useState('');
+  const [msgErr, setMsgErr] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    get
+      .tags()
+      .then((r) => setTags(r.tags))
+      .catch((e: Error) => {
+        setMsg(e.message);
+        setMsgErr(true);
+      });
+  };
+  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = (action: 'create' | 'delete', name: string) => {
+    setBusy(true);
+    void runAction(
+      () => post.tag(action, name),
+      (m, err) => {
+        setMsg(m);
+        setMsgErr(Boolean(err));
+      },
+      () => {
+        load();
+        props.onChanged();
+      }
+    ).finally(() => setBusy(false));
+  };
+
+  return (
+    <ModalShell icon="🏷" title={`标签管理 (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={560}>
+      <HelpNote>
+        {props.repoType === 'git'
+          ? '标签是给当前提交打的固定名字，常用于标记发布版本（v1.0、v2.0 等）。用法：输入名称回车 = 给当前代码打标签；列表中的标签可「删除」。'
+          : 'SVN 标签是版本库中的目录快照（tags/），只读性质，用于标记发布版本。用法：输入名称回车 = 复制 trunk（或当前目录）创建标签；列表中的标签可「删除」（危险操作会确认）。'}
+      </HelpNote>
+      <div className="row" style={{ margin: '12px 0' }}>
+        <input
+          type="text"
+          placeholder="新标签名称…（回车创建）"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && newName.trim()) act('create', newName.trim());
+          }}
+          style={{ flex: 1 }}
+        />
+        <button className="primary" disabled={busy || !newName.trim()} onClick={() => act('create', newName.trim())}>
+          🏷 创建标签
+        </button>
+      </div>
+      <div className="vcs-list" style={{ maxHeight: 260 }}>
+        {tags.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>暂无标签</div>}
+        {tags.map((t) => (
+          <div key={t} className="changed-row">
+            <span style={{ color: 'var(--accent)' }}>🏷</span>
+            <span className="mono" style={{ flex: 1 }}>{t}</span>
+            <button
+              className="mini danger"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm(`确认删除标签 ${t}？`)) act('delete', t);
+              }}
+            >
+              删除
+            </button>
+          </div>
+        ))}
+      </div>
+      <ResultLine msg={msg} err={msgErr} />
+      {/* 远程仓库（git） */}
+      {props.repoType === 'git' && <RemoteList />}
+    </ModalShell>
+  );
+}
+
+/** git 远程列表展示 */
+function RemoteList() {
+  const [remotes, setRemotes] = useState<{ name: string; url: string }[]>([]);
+  useEffect(() => {
+    get
+      .remotes()
+      .then((r) => setRemotes(r.remotes))
+      .catch(() => {});
+  }, []);
+  if (remotes.length === 0) return null;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="dim small" style={{ marginBottom: 4 }}>远程仓库：</div>
+      {remotes.map((r) => (
+        <div key={r.name} className="changed-row">
+          <span className="badge git" style={{ background: 'var(--accent)', fontSize: 9 }}>{r.name}</span>
+          <span className="mono small dim" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.url}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ==================== Stash（git） ====================
+
+export function StashDialog(props: { onClose: () => void; onChanged: () => void }) {
+  const [items, setItems] = useState<StashItem[]>([]);
+  const [message, setMessage] = useState('');
+  const [msg, setMsg] = useState('');
+  const [msgErr, setMsgErr] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    get
+      .stash()
+      .then((r) => setItems(r.items))
+      .catch((e: Error) => {
+        setMsg(e.message);
+        setMsgErr(true);
+      });
+  };
+  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = (action: 'push' | 'pop' | 'drop', index = 0, msg2 = '') => {
+    setBusy(true);
+    void runAction(
+      () => post.stash(action, msg2, index),
+      (m, err) => {
+        setMsg(m);
+        setMsgErr(Boolean(err));
+      },
+      () => {
+        load();
+        props.onChanged();
+      }
+    ).finally(() => setBusy(false));
+  };
+
+  return (
+    <ModalShell icon="📦" title={`Stash 暂存区 (GIT)`} onClose={props.onClose} width={580}>
+      <HelpNote>
+        Stash 把当前未提交的改动临时收起来（含未跟踪文件），让工作区变干净——适合"先切分支/先做别的，稍后再回来继续"。用法：点「保存当前改动」收起（可写说明）；列表中「恢复」= 把改动取回工作区，「丢弃」= 放弃这份改动。
+      </HelpNote>
+      <div className="row" style={{ margin: '12px 0' }}>
+        <input
+          type="text"
+          placeholder="保存说明（可选）…"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') act('push', 0, message);
+          }}
+          style={{ flex: 1 }}
+        />
+        <button className="primary" disabled={busy} onClick={() => act('push', 0, message)}>
+          📦 保存当前改动
+        </button>
+      </div>
+      <div className="vcs-list" style={{ maxHeight: 260 }}>
+        {items.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>暂无 Stash</div>}
+        {items.map((it) => (
+          <div key={it.index} className="changed-row">
+            <span style={{ color: 'var(--warn)' }}>📦</span>
+            <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              stash@{it.index}: {it.label}
+            </span>
+            <button className="mini" disabled={busy} onClick={() => act('pop', it.index)}>恢复</button>
+            <button
+              className="mini danger"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm(`确认丢弃 stash@{${it.index}}？改动将丢失。`)) act('drop', it.index);
+              }}
+            >
+              丢弃
+            </button>
+          </div>
+        ))}
+      </div>
+      <ResultLine msg={msg} err={msgErr} />
+    </ModalShell>
+  );
+}
+
+// ==================== Git 信息与配置 ====================
+
+/** Git 信息弹窗：分支 / 远程 / 上游 / 最近提交，可修改远程地址 */
+export function GitInfoModal(props: { onClose: () => void; onToast: (m: string) => void }) {
+  const [info, setInfo] = useState<{
+    branch: string;
+    remote: string;
+    upstream: string;
+    lastCommit: { hash: string; author: string; date: string; msg: string } | null;
+  } | null>(null);
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    get
+      .gitInfo()
+      .then((r) => {
+        setInfo(r);
+        setUrl(r.remote);
+      })
+      .catch((e: Error) => props.onToast((e as Error).message));
+  };
+  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = () => {
+    if (!url.trim()) {
+      props.onToast('远程地址不能为空');
+      return;
+    }
+    setBusy(true);
+    void post
+      .gitConfig(url.trim())
+      .then((r) => {
+        props.onToast(r.message);
+        if (r.ok) load();
+      })
+      .catch((e: Error) => props.onToast(`配置失败: ${(e as Error).message}`))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="modal-mask">
+      <ResizableModal width={560} minWidth={480}>
+        <h3>⚙ Git 信息</h3>
+        <div className="body">
+          {!info && <div className="loading">⏳ 读取 Git 信息…</div>}
+          {info && (
+            <>
+              <div className="help-note" style={{ marginBottom: 12 }}>
+                <div className="small" style={{ lineHeight: 1.9 }}>
+                  <div className="row" style={{ gap: 8 }}>
+                    <span className="dim" style={{ width: 72 }}>当前分支</span>
+                    <span className="mono" style={{ color: 'var(--accent)', fontWeight: 600 }}>{info.branch || '（分离头指针）'}</span>
+                  </div>
+                  <div className="row" style={{ gap: 8 }}>
+                    <span className="dim" style={{ width: 72 }}>上游跟踪</span>
+                    <span className="mono">{info.upstream || <span style={{ color: 'var(--warn)' }}>未设置（更新时自动按 origin/分支拉取）</span>}</span>
+                  </div>
+                  {info.lastCommit && (
+                    <>
+                      <div className="row" style={{ gap: 8 }}>
+                        <span className="dim" style={{ width: 72 }}>最近提交</span>
+                        <span className="mono">{info.lastCommit.hash}</span>
+                      </div>
+                      <div className="row" style={{ gap: 8 }}>
+                        <span className="dim" style={{ width: 72 }}>提交信息</span>
+                        <span className="small" style={{ flex: 1, wordBreak: 'break-all' }}>{info.lastCommit.msg}</span>
+                      </div>
+                      <div className="row" style={{ gap: 8 }}>
+                        <span className="dim" style={{ width: 72 }}>作者 / 时间</span>
+                        <span className="small">{info.lastCommit.author} · {info.lastCommit.date}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+              {/* 远程地址配置 */}
+              <FormRow label="远程地址（origin）">
+                <div className="row" style={{ gap: 8 }}>
+                  <input type="text" placeholder="git@host:user/repo.git 或 https://..." value={url} onChange={(e) => setUrl(e.target.value)} style={{ flex: 1 }} />
+                  <button className="mini primary" disabled={busy} onClick={save}>{busy ? '保存中…' : '保存'}</button>
+                </div>
+                <div className="dim small" style={{ marginTop: 6 }}>修改后推送/拉取将使用新地址（已有 origin 则更新，没有则添加）</div>
+              </FormRow>
+            </>
+          )}
+        </div>
+        <div className="foot">
+          <button onClick={props.onClose}>关闭</button>
+        </div>
+      </ResizableModal>
+    </div>
+  );
+}
+
+// ==================== 创建 / 克隆仓库 ====================
+
+export function CreateRepoDialog(props: { home?: string; onClose: () => void; onCreated: (dir: string) => void }) {
+  const [type, setType] = useState<'git' | 'clone' | 'svn'>('git');
+  const [dir, setDir] = useState(props.home ?? '');
+  const [name, setName] = useState('');
+  const [url, setUrl] = useState('');
+  const [msg, setMsg] = useState('');
+  const [msgErr, setMsgErr] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [picker, setPicker] = useState(false); // 文件夹浏览选择器
+
+  const submit = () => {
+    if (!dir.trim() || !name.trim()) {
+      setMsg('请填写目录和名称');
+      setMsgErr(true);
+      return;
+    }
+    setBusy(true);
+    const repoType = type === 'clone' ? 'git' : type;
+    void runAction(
+      () => post.repoCreate(repoType, dir.trim(), name.trim(), type === 'clone' ? url.trim() : ''),
+      (m, err) => {
+        setMsg(m);
+        setMsgErr(Boolean(err));
+      },
+      () => props.onCreated(`${dir.trim().replace(/\/$/, '')}/${name.trim()}`)
+    ).finally(() => setBusy(false));
+  };
+
+  return (
+    <ModalShell icon="➕" title="创建 / 克隆仓库" onClose={props.onClose} width={540}>
+      <HelpNote>
+        三种方式：Git 仓库 = 在本地目录初始化新仓库（git init）；Git 克隆 = 从远程地址复制一份到本地（git clone）；SVN 仓库 = 用 svnadmin 创建本地仓库并自动检出工作副本（目录名 + "-wc"）。
+      </HelpNote>
+      <div style={{ marginTop: 12 }} />
+      <div className="row" style={{ marginBottom: 12, gap: 6 }}>
+        {(
+          [
+            ['git', 'Git 仓库 (init)'],
+            ['clone', 'Git 克隆'],
+            ['svn', 'SVN 仓库'],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} className={`mini ${type === k ? 'primary' : ''}`} onClick={() => setType(k)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {type === 'clone' && (
+        <FormRow label="克隆地址（URL）">
+          <input type="text" placeholder="https://github.com/xxx/repo.git" value={url} onChange={(e) => setUrl(e.target.value)} />
+        </FormRow>
+      )}
+      <FormRow label="所在目录（父目录路径）">
+        <div className="row" style={{ gap: 8 }}>
+          <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} />
+          <button className="mini tool-btn" title="打开文件夹浏览（可新建/重命名文件夹）" onClick={() => setPicker(true)}>
+            📂 浏览
+          </button>
+        </div>
+      </FormRow>
+      <FormRow label={type === 'clone' ? '目标文件夹名称' : '仓库名称'}>
+        <input
+          type="text"
+          placeholder="my-project"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+        />
+      </FormRow>
+      <div className="dim small">
+        {type === 'git' && '在当前目录执行 git init，创建新的 Git 仓库'}
+        {type === 'clone' && 'git clone 远程仓库到本地'}
+        {type === 'svn' && 'svnadmin create 创建本地 SVN 仓库，并自动检出工作副本（目录名 + "-wc"）'}
+      </div>
+      <ResultLine msg={msg} err={msgErr} />
+      <div className="foot" style={{ padding: '12px 0 0', borderTop: 'none' }}>
+        <button className="primary" disabled={busy} onClick={submit}>
+          {busy ? '创建中…' : '创建'}
+        </button>
+      </div>
+      {/* 文件夹浏览选择器：新建/重命名，确定填充所在目录 */}
+      {picker && (
+        <div className="modal-mask">
+          <ResizableModal width={640}>
+            <h3>📂 选择所在目录</h3>
+            <div className="body">
+              <DirPicker
+                startDir={props.home ?? ''}
+                onPick={(p) => {
+                  setDir(p);
+                  setPicker(false);
+                }}
+                onClose={() => setPicker(false)}
+                onToast={setMsg}
+              />
+            </div>
+          </ResizableModal>
+        </div>
+      )}
+    </ModalShell>
+  );
+}

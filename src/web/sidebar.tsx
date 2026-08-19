@@ -1,0 +1,90 @@
+/** 侧边栏：视图导航 + 最近项目列表（右键删除）+ 版本号 */
+import React, { useState } from 'react';
+import { IconClock, IconDiff, IconFolder } from './icons.js';
+import { ContextMenu } from './context-menu.js';
+
+/** 主视图类型（侧边栏导航目标） */
+export type View = 'log' | 'diff' | 'browse';
+
+export function Sidebar(props: {
+  view: View;
+  history: { path: string; type: 'svn' | 'git'; lastOpened: number }[];
+  version?: string;
+  onNav: (v: View) => void;
+  onOpenHistory: (h: { path: string }) => void;
+  onRemoveHistory: (path: string) => void;
+}) {
+  // 最近项目右键菜单（删除 / 取消）
+  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+
+  const NAV = [
+    { key: 'log' as View, label: '历史', icon: <IconClock size={16} /> },
+    { key: 'diff' as View, label: '差异', icon: <IconDiff size={16} /> },
+    { key: 'browse' as View, label: '文件夹', icon: <IconFolder size={16} /> },
+  ];
+
+  return (
+    <div className="sidebar" style={{ display: props.view === 'diff' ? 'none' : undefined }}>
+      {NAV.map((n) => (
+        <div
+          key={n.key}
+          className={`item ${props.view === n.key ? 'active' : ''}`}
+          onClick={() => props.onNav(n.key)}
+        >
+          <span style={{ display: 'flex', width: 20, justifyContent: 'center' }}>{n.icon}</span>
+          <span>{n.label}</span>
+        </div>
+      ))}
+      <div style={{ flex: 1 }} />
+      {/* 最近项目：底部区域（版本号上方） */}
+      {props.history.length > 0 && (
+        <>
+          <div className="sidebar-title">最近项目</div>
+          <div className="history-list">
+            {props.history.map((h) => (
+              <div
+                key={h.path}
+                className="history-item"
+                title={`${h.path}\n点击打开 · 右键删除`}
+                onClick={() => props.onOpenHistory(h)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setRmMenu({ x: e.clientX, y: e.clientY, path: h.path });
+                }}
+              >
+                <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>
+                  {h.type.toUpperCase()}
+                </span>
+                <span className="history-path">{h.path.split('/').filter(Boolean).pop()}</span>
+              </div>
+            ))}
+            {/* 右键菜单：删除 / 取消 */}
+            {rmMenu && (
+              <ContextMenu
+                x={rmMenu.x}
+                y={rmMenu.y}
+                mask
+                onClose={() => setRmMenu(null)}
+                items={[
+                  {
+                    icon: '🗑',
+                    label: '删除',
+                    danger: true,
+                    action: () => {
+                      const p = rmMenu.path;
+                      props.onRemoveHistory(p);
+                    },
+                  },
+                  { icon: '✕', label: '取消' },
+                ]}
+              />
+            )}
+          </div>
+        </>
+      )}
+      <div className="small dim" style={{ padding: '14px 20px 10px', borderTop: '1px solid var(--border)', marginTop: 8 }}>
+        v{props.version ?? '1.0.0'}
+      </div>
+    </div>
+  );
+}

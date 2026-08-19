@@ -1,0 +1,36 @@
+# electron-builder 配置：Linux AppImage 打包
+appId: com.svnkit.tool
+productName: svn-git文件版本管理
+electronVersion: 33.4.11
+# 只保留中英文语言包（locales 40M → ~2M，显著减小产物）
+electronLanguages:
+  - zh-CN
+  - en-US
+# 使用本地 electron 分发，跳过 GitHub 下载（避免网络卡死）
+electronDist: node_modules/electron/dist
+directories:
+  output: dist-appimage
+  buildResources: build
+files:
+  - dist/**/*
+asar: true
+npmRebuild: false
+linux:
+  icon: build/icon.png
+  target:
+    - AppImage
+  category: Development
+  maintainer: svn-git
+  synopsis: SVN/Git 状态检测与操作工具
+  executableName: svnkit
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-${version}-setup.${ext}
+  shortcutName: svn-git文件版本管理

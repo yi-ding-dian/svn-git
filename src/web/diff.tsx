@@ -1,0 +1,544 @@
+/** 差异视图：并排双栏对比（左原版/右当前，修改行 M 标识，语法高亮，点击联动）/ 版本间文本 diff */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { get } from './api.js';
+import { DiffRender } from './diff-render.js';
+import { langOf, highlightLine } from './highlight.js';
+
+export interface DiffTarget {
+  path?: string;
+  a?: string;
+  b?: string;
+}
+
+interface Props {
+  target: DiffTarget | null;
+  tick: number;
+  onBack: () => void;
+}
+
+/** unified diff 解析出的行 */
+export interface DiffLine {
+  text: string;
+  type: 'ctx' | 'del' | 'add';
+  leftNo: number;
+  rightNo: number;
+  block: number;
+}
+
+export function parseUnifiedDiff(text: string): DiffLine[] {
+  const out: DiffLine[] = [];
+  let leftNo = 0;
+  let rightNo = 0;
+  let block = 0;
+  let blockOpen = false;
+  let inHunk = false;
+  for (const raw of text.split('\n')) {
+    const hunk = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)/);
+    if (hunk && hunk[1] && hunk[2]) {
+      leftNo = Number(hunk[1]);
+      rightNo = Number(hunk[2]);
+      inHunk = true;
+      blockOpen = false;
+      continue;
+    }
+    if (!inHunk) continue;
+    const ch = raw[0];
+    if (ch === ' ') {
+      out.push({ text: raw.slice(1), type: 'ctx', leftNo: leftNo++, rightNo: rightNo++, block: -1 });
+      blockOpen = false;
+    } else if (ch === '-') {
+      if (!blockOpen) {
+        block += 1;
+        blockOpen = true;
+      }
+      out.push({ text: raw.slice(1), type: 'del', leftNo: leftNo++, rightNo: 0, block });
+    } else if (ch === '+') {
+      if (!blockOpen) {
+        block += 1;
+        blockOpen = true;
+      }
+      out.push({ text: raw.slice(1), type: 'add', leftNo: 0, rightNo: rightNo++, block });
+    } else if (ch === '\\') {
+      /* 无换行符提示，忽略 */
+    } else {
+      inHunk = false;
+    }
+  }
+  return out;
+}
+
+export function DiffView(props: Props) {
+  const [versions, setVersions] = useState<{ left: string; right: string; leftLabel: string; rightLabel: string } | null>(null);
+  const [diffLines, setDiffLines] = useState<DiffLine[]>([]);
+  const [text, setText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  // 差异块导航
+  const [curBlock, setCurBlock] = useState(0);
+  // diff 内搜索（右栏 = 当前内容）
+  const [dSearch, setDSearch] = useState('');
+  const [dSearchActive, setDSearchActive] = useState(false);
+  const [dMatchIdx, setDMatchIdx] = useState(0);
+  // 左栏搜索（原版内容），独立于右栏搜索
+  const [dSearchL, setDSearchL] = useState('');
+  const [dSearchLActive, setDSearchLActive] = useState(false);
+  const [dMatchLIdx, setDMatchLIdx] = useState(0);
+  // 文件更新检测
+  const [staleTip, setStaleTip] = useState(false);
+  const mtimeRef = useRef<{ mtime: number; size: number } | null>(null);
+
+  const leftRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const rightRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const leftPane = useRef<HTMLDivElement>(null);
+  const rightPane = useRef<HTMLDivElement>(null);
+
+  const sideMode = Boolean(props.target?.path);
+
+  useEffect(() => {
+    if (!props.target) return;
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    const t = props.target;
+    if (sideMode) {
+      // 并排模式：加载左右版本 + 行级 diff
+      Promise.all([
+        get.fileVersions(t.path!, t.a, t.b),
+        get.diff(t.path, t.a, t.b),
+      ])
+        .then(([fv, d]) => {
+          if (cancelled) return;
+          setVersions({ left: fv.left, right: fv.right, leftLabel: fv.leftLabel, rightLabel: fv.rightLabel });
+          setDiffLines(d.ok ? parseUnifiedDiff(d.output) : []);
+          setCurBlock(0);
+          // 记录文件指纹，开始外部更新检测
+          get.fileMtime(t.path!).then((m) => { mtimeRef.current = m; }).catch(() => {});
+          setStaleTip(false);
+        })
+        .catch((e: Error) => {
+          if (!cancelled) setError(e.message);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    } else {
+      // 文本模式（全仓库 diff 或版本间）
+      get
+        .diff(t.path, t.a, t.b)
+        .then((r) => {
+          if (!cancelled) {
+            if (!r.ok) setError(r.error ?? 'diff 失败');
+            else setText(r.output.trim() || '(无差异)');
+          }
+        })
+        .catch((e: Error) => {
+          if (!cancelled) setError(e.message);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [props.target, props.tick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 差异块导航
+  const blocksRef = useRef<{ id: number; left: number; right: number }[]>([]);
+  const curBlockRef = useRef(0);
+  curBlockRef.current = curBlock;
+
+  // 跳转到差异块：左右两栏都滚动到块首行
+  const goBlock = useCallback((i: number) => {
+    const b = blocksRef.current[i];
+    if (!b) return;
+    setCurBlock(i);
+    leftRefs.current.get(b.left)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    rightRefs.current.get(b.right)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, []);
+
+  // ← / Esc 返回；↑↓ 差异块导航（并排模式且有差异时）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft' || e.key === 'Escape') {
+        e.preventDefault();
+        props.onBack();
+        return;
+      }
+      if (sideMode && blocksRef.current.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          goBlock((curBlockRef.current + 1) % blocksRef.current.length);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          goBlock((curBlockRef.current - 1 + blocksRef.current.length) % blocksRef.current.length);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [props.onBack, sideMode]);
+
+  // 差异块列表
+  const blocks = useMemo(() => {
+    const m = new Map<number, { left: number; right: number }>();
+    for (const l of diffLines) {
+      const v = m.get(l.block) ?? { left: Number.MAX_SAFE_INTEGER, right: Number.MAX_SAFE_INTEGER };
+      if (l.type === 'del') v.left = Math.min(v.left, l.leftNo);
+      if (l.type === 'add') v.right = Math.min(v.right, l.rightNo);
+      m.set(l.block, v);
+    }
+    return [...m.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([id, v]) => ({ id, left: v.left, right: v.right }));
+  }, [diffLines]);
+  blocksRef.current = blocks;
+
+  // 左右栏比例拖拽
+  const [leftRatio, setLeftRatio] = useState(50);
+  const dragState = useRef<{ startX: number; startRatio: number } | null>(null);
+  const startDrag = (e: React.MouseEvent) => {
+    dragState.current = { startX: e.clientX, startRatio: leftRatio };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      if (!dragState.current) return;
+      const delta = ((e.clientX - dragState.current.startX) / window.innerWidth) * 100;
+      setLeftRatio(Math.min(85, Math.max(15, dragState.current.startRatio + delta)));
+    };
+    const up = () => {
+      dragState.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+  }, []);
+
+  // 外部更新检测（3 秒轮询文件指纹）
+  useEffect(() => {
+    if (!sideMode || !props.target?.path) return;
+    const path = props.target.path;
+    const timer = setInterval(() => {
+      if (staleTip) return;
+      get
+        .fileMtime(path)
+        .then((m) => {
+          if (mtimeRef.current && (m.mtime !== mtimeRef.current.mtime || m.size !== mtimeRef.current.size)) {
+            setStaleTip(true);
+          }
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [sideMode, props.target, staleTip]);
+
+  // 并排行拆分：左栏 = 原版每行 + 删除行标记 M；右栏 = 当前每行 + 新增行标记 M
+  const leftRows = useMemo(() => {
+    if (!versions) return [];
+    const delMark = new Map<number, number>(); // leftNo -> block
+    for (const l of diffLines) {
+      if (l.type === 'del') delMark.set(l.leftNo, l.block);
+    }
+    return versions.left.split('\n').map((t, i) => {
+      const no = i + 1;
+      const block = delMark.get(no);
+      return { no, text: t, change: block !== undefined, block: block ?? -1 };
+    });
+  }, [versions, diffLines]);
+
+  const rightRows = useMemo(() => {
+    if (!versions) return [];
+    const rightMap = new Map<number, { text: string; block: number }>();
+    for (const l of diffLines) {
+      if (l.type === 'add') rightMap.set(l.rightNo, { text: l.text, block: l.block });
+    }
+    const out: { no: number; text: string; change: boolean; block: number }[] = [];
+    versions.right.split('\n').forEach((t, i) => {
+      const no = i + 1;
+      const m = rightMap.get(no);
+      if (m) out.push({ no, text: m.text, change: true, block: m.block });
+      else out.push({ no, text: t, change: false, block: -1 });
+    });
+    return out;
+  }, [versions, diffLines]);
+
+  // diff 搜索匹配（右栏 = 当前内容）
+  const dMatches = useMemo(() => {
+    if (!dSearchActive || !dSearch.trim()) return [] as number[];
+    const q = dSearch.toLowerCase();
+    const out: number[] = [];
+    rightRows.forEach((r) => {
+      if (r.text.toLowerCase().includes(q)) out.push(r.no);
+    });
+    return out;
+  }, [dSearch, dSearchActive, rightRows]);
+
+  const goNextDMatch = useCallback(() => {
+    if (dMatches.length === 0) return;
+    const next = (dMatchIdx + 1) % dMatches.length;
+    setDMatchIdx(next);
+    rightRefs.current.get(dMatches[next]!)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [dMatches, dMatchIdx]);
+
+  // 左栏搜索匹配 + 跳转
+  const dMatchesL = useMemo(() => {
+    if (!dSearchLActive || !dSearchL.trim()) return [] as number[];
+    const q = dSearchL.toLowerCase();
+    return leftRows.filter((r) => r.text.toLowerCase().includes(q)).map((r) => r.no);
+  }, [dSearchL, dSearchLActive, leftRows]);
+  const goNextLMatch = useCallback(() => {
+    if (dMatchesL.length === 0) return;
+    const next = (dMatchLIdx + 1) % dMatchesL.length;
+    setDMatchLIdx(next);
+    leftRefs.current.get(dMatchesL[next]!)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [dMatchesL, dMatchLIdx]);
+
+  // 滚动条预览标记：修改块位置（绿=有新增/修改行，红=纯删除）
+  const scrollMarkers = useMemo(() => {
+    if (blocks.length === 0) return [] as { block: number; percent: number; color: 'add' | 'del' }[];
+    const total = Math.max(leftRows.length, rightRows.length, 1);
+    return blocks.map((b) => {
+      const hasAdd = b.right > 0 && b.right !== Number.MAX_SAFE_INTEGER;
+      const anchor = hasAdd ? b.right : b.left;
+      return { block: b.id, percent: Math.min(99, Math.max(0, (anchor / total) * 100)), color: hasAdd ? ('add' as const) : ('del' as const) };
+    });
+  }, [blocks, leftRows.length, rightRows.length]);
+
+  // 修改块的首行号（块起点，跳转定位用）
+  const blockFirstLeft = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const l of diffLines) if (l.type === 'del' && !m.has(l.block)) m.set(l.block, l.leftNo);
+    return m;
+  }, [diffLines]);
+  const blockFirstRight = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const l of diffLines) if (l.type === 'add' && !m.has(l.block)) m.set(l.block, l.rightNo);
+    return m;
+  }, [diffLines]);
+
+  // 手动滚动到指定行（scrollIntoView 会连带滚动外层容器，改为 pane 内精确滚动，左右联动可靠）
+  const scrollToLine = (pane: HTMLDivElement | null, el: HTMLDivElement | undefined) => {
+    if (!pane || !el) return;
+    const rect = el.getBoundingClientRect();
+    const paneRect = pane.getBoundingClientRect();
+    pane.scrollTop += rect.top - paneRect.top - pane.clientHeight / 2;
+  };
+  // 点击右侧修改行 → 左侧滚动到对应修改块首行
+  const jumpLeft = (block: number) => {
+    const no = blockFirstLeft.get(block);
+    if (no === undefined) return;
+    scrollToLine(leftPane.current, leftRefs.current.get(no));
+  };
+  // 点击左侧修改行 → 右侧滚动
+  const jumpRight = (block: number) => {
+    const no = blockFirstRight.get(block);
+    if (no === undefined) return;
+    scrollToLine(rightPane.current, rightRefs.current.get(no));
+  };
+
+  const lang = props.target?.path ? langOf(props.target.path) : undefined;
+
+  const title = props.target
+    ? props.target.a && props.target.b
+      ? `${props.target.a} → ${props.target.b}`
+      : '工作区差异'
+    : '';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div className="row" style={{ marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+        <span className="dim">
+          差异: {title}
+          {props.target?.path ? ` — ${props.target.path}` : ''}
+        </span>
+        <span className="grow" />
+        {sideMode && blocks.length > 0 && (
+          <>
+            <span className="dim small nowrap">差异点 {curBlock + 1}/{blocks.length}</span>
+            <button className="mini" onClick={() => goBlock((curBlock - 1 + blocks.length) % blocks.length)}>上一个 ↑</button>
+            <button className="mini" onClick={() => goBlock((curBlock + 1) % blocks.length)}>下一个 ↓</button>
+          </>
+        )}
+        <span className="dim small">← 键返回</span>
+        <button className="mini" onClick={props.onBack}>← 返回</button>
+      </div>
+      {staleTip && (
+        <div className="stale-tip" style={{ marginBottom: 8 }}>
+          <span>⚠ 文件已更新，是否更新文件？</span>
+          <span className="grow" />
+          <button
+            className="mini primary"
+            onClick={() => {
+              setStaleTip(false);
+              setLoading(true);
+              setError('');
+              const t = props.target!;
+              Promise.all([get.fileVersions(t.path!, t.a, t.b), get.diff(t.path, t.a, t.b)])
+                .then(([fv, d]) => {
+                  setVersions({ left: fv.left, right: fv.right, leftLabel: fv.leftLabel, rightLabel: fv.rightLabel });
+                  setDiffLines(d.ok ? parseUnifiedDiff(d.output) : []);
+                  get.fileMtime(t.path!).then((m) => { mtimeRef.current = m; }).catch(() => {});
+                })
+                .catch((e: Error) => setError(e.message))
+                .finally(() => setLoading(false));
+            }}
+          >
+            更新文件
+          </button>
+          <button className="mini" onClick={() => setStaleTip(false)}>忽略</button>
+        </div>
+      )}
+      {error && <div className="error">{error}</div>}
+      {loading && !error && <div className="loading">⏳ 加载对比…</div>}
+      {!loading && !error && sideMode && versions && (
+        <>
+          {/* 栏头：左右各带独立搜索框（定位各自栏内代码） */}
+          <div style={{ display: 'flex', flexShrink: 0, marginBottom: 6, gap: 8 }}>
+            {/* 左栏：原版 */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="dim small" style={{ marginBottom: 4 }}>◀ {versions.leftLabel}</div>
+              <div className="row" style={{ gap: 6 }}>
+                {dSearchLActive ? (
+                  <>
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="搜索左栏代码…"
+                      value={dSearchL}
+                      onChange={(e) => {
+                        setDSearchL(e.target.value);
+                        setDMatchLIdx(0);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') goNextLMatch();
+                        if (e.key === 'Escape') setDSearchLActive(false);
+                      }}
+                      style={{ flex: 1, minWidth: 0 }}
+                    />
+                    <span className="dim small nowrap">
+                      {dSearchL.trim() && dMatchesL.length > 0 ? `${dMatchLIdx + 1}/${dMatchesL.length}` : dSearchL.trim() ? '无匹配' : ''}
+                    </span>
+                    <button className="mini" onClick={goNextLMatch}>下一个 ↓</button>
+                  </>
+                ) : (
+                  <button className="mini" onClick={() => setDSearchLActive(true)}>🔍 搜索此栏</button>
+                )}
+              </div>
+            </div>
+            {/* 右栏：当前 */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="dim small" style={{ marginBottom: 4 }}>▶ {versions.rightLabel}</div>
+              <div className="row" style={{ gap: 6 }}>
+                {dSearchActive ? (
+                  <>
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="搜索右栏代码…"
+                      value={dSearch}
+                      onChange={(e) => {
+                        setDSearch(e.target.value);
+                        setDMatchIdx(0);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') goNextDMatch();
+                        if (e.key === 'Escape') setDSearchActive(false);
+                      }}
+                      style={{ flex: 1, minWidth: 0 }}
+                    />
+                    <span className="dim small nowrap">
+                      {dSearch.trim() && dMatches.length > 0 ? `${dMatchIdx + 1}/${dMatches.length}` : dSearch.trim() ? '无匹配' : ''}
+                    </span>
+                    <button className="mini" onClick={goNextDMatch}>下一个 ↓</button>
+                  </>
+                ) : (
+                  <button className="mini" onClick={() => setDSearchActive(true)}>🔍 搜索此栏</button>
+                )}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flex: 1, minHeight: 0, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+            {/* 左栏：原版（flex 不伸缩，宽度由 leftRatio 控制；sb-pane 默认 flex:1 会覆盖 width） */}
+            <div ref={leftPane} className="sb-pane" style={{ width: `${leftRatio}%`, flex: '0 0 auto' }}>
+              {leftRows.length === 0 && <div className="dim" style={{ padding: 20 }}>（原版为空 — 新增文件）</div>}
+              {leftRows.map((r) => {
+                const isHitL = dSearchLActive && dMatchesL.includes(r.no);
+                const isCurL = isHitL && r.no === dMatchesL[dMatchLIdx % Math.max(1, dMatchesL.length)];
+                return (
+                <div
+                  key={`l${r.no}`}
+                  ref={(el) => {
+                    if (el) leftRefs.current.set(r.no, el);
+                  }}
+                  className={`sb-line ${r.change ? 'sb-del' : ''} ${isHitL ? 'pv-hit' : ''} ${isCurL ? 'pv-cur' : ''}`}
+                  onClick={() => r.change && jumpRight(r.block)}
+                  title={r.change ? '修改处（点击右侧定位）' : ''}
+                >
+                  <span className="sb-no">{r.no}</span>
+                  <span className="sb-marker">{r.change ? 'M' : ''}</span>
+                  <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
+                </div>
+                );
+              })}
+            </div>
+            {/* 拖拽手柄 */}
+            <div className="sb-resizer" onMouseDown={startDrag} title="拖动调整左右栏宽度" />
+            {/* 右栏：当前 + 滚动条预览标记 */}
+            <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0 }}>
+            <div ref={rightPane} className="sb-pane">
+              {rightRows.length === 0 && <div className="dim" style={{ padding: 20 }}>（当前为空 — 文件已删除）</div>}
+              {rightRows.map((r) => {
+                const isHit = dSearchActive && dMatches.includes(r.no);
+                const isCur = isHit && r.no === dMatches[dMatchIdx % Math.max(1, dMatches.length)];
+                return (
+                  <div
+                    key={`r${r.no}`}
+                    ref={(el) => {
+                      if (el) rightRefs.current.set(r.no, el);
+                    }}
+                    className={`sb-line ${r.change ? 'sb-add' : ''} ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''}`}
+                    onClick={() => r.change && jumpLeft(r.block)}
+                    title={r.change ? '修改处（点击左侧定位）' : ''}
+                  >
+                    <span className="sb-no">{r.no}</span>
+                    <span className="sb-marker">{r.change ? 'M' : ''}</span>
+                    <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
+                  </div>
+                );
+              })}
+            </div>
+            {/* 滚动条预览标记：绿=新增/修改，红=删除 */}
+            {scrollMarkers.length > 0 && (
+              <div className="sb-scrollbar" title="修改位置（点击跳转）">
+                {scrollMarkers.map((m) => (
+                  <div
+                    key={m.block}
+                    className={`sb-marker-dot ${m.color} ${m.block === curBlock ? 'current' : ''}`}
+                    style={{ top: `${m.percent}%` }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      goBlock(blocks.findIndex((b) => b.id === m.block));
+                    }}
+                    title={m.color === 'add' ? '新增/修改' : '删除'}
+                  />
+                ))}
+              </div>
+            )}
+            </div>
+          </div>
+        </>
+      )}
+      {!loading && !error && sideMode && !versions && <div className="empty">（无差异）</div>}
+      {!loading && !error && !sideMode && <DiffRender text={text} />}
+    </div>
+  );
+}
