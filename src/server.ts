@@ -1211,8 +1211,13 @@ export function startServer(): Promise<ServerHandle> {
       // ---------- 环境检测 / 安装 ----------
       if (p === '/api/env-check') {
         const check = async (cmd: string): Promise<{ installed: boolean; version: string }> => {
-          const r = await run(cmd, ['--version'], { timeoutMs: 10_000 });
-          return { installed: r.code === 0, version: r.stdout.split('\n')[0]?.trim() ?? '' };
+          try {
+            const r = await run(cmd, ['--version'], { timeoutMs: 10_000 });
+            return { installed: r.code === 0, version: r.stdout.split('\n')[0]?.trim() ?? '' };
+          } catch {
+            // 命令不存在(如未安装 svn)→ 视为未安装,而非接口 500
+            return { installed: false, version: '' };
+          }
         };
         const [svn, git] = await Promise.all([check('svn'), check('git')]);
         sendJson(res, 200, { svn, git });

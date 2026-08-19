@@ -132,7 +132,13 @@ export function App() {
       .catch(() => setToast('删除失败'));
   }, []);
 
-  const envMissing = env && (!env.svn.installed || !env.git.installed);
+  // 环境缺失:只提示「当前仓库类型需要」的引擎;未打开仓库时任一缺失都提示
+  // (用户可能只用 Git 或只用 SVN,不强制两者都装)
+  const needSvn = !repo?.type || repo.type === 'svn';
+  const needGit = !repo?.type || repo.type === 'git';
+  const missingSvn = !!(env && needSvn && !env.svn.installed);
+  const missingGit = !!(env && needGit && !env.git.installed);
+  const envMissing = missingSvn || missingGit;
 
   // 远程更新监控：每 2 分钟检查一次（git fetch / svn status -u 均为轻量操作）
   // 重点：你正在修改的文件是否被他人先提交（冲突风险预警）
@@ -539,12 +545,19 @@ export function App() {
         </div>
       )}
 
-      {/* 环境缺失横幅 */}
+      {/* 环境缺失横幅:仅提示当前仓库类型需要的引擎 */}
       {envMissing && !modal && (
         <div className="env-banner">
-          <span>⚠ 未检测到{!env?.svn.installed ? ' SVN' : ''}{!env?.git.installed ? ' Git' : ''}，安装后才能使用本工具</span>
+          <span>
+            ⚠ 未检测到{missingSvn ? ' SVN' : ''}{missingGit ? ' Git' : ''}
+            {missingSvn && missingGit
+              ? '，无法操作任何版本库'
+              : missingSvn
+                ? '，无法操作 SVN 仓库（使用 Git 不受影响）'
+                : '，无法操作 Git 仓库（使用 SVN 不受影响）'}
+          </span>
           <span className="grow" />
-          <button className="mini primary" onClick={() => setModal({ type: 'env' })}>去安装</button>
+          <button className="mini primary" onClick={() => setModal({ type: 'env' })}>查看指引</button>
         </div>
       )}
 

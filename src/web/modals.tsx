@@ -314,7 +314,7 @@ export function EnvInstallModal(props: {
         <span style={{ color: 'var(--err)', fontWeight: 600 }}>✗ 未安装</span>
       )}
       <span className="dim small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {props.info.version || (props.info.installed ? '' : '安装后才能使用本工具')}
+        {props.info.version || (props.info.installed ? '' : `仅影响 ${props.name.toUpperCase()} 仓库操作`)}
       </span>
       {!props.info.installed && (
         <button className="mini primary" disabled={status === 'running'} onClick={() => install(props.tool)}>
@@ -330,7 +330,7 @@ export function EnvInstallModal(props: {
         <h3>环境检测</h3>
         <div className="body">
           <HelpNote>
-            本工具需要系统已安装 <b>SVN</b> 和 <b>Git</b> 命令行工具。检测到缺失时请先安装（自动安装需要当前用户有免密 sudo 权限；否则按提示手动安装）。
+            本工具同时支持 <b>SVN</b> 和 <b>Git</b> 两种仓库。使用哪种仓库，系统需已安装对应的命令行工具；只用其中一种时，只需安装对应的一种即可，未安装的引擎仅影响该类仓库的操作。
           </HelpNote>
           <div className="vcs-list" style={{ marginTop: 12 }}>
             <Row name="svn" info={props.env.svn} tool="svn" />

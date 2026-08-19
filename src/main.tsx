@@ -46,10 +46,16 @@ async function openUI(url: string) {
   }
   // 纯 node：打开系统默认浏览器（跨平台）
   const { spawn } = await import('node:child_process');
+  const openBrowser = (cmd: string, args: string[]) => {
+    const p = spawn(cmd, args, { stdio: 'ignore', detached: true });
+    // 命令缺失(如无 xdg-open)时仅记录,不崩溃(服务继续运行,可手动访问地址)
+    p.on('error', (e) => console.error(`[svnkit] 打开浏览器失败(${cmd}): ${e.message}`));
+    p.unref();
+  };
   if (process.platform === 'win32') {
-    spawn('cmd', ['/c', 'start', '', url], { stdio: 'ignore', detached: true }).unref();
+    openBrowser('cmd', ['/c', 'start', '', url]);
   } else {
-    spawn('xdg-open', [url], { stdio: 'ignore', detached: true }).unref();
+    openBrowser('xdg-open', [url]);
   }
 }
 
