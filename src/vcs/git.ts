@@ -1,9 +1,43 @@
 /** Git 实现：包装 git 命令行，--porcelain 机器输出解析 */
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { statSync } from 'node:fs';
 import { run } from './exec.js';
+import { loadConfig } from '../config.js';
 import type { FileStatus, LogEntry, RepoInfo, VcsResult } from './types.js';
+
+/** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限） */
+function createAskPass(cred: { username: string; password: string }): { path: string; cleanup: () => void } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svnkit-askpass-'));
+  const file = path.join(dir, 'askpass.sh');
+  const u = Buffer.from(cred.username, 'utf8').toString('base64');
+  const p = Buffer.from(cred.password, 'utf8').toString('base64');
+  fs.writeFileSync(
+    file,
+    `#!/bin/sh\ncase "$1" in\n  *Username*) printf '%s' '${u}' | base64 -d ;;\n  *Password*) printf '%s' '${p}' | base64 -d ;;\nesac\n`,
+    // 0o700：owner 读写执行（git 需要执行脚本），其他用户无权限（凭据安全）
+    { mode: 0o700 },
+  );
+  return {
+    path: file,
+    cleanup: () => {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch {
+        /* 忽略清理失败 */
+      }
+    },
+  };
+}
+
+/** 认证失败类型：基于 remote URL 判断（github / 其他 https 服务器 / ssh） */
+function authTypeOf(remoteUrl: string): 'github' | 'server' | 'ssh' | undefined {
+  if (!remoteUrl) return undefined;
+  if (/github\.com/i.test(remoteUrl)) return 'github';
+  if (/^(git@|ssh:\/\/)/.test(remoteUrl)) return 'ssh';
+  return 'server';
+}
 
 /** stat 检测目录 */
 function isDir(abs: string): boolean {
@@ -62,8 +96,15 @@ function unquote(s: string): string {
 export class GitVcs {
   constructor(private repo: RepoInfo) {}
 
-  private exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal } = {}) {
-    return run('git', args, { cwd: this.repo.root, timeoutMs: extra.timeoutMs ?? 120_000, signal: extra.signal });
+  private exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; env?: Record<string, string> } = {}) {
+    return run('git', args, {
+      cwd: this.repo.root,
+      timeoutMs: extra.timeoutMs ?? 120_000,
+      signal: extra.signal,
+      // GIT_TERMINAL_PROMPT=0：禁用终端交互提示（否则 git 检测到启动终端会卡在 "Username for..." 等输入，
+      //  不走工具的认证弹窗）；GIT_SSH_COMMAND BatchMode：SSH 不交互（不卡主机指纹/密码输入），失败快速返回
+      env: { GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new', ...extra.env },
+    });
   }
 
   /** 当前分支 */
@@ -344,11 +385,38 @@ export class GitVcs {
     return { ok: true, message: `已删除 ${relPaths.length} 项` };
   }
 
-  /** git push */
-  async push(): Promise<VcsResult> {
-    const res = await this.exec(['push'], { timeoutMs: 600_000 });
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git push 失败' };
-    return { ok: true, message: '推送成功' };
+  /** git push：认证失败时用保存的凭据(GIT_ASKPASS)自动重试；仍失败返回 authType 供前端引导认证 */
+  async push(signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }> {
+    const cred = loadConfig().git;
+    let res = await this.exec(['push'], { timeoutMs: 600_000, signal });
+    if (res.aborted) return { ok: false, message: '推送已取消' };
+    if (res.code === 0) return { ok: true, message: '推送成功' };
+    // 无上游分支：自动 git push origin <当前分支>（与 pull 的无上游自动重试一致）
+    if (/没有对应的上游分支|no upstream branch|no tracking information/i.test(res.stderr)) {
+      const branch = await this.branch();
+      if (branch && branch !== 'HEAD') {
+        const r2 = await this.exec(['push', 'origin', branch], { timeoutMs: 600_000, signal });
+        if (r2.aborted) return { ok: false, message: '推送已取消' };
+        if (r2.code === 0) return { ok: true, message: '推送成功' };
+        res = r2;
+      }
+    }
+    const errText = res.stderr + res.stdout;
+    const isAuthError = /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(errText);
+    if (isAuthError && cred?.username && cred?.password) {
+      // 已有保存的凭据 → 用 GIT_ASKPASS 重试一次
+      const ask = createAskPass(cred);
+      const retry = await this.exec(['push'], { timeoutMs: 600_000, signal, env: { GIT_ASKPASS: ask.path } });
+      ask.cleanup();
+      if (retry.aborted) return { ok: false, message: '推送已取消' };
+      if (retry.code === 0) return { ok: true, message: '推送成功' };
+      return { ok: false, message: retry.stderr.trim() || 'git push 失败', authType: authTypeOf(await this.remote()) };
+    }
+    return {
+      ok: false,
+      message: res.stderr.trim() || 'git push 失败',
+      authType: isAuthError ? authTypeOf(await this.remote()) : undefined,
+    };
   }
 
   /** git ls-tree：版本库内容浏览（HEAD） */
