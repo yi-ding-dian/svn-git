@@ -110,7 +110,31 @@ function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
 
 /** 工作副本状态缓存（5 秒） */
 const statusCache = new Map<string, { time: number; items: unknown[] }>();
-const STATUS_TTL = 5000;
+
+// ---------- svn:ignore 全局缓存 + 并发限制 ----------
+// 大目录下每个干净子目录都要 propget 一次(svn 进程启动 ~30ms),
+// 串行几百次会"卡半天";属性值不常变 → 全局缓存 30s + 同目录去重 + 并发池 ≤8
+const SVN_IGNORE_TTL = 30_000;
+const svnIgnoreCache = new Map<string, { time: number; rules: string[] }>();
+const svnIgnoreInflight = new Map<string, Promise<string[]>>();
+let svnIgnoreActive = 0;
+const svnIgnoreWaiters: (() => void)[] = [];
+function withSvnIgnoreSlot<T>(fn: () => Promise<T>): Promise<T> {
+  const run = async (): Promise<T> => {
+    while (svnIgnoreActive >= 8) {
+      await new Promise<void>((res) => svnIgnoreWaiters.push(res));
+    }
+    svnIgnoreActive++;
+    try {
+      return await fn();
+    } finally {
+      svnIgnoreActive--;
+      svnIgnoreWaiters.shift()?.();
+    }
+  };
+  return run();
+}
+const STATUS_TTL = 30_000;
 
 async function getStatusCached(repo: RepoInfo, force = false): Promise<unknown[]> {
   const key = repo.root;
@@ -449,7 +473,6 @@ export function startServer(): Promise<ServerHandle> {
         const dirSelf = unversionedAncestor || items.find((i) => i.path === rel && i.code === '?');
 
         // 忽略规则检测：status 无条目的磁盘文件/目录，若被 svn:ignore / .gitignore 匹配则标记 'I'
-        const ignoreCache = new Map<string, string[]>();
         let gitignoreRules: string[] | null = null;
         const getIgnoreRules = async (dirRel: string): Promise<string[]> => {
           if (repo.type === 'git') {
@@ -464,12 +487,20 @@ export function startServer(): Promise<ServerHandle> {
               : [];
             return gitignoreRules;
           }
-          const hit = ignoreCache.get(dirRel);
-          if (hit) return hit;
-          const r = await run('svn', ['propget', 'svn:ignore', dirRel || '.'], { cwd: repo.root, timeoutMs: 15_000 });
-          const rules = r.code === 0 && r.stdout.trim() ? r.stdout.split('\n').map((s) => s.trim()).filter(Boolean) : [];
-          ignoreCache.set(dirRel, rules);
-          return rules;
+          // svn:ignore：全局缓存(30s) + 同目录并发去重 + 并发池限制(≤8 个 svn 进程)
+          const hit = svnIgnoreCache.get(dirRel);
+          if (hit && Date.now() - hit.time < SVN_IGNORE_TTL) return hit.rules;
+          const inflight = svnIgnoreInflight.get(dirRel);
+          if (inflight) return inflight;
+          const p = withSvnIgnoreSlot(async () => {
+            const r = await run('svn', ['propget', 'svn:ignore', dirRel || '.'], { cwd: repo.root, timeoutMs: 15_000 });
+            const rules = r.code === 0 && r.stdout.trim() ? r.stdout.split('\n').map((s) => s.trim()).filter(Boolean) : [];
+            svnIgnoreCache.set(dirRel, { time: Date.now(), rules });
+            return rules;
+          });
+          svnIgnoreInflight.set(dirRel, p);
+          void p.finally(() => svnIgnoreInflight.delete(dirRel));
+          return p;
         };
         const isIgnoredByRules = (rules: string[], name: string): boolean => {
           for (const rule of rules) {

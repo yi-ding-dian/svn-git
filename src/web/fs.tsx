@@ -136,6 +136,9 @@ export function FsView(props: Props) {
   const nodeDataRef = useRef(nodeData);
   nodeDataRef.current = nodeData;
   const [fsLoading, setFsLoading] = useState(false);
+  // 大目录提示（条目多时提示原因，避免误以为卡死；5 秒后自动消失）
+  const [bigTip, setBigTip] = useState('');
+  const bigTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const load = useCallback(async (targetDir: string, force: boolean) => {
     const cache = nodeDataRef.current.get(targetDir);
     if (!force && cache) {
@@ -153,6 +156,15 @@ export function FsView(props: Props) {
       setData(r);
       setSel(null);
       setPreview(null);
+      // 大目录提示：条目多时告知原因（加载完成后展示 5 秒）
+      const n = r.entries?.length ?? 0;
+      if (n > 200) {
+        setBigTip(`该目录文件较多（共 ${n} 项），首次加载可能需要一点时间`);
+        if (bigTipTimer.current) clearTimeout(bigTipTimer.current);
+        bigTipTimer.current = setTimeout(() => setBigTip(''), 5000);
+      } else {
+        setBigTip('');
+      }
     } catch (e) {
       // 目录不存在（ENOENT：上次浏览位置被删除/仓库已切换）→ 自动回到仓库根，避免卡死在错误页
       if (targetDir && (e as Error).message.includes('ENOENT')) {
@@ -1058,9 +1070,21 @@ export function FsView(props: Props) {
           ))}
         </div>
         {error && <div className="error">{error}</div>}
-        {mode === 'tree' && nodeData.size === 0 && !error && <div className="loading">⏳ 读取文件夹…</div>}
-        {mode === 'list' && !data && !error && <div className="loading">⏳ 读取文件夹…</div>}
-        {mode === 'browse' && fsLoading && !data && !error && <div className="loading">⏳ 读取文件夹…</div>}
+        {bigTip && <div className="fs-big-tip">⚠ {bigTip}</div>}
+        {/* 树模式首次加载 */}
+        {mode === 'tree' && nodeData.size === 0 && !error && (
+          <div className="loading">
+            <div className="spinner" style={{ width: 24, height: 24 }} />
+            <div style={{ marginTop: 8 }}>正在加载…</div>
+          </div>
+        )}
+        {/* 列表/浏览模式：加载中转圈提示条（切换目录/首次加载都有反馈，不再干等） */}
+        {(mode === 'list' || mode === 'browse') && fsLoading && !error && (
+          <div className="fs-loading-bar">
+            <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
+            <span>{data ? '正在加载目录…' : '正在加载…'}</span>
+          </div>
+        )}
         {/* 树模式扁平化行 */}
         {mode === 'tree' && !preview && (
           <div

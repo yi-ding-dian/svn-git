@@ -543,6 +543,16 @@ textarea { resize: vertical; font-family: inherit; }
   border-radius: 50%; margin: 0 auto; animation: spin .8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* 文件视图加载转圈提示条 + 大目录提示条 */
+.fs-loading-bar {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  color: var(--accent); font-size: 12px; background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+}
+.fs-big-tip {
+  padding: 7px 10px; font-size: 12px; color: #b45309;
+  background: rgba(251, 191, 36, .1); border-bottom: 1px solid var(--border);
+}
 /* 勾选框统一主题色 */
 input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 /* 提交弹窗：注释标签 + 注释输入框 */
