@@ -151,6 +151,8 @@ export const get = {
       conflictRisk: { path: string; lines: number[] }[];
       lockedByOthers: string[];
       updatedFiles: string[];
+      /** 远程新提交（按提交分组显示，含作者/时间/消息/变更文件） */
+      remoteLogs?: LogEntry[];
     }>('/api/preflight', { signal }),
   conflicts: () =>
     api<{ conflicts: { path: string; ours: string; theirs: string; base: string; work: string }[] }>('/api/conflicts'),

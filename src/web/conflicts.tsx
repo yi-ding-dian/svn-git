@@ -209,7 +209,7 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
         <h3>⚠ 解决冲突（{conflicts.length}）</h3>
         <div className="body" style={{ display: 'flex', gap: 12, minHeight: expanded ? 'calc(96vh - 90px)' : 460 }}>
           {/* 左：冲突文件列表 */}
-          <div className="vcs-list" style={{ width: 200, flexShrink: 0, maxHeight: 400 }}>
+          <div className="vcs-list" style={{ width: 200, flexShrink: 0, minHeight: 120 }}>
             {loading && <div className="dim" style={{ padding: 10 }}>加载中…</div>}
             {!loading && conflicts.length === 0 && <div className="dim" style={{ padding: 10 }}>暂无冲突</div>}
             {conflicts.map((c, i) => (

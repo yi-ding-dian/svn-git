@@ -1,6 +1,6 @@
 /** 根组件：侧边栏布局 + 全局状态 + 操作流程 */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { get, post, type RepoInfo, type VcsResult } from './api.js';
+import { get, post, type RepoInfo, type VcsResult, type LogEntry } from './api.js';
 import { LogView } from './log.js';
 import { DiffView, type DiffTarget } from './diff.js';
 import { FsView } from './fs.js';
@@ -159,7 +159,7 @@ export function App() {
 
   // 远程更新监控：每 2 分钟检查一次（git fetch / svn status -u 均为轻量操作）
   // 重点：你正在修改的文件是否被他人先提交（冲突风险预警）
-  const [remoteHint, setRemoteHint] = useState<{ behind: number; locked: number; risk: number; files?: string[] } | null>(null);
+  const [remoteHint, setRemoteHint] = useState<{ behind: number; locked: number; risk: number; files?: string[]; remoteLogs?: LogEntry[] } | null>(null);
   const [riskFiles, setRiskFiles] = useState<string[]>([]);
   // 检查远程状态并刷新提示条；更新完成后立即调用，避免提示条残留旧状态
   const checkRemote = useCallback(() => {
@@ -168,7 +168,7 @@ export function App() {
       .then((r) => {
         const risk = r.conflictRisk?.length ?? 0;
         if (r.behind > 0 || (r.lockedByOthers?.length ?? 0) > 0 || risk > 0) {
-          setRemoteHint({ behind: r.behind, locked: r.lockedByOthers?.length ?? 0, risk, files: r.updatedFiles ?? [] });
+          setRemoteHint({ behind: r.behind, locked: r.lockedByOthers?.length ?? 0, risk, files: r.updatedFiles ?? [], remoteLogs: r.remoteLogs ?? [] });
           setRiskFiles((r.conflictRisk ?? []).map((f) => f.path));
         } else {
           setRemoteHint(null);
@@ -182,6 +182,11 @@ export function App() {
     const t = setInterval(checkRemote, 120_000);
     return () => clearInterval(t);
   }, [info?.root, checkRemote]);
+
+  // 远程新提交涉及的文件总数（remoteLogs 去重；无 logs 时用 updatedFiles 数）
+  const remoteFileCount = remoteHint?.remoteLogs?.length
+    ? new Set(remoteHint.remoteLogs.flatMap((l) => l.changed.map((c) => c.path))).size
+    : (remoteHint?.files?.length ?? 0);
 
   // 从历史列表打开项目
   const openHistoryItem = useCallback(
@@ -296,7 +301,7 @@ export function App() {
                 message: (
                   <>
                     以下文件与服务器版本存在<b>行冲突</b>，请先手动处理后再提交：
-                    <div className="error mt8" style={{ maxHeight: 120, overflow: 'auto' }}>
+                    <div className="error mt8" style={{ minHeight: 100, overflow: 'auto' }}>
                       {clash.map((f) => (
                         <div key={f.path} className="mono">
                           ⚠ {f.path}：{f.lines.map((l) => (l === 0 ? '文件开头' : `第 ${l} 行`)).join('、')} 冲突
@@ -337,7 +342,7 @@ export function App() {
                 message: (
                   <>
                     服务器有 <b>{pf.behind}</b> 个新提交，以下 <b>{same.length}</b> 个待提交文件服务器也有新版本，<b>可能冲突</b>（双击查看差异）：
-                    <div className="vcs-list" style={{ maxHeight: 180, marginTop: 8 }}>
+                    <div className="vcs-list" style={{ minHeight: 120, marginTop: 8 }}>
                       {same.map((f) => (
                         <div
                           key={f}
@@ -521,7 +526,6 @@ export function App() {
         unpushedCount={unpushedCount}
       />
 
-      {/* 远程更新提示条：含"你修改的文件被他人先提交"预警 */}
       {remoteHint && !modal && (
         <div
           className="env-banner"
@@ -535,14 +539,15 @@ export function App() {
             {remoteHint.risk > 0 ? (
               <>
                 ⚠ <b>你修改的 {remoteHint.risk} 个文件已被他人先提交新版本</b>
-                {remoteHint.behind > 0 ? `（远程共 ${remoteHint.behind} 个新提交）` : ''}
+                {remoteHint.behind > 0 ? `（远程 ${remoteHint.behind} 个新提交 · 共 ${remoteFileCount} 个文件）` : ''}
               </>
             ) : (
-              <>🔔 远程有 <b>{remoteHint.behind}</b> 个新提交</>
+              <>🔔 远程有 <b>{remoteHint.behind}</b> 个新提交 · 共 <b>{remoteFileCount}</b> 个文件</>
             )}
             {remoteHint.locked > 0 ? ` · ${remoteHint.locked} 个文件被他人锁定` : ''}
           </span>
           <span className="grow" />
+          {/* 远程新提交涉及的文件总数（remoteLogs 去重；无 logs 时用 updatedFiles 数） */}
           {remoteHint.risk > 0 && (
             <button className="mini" onClick={() => setModal({ type: 'remote-conflicts', files: riskFiles })}>
               查看对比
@@ -554,24 +559,50 @@ export function App() {
             onClick={() =>
               setModal({
                 type: 'confirm',
-                title: `远程有 ${remoteHint.behind} 个新提交`,
+                title: `远程有 ${remoteHint.behind} 个新提交 · 共 ${
+                  remoteHint.remoteLogs?.length
+                    ? new Set(remoteHint.remoteLogs.flatMap((l) => l.changed.map((c) => c.path))).size
+                    : (remoteHint.files?.length ?? 0)
+                } 个文件`,
                 // 宽度随最长文件名自适应（与提交确认弹窗同规则）
                 width: pathAutoWidth((remoteHint.files ?? []).reduce((m, p) => Math.max(m, p.length), 0), 520, 1200),
                 message: (
                   <>
-                    <div className="small dim" style={{ marginBottom: 6 }}>
-                      新提交涉及的文件（{remoteHint.files?.length ?? 0} 个）：
-                    </div>
-                    <div className="vcs-list" style={{ maxHeight: 320 }}>
-                      {(remoteHint.files ?? []).map((f) => (
-                        <div key={f} className="vcs-row" style={{ cursor: 'default' }}>
-                          <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f}>
-                            {f}
-                          </span>
-                        </div>
-                      ))}
-                      {(remoteHint.files ?? []).length === 0 && <div className="dim" style={{ padding: 10 }}>（无法获取文件列表）</div>}
-                    </div>
+                    {remoteHint.remoteLogs && remoteHint.remoteLogs.length > 0 ? (
+                      // 按提交分组：分隔线 + 提交人/时间/消息 + 提交的文件
+                      <div className="vcs-list" style={{ minHeight: 120 }}>
+                        {remoteHint.remoteLogs.map((l, i) => (
+                          <React.Fragment key={l.rev}>
+                            {i > 0 && <div className="remote-log-sep">──────────</div>}
+                            <div className="remote-log-head">
+                              <span className="mono small" style={{ fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>{l.rev}</span>
+                              <span className="small" style={{ flexShrink: 0 }}>{l.author}</span>
+                              <span className="small dim" style={{ flexShrink: 0 }}>{l.date.slice(0, 16)}</span>
+                            </div>
+                            {l.msg && <div className="small dim" style={{ padding: '2px 10px' }}>{l.msg}</div>}
+                            {l.changed.map((c) => (
+                              <div key={c.path} className="vcs-row" style={{ cursor: 'default' }}>
+                                <span className={`act ${c.action}`} style={{ flexShrink: 0 }}>{c.action}</span>
+                                <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.path}>
+                                  {c.path}
+                                </span>
+                              </div>
+                            ))}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="vcs-list" style={{ minHeight: 120 }}>
+                        {(remoteHint.files ?? []).map((f) => (
+                          <div key={f} className="vcs-row" style={{ cursor: 'default' }}>
+                            <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={f}>
+                              {f}
+                            </span>
+                          </div>
+                        ))}
+                        {(remoteHint.files ?? []).length === 0 && <div className="dim" style={{ padding: 10 }}>（无法获取文件列表）</div>}
+                      </div>
+                    )}
                   </>
                 ),
                 confirmLabel: '关闭',
@@ -864,7 +895,7 @@ export function App() {
                     确认提交以下 <b>{paths.length}</b> 个文件？
                   </div>
                   {/* 文件列表：容器 + mono + 滚动 + 省略号，超长路径可读 */}
-                  <div className="vcs-list" style={{ maxHeight: 220 }}>
+                  <div className="vcs-list" style={{ minHeight: 120 }}>
                     {paths.map((p) => (
                       <div key={p} className="vcs-row" style={{ cursor: 'default' }}>
                         <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p}>

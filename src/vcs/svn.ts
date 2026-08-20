@@ -121,18 +121,9 @@ export class SvnVcs {
   }
 
   /** svn log -v --xml：历史记录（可限定路径） */
-  async log(limit = 200, pathRel?: string): Promise<LogEntry[]> {
-    // -r HEAD:1 范围写法：显式起点 HEAD（wc 可能停在旧 revision，mixed revision 下默认查询会查空），
-    // 注意必须是 HEAD:1 范围而非 -r HEAD 单版本（单版本只返回该 revision 一条记录）
-    const args = ['log', '-r', 'HEAD:1', '-v', '--xml', '-l', String(limit)];
-    if (pathRel) args.push(pathRel);
-    const res = await this.exec(args);
-    if (res.code !== 0) {
-      const auth = this.authError(res);
-      if (auth) throw new Error(auth);
-      throw new Error(`svn log 失败: ${res.stderr.trim()}`);
-    }
-    const doc = this.xml.parse(res.stdout);
+  /** 解析 svn log --xml -v 输出为 LogEntry[]（log 与 preflight 共用） */
+  private parseLogXml(stdout: string): LogEntry[] {
+    const doc = this.xml.parse(stdout);
     const entries = doc?.log?.logentry ?? [];
     const arr = Array.isArray(entries) ? entries : entries ? [entries] : [];
     return arr.map((e: any) => {
@@ -152,6 +143,20 @@ export class SvnVcs {
         changed,
       };
     });
+  }
+
+  async log(limit = 200, pathRel?: string): Promise<LogEntry[]> {
+    // -r HEAD:1 范围写法：显式起点 HEAD（wc 可能停在旧 revision，mixed revision 下默认查询会查空），
+    // 注意必须是 HEAD:1 范围而非 -r HEAD 单版本（单版本只返回该 revision 一条记录）
+    const args = ['log', '-r', 'HEAD:1', '-v', '--xml', '-l', String(limit)];
+    if (pathRel) args.push(pathRel);
+    const res = await this.exec(args);
+    if (res.code !== 0) {
+      const auth = this.authError(res);
+      if (auth) throw new Error(auth);
+      throw new Error(`svn log 失败: ${res.stderr.trim()}`);
+    }
+    return this.parseLogXml(res.stdout);
   }
 
   /** svn diff：工作区 vs 版本库，或 -r A:B 版本间；可限定路径 */
@@ -360,10 +365,11 @@ export class SvnVcs {
     conflictRisk: string[];
     lockedByOthers: string[];
     updatedFiles: string[];
+    remoteLogs: LogEntry[];
   }> {
     const res = await this.exec(['status', '-u'], { timeoutMs: 120_000 });
     if (res.code !== 0) {
-      return { remoteHasUpdate: false, behind: 0, conflictRisk: [], lockedByOthers: [], updatedFiles: [] };
+      return { remoteHasUpdate: false, behind: 0, conflictRisk: [], lockedByOthers: [], updatedFiles: [], remoteLogs: [] };
     }
     const out = res.stdout.split('\n');
     // 格式（cat -A 实测）：条目行 "[列1状态][7空格][* 过期标记][ 版本号 ][ 路径]"
@@ -388,12 +394,21 @@ export class SvnVcs {
         if (c1 !== ' ' && c1 !== '?') conflictRisk.push(path); // 本地也改了 → 冲突风险
       }
     }
+    // 远程新提交列表（wc 的 BASE 之后的版本：HEAD:BASE），供"去查看"按提交分组显示
+    let remoteLogs: LogEntry[] = [];
+    if (expiredCount > 0) {
+      const lg = await this.exec(['log', '-r', 'HEAD:BASE', '-v', '--xml']);
+      if (lg.code === 0) remoteLogs = this.parseLogXml(lg.stdout);
+    }
     return {
       remoteHasUpdate: expiredCount > 0,
-      behind: expiredCount,
+      // behind 语义 = 提交数（HEAD:BASE 的版本数），而非 status -u 的过期文件数；
+      // log 获取失败时回退文件数（至少提示有更新）
+      behind: remoteLogs.length > 0 ? remoteLogs.length : expiredCount,
       conflictRisk,
       lockedByOthers,
       updatedFiles,
+      remoteLogs,
     };
   }
 

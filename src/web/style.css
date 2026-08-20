@@ -515,7 +515,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .modal:hover .mr-edge:hover, .modal:hover .mr-edge.active { opacity: .55; }
 
 .modal h3 { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 15px; }
-.modal .body { padding: 16px 18px; overflow: auto; }
+.modal .body {
+  padding: 16px 18px; overflow: auto;
+  flex: 1; min-height: 0; display: flex; flex-direction: column; /* 弹窗拉高时内容区跟随伸缩，超高才滚动 */
+}
 .modal .foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
 
 textarea, input[type=text], input[type=password] {
@@ -552,6 +555,14 @@ textarea { resize: vertical; font-family: inherit; }
 .fs-big-tip {
   padding: 7px 10px; font-size: 12px; color: #b45309;
   background: rgba(251, 191, 36, .1); border-bottom: 1px solid var(--border);
+}
+/* 远程新提交分组：分隔线 + 提交头 */
+.remote-log-sep {
+  padding: 4px 10px; color: var(--dim); font-size: 12px; text-align: center;
+  letter-spacing: 2px; user-select: none;
+}
+.remote-log-head {
+  display: flex; align-items: center; gap: 8px; padding: 4px 10px 2px;
 }
 /* 常用文件夹后台预加载进度条 */
 .fs-preload-bar {

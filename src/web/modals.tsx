@@ -215,7 +215,7 @@ export function UpdateResultModal(props: {
           </div>
           {props.files && props.files.length > 0 ? (
             // 终端式文件列表：状态字母 + 路径；文件多时滚动
-            <div className="vcs-list" style={{ maxHeight: 420 }}>
+            <div className="vcs-list" style={{ minHeight: 120 }}>
               {props.files.map((f, i) => (
                 <div key={i} className="vcs-row" style={{ cursor: 'default' }}>
                   <span className="mono small nowrap" style={{ width: 30, textAlign: 'center', fontWeight: 700, color: STATUS_COLOR[f.status] }}>

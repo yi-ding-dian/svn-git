@@ -55,7 +55,7 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
         <h3>⚠ 忽略设置</h3>
         <div className="body">
           <div className="dim small" style={{ marginBottom: 8, wordBreak: 'break-all' }}>目录: {props.dir || '（仓库根）'}</div>
-          <div className="vcs-list" style={{ maxHeight: 220 }}>
+          <div className="vcs-list" style={{ minHeight: 100 }}>
             {rules.length === 0 && <div className="dim" style={{ padding: 10 }}>暂无忽略规则</div>}
             {rules.map((r) => (
               <div key={r} className="vcs-row" style={{ cursor: 'default' }}>

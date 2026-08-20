@@ -27,7 +27,7 @@ export function FavDirsModal(props: {
           {props.favs.length === 0 && (
             <div className="dim" style={{ padding: '12px 0' }}>还没有常用文件夹</div>
           )}
-          <div className="vcs-list" style={{ border: '1px solid var(--border)', borderRadius: 8, maxHeight: 260, overflow: 'auto' }}>
+          <div className="vcs-list" style={{ border: '1px solid var(--border)', borderRadius: 8, minHeight: 120, overflow: 'auto' }}>
             {props.favs.map((f) => (
               <div key={f.path} className="vcs-row">
                 <span className="badge" style={{ background: '#f59e0b', flexShrink: 0 }}>⭐</span>

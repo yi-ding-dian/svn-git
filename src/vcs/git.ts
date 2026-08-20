@@ -685,6 +685,7 @@ export class GitVcs {
     ahead: number;
     conflictRisk: string[];
     updatedFiles: string[];
+    remoteLogs: LogEntry[];
   }> {
     // 拉取远程元数据（静默，失败不阻塞）
     await this.exec(['fetch', '--quiet', 'origin'], { timeoutMs: 60_000 }).catch(() => {});
@@ -710,6 +711,8 @@ export class GitVcs {
     }
     // 远程新提交修改的文件
     const remoteChanged = new Set<string>();
+    // 远程新提交列表（HEAD..origin/xxx），供"去查看"按提交分组显示
+    let remoteLogs: LogEntry[] = [];
     if (behind > 0) {
       const diff = await this.exec(['diff', '--name-only', `HEAD...${upstream}`], { timeoutMs: 30_000 });
       if (diff.code === 0) {
@@ -717,9 +720,14 @@ export class GitVcs {
           if (p.trim()) remoteChanged.add(p.trim());
         }
       }
+      const lg = await this.exec(
+        ['-c', 'core.quotepath=false', 'log', '--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--name-status', `HEAD..${upstream}`],
+        { timeoutMs: 30_000 },
+      );
+      if (lg.code === 0) remoteLogs = parseGitLog(lg.stdout);
     }
     const conflictRisk = [...localChanged].filter((p) => remoteChanged.has(p));
-    return { remoteHasUpdate: behind > 0, behind, ahead, conflictRisk, updatedFiles: [...remoteChanged] };
+    return { remoteHasUpdate: behind > 0, behind, ahead, conflictRisk, updatedFiles: [...remoteChanged], remoteLogs };
   }
 
   // ============ Blame 追溯 ============
