@@ -1,12 +1,16 @@
 /** VCS 层冒烟测试：每次运行前重置仓库并构造确定状态，保证可重复执行 */
+import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { run } from '../dist/vcs/exec.js';
 import { detectRepo } from '../dist/vcs/detect.js';
 import { GitVcs } from '../dist/vcs/git.js';
 import { SvnVcs } from '../dist/vcs/svn.js';
 
-const GIT_DIR = '/tmp/svnkit-test/git-repo';
-const SVN_DIR = '/tmp/svnkit-test/svn-wc';
+// 测试仓库位置：相对脚本推导（项目根/svnkit-test），clone 到任何路径都能跑
+const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svnkit-test');
+const GIT_DIR = path.join(TEST_BASE, 'git-repo');
+const SVN_DIR = path.join(TEST_BASE, 'svn-wc');
 
 // ---------- 重置并构造确定状态 ----------
 console.log('== 构造测试状态 ==');
@@ -16,10 +20,10 @@ fs.writeFileSync(`${GIT_DIR}/readme.md`, `hello v1\nhello v2\nTEST-MARKER-${Date
 fs.writeFileSync(`${GIT_DIR}/tmp-test.txt`, 'x'); // -> ??
 
 // SVN：重建仓库 + 工作副本（每次运行完全干净）
-fs.rmSync('/tmp/svnkit-test/svn-repo', { recursive: true, force: true });
+fs.rmSync(path.join(TEST_BASE, 'svn-repo'), { recursive: true, force: true });
 fs.rmSync(SVN_DIR, { recursive: true, force: true });
-await run('svnadmin', ['create', '/tmp/svnkit-test/svn-repo']);
-await run('svn', ['checkout', '-q', 'file:///tmp/svnkit-test/svn-repo', SVN_DIR]);
+await run('svnadmin', ['create', path.join(TEST_BASE, 'svn-repo')]);
+await run('svn', ['checkout', '-q', `file://${path.join(TEST_BASE, 'svn-repo')}`, SVN_DIR]);
 fs.writeFileSync(`${SVN_DIR}/readme.md`, 'project doc');
 fs.mkdirSync(`${SVN_DIR}/src`, { recursive: true });
 fs.writeFileSync(`${SVN_DIR}/src/main.c`, 'main() {}');

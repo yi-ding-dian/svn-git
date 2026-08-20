@@ -1,9 +1,10 @@
 #!/bin/bash
-# 手动测试项目准备脚本：/tmp/svnkit-test/manual-test/
+# 手动测试项目准备脚本：项目根/svnkit-test/manual-test/（相对脚本位置推导，clone 到任何路径可用）
 # 生成 git + svn 各一个演示仓库（含提交历史/各类状态/分支/标签），供用户在工具里手动测试
 set -euo pipefail
 
-BASE=/tmp/svnkit-test/manual-test
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BASE="$(cd "$SCRIPT_DIR/.." && pwd)/svnkit-test/manual-test"
 rm -rf "$BASE"
 mkdir -p "$BASE"
 

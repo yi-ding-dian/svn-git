@@ -1,12 +1,16 @@
 /** 版本管理扩展功能测试：分支/标签/Stash/合并/清理/Blame/忽略/锁定/创建仓库 */
+import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { run } from '../dist/vcs/exec.js';
 import { detectRepo } from '../dist/vcs/detect.js';
 import { GitVcs } from '../dist/vcs/git.js';
 import { SvnVcs } from '../dist/vcs/svn.js';
 
-const GIT_DIR = '/tmp/svnkit-test/git-repo';
-const SVN_DIR = '/tmp/svnkit-test/svn-wc';
+// 测试仓库位置：相对脚本推导（项目根/svnkit-test），clone 到任何路径都能跑
+const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svnkit-test');
+const GIT_DIR = path.join(TEST_BASE, 'git-repo');
+const SVN_DIR = path.join(TEST_BASE, 'svn-wc');
 
 let pass = 0;
 let fail = 0;
