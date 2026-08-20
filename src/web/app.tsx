@@ -291,6 +291,8 @@ export function App() {
               setModal({
                 type: 'confirm',
                 title: '⚠ 存在行冲突，禁止提交',
+                // 宽度随最长文件名自适应
+                width: pathAutoWidth(clash.reduce((m, f) => Math.max(m, f.path.length), 0), 520, 1200),
                 message: (
                   <>
                     以下文件与服务器版本存在<b>行冲突</b>，请先手动处理后再提交：
@@ -330,6 +332,8 @@ export function App() {
               setModal({
                 type: 'confirm',
                 title: '⚠ 服务器有新版本',
+                // 宽度随最长文件名自适应
+                width: pathAutoWidth(same.reduce((m, p) => Math.max(m, p.length), 0), 520, 1200),
                 message: (
                   <>
                     服务器有 <b>{pf.behind}</b> 个新提交，以下 <b>{same.length}</b> 个待提交文件服务器也有新版本，<b>可能冲突</b>（双击查看差异）：
@@ -551,6 +555,8 @@ export function App() {
               setModal({
                 type: 'confirm',
                 title: `远程有 ${remoteHint.behind} 个新提交`,
+                // 宽度随最长文件名自适应（与提交确认弹窗同规则）
+                width: pathAutoWidth((remoteHint.files ?? []).reduce((m, p) => Math.max(m, p.length), 0), 520, 1200),
                 message: (
                   <>
                     <div className="small dim" style={{ marginBottom: 6 }}>

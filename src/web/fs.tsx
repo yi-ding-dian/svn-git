@@ -1,6 +1,6 @@
 /** 文件夹浏览视图：列表/树/浏览(网格)三模式，支持键盘导航（↑↓ 选择、→/Enter 进入、← 返回） */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry } from './api.js';
+import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterTreeNode } from './api.js';
 import { langOf, highlightLine } from './highlight.js';
 import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconList, IconTree, IconGrid, IconHome, IconUp, GridIcon } from './icons.js';
 import { CodeBadge, DirBadge } from './badges.js';
@@ -23,7 +23,7 @@ interface Props {
   onToast: (msg: string) => void;
 }
 
-type Filter = 'changed' | 'new';
+type Filter = 'changed' | 'new' | 'deleted';
 type Mode = 'list' | 'tree' | 'browse';
 
 /** fs 列表排序优先级：与旧版本地 CODE_RANK 严格一致（X 外部引用视为无状态，不与干净条目区分优先级） */
@@ -34,10 +34,14 @@ function filterEntries<T extends { code: string }>(list: T[], filters: Set<Filte
   if (filters.size === 0) return list;
   const wantChanged = filters.has('changed');
   const wantNew = filters.has('new');
+  const wantDeleted = filters.has('deleted');
+  // 修改状态精确枚举：排除 ?(未版本化)、I(被忽略)、X(外部引用) 与无状态
+  const MODIFIED = new Set(['M', 'A', 'D', 'R', 'C', '!', '~', 'U']);
   return list.filter((e) => {
-    const isChanged = e.code !== '' && e.code !== '?';
+    const isChanged = MODIFIED.has(e.code);
     const isNew = e.code === '?';
-    return (wantChanged && isChanged) || (wantNew && isNew);
+    const isDeleted = e.code === 'D';
+    return (wantChanged && isChanged) || (wantNew && isNew) || (wantDeleted && isDeleted);
   });
 }
 
@@ -90,6 +94,8 @@ export function FsView(props: Props) {
   const [showHidden, setShowHidden] = useState(false);
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [mode, setMode] = useState<Mode>('browse');
+  // 过滤激活时记住原视图（取消过滤恢复）
+  const prevModeRef = useRef<Mode>(mode);
   type CtxItem = CtxMenuItem; // 右键菜单项（公共类型见 context-menu.tsx）
   const [ctx, setCtx] = useState<{ x: number; y: number; items: CtxItem[] } | null>(null);
   // 右键选中锁定：右键后条目保持选中（hover 不清），点击其他地方/菜单关闭才取消
@@ -362,6 +368,128 @@ export function FsView(props: Props) {
       .slice()
       .sort((a, b) => Number(b.isDir) - Number(a.isDir) || fsSortRank(b.code) - fsSortRank(a.code) || a.name.localeCompare(b.name));
   }, [data, showHidden, filters]);
+
+  // 过滤激活时：拉取过滤后的树（仅修改/仅新文件/仅删除 → 树视图展示，双击文件跳转定位）
+  const [filterTree, setFilterTree] = useState<FilterTreeNode[] | null>(null);
+  useEffect(() => {
+    if (filters.size === 0) {
+      setFilterTree(null);
+      return;
+    }
+    let cancelled = false;
+    const codes: string[] = [];
+    if (filters.has('changed')) codes.push('M', 'A', 'D', 'R', 'C', '!', '~', 'U');
+    if (filters.has('new')) codes.push('?');
+    if (filters.has('deleted')) codes.push('D');
+    get
+      .filteredTree(data?.dir ?? '', codes)
+      .then((r) => {
+        if (!cancelled) setFilterTree(r.tree);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [filters, data?.dir]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** 过滤树双击文件 → 跳转到所在文件夹并选中（清除过滤恢复原视图） */
+  const jumpToFile = (rel: string) => {
+    const idx = rel.lastIndexOf('/');
+    const parent = idx >= 0 ? rel.slice(0, idx) : '';
+    setDir(parent);
+    setSelected(new Set([rel]));
+    setFocusIndex(0);
+    setFilters(new Set());
+    setMode(prevModeRef.current);
+  };
+  // 过滤树：转成扁平行（复用树列表行渲染），默认全展开，目录可点击收起
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const filterRows = useMemo<VisibleRow[]>(() => {
+    const rows: VisibleRow[] = [];
+    const countFiles = (n: FilterTreeNode): number => {
+      let c = 0;
+      const w = (x: FilterTreeNode) => {
+        if (!x.isDir) c++;
+        else x.children.forEach(w);
+      };
+      w(n);
+      return c;
+    };
+    const walk = (nodes: FilterTreeNode[], depth: number) => {
+      for (const n of nodes) {
+        const open = n.isDir && !collapsed.has(n.path);
+        rows.push({
+          rel: n.path,
+          name: n.name,
+          code: n.isDir ? '' : n.code,
+          isDir: n.isDir,
+          size: 0,
+          mtime: '',
+          count: n.isDir ? countFiles(n) : undefined,
+          depth,
+          open,
+          locked: false,
+        });
+        if (n.isDir && open) walk(n.children, depth + 1);
+      }
+    };
+    walk(filterTree ?? [], 0);
+    return rows;
+  }, [filterTree, collapsed]);
+  /** 树行渲染（树列表与过滤树共用；filtered=true 时目录点击折叠、双击文件跳转） */
+  const renderTreeRow = (row: VisibleRow, i: number, filtered: boolean) => (
+    <div
+      key={row.rel}
+      ref={(el) => {
+        if (el) rowRefs.current.set(row.rel, el);
+        else rowRefs.current.delete(row.rel); // 行卸载（收起/切换模式）时移除，避免残留导致泄漏
+      }}
+      className={`tree-row ${searchResults.includes(row.rel) ? 'search-hit' : ''}`}
+      style={{
+        paddingLeft: 8 + row.depth * 18,
+        background: i === focusIndex || selected.has(row.rel) ? 'var(--panel2)' : undefined,
+        outline: i === focusIndex ? '1px solid var(--accent)' : selected.has(row.rel) ? '1px solid var(--accent)' : undefined,
+      }}
+      onMouseEnter={() => {
+        if (!ctxLocked) setFocusIndex(-1);
+        else if (ctxRelRef.current === row.rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
+      }}
+      onMouseLeave={closeCtxSoon}
+      onClick={(ev) => {
+        onRowClick(row.rel, i, ev, { name: row.name, isDir: row.isDir, code: row.code, size: row.size, mtime: row.mtime, relPath: row.rel } as FsEntry);
+        if (row.isDir && !ev.ctrlKey && !ev.shiftKey) {
+          if (filtered) {
+            // 过滤树：本地折叠（数据已全量，无需再加载）
+            setCollapsed((s) => {
+              const n = new Set(s);
+              if (n.has(row.rel)) n.delete(row.rel);
+              else n.add(row.rel);
+              return n;
+            });
+          } else {
+            toggleExpand(row.rel); // Ctrl/Shift 时仅选择不展开
+          }
+        }
+      }}
+      onDoubleClick={() => {
+        if (filtered) {
+          if (!row.isDir) jumpToFile(row.rel);
+        } else if (!row.isDir) void openFile(row.name, row.code, row.rel);
+      }}
+      onContextMenu={(ev) => onRowContext(ev, { isDir: row.isDir, code: row.code, rel: row.rel, name: row.name }, i)}
+      title={row.isDir ? '单击展开/收起 · 右键操作菜单' : filtered ? '双击跳转定位' : '单击选中 · 双击查看 · 右键操作菜单'}
+    >
+      {row.isDir ? <DirBadge codes={row.codes} /> : <CodeBadge code={row.code} />}
+      <span className="arrow">{row.isDir ? (row.open ? '▾' : '▸') : ''}</span>
+      {row.locked && <IconLock size={13} />}
+      <span className={`name ${row.isDir ? 'dir' : 'file'}`} style={{ flex: 1 }}>
+        {row.name}
+        {row.count ? <span className="count"> （{row.count} 项）</span> : null}
+      </span>
+      {!filtered && !row.isDir && <span className="dim small nowrap">{fmtSize(row.size)}</span>}
+      {!filtered && !row.isDir && <span className="dim small nowrap" style={{ width: 110 }}>{row.mtime}</span>}
+      {rowButtons(row)}
+    </div>
+  );
 
   const breadcrumbs = useMemo(() => {
     if (!data) return [] as { label: string; rel: string }[];
@@ -1044,26 +1172,33 @@ export function FsView(props: Props) {
             {showHidden ? <IconEye /> : <IconEyeOff />} {showHidden ? '隐藏' : '隐藏文件'}
           </button>
           <span className="row" style={{ gap: 4 }}>
-            {(['changed', 'new'] as Filter[]).map((f) => (
+            {(['changed', 'new', 'deleted'] as Filter[]).map((f) => (
               <button
                 key={f}
                 className={`mini tool-btn ${filters.has(f) ? 'primary' : ''}`}
-                onClick={() =>
-                  setFilters((s) => {
-                    const n = new Set(s);
-                    if (n.has(f)) n.delete(f);
-                    else n.add(f);
-                    return n;
-                  })
-                }
-                title={f === 'changed' ? '只看有修改的文件' : '只看未添加的新文件'}
+                onClick={() => {
+                  const willActive = !filters.has(f);
+                  const next = new Set(filters);
+                  if (next.has(f)) next.delete(f);
+                  else next.add(f);
+                  setFilters(next);
+                  if (willActive) {
+                    // 激活过滤 → 切树视图展示过滤树
+                    if (filters.size === 0) prevModeRef.current = mode;
+                    setMode('tree');
+                  } else if (next.size === 0) {
+                    // 全部取消 → 恢复原视图
+                    setMode(prevModeRef.current);
+                  }
+                }}
+                title={f === 'changed' ? '只看有修改的文件' : f === 'new' ? '只看未添加的新文件（树视图，双击文件跳转）' : '只看已删除的文件'}
               >
-                {f === 'changed' ? <IconDiff /> : <IconPlus />}
-                {f === 'changed' ? '仅修改' : '仅新文件'}
+                {f === 'changed' ? <IconDiff /> : f === 'new' ? <IconPlus /> : <IconClean />}
+                {f === 'changed' ? '仅修改' : f === 'new' ? '仅新文件' : '仅删除'}
               </button>
             ))}
             {filters.size > 0 && (
-              <button className="mini" onClick={() => setFilters(new Set())}>全部</button>
+              <button className="mini" onClick={() => { setFilters(new Set()); setMode(prevModeRef.current); }}>全部</button>
             )}
           </span>
           <span className="row" style={{ gap: 4, marginLeft: 4 }}>
@@ -1229,50 +1364,19 @@ export function FsView(props: Props) {
               }
             }}
           >
-            {visibleRows.length === 0 && !error && <div className="empty">空文件夹（← 上级 · 空白处右键菜单）</div>}
-            {visibleRows.map((row, i) => {
-              const focused = i === focusIndex;
-              return (
-                <div
-                  key={row.rel}
-                  ref={(el) => {
-                    if (el) rowRefs.current.set(row.rel, el);
-                    else rowRefs.current.delete(row.rel); // 行卸载（收起/切换模式）时移除，避免残留导致泄漏
-                  }}
-                  className={`tree-row ${searchResults.includes(row.rel) ? 'search-hit' : ''}`}
-                  style={{
-                    paddingLeft: 8 + row.depth * 18,
-                    background: focused || selected.has(row.rel) ? 'var(--panel2)' : undefined,
-                    outline: focused ? '1px solid var(--accent)' : selected.has(row.rel) ? '1px solid var(--accent)' : undefined,
-                  }}
-                  onMouseEnter={() => {
-                    if (!ctxLocked) setFocusIndex(-1);
-                    else if (ctxRelRef.current === row.rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
-                  }}
-                  onMouseLeave={closeCtxSoon}
-                  onClick={(ev) => {
-                    onRowClick(row.rel, i, ev, { name: row.name, isDir: row.isDir, code: row.code, size: row.size, mtime: row.mtime, relPath: row.rel } as FsEntry);
-                    if (row.isDir && !ev.ctrlKey && !ev.shiftKey) toggleExpand(row.rel); // Ctrl/Shift 时仅选择不展开
-                  }}
-                  onDoubleClick={() => {
-                    if (!row.isDir) void openFile(row.name, row.code, row.rel);
-                  }}
-                  onContextMenu={(ev) => onRowContext(ev, { isDir: row.isDir, code: row.code, rel: row.rel, name: row.name }, i)}
-                  title={row.isDir ? '单击展开/收起 · 右键操作菜单' : '单击选中 · 双击查看 · 右键操作菜单'}
-                >
-                  {row.isDir ? <DirBadge codes={row.codes} /> : <CodeBadge code={row.code} />}
-                  <span className="arrow">{row.isDir ? (row.open ? '▾' : '▸') : ''}</span>
-                  {row.locked && <IconLock size={13} />}
-                  <span className={`name ${row.isDir ? 'dir' : 'file'}`} style={{ flex: 1 }}>
-                    {row.name}
-                    {row.count ? <span className="count"> （{row.count} 项）</span> : null}
-                  </span>
-                  {!row.isDir && <span className="dim small nowrap">{fmtSize(row.size)}</span>}
-                  {!row.isDir && <span className="dim small nowrap" style={{ width: 110 }}>{row.mtime}</span>}
-                  {rowButtons(row)}
-                </div>
-              );
-            })}
+            {/* 过滤激活：渲染过滤树（树列表同款行样式，仅数据过滤；目录可折叠，双击文件跳转） */}
+            {filters.size > 0 ? (
+              filterTree && filterTree.length === 0 ? (
+                <div className="empty">没有符合条件的文件</div>
+              ) : (
+                filterRows.map((row, i) => renderTreeRow(row, i, true))
+              )
+            ) : (
+              <>
+                {visibleRows.length === 0 && !error && <div className="empty">空文件夹（← 上级 · 空白处右键菜单）</div>}
+                {visibleRows.map((row, i) => renderTreeRow(row, i, false))}
+              </>
+            )}
           </div>
         )}
         {/* 列表模式 */}
@@ -1288,7 +1392,19 @@ export function FsView(props: Props) {
               }
             }}
           >
-            {listEntries.length === 0 && !error && <div className="empty">空文件夹（← 返回上级 · 空白处右键菜单）</div>}
+            {listEntries.length === 0 && !error && (
+              <div className="empty">
+                {filters.size > 0
+                  ? filters.has('deleted')
+                    ? '该目录下没有已删除的文件'
+                    : filters.has('new') && filters.has('changed')
+                      ? '该目录下没有修改或未版本化的文件'
+                      : filters.has('new')
+                        ? '该目录下没有未版本化的新文件'
+                        : '该目录下没有修改的文件'
+                  : '空文件夹（← 返回上级 · 空白处右键菜单）'}
+              </div>
+            )}
             {listEntries.map((e, i) => renderEntryRow(e, i))}
           </div>
         )}
@@ -1356,7 +1472,19 @@ export function FsView(props: Props) {
               setFocusIndex(-1); // 同时清除焦点选中高亮
             }}
           >
-            {listEntries.length === 0 && !error && <div className="empty">空文件夹（← 返回上级 · 空白处右键菜单）</div>}
+            {listEntries.length === 0 && !error && (
+              <div className="empty">
+                {filters.size > 0
+                  ? filters.has('deleted')
+                    ? '该目录下没有已删除的文件'
+                    : filters.has('new') && filters.has('changed')
+                      ? '该目录下没有修改或未版本化的文件'
+                      : filters.has('new')
+                        ? '该目录下没有未版本化的新文件'
+                        : '该目录下没有修改的文件'
+                  : '空文件夹（← 返回上级 · 空白处右键菜单）'}
+              </div>
+            )}
             {listEntries.map((e, i) => {
               const rel = relOf(e);
               const focused = i === focusIndex;

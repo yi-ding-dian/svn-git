@@ -63,6 +63,8 @@ export interface FsEntry {
   count?: number;
   /** 目录同时发生的操作集合（M/A/D…），无操作或未版本化时为 undefined */
   codes?: string[];
+  /** 目录内部未版本化文件数量（'?' 不显示徽标，筛选"仅新文件"时用于提示新文件位置） */
+  unversionedCount?: number;
 }
 
 export interface FsData {
@@ -107,6 +109,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export const get = {
   info: () => api<RepoInfo>('/api/info'),
   status: () => api<{ items: FileStatus[] }>('/api/status'),
+  filteredTree: (dir?: string, codes: string[] = []) =>
+    api<{ tree: FilterTreeNode[] }>(`/api/filtered-tree?dir=${encodeURIComponent(dir ?? '')}&codes=${encodeURIComponent(codes.join(','))}`),
   log: (pathRel?: string) =>
     api<{ logs: LogEntry[]; unpushed: string[] }>(`/api/log${pathRel ? `?path=${encodeURIComponent(pathRel)}` : ''}`),
   diff: (pathRel?: string, a?: string, b?: string) => {
@@ -167,6 +171,14 @@ export const get = {
   gitUnpushedCount: () => api<{ count: number }>('/api/git-unpushed-count'),
   gitUnpushed: () => api<{ count: number; unpushed: LogEntry[] }>('/api/git-unpushed'),
 };
+
+export interface FilterTreeNode {
+  name: string;
+  path: string;
+  isDir: boolean;
+  code: string;
+  children: FilterTreeNode[];
+}
 
 export interface BranchInfo {
   current: string;
