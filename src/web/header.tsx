@@ -159,7 +159,20 @@ export function AppHeader(props: {
             type: 'confirm',
             title: '退出应用',
             message: '将关闭本地服务并退出应用（浏览器页面将无法访问）。确认退出？',
-            action: () => void post.shutdown(),
+            action: () => {
+              void post
+                .shutdown()
+                .then(() => {
+                  // 先替换为提示页，再尝试关闭标签：关闭成功则页面瞬间消失；被浏览器拦截则提示页已就位
+                  document.body.innerHTML =
+                    '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:10px;font-family:sans-serif;background:#0d1117;color:#e6edf3">' +
+                    '<div style="font-size:20px">✅ 服务已退出</div>' +
+                    '<div style="color:#8b949e">本地服务已关闭，此页面已无法使用，请手动关闭本标签页</div>' +
+                    '</div>';
+                  window.close();
+                })
+                .catch((e: Error) => props.onToast(`退出失败: ${e.message}`));
+            },
           })
         }
       />
