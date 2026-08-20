@@ -453,6 +453,131 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
+      if (p === '/api/new-files') {
+        // 目录及所有子目录中的未版本化文件（'?' 条目；目录条目递归展开内部文件）。
+        // 用于筛选"仅新文件"时平铺列出全部新文件，双击跳转定位
+        const { repo } = vcsOf();
+        const dir = url.searchParams.get('dir') || '';
+        const prefix = dir ? dir + '/' : '';
+        const items = (await getStatusCached(repo, false)) as { path: string; code: string; isDir: boolean }[];
+        const files: { path: string }[] = [];
+        const seen = new Set<string>();
+        const walkDir = (relDir: string) => {
+          let names: string[];
+          try {
+            names = fs.readdirSync(path.join(repo.root, relDir));
+          } catch {
+            return;
+          }
+          for (const n of names) {
+            if (n === '.svn' || n === '.git') continue;
+            const base = relDir.replace(/\/+$/, ''); // 防御性去尾斜杠（如 "?? dir/"）
+            const rel = base ? `${base}/${n}` : n;
+            if (seen.has(rel)) continue;
+            const abs = path.join(repo.root, rel);
+            let st: fs.Stats;
+            try {
+              st = fs.statSync(abs);
+            } catch {
+              continue;
+            }
+            seen.add(rel);
+            if (st.isDirectory()) walkDir(rel);
+            else files.push({ path: rel });
+          }
+        };
+        for (const it of items) {
+          if (it.code !== '?' || !it.path.startsWith(prefix) || seen.has(it.path)) continue;
+          seen.add(it.path);
+          if (it.isDir) walkDir(it.path);
+          else files.push({ path: it.path });
+        }
+        files.sort((a, b) => a.path.localeCompare(b.path));
+        sendJson(res, 200, { files });
+        return;
+      }
+
+      if (p === '/api/filtered-tree') {
+        // 过滤后的树：目录及子目录中，状态码匹配的条目按目录层级构建树（'?' 目录展开内部全部文件）。
+        // 供"仅修改/仅新文件/仅删除"过滤在树视图展示
+        const { repo } = vcsOf();
+        const dir = url.searchParams.get('dir') || '';
+        const codes = new Set((url.searchParams.get('codes') || '').split(',').filter(Boolean));
+        const prefix = dir ? dir + '/' : '';
+        const items = (await getStatusCached(repo, false)) as { path: string; code: string; isDir: boolean }[];
+        interface TNode {
+          name: string;
+          path: string;
+          isDir: boolean;
+          code: string;
+          children: TNode[];
+        }
+        const root: TNode[] = [];
+        const map = new Map<string, TNode>();
+        const ensureDir = (rel: string): TNode => {
+          let n = map.get(rel);
+          if (!n) {
+            n = { name: rel.split('/').pop() || rel, path: rel, isDir: true, code: '', children: [] };
+            map.set(rel, n);
+            const i = rel.lastIndexOf('/');
+            if (i < 0) root.push(n);
+            else ensureDir(rel.slice(0, i)).children.push(n);
+          }
+          return n;
+        };
+        const pushFile = (rel: string, code: string) => {
+          const i = rel.lastIndexOf('/');
+          const parent = i < 0 ? null : ensureDir(rel.slice(0, i));
+          const arr = parent ? parent.children : root;
+          if (!map.has(rel)) {
+            const n = { name: rel.split('/').pop() || rel, path: rel, isDir: false, code, children: [] };
+            map.set(rel, n);
+            arr.push(n);
+          }
+        };
+        // '?' 目录：递归展开内部全部文件（未版本化目录内的所有内容都是新文件）
+        const walkUnversionedDir = (relDir: string) => {
+          let names: string[];
+          try {
+            names = fs.readdirSync(path.join(repo.root, relDir));
+          } catch {
+            return;
+          }
+          for (const n of names) {
+            if (n === '.svn' || n === '.git') continue;
+            const base = relDir.replace(/\/+$/, '');
+            const rel = base ? `${base}/${n}` : n;
+            const abs = path.join(repo.root, rel);
+            let st: fs.Stats;
+            try {
+              st = fs.statSync(abs);
+            } catch {
+              continue;
+            }
+            if (st.isDirectory()) walkUnversionedDir(rel);
+            else pushFile(rel, '?');
+          }
+        };
+        for (const it of items) {
+          if (!it.path.startsWith(prefix) || !codes.has(it.code)) continue;
+          if (it.code === '?' && it.isDir) {
+            walkUnversionedDir(it.path);
+          } else if (it.isDir) {
+            ensureDir(it.path);
+          } else {
+            pushFile(it.path, it.code);
+          }
+        }
+        // 排序：目录在前，名称排序
+        const sortTree = (nodes: TNode[]) => {
+          nodes.sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name));
+          for (const n of nodes) sortTree(n.children);
+        };
+        sortTree(root);
+        sendJson(res, 200, { tree: root });
+        return;
+      }
+
       if (p === '/api/fs') {
         // 工作副本文件夹浏览：磁盘目录 + 状态匹配
         const { vcs, repo } = vcsOf();
@@ -464,7 +589,7 @@ export function startServer(): Promise<ServerHandle> {
           return;
         }
         const items = (await getStatusCached(repo, force)) as { path: string; code: string; isDir: boolean }[];
-        const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; count?: number; codes?: string[] }[] = [];
+        const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; count?: number; codes?: string[]; unversionedCount?: number }[] = [];
         // 目录多状态徽标显示顺序：修改 / 添加 / 删除 / 冲突 / 替换 / 缺失 / 更新 / 类型变更
         const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
         let names: string[];
@@ -543,6 +668,7 @@ export function startServer(): Promise<ServerHandle> {
           let code = dirSelf ? '?' : '';
           let count: number | undefined;
           let codes: string[] | undefined;
+          let unversionedCount = 0;
           // 目录自身在 status 中的条目（如 svn/git 的 '?' 未版本化目录）优先采用
           const self = items.find((i) => i.path === relDir);
           if (self && self.code !== 'none') code = self.code;
@@ -560,12 +686,16 @@ export function startServer(): Promise<ServerHandle> {
             }
             // 变更数只统计已版本化条目（未版本化 '?' 未纳入版本控制，不计数）
             count = sub.filter((s) => s.code !== '?').length;
+            // 内部未版本化数量（'?' 不在徽标显示，但筛选"仅新文件"时需要提示新文件在哪）
+            unversionedCount = sub.filter((s) => s.code === '?').length;
             // 目录操作集合：同时显示 M/A/D 等全部操作标识；排除未版本化 '?' 与无变更 ' '
             codes = [...new Set(sub.map((s) => s.code).filter((c) => c && c !== '?' && c !== ' ' && c !== 'none'))];
             codes.sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b));
           }
+          // 目录自身被忽略(I)：子级无操作时徽标也应显示 I（避免被误显示为干净的 √）
+          if (code === 'I' && !codes) codes = ['I'];
           // 目录在磁盘上存在就总是显示（svn/git status 对干净目录无条目，不 push 会丢失目录）
-          entries.push({ name: d, isDir: true, size: 0, mtime: '', code, count, codes });
+          entries.push({ name: d, isDir: true, size: 0, mtime: '', code, count, codes, unversionedCount: unversionedCount || undefined });
         }
         for (const f of files) {
           const p = path.join(abs, f);
