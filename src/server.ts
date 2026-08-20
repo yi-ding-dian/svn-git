@@ -787,6 +787,8 @@ export function startServer(): Promise<ServerHandle> {
         const pathRel = url.searchParams.get('path') || undefined;
         const limit = Number(url.searchParams.get('limit') ?? 200);
         const logs = await vcs.log(limit, pathRel);
+        // 注意:总数统计(svn 全量 log)很慢,不能在此串行等待(大仓库会一直转圈),
+        // 已拆分为独立接口 /api/log-count 由前端异步拉取
         // git:附带未推送提交 hash 列表(历史视图绿灯标记);svn 无此概念
         let unpushed: string[] = [];
         if (repo.type === 'git') {
@@ -796,7 +798,21 @@ export function startServer(): Promise<ServerHandle> {
             /* 计算失败不阻断历史列表 */
           }
         }
-        sendJson(res, 200, { logs, unpushed });
+        sendJson(res, 200, { logs, unpushed, total: 0 });
+        return;
+      }
+
+      if (p === '/api/log-count') {
+        // 历史总数(独立接口,svn 全量统计较慢,由前端异步拉取,不阻塞列表加载)
+        const { vcs } = vcsOf();
+        const pathRel = url.searchParams.get('path') || undefined;
+        let total = 0;
+        try {
+          total = await (vcs as any).logCount(pathRel);
+        } catch {
+          /* 统计失败返回 0 */
+        }
+        sendJson(res, 200, { total });
         return;
       }
 
@@ -908,12 +924,57 @@ export function startServer(): Promise<ServerHandle> {
               /* URL 解析失败保持原样 */
             }
           }
-          // 转换失败（提交路径不属于当前工作副本，如其他分支/标签的提交）→ 明确提示，避免原始 E155007
+          // 转换失败（提交路径不属于当前工作副本，如其他分支/标签的提交）→
+          // 尝试从服务器 URL 直接 diff（不依赖本地工作副本，需网络）；失败再明确提示
           if (pathRel && y === '') {
+            try {
+              const rootUrl = await (vcs as any).repositoryRootUrl();
+              if (rootUrl && pathRel.startsWith('/')) {
+                const url = rootUrl.replace(/\/+$/, '') + pathRel;
+                const du = await (vcs as any).diffUrl(String(n - 1), rev, url);
+                if (du.ok || du.output) {
+                  sendJson(res, 200, du);
+                  return;
+                }
+              }
+            } catch {
+              /* URL 失败走下方提示 */
+            }
             sendJson(res, 200, { ok: false, output: '', error: `该文件不在当前工作副本中，无法查看差异：${pathRel}` });
             return;
           }
           const d = await vcs.diff(String(n - 1), rev, rel);
+          // 文件不在当前工作副本（D 已删除 / A 未更新到本地）或新增文件版本间不存在 →
+          // 回退服务器 URL 版本间比较（不依赖工作副本，A/D 都能输出）；
+          // URL 也失败时（极端场景）用 svn cat 取内容构造"整文件新增"
+          if ((!d.ok || !d.output.trim()) && pathRel && pathRel.startsWith('/')) {
+            try {
+              const rootUrl = await (vcs as any).repositoryRootUrl();
+              if (rootUrl) {
+                const url = rootUrl.replace(/\/+$/, '') + pathRel;
+                const du = await (vcs as any).diffUrl(String(n - 1), rev, url);
+                if (du.ok || du.output) {
+                  sendJson(res, 200, du);
+                  return;
+                }
+                const cat = await (vcs as any).catRev(rev, url);
+                if (cat.ok && cat.output) {
+                  const lines = cat.output.split('\n');
+                  if (lines.length && lines[lines.length - 1] === '') lines.pop();
+                  const range = lines.length === 0 ? '0,0' : `1,${lines.length}`;
+                  sendJson(res, 200, {
+                    ok: true,
+                    output:
+                      `--- ${pathRel}\t(不存在的)\n+++ ${pathRel}\t(版本 ${rev})\n@@ -0,0 +${range} @@\n` +
+                      lines.map((l: string) => '+' + l).join('\n'),
+                  });
+                  return;
+                }
+              }
+            } catch {
+              /* 保持原结果 */
+            }
+          }
           sendJson(res, 200, d);
         }
         return;
@@ -1311,7 +1372,9 @@ export function startServer(): Promise<ServerHandle> {
         if (process.platform === 'win32') {
           await run('explorer', ['/select,', abs], { timeoutMs: 10_000 });
         } else {
-          await run('xdg-open', [path.dirname(abs)], { timeoutMs: 10_000 });
+          // 目录直接打开本身；文件才打开所在文件夹（否则右键目录会定位到上一级）
+          const target = fs.statSync(abs).isDirectory() ? abs : path.dirname(abs);
+          await run('xdg-open', [target], { timeoutMs: 10_000 });
         }
         sendJson(res, 200, { ok: true });
         return;
