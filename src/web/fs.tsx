@@ -15,6 +15,8 @@ interface Props {
   repoType: 'svn' | 'git';
   /** 仓库根（切换仓库时重置浏览位置，避免残留上次目录） */
   repoRoot?: string | null;
+  /** 操作范围(相对仓库根):大仓库打开的子项目,浏览从这里开始 */
+  startRel?: string | null;
   onAction: (op: 'add' | 'revert' | 'delete' | 'commit', paths: string[]) => void;
   onDiff: (path: string) => void;
   onLog: (path: string) => void;
@@ -82,7 +84,7 @@ function ActionBtn(props: {
 }
 
 export function FsView(props: Props) {
-  const [dir, setDir] = useState(''); // 列表模式当前目录
+  const [dir, setDir] = useState(props.startRel ?? ''); // 列表模式当前目录(初始 = 操作范围,大仓库子项目)
   const [data, setData] = useState<FsData | null>(null); // 列表模式数据
   const [error, setError] = useState('');
   const [sel, setSel] = useState<FsEntry | null>(null);
@@ -272,9 +274,9 @@ export function FsView(props: Props) {
   useEffect(() => {
     void load(dir, false);
   }, [dir, load]); // eslint-disable-line react-hooks/exhaustive-deps
-  // 仓库切换（repoRoot 变化）→ 浏览位置回到仓库根，清空旧目录缓存
+  // 仓库切换（repoRoot 变化）→ 浏览位置回到操作范围(子项目/根)，清空旧目录缓存
   useEffect(() => {
-    setDir('');
+    setDir(props.startRel ?? '');
     setSel(null);
     setPreview(null);
     setNodeData(new Map());

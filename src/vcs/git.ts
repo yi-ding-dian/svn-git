@@ -188,10 +188,13 @@ export class GitVcs {
   }
 
   /** git status --porcelain=v1 */
-  async status(): Promise<FileStatus[]> {
+  async status(pathRel?: string): Promise<FileStatus[]> {
     // 注意：git 2.20 的 -u 不接受分离参数（-u normal 会把 normal 当路径），必须 -unormal
     // -c core.quotepath=false：中文文件名不做八进制转义（否则 unquote 解析失败，未跟踪中文文件显示为干净）
-    const res = await this.exec(['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-unormal']);
+    // pathRel:限定扫描范围(大仓库中的子项目),只返回该路径内状态,避免全仓库扫描卡顿
+    const args = ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-unormal'];
+    if (pathRel) args.push('--', pathRel);
+    const res = await this.exec(args);
     if (res.code !== 0) throw new Error(`git status 失败: ${res.stderr.trim()}`);
     const list: FileStatus[] = [];
     for (const line of res.stdout.split('\n')) {

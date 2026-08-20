@@ -155,12 +155,16 @@ function getSvnIgnoreMap(root: string): Promise<Map<string, string[]>> {
 }
 const STATUS_TTL = 30_000;
 
+// 当前操作范围：大仓库中打开的子项目(相对仓库根路径)。状态扫描限定在该范围内,避免全仓库扫描卡顿
+const currentScopes = new Map<string, string>();
+
 async function getStatusCached(repo: RepoInfo, force = false): Promise<unknown[]> {
-  const key = repo.root;
+  const scope = currentScopes.get(repo.root) ?? '';
+  const key = `${repo.root}::${scope}`;
   const hit = statusCache.get(key);
   if (!force && hit && Date.now() - hit.time < STATUS_TTL) return hit.items;
   const { vcs } = vcsOf();
-  const items = await vcs.status();
+  const items = await vcs.status(scope || undefined);
   statusCache.set(key, { time: Date.now(), items });
   return items;
 }
@@ -272,7 +276,17 @@ export function startServer(): Promise<ServerHandle> {
         } catch {
           /* 忽略 */
         }
-        sendJson(res, 200, { type: repo.type, root: repo.root, url: url2, revOrBranch: rev, startDir: START_DIR, home: os.homedir(), version });
+        sendJson(res, 200, {
+          type: repo.type,
+          root: repo.root,
+          url: url2,
+          revOrBranch: rev,
+          startDir: START_DIR,
+          // 当前操作范围(相对仓库根,大仓库子项目场景):浏览起点 + 状态扫描范围
+          startRel: currentScopes.get(repo.root) ?? '',
+          home: os.homedir(),
+          version,
+        });
         return;
       }
 
@@ -440,6 +454,8 @@ export function startServer(): Promise<ServerHandle> {
           return;
         }
         process.env.SVNKIT_REPO_DIR = r.root;
+        // 记录操作范围：打开的目录相对仓库根(子项目);打开根目录则为空(全仓库)
+        currentScopes.set(r.root, dir === r.root ? '' : path.relative(r.root, dir));
         addHistory({ path: r.root, type: r.type }); // 记录到最近项目
         sendJson(res, 200, { ok: true, repo: r });
         return;

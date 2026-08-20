@@ -6,6 +6,8 @@ export interface RepoInfo {
   url: string | null;
   revOrBranch: string | null;
   startDir: string;
+  /** 当前操作范围(相对仓库根,大仓库中的子项目):浏览起点;空 = 仓库根 */
+  startRel?: string;
   /** 用户 home 目录（打开项目默认浏览位置） */
   home?: string;
   version?: string;

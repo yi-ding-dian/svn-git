@@ -668,6 +668,7 @@ export function App() {
                   tick={tick}
                   repoType={repo.type}
                   repoRoot={repo.root}
+                  startRel={repo.startRel}
                   onAction={handleAction}
                   onDiff={(p) => gotoDiff(p)}
                   onLog={(p) => showLog(p)}

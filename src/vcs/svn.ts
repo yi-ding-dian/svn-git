@@ -87,8 +87,11 @@ export class SvnVcs {
   }
 
   /** svn status --xml：工作副本状态 */
-  async status(): Promise<FileStatus[]> {
-    const res = await this.exec(['status', '--xml']);
+  async status(pathRel?: string): Promise<FileStatus[]> {
+    // pathRel:限定扫描范围(大仓库中的子项目),只返回该路径内状态,避免全仓库扫描卡顿
+    const args = ['status', '--xml'];
+    if (pathRel) args.push(pathRel);
+    const res = await this.exec(args);
     if (res.code !== 0) {
       const auth = this.authError(res);
       if (auth) throw new Error(auth);
