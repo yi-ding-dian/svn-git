@@ -607,9 +607,14 @@ export class GitVcs {
     const args = ['stash', 'push', '-u']; // 包含未跟踪文件
     if (message) args.push('-m', message);
     const res = await this.exec(args, { timeoutMs: 60_000 });
+    // git 2.20 无改动时 exit code 为 0（仅 stderr 提示 "没有要保存的本地修改"/"No local changes to save"），
+    // 因此成功分支也需检查提示，避免误报"已保存"但实际未保存
+    const msg = res.stderr.trim() || res.stdout.trim();
     if (res.code !== 0) {
-      const msg = res.stderr.trim() || res.stdout.trim();
-      return { ok: false, message: msg.includes('No local changes') ? '没有可保存的改动' : msg || 'stash 失败' };
+      return { ok: false, message: /No local changes|没有要保存的本地修改/i.test(msg) ? '没有可保存的改动' : msg || 'stash 失败' };
+    }
+    if (/No local changes|没有要保存的本地修改/i.test(msg)) {
+      return { ok: false, message: '没有可保存的改动' };
     }
     return { ok: true, message: '改动已保存到 Stash' };
   }

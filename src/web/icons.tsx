@@ -339,3 +339,68 @@ export function IconExit({ size = 16 }: IconProps) {
     </svg>
   );
 }
+
+// ============ 右键菜单彩色图标（不依赖系统 emoji 字体） ============
+
+/** 提交：蓝色上传箭头 */
+export function IconUpload({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M12 16.5v-10M7 10.5l5-5 5 5" stroke="#1f6feb" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M4.5 19.5h15" stroke="#58a6ff" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** 查看历史：蓝色时钟 */
+export function IconHistory({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <circle cx="12" cy="12" r="8.5" stroke="#1f6feb" strokeWidth="2.2" fill="none" />
+      <path d="M12 7.5V12l3 2" stroke="#58a6ff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <circle cx="12" cy="12" r="1.6" fill="#1f6feb" />
+    </svg>
+  );
+}
+
+/** 忽略：灰色眼睛 + 红色斜线 */
+export function IconIgnore({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" stroke="#8b949e" strokeWidth="2" fill="none" />
+      <circle cx="12" cy="12" r="3" stroke="#8b949e" strokeWidth="2" fill="none" />
+      <path d="M5 19L19 5" stroke="#f85149" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** 常用文件夹：黄色星星 */
+export function IconStar({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.3L12 17l-5.7 3.2 1.2-6.3L2.8 9.5l6.4-.8z" fill="#e3b341" />
+    </svg>
+  );
+}
+
+/** 复制完整路径：灰色双页 */
+export function IconCopy({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <rect x="8" y="8" width="12" height="12" rx="2" stroke="#8b949e" strokeWidth="2" fill="none" />
+      <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="#b1bac4" strokeWidth="2" fill="none" />
+    </svg>
+  );
+}
+
+
+/** 查看内容：蓝色文件页 */
+export function IconFile({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M6 3.5h8l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 20V5a1.5 1.5 0 0 1 1-1.5z" fill="#58a6ff" />
+      <path d="M14 3.5l4 4h-4z" fill="#dbeafe" />
+      <path d="M8.5 12h7M8.5 15.5h7" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
