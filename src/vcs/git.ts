@@ -202,7 +202,9 @@ export class GitVcs {
       let pname = p;
       const arrow = p.indexOf(' -> ');
       if (arrow > 0) pname = p.slice(arrow + 4);
-      const relPath = unquote(pname.trim());
+      let relPath = unquote(pname.trim());
+      // 未跟踪目录输出 "?? dir/" 带尾部斜杠：去掉，统一为无斜杠路径（否则状态匹配/拼接会双斜杠）
+      if (relPath.endsWith('/')) relPath = relPath.slice(0, -1);
       const main = mapCode(xy[0] ?? ' ');
       const wc = mapCode(xy[1] ?? ' ');
       let code = main === ' ' ? wc : main;
