@@ -730,6 +730,11 @@ export function App() {
             <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
               <div className="spinner" />
               <div style={{ marginTop: 14, fontWeight: 600 }}>正在推送…</div>
+              {repo?.url && (
+                <div className="mono small dim" style={{ marginTop: 6 }} title="推送目标仓库">
+                  📤 {repo.url}
+                </div>
+              )}
               <div className="dim small" style={{ marginTop: 6 }}>视网络情况可能需要一些时间，可随时取消</div>
               <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>已耗时 {updateElapsed}s</div>
               <button className="mini danger" style={{ marginTop: 18 }} onClick={cancelPush}>
