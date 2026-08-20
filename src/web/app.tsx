@@ -226,7 +226,11 @@ export function App() {
         setModal({
           type: 'confirm',
           title: '❌ 推送失败',
-          message: <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{r.message}</span>,
+          message: (
+            <div className="error" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              {r.message}
+            </div>
+          ),
           confirmLabel: '知道了',
           action: () => setModal(null),
         });
