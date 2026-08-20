@@ -6,6 +6,7 @@ import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnl
 import { CodeBadge, DirBadge } from './badges.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { IgnoreModal } from './ignore-modal.js';
+import { FavDirsModal } from './fav-dirs.js';
 import { renderMarkdown } from './markdown.js';
 import { fmtSize } from './utils.js';
 
@@ -139,6 +140,89 @@ export function FsView(props: Props) {
   // 大目录提示（条目多时提示原因，避免误以为卡死；5 秒后自动消失）
   const [bigTip, setBigTip] = useState('');
   const bigTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---------- 常用文件夹：指定 + 后台递归预加载缓存（大仓库秒开） ----------
+  interface FavDir {
+    path: string;
+    name: string;
+    addedAt: number;
+  }
+  const favKey = (root: string) => `svnkit:fav-dirs:${root}`;
+  const loadFavs = (root: string): FavDir[] => {
+    try {
+      return JSON.parse(localStorage.getItem(favKey(root)) ?? '[]') as FavDir[];
+    } catch {
+      return [];
+    }
+  };
+  const [favs, setFavs] = useState<FavDir[]>(() => (props.repoRoot ? loadFavs(props.repoRoot) : []));
+  const [favModal, setFavModal] = useState(false);
+  // 预加载进度（done/total 渐进；running=false 表示已完成）
+  const [preload, setPreload] = useState<{ done: number; total: number; cur: string; running: boolean } | null>(null);
+  // 预加载引擎：全局队列 + 并发 6 + 代际停止（仓库切换时旧 worker 立即停，不污染新仓库缓存）
+  const preloadQueueRef = useRef<string[]>([]);
+  const preloadSeenRef = useRef<Set<string>>(new Set());
+  const preloadGenRef = useRef(0);
+  const preloadRunningRef = useRef(false);
+  /** 递归预加载目录（BFS + 并发 6，结果写入 nodeData 缓存，之后进入秒开） */
+  const preloadDir = useCallback((rootRel: string) => {
+    const queue = preloadQueueRef.current;
+    if (!preloadSeenRef.current.has(rootRel)) {
+      preloadSeenRef.current.add(rootRel);
+      queue.push(rootRel);
+    }
+    if (preloadRunningRef.current) return; // 已在预加载中，新目录并入队列
+    preloadRunningRef.current = true;
+    const gen = preloadGenRef.current;
+    let done = 0;
+    setPreload({ done: 0, total: 1, cur: rootRel, running: true });
+    const worker = async () => {
+      while (queue.length) {
+        if (preloadGenRef.current !== gen) return; // 仓库已切换，停止
+        const d = queue.shift()!;
+        try {
+          const r = await get.fs(d, false);
+          setNodeData((m) => new Map(m).set(d, r));
+          for (const e of r.entries ?? []) {
+            if (e.isDir) {
+              const sub = d ? `${d}/${e.name}` : e.name;
+              if (!preloadSeenRef.current.has(sub)) {
+                preloadSeenRef.current.add(sub);
+                queue.push(sub);
+              }
+            }
+          }
+        } catch {
+          /* 单目录失败不阻断其余 */
+        }
+        done++;
+        setPreload({ done, total: done + queue.length, cur: d, running: true });
+      }
+    };
+    void Promise.all(Array.from({ length: 6 }, () => worker())).then(() => {
+      preloadRunningRef.current = false;
+      setPreload((p) => (p ? { ...p, running: false } : null));
+      setTimeout(() => setPreload(null), 2500);
+    });
+  }, []);
+  /** 加入常用文件夹（去重后保存 + 立即预加载） */
+  const addFavDir = (rel: string) => {
+    if (!props.repoRoot) return;
+    const list = loadFavs(props.repoRoot);
+    if (list.some((f) => f.path === rel)) return;
+    const next = [...list, { path: rel, name: rel.split('/').pop() || rel, addedAt: Date.now() }];
+    localStorage.setItem(favKey(props.repoRoot), JSON.stringify(next));
+    setFavs(next);
+    preloadDir(rel);
+    props.onToast(`已加入常用文件夹，正在后台预加载：${rel}`);
+  };
+  /** 移除常用文件夹 */
+  const removeFav = (rel: string) => {
+    if (!props.repoRoot) return;
+    const next = loadFavs(props.repoRoot).filter((f) => f.path !== rel);
+    localStorage.setItem(favKey(props.repoRoot), JSON.stringify(next));
+    setFavs(next);
+  };
   const load = useCallback(async (targetDir: string, force: boolean) => {
     const cache = nodeDataRef.current.get(targetDir);
     if (!force && cache) {
@@ -188,6 +272,21 @@ export function FsView(props: Props) {
     setSel(null);
     setPreview(null);
     setNodeData(new Map());
+    // 自动预加载该仓库保存的常用文件夹（仅 svn，git 无需预加载；后台，不阻塞界面）
+    if (props.repoRoot) {
+      // 停掉旧仓库的预加载 worker，清空队列与已见集合，避免污染新仓库缓存
+      preloadGenRef.current++;
+      preloadQueueRef.current = [];
+      preloadSeenRef.current = new Set();
+      preloadRunningRef.current = false;
+      if (props.repoType === 'svn') {
+        const saved = loadFavs(props.repoRoot);
+        setFavs(saved);
+        for (const f of saved) preloadDir(f.path);
+      } else {
+        setFavs([]);
+      }
+    }
   }, [props.repoRoot]); // eslint-disable-line react-hooks/exhaustive-deps
   // 刷新（tick 变化）：强制重新拉取
   useEffect(() => {
@@ -752,6 +851,14 @@ export function FsView(props: Props) {
         items.push({ sep: true });
         items.push({ icon: '🕘', label: '查看历史', action: () => viewHistory(t.rel, e) });
         items.push({ icon: '⛔', label: '忽略设置…', action: () => setIgnoreModal({ dir: t.rel }) });
+        // 常用文件夹（仅 svn：git 加载快无需预加载）：自身已加入显示移除；父目录已加入则不再显示；其余显示加入
+        if (props.repoType === 'svn') {
+          if (favs.some((f) => f.path === t.rel)) {
+            items.push({ icon: '⭐', label: '已加入常用文件夹（点击移除）', action: () => removeFav(t.rel) });
+          } else if (!favs.some((f) => t.rel.startsWith(f.path + '/'))) {
+            items.push({ icon: '⭐', label: '加入常用文件夹（预加载缓存）', action: () => addFavDir(t.rel) });
+          }
+        }
         // 已版本化且磁盘存在（非 '!' 缺失）才可删除
         if (t.code !== '!') {
           items.push({ sep: true });
@@ -761,6 +868,14 @@ export function FsView(props: Props) {
         // 未版本化目录：只能添加/忽略（无历史/无 diff/无忽略设置/不可删除——不在版本管理里）
         items.push({ icon: '➕', label: '添加到版本库', action: () => props.onAction('add', [t.rel]) });
         items.push({ icon: '⛔', label: '加入忽略…', action: () => ignoreFile(t) });
+        // 常用文件夹（仅 svn：git 加载快无需预加载）：自身已加入显示移除；父目录已加入则不再显示；其余显示加入
+        if (props.repoType === 'svn') {
+          if (favs.some((f) => f.path === t.rel)) {
+            items.push({ icon: '⭐', label: '已加入常用文件夹（点击移除）', action: () => removeFav(t.rel) });
+          } else if (!favs.some((f) => t.rel.startsWith(f.path + '/'))) {
+            items.push({ icon: '⭐', label: '加入常用文件夹（预加载缓存）', action: () => addFavDir(t.rel) });
+          }
+        }
       }
     } else {
       // 文件
@@ -961,6 +1076,11 @@ export function FsView(props: Props) {
             <button className={`mini tool-btn ${mode === 'browse' ? 'primary' : ''}`} onClick={() => setMode('browse')} title="文件浏览器视图">
               <IconGrid /> 浏览
             </button>
+            {props.repoType === 'svn' && (
+              <button className={`mini tool-btn ${favs.length > 0 ? 'primary' : ''}`} onClick={() => setFavModal(true)} title="常用文件夹：指定后后台预加载缓存，进入秒开">
+                ⭐ 常用{favs.length > 0 ? `(${favs.length})` : ''}
+              </button>
+            )}
           </span>
           {/* 上一级：浏览按钮右侧、搜索框左侧，带间隔 */}
           <button
@@ -1083,6 +1203,17 @@ export function FsView(props: Props) {
           <div className="fs-loading-bar">
             <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
             <span>{data ? '正在加载目录…' : '正在加载…'}</span>
+          </div>
+        )}
+        {/* 常用文件夹后台预加载进度 */}
+        {preload && (
+          <div className="fs-preload-bar">
+            <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
+            <span>
+              {preload.running
+                ? `正在后台预加载常用文件夹：${preload.done}/${preload.total}（${preload.cur}）`
+                : `✅ 常用文件夹后台预加载完成（${preload.done} 个目录），进入秒开`}
+            </span>
           </div>
         )}
         {/* 树模式扁平化行 */}
@@ -1414,6 +1545,19 @@ export function FsView(props: Props) {
           onClose={() => setIgnoreModal(null)}
           onChanged={() => (mode === 'tree' ? loadNode('', true) : void load(dir, true))}
           onToast={props.onToast}
+        />
+      )}
+
+      {/* 常用文件夹管理弹窗 */}
+      {favModal && (
+        <FavDirsModal
+          favs={favs}
+          preload={preload}
+          onRemove={removeFav}
+          onPreloadAll={() => {
+            for (const f of favs) preloadDir(f.path);
+          }}
+          onClose={() => setFavModal(false)}
         />
       )}
 

@@ -111,28 +111,47 @@ function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
 /** 工作副本状态缓存（5 秒） */
 const statusCache = new Map<string, { time: number; items: unknown[] }>();
 
-// ---------- svn:ignore 全局缓存 + 并发限制 ----------
-// 大目录下每个干净子目录都要 propget 一次(svn 进程启动 ~30ms),
-// 串行几百次会"卡半天";属性值不常变 → 全局缓存 30s + 同目录去重 + 并发池 ≤8
-const SVN_IGNORE_TTL = 30_000;
-const svnIgnoreCache = new Map<string, { time: number; rules: string[] }>();
-const svnIgnoreInflight = new Map<string, Promise<string[]>>();
-let svnIgnoreActive = 0;
-const svnIgnoreWaiters: (() => void)[] = [];
-function withSvnIgnoreSlot<T>(fn: () => Promise<T>): Promise<T> {
-  const run = async (): Promise<T> => {
-    while (svnIgnoreActive >= 8) {
-      await new Promise<void>((res) => svnIgnoreWaiters.push(res));
+// ---------- svn:ignore 全量规则缓存 ----------
+// 逐目录 propget 太慢(每目录一次 svn 进程 ~30ms)。改为一次 `svn propget svn:ignore -R .`
+// 递归拉取全仓库规则(输出格式:<路径> - <规则> 块,空行分隔),缓存 60s,之后所有目录查内存 Map(0 命令)
+const SVN_IGNORE_MAP_TTL = 60_000;
+const svnIgnoreMapCache = new Map<string, { time: number; map: Map<string, string[]> }>();
+const svnIgnoreMapInflight = new Map<string, Promise<Map<string, string[]>>>();
+/** 拉取（带缓存）仓库全部 svn:ignore 规则：dir -> rules[] */
+function getSvnIgnoreMap(root: string): Promise<Map<string, string[]>> {
+  const hit = svnIgnoreMapCache.get(root);
+  if (hit && Date.now() - hit.time < SVN_IGNORE_MAP_TTL) return Promise.resolve(hit.map);
+  const inflight = svnIgnoreMapInflight.get(root);
+  if (inflight) return inflight;
+  const p = run('svn', ['propget', 'svn:ignore', '-R', '.'], { cwd: root, timeoutMs: 60_000 }).then((r) => {
+    const map = new Map<string, string[]>();
+    if (r.code === 0) {
+      // 输出:每条目 "<相对路径> - <规则1>\n<规则2>...",块之间空行分隔
+      let curPath: string | null = null;
+      const rules: string[] = [];
+      for (const line of r.stdout.split('\n')) {
+        if (!line.trim()) {
+          if (curPath) map.set(curPath, rules.slice());
+          curPath = null;
+          rules.length = 0;
+          continue;
+        }
+        const m = line.match(/^(\S.*?) - (.*)$/);
+        if (m && curPath === null) {
+          curPath = m[1]!;
+          if (m[2]!.trim()) rules.push(m[2]!.trim());
+        } else if (curPath !== null) {
+          rules.push(line.trim());
+        }
+      }
+      if (curPath) map.set(curPath, rules.slice());
     }
-    svnIgnoreActive++;
-    try {
-      return await fn();
-    } finally {
-      svnIgnoreActive--;
-      svnIgnoreWaiters.shift()?.();
-    }
-  };
-  return run();
+    svnIgnoreMapCache.set(root, { time: Date.now(), map });
+    return map;
+  });
+  svnIgnoreMapInflight.set(root, p);
+  void p.finally(() => svnIgnoreMapInflight.delete(root));
+  return p;
 }
 const STATUS_TTL = 30_000;
 
@@ -487,20 +506,9 @@ export function startServer(): Promise<ServerHandle> {
               : [];
             return gitignoreRules;
           }
-          // svn:ignore：全局缓存(30s) + 同目录并发去重 + 并发池限制(≤8 个 svn 进程)
-          const hit = svnIgnoreCache.get(dirRel);
-          if (hit && Date.now() - hit.time < SVN_IGNORE_TTL) return hit.rules;
-          const inflight = svnIgnoreInflight.get(dirRel);
-          if (inflight) return inflight;
-          const p = withSvnIgnoreSlot(async () => {
-            const r = await run('svn', ['propget', 'svn:ignore', dirRel || '.'], { cwd: repo.root, timeoutMs: 15_000 });
-            const rules = r.code === 0 && r.stdout.trim() ? r.stdout.split('\n').map((s) => s.trim()).filter(Boolean) : [];
-            svnIgnoreCache.set(dirRel, { time: Date.now(), rules });
-            return rules;
-          });
-          svnIgnoreInflight.set(dirRel, p);
-          void p.finally(() => svnIgnoreInflight.delete(dirRel));
-          return p;
+          // svn:ignore：一次 `-R` 全量拉取缓存后，所有目录直接查内存 Map（不再逐目录跑 svn 进程）
+          const map = await getSvnIgnoreMap(repo.root);
+          return map.get(dirRel) ?? [];
         };
         const isIgnoredByRules = (rules: string[], name: string): boolean => {
           for (const rule of rules) {

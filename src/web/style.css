@@ -553,6 +553,12 @@ textarea { resize: vertical; font-family: inherit; }
   padding: 7px 10px; font-size: 12px; color: #b45309;
   background: rgba(251, 191, 36, .1); border-bottom: 1px solid var(--border);
 }
+/* 常用文件夹后台预加载进度条 */
+.fs-preload-bar {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  color: var(--accent); font-size: 12px; background: rgba(34, 197, 94, .08);
+  border-bottom: 1px solid var(--border);
+}
 /* 勾选框统一主题色 */
 input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 /* 提交弹窗：注释标签 + 注释输入框 */
