@@ -648,6 +648,23 @@ export function startServer(): Promise<ServerHandle> {
           }
           return false;
         };
+        // 祖先链上有被忽略目录（如 .gitignore 的 node_modules/）→ 内部所有内容都算忽略（I）
+        // （被忽略目录不在 status 条目里，需逐级用忽略规则匹配祖先目录名）
+        let ignoredAncestor = false;
+        {
+          const parts = rel.split('/');
+          let acc = '';
+          for (let i = 0; i < parts.length; i++) {
+            const part = parts[i]!;
+            acc = acc ? `${acc}/${part}` : part;
+            const parentOf = path.dirname(acc);
+            const rules = await getIgnoreRules(parentOf === '.' ? '.' : parentOf);
+            if (rules.length && isIgnoredByRules(rules, part)) {
+              ignoredAncestor = true;
+              break;
+            }
+          }
+        }
         const prefix = rel ? rel + '/' : '';
         const dirs: string[] = [];
         const files: string[] = [];
@@ -672,10 +689,13 @@ export function startServer(): Promise<ServerHandle> {
           // 目录自身在 status 中的条目（如 svn/git 的 '?' 未版本化目录）优先采用
           const self = items.find((i) => i.path === relDir);
           if (self && self.code !== 'none') code = self.code;
-          // 无条目且非未版本化：可能是被忽略的目录
+          // 无条目且非未版本化：祖先被忽略（如 node_modules 内）→ 直接 I；否则按忽略规则判断
           if (!code && !self) {
-            const rules = await getIgnoreRules(path.dirname(relDir) === '.' ? '.' : path.dirname(relDir));
-            if (rules.length && isIgnoredByRules(rules, d)) code = 'I';
+            if (ignoredAncestor) code = 'I';
+            else {
+              const rules = await getIgnoreRules(path.dirname(relDir) === '.' ? '.' : path.dirname(relDir));
+              if (rules.length && isIgnoredByRules(rules, d)) code = 'I';
+            }
           }
           const sub = items.filter((i) => i.path.startsWith(relDir + '/'));
           if (sub.length > 0) {
@@ -708,10 +728,13 @@ export function startServer(): Promise<ServerHandle> {
           const relFile = prefix + f;
           const it = items.find((i) => i.path === relFile);
           let code = dirSelf ? '?' : it?.code ?? '';
-          // 无条目且非未版本化：可能是被忽略的文件（svn:ignore / .gitignore）
+          // 无条目且非未版本化：祖先被忽略（如 node_modules 内）→ 直接 I；否则按忽略规则判断
           if (!code && !it) {
-            const rules = await getIgnoreRules(path.dirname(relFile) === '.' ? '.' : path.dirname(relFile));
-            if (rules.length && isIgnoredByRules(rules, f)) code = 'I';
+            if (ignoredAncestor) code = 'I';
+            else {
+              const rules = await getIgnoreRules(path.dirname(relFile) === '.' ? '.' : path.dirname(relFile));
+              if (rules.length && isIgnoredByRules(rules, f)) code = 'I';
+            }
           }
           entries.push({
             name: f,
