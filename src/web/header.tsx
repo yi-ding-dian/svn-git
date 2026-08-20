@@ -1,7 +1,7 @@
 /** 顶部工具栏：仓库信息 + 版本管理操作 + 主题/字号 + 打开项目/登录/退出 */
 import React from 'react';
 import { post, type RepoInfo } from './api.js';
-import { IconBranch, IconTag, IconStash, IconPlus, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit } from './icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit } from './icons.js';
 import { type Modal } from './modals.js';
 import { type View } from './sidebar.js';
 
@@ -24,9 +24,10 @@ function ToolBtn(props: {
   label: React.ReactNode;
   title?: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <button className="tool-btn" title={props.title} onClick={props.onClick}>
+    <button className="tool-btn" title={props.title} onClick={props.onClick} disabled={props.disabled}>
       {props.icon} {props.label}
     </button>
   );
@@ -46,6 +47,8 @@ export function AppHeader(props: {
   onToast: (m: string) => void;
   /** 推送（含进度窗口与认证引导） */
   onPush: () => void;
+  /** 未推送提交数（git；null=未知/svn 不显示角标） */
+  unpushedCount?: number | null;
 }) {
   const repo = props.repo;
   return (
@@ -71,9 +74,23 @@ export function AppHeader(props: {
           <ToolBtn icon={<IconStash />} label="Stash" title="Stash 暂存区" onClick={() => props.setModal({ type: 'stash' })} />
           <ToolBtn
             icon={<IconCommit />}
-            label="推送"
-            title="推送（git push，含进度与认证引导）"
+            label={
+              props.unpushedCount != null ? (
+                <>
+                  推送
+                  <span className={`push-count ${props.unpushedCount > 0 ? 'on' : ''}`}>{props.unpushedCount}</span>
+                </>
+              ) : (
+                '推送'
+              )
+            }
+            title={
+              props.unpushedCount != null && props.unpushedCount <= 0
+                ? '没有待推送的提交（未推送数为 0）'
+                : `推送 ${props.unpushedCount ?? 0} 个未推送提交（git push，含进度与认证引导）`
+            }
             onClick={props.onPush}
+            disabled={props.unpushedCount != null && props.unpushedCount <= 0}
           />
           <ToolBtn icon={<IconClean />} label="清理" title="清理未跟踪文件" onClick={() => props.setModal({ type: 'clean' })} />
         </>
@@ -122,7 +139,7 @@ export function AppHeader(props: {
       </span>
       <ToolBtn icon={<IconRefresh />} label="刷新" title="刷新" onClick={props.onRefresh} />
       {repo?.type === 'git' && (
-        <ToolBtn icon={<IconBranch />} label="Git" title="Git 信息与配置" onClick={() => props.setModal({ type: 'git-info' })} />
+        <ToolBtn icon={<IconGear />} label="Git" title="Git 信息与配置" onClick={() => props.setModal({ type: 'git-info' })} />
       )}
       <ToolBtn icon={<IconFolder />} label="打开项目" title="打开项目" onClick={() => props.setModal({ type: 'open' })} />
       {repo?.type === 'svn' && (

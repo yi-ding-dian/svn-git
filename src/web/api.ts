@@ -107,7 +107,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export const get = {
   info: () => api<RepoInfo>('/api/info'),
   status: () => api<{ items: FileStatus[] }>('/api/status'),
-  log: (pathRel?: string) => api<{ logs: LogEntry[] }>(`/api/log${pathRel ? `?path=${encodeURIComponent(pathRel)}` : ''}`),
+  log: (pathRel?: string) =>
+    api<{ logs: LogEntry[]; unpushed: string[] }>(`/api/log${pathRel ? `?path=${encodeURIComponent(pathRel)}` : ''}`),
   diff: (pathRel?: string, a?: string, b?: string) => {
     const q = new URLSearchParams();
     if (pathRel) q.set('path', pathRel);
@@ -163,6 +164,8 @@ export const get = {
       '/api/git-info',
     ),
   gitAuth: () => api<{ username: string; hasPassword: boolean }>('/api/git-auth'),
+  gitUnpushedCount: () => api<{ count: number }>('/api/git-unpushed-count'),
+  gitUnpushed: () => api<{ count: number; unpushed: LogEntry[] }>('/api/git-unpushed'),
 };
 
 export interface BranchInfo {
@@ -208,6 +211,8 @@ export const post = {
   rename: (from: string, to: string) => api<{ ok: boolean }>('/api/rename', json({ from, to })),
   gitConfig: (remoteUrl: string) => api<VcsResult>('/api/git-config', json({ remoteUrl })),
   gitAuthSave: (username: string, password: string) => api<VcsResult>('/api/git-auth', json({ username, password })),
+  gitAmend: (message: string) => api<VcsResult>('/api/git-amend', json({ message })),
+  gitReset: () => api<VcsResult>('/api/git-reset', json({})),
   shutdown: () => api<{ ok: boolean }>('/api/shutdown', json({})),
 };
 

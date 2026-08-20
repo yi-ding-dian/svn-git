@@ -12,6 +12,8 @@ import { fmtSize } from './utils.js';
 interface Props {
   tick: number;
   repoType: 'svn' | 'git';
+  /** 仓库根（切换仓库时重置浏览位置，避免残留上次目录） */
+  repoRoot?: string | null;
   onAction: (op: 'add' | 'revert' | 'delete' | 'commit', paths: string[]) => void;
   onDiff: (path: string) => void;
   onLog: (path: string) => void;
@@ -152,6 +154,12 @@ export function FsView(props: Props) {
       setSel(null);
       setPreview(null);
     } catch (e) {
+      // 目录不存在（ENOENT：上次浏览位置被删除/仓库已切换）→ 自动回到仓库根，避免卡死在错误页
+      if (targetDir && (e as Error).message.includes('ENOENT')) {
+        setDir('');
+        setError('');
+        return;
+      }
       setError((e as Error).message);
     } finally {
       setFsLoading(false);
@@ -162,6 +170,13 @@ export function FsView(props: Props) {
   useEffect(() => {
     void load(dir, false);
   }, [dir, load]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 仓库切换（repoRoot 变化）→ 浏览位置回到仓库根，清空旧目录缓存
+  useEffect(() => {
+    setDir('');
+    setSel(null);
+    setPreview(null);
+    setNodeData(new Map());
+  }, [props.repoRoot]); // eslint-disable-line react-hooks/exhaustive-deps
   // 刷新（tick 变化）：强制重新拉取
   useEffect(() => {
     if (props.tick === 0) return;

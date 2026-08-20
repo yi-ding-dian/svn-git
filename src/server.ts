@@ -575,11 +575,20 @@ export function startServer(): Promise<ServerHandle> {
       }
 
       if (p === '/api/log') {
-        const { vcs } = vcsOf();
+        const { vcs, repo } = vcsOf();
         const pathRel = url.searchParams.get('path') || undefined;
         const limit = Number(url.searchParams.get('limit') ?? 200);
         const logs = await vcs.log(limit, pathRel);
-        sendJson(res, 200, { logs });
+        // git:附带未推送提交 hash 列表(历史视图绿灯标记);svn 无此概念
+        let unpushed: string[] = [];
+        if (repo.type === 'git') {
+          try {
+            unpushed = await (vcs as any).unpushed();
+          } catch {
+            /* 计算失败不阻断历史列表 */
+          }
+        }
+        sendJson(res, 200, { logs, unpushed });
         return;
       }
 
@@ -673,7 +682,30 @@ export function startServer(): Promise<ServerHandle> {
           sendJson(res, 200, s);
         } else {
           const n = Number(rev);
-          const d = await vcs.diff(String(n - 1), rev, pathRel);
+          // svn log -v 的变更路径是仓库内路径（相对 repository root，如 /projects/CWBS-SCA/tags/SCA_HB/...），
+          // 不能直接当工作副本相对路径用（会报 E155007 不是工作副本）。
+          // 转换：取 wc URL path 的最长后缀 Y（wc 在仓库内的位置），pathRel 以它开头则截掉 → wc 相对路径
+          let rel = pathRel;
+          let y = '';
+          if (pathRel && repo.url) {
+            try {
+              const urlPath = new URL(repo.url).pathname;
+              const segs = urlPath.split('/').filter(Boolean);
+              for (let i = segs.length - 1; i >= 1; i--) {
+                const cand = segs.slice(i).join('/');
+                if (cand.length > y.length && pathRel.startsWith(`/${cand}`)) y = cand;
+              }
+              if (y) rel = pathRel.slice(('/' + y).length + 1) || '';
+            } catch {
+              /* URL 解析失败保持原样 */
+            }
+          }
+          // 转换失败（提交路径不属于当前工作副本，如其他分支/标签的提交）→ 明确提示，避免原始 E155007
+          if (pathRel && y === '') {
+            sendJson(res, 200, { ok: false, output: '', error: `该文件不在当前工作副本中，无法查看差异：${pathRel}` });
+            return;
+          }
+          const d = await vcs.diff(String(n - 1), rev, rel);
           sendJson(res, 200, d);
         }
         return;
@@ -811,6 +843,60 @@ export function startServer(): Promise<ServerHandle> {
           sendJson(res, 400, { error: '未知操作' });
           return;
         }
+        sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
+        return;
+      }
+
+      if (p === '/api/git-amend' && req.method === 'POST') {
+        // 修改最近一次提交注释（仅 git）
+        const { vcs, repo } = vcsOf();
+        if (repo.type !== 'git') {
+          sendJson(res, 400, { error: '仅 git 仓库支持' });
+          return;
+        }
+        const body = await readBody(req);
+        const message = String(body.message ?? '').trim();
+        if (!message) {
+          sendJson(res, 400, { error: '注释不能为空' });
+          return;
+        }
+        const result = await (vcs as any).amend(message);
+        sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
+        return;
+      }
+
+      if (p === '/api/git-unpushed-count') {
+        // 未推送提交数量（推送按钮角标，仅 git）
+        const { vcs, repo } = vcsOf();
+        if (repo.type !== 'git') {
+          sendJson(res, 200, { count: 0 });
+          return;
+        }
+        const count = await (vcs as any).unpushedCount();
+        sendJson(res, 200, { count });
+        return;
+      }
+
+      if (p === '/api/git-unpushed') {
+        // 未推送提交完整列表（含变更文件，推送确认弹窗，仅 git）
+        const { vcs, repo } = vcsOf();
+        if (repo.type !== 'git') {
+          sendJson(res, 200, { count: 0, unpushed: [] });
+          return;
+        }
+        const unpushed = await (vcs as any).unpushedLog();
+        sendJson(res, 200, { count: unpushed.length, unpushed });
+        return;
+      }
+
+      if (p === '/api/git-reset' && req.method === 'POST') {
+        // 撤销最近一次提交（--soft 保留修改，仅 git）
+        const { vcs, repo } = vcsOf();
+        if (repo.type !== 'git') {
+          sendJson(res, 400, { error: '仅 git 仓库支持' });
+          return;
+        }
+        const result = await (vcs as any).resetSoft();
         sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
         return;
       }

@@ -277,6 +277,14 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ---------- 工具栏按钮（带图标） ---------- */
 .tool-btn { display: inline-flex; align-items: center; gap: 6px; }
+/* 推送按钮未推送数角标 */
+.push-count {
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--dim); color: var(--bg); font-size: 11px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+}
+.push-count.on { background: #22c55e; color: #fff; box-shadow: 0 0 4px rgba(34,197,94,.5); }
+.tool-btn:disabled .push-count { opacity: .5; }
 .tool-btn svg { display: block; }
 
 /* ---------- 版本管理对话框 ---------- */
@@ -457,6 +465,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .list-item .author { flex-shrink: 0; }
 .list-item .msg { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-item .stat { color: var(--dim); font-size: 12px; flex-shrink: 0; }
+/* 未推送绿灯标记：绿点 + 领先数量 */
+.list-item .unpushed { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; margin-left: 6px; cursor: default; }
+.list-item .unpushed-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.6); }
+.list-item .unpushed-n { color: #22c55e; font-size: 12px; font-weight: 700; font-family: Consolas, monospace; }
 
 /* ---------- 变更文件列表 ---------- */
 .changed { display: flex; flex-direction: column; }

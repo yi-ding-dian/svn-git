@@ -7,6 +7,7 @@ import { FsView } from './fs.js';
 import { OpenView, OpenModal } from './open.js';
 import { CommitModal, LoginModal, ConfirmModal, CommitSelectModal, UpdateResultModal, EnvInstallModal, type Modal } from './modals.js';
 import { BranchDialog, TagDialog, StashDialog, CreateRepoDialog, CleanDialog, GitInfoModal, GitPushAuthModal } from './vcs-dialogs.js';
+import { PushConfirmModal } from './push-confirm.js';
 import { ConflictResolverModal } from './conflicts.js';
 import { RemoteConflictModal } from './remote-conflicts.js';
 import { AppHeader, THEMES, FONT_SIZES } from './header.js';
@@ -87,7 +88,23 @@ export function App() {
     }
   }, [fontSize]);
 
-  const refresh = useCallback(() => setTick((t) => t + 1), []);
+  // 未推送提交数（推送按钮角标；git 仓库有效，svn 保持 null 不显示）
+  const [unpushedCount, setUnpushedCount] = useState<number | null>(null);
+  const refreshUnpushed = useCallback(() => {
+    get
+      .gitUnpushedCount()
+      .then((r) => setUnpushedCount(r.count))
+      .catch(() => setUnpushedCount(null));
+  }, []);
+  // 仓库变化（打开/切换）时自动刷新角标；refreshUnpushed 每次 refresh() 时也会调用
+  useEffect(() => {
+    void refreshUnpushed();
+  }, [repo?.type]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const refresh = useCallback(() => {
+    setTick((t) => t + 1);
+    void refreshUnpushed();
+  }, [refreshUnpushed]);
 
   // 冲突计数：有 C 状态文件时显示"解决冲突"入口
   const [conflictCount, setConflictCount] = useState(0);
@@ -243,53 +260,11 @@ export function App() {
     }
   }, [refresh]);
   const cancelPush = () => pushAbortRef.current?.abort();
-  // 推送入口：点击立即弹推送窗口，落后检查在窗口内进行（网络慢也有反馈，不让人干等）
+  // 推送入口：弹出「确认推送」窗口（未推送提交列表 + 推送条件），确认后执行
   const doPush = useCallback(() => {
-    void (async () => {
-      setPushing(true);
-      const ac = new AbortController();
-      pushAbortRef.current = ac;
-      try {
-        // 落后检查（窗口内，15 秒超时，超时视为无落后直接推）
-        const pac = new AbortController();
-        const pt = setTimeout(() => pac.abort(), 15_000);
-        const pf = await get.preflight(pac.signal).catch(() => null);
-        clearTimeout(pt);
-        if (pf && pf.behind > 0) {
-          setPushing(false);
-          setModal({
-            type: 'confirm',
-            title: '⚠ 推送前需要拉取',
-            message: (
-              <>
-                远程有 <b>{pf.behind}</b> 个新提交，当前分支落后。直接推送会被拒绝，建议先拉取合并。
-                {pf.conflictRisk.length > 0 && (
-                  <div className="error mt8">
-                    ⚠ 以下文件双方都有修改，拉取时可能冲突：{pf.conflictRisk.map((f) => f.path).join('、')}
-                  </div>
-                )}
-              </>
-            ),
-            confirmLabel: '仍然推送',
-            secondaryLabel: '先拉取',
-            action: () => void pushNow(),
-            secondaryAction: () => {
-              setModal(null);
-              void doUpdateDir('');
-            },
-          });
-          return;
-        }
-        // 实际推送（pushNow 负责进度窗口/认证引导/失败弹窗）
-        await pushNow();
-      } catch (e) {
-        setToast((e as Error).message === '已取消' ? '已取消推送' : `推送失败: ${(e as Error).message}`);
-      } finally {
-        setPushing(false);
-        pushAbortRef.current = null;
-      }
-    })();
-  }, [pushNow]);
+    if (unpushedCount != null && unpushedCount <= 0) return; // 无未推送提交（按钮已置灰，双保险）
+    setModal({ type: 'push-confirm' });
+  }, [unpushedCount]);
 
   // 跳转 diff 视图（提交冲突提示"双击查看差异"使用；定义在 handleAction 之前供其依赖）
   const gotoDiff = useCallback(
@@ -394,7 +369,7 @@ export function App() {
           }
         })();
       } else if (op === 'push') {
-        // 统一走 doPush（落后检查 + 进度窗口 + 认证引导）
+        // 统一走 doPush（确认窗 + 进度窗口 + 认证引导）
         doPush();
       } else if (op === 'revert') {
         setModal({
@@ -539,6 +514,7 @@ export function App() {
         setModal={setModal}
         onToast={setToast}
         onPush={doPush}
+        unpushedCount={unpushedCount}
       />
 
       {/* 远程更新提示条：含"你修改的文件被他人先提交"预警 */}
@@ -633,7 +609,7 @@ export function App() {
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
               <div style={{ display: view === 'log' ? undefined : 'none', height: '100%' }}>
-                <LogView path={logPath} tick={tick} onClearPath={() => setLogPath(undefined)} />
+                <LogView path={logPath} tick={tick} onClearPath={() => setLogPath(undefined)} onChanged={refresh} />
               </div>
               <div style={{ display: view === 'diff' ? undefined : 'none', height: '100%' }}>
                 <DiffView
@@ -653,6 +629,7 @@ export function App() {
                 <FsView
                   tick={tick}
                   repoType={repo.type}
+                  repoRoot={repo.root}
                   onAction={handleAction}
                   onDiff={(p) => gotoDiff(p)}
                   onLog={(p) => showLog(p)}
@@ -815,7 +792,22 @@ export function App() {
           onToast={setToast}
           onSaved={() => {
             setPushAuth(null);
-            void doPush(); // 保存凭据后自动重试推送（后端用 GIT_ASKPASS 携带凭据）
+            void pushNow(); // 保存凭据后自动重试推送（已过确认窗，直接执行；后端用 GIT_ASKPASS 携带凭据）
+          }}
+        />
+      )}
+      {modal?.type === 'push-confirm' && (
+        <PushConfirmModal
+          onCancel={() => setModal(null)}
+          onConfirm={() => {
+            setModal(null);
+            void pushNow();
+          }}
+          onDiff={(path, rev) => {
+            // 双击变更文件 → 查看该提交中的差异（左=提交前，右=提交）；返回时恢复本弹窗
+            setDiffReturnModal({ type: 'push-confirm' });
+            setModal(null);
+            gotoDiff(path, `${rev}^`, rev);
           }}
         />
       )}

@@ -48,6 +48,40 @@ function isDir(abs: string): boolean {
   }
 }
 
+/**
+ * 解析 git log 机器输出（--format 含 \x1e 分隔 + --name-status）。
+ * 输出结构：<format 行(含 \x1e)>\n\n<name-status 行…>。name-status 属于其上方那条记录，
+ * 与下一条 format 之间无分隔，因此按行扫描：含 \x1e 的行是新记录头。
+ */
+function parseGitLog(stdout: string): LogEntry[] {
+  const out: LogEntry[] = [];
+  let cur: LogEntry | null = null;
+  for (const line of stdout.split('\n')) {
+    const sep = line.indexOf('\x1e');
+    if (sep >= 0) {
+      const head = line.slice(0, sep);
+      const [hash, author, date, msg] = head.split('\x1f');
+      if (hash) {
+        cur = {
+          rev: hash.slice(0, 7),
+          author: author ?? '',
+          date: (date ?? '').replace('T', ' ').replace(/[+-]\d{2}:\d{2}$/, ''),
+          msg: msg ?? '',
+          changed: [],
+        };
+        out.push(cur);
+      }
+    } else if (cur && line) {
+      const m = line.match(/^([MADRCU])\t(.+)$/);
+      if (m && m[1] && m[2]) {
+        const p = m[2].includes('\t') ? m[2].split('\t').pop()! : m[2];
+        cur.changed.push({ action: m[1], path: p });
+      }
+    }
+  }
+  return out;
+}
+
 /** git porcelain 状态码 -> 统一语义码 */
 function mapCode(x: string): string {
   switch (x) {
@@ -194,34 +228,70 @@ export class GitVcs {
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args);
     if (res.code !== 0) throw new Error(`git log 失败: ${res.stderr.trim()}`);
-    // 输出结构：<format 行(含 \x1e)>\n\n<name-status 行…>。name-status 属于其上方那条记录，
-    // 与下一条 format 之间无分隔，因此按行扫描：含 \x1e 的行是新记录头。
-    const out: LogEntry[] = [];
-    let cur: LogEntry | null = null;
-    for (const line of res.stdout.split('\n')) {
-      const sep = line.indexOf('\x1e');
-      if (sep >= 0) {
-        const head = line.slice(0, sep);
-        const [hash, author, date, msg] = head.split('\x1f');
-        if (hash) {
-          cur = {
-            rev: hash.slice(0, 7),
-            author: author ?? '',
-            date: (date ?? '').replace('T', ' ').replace(/[+-]\d{2}:\d{2}$/, ''),
-            msg: msg ?? '',
-            changed: [],
-          };
-          out.push(cur);
-        }
-      } else if (cur && line) {
-        const m = line.match(/^([MADRCU])\t(.+)$/);
-        if (m && m[1] && m[2]) {
-          const p = m[2].includes('\t') ? m[2].split('\t').pop()! : m[2];
-          cur.changed.push({ action: m[1], path: p });
-        }
-      }
+    return parseGitLog(res.stdout);
+  }
+
+  /**
+   * 未推送提交（本地领先远程）的 hash 列表。
+   * 有上游：@{u}..HEAD；无上游（无远程分支）：全部提交视为未推送；空仓库返回空。
+   */
+  async unpushed(): Promise<string[]> {
+    // 有上游：rev-list 纯 hash 输出（无 pretty 头行）
+    const up = await this.exec(['rev-list', '@{u}..HEAD']);
+    if (up.code === 0) {
+      return up.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
     }
-    return out;
+    // 无上游 / 上游不存在：全部提交均未推送（与 log 同量级）
+    const all = await this.exec(['log', '-n', '200', '--format=%H']);
+    return all.code === 0 ? all.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
+  }
+
+  /** 未推送提交数量（轻量，推送按钮角标用；逻辑与 unpushed 一致） */
+  async unpushedCount(): Promise<number> {
+    const up = await this.exec(['rev-list', '--count', '@{u}..HEAD']);
+    if (up.code === 0) return Number(up.stdout.trim()) || 0;
+    const all = await this.exec(['rev-list', '--count', 'HEAD']);
+    return all.code === 0 ? Number(all.stdout.trim()) || 0 : 0;
+  }
+
+  /** 未推送提交完整列表（含变更文件，推送确认弹窗用；无未推送时返回空数组） */
+  async unpushedLog(): Promise<LogEntry[]> {
+    // 有上游：@{u}..HEAD（只显示未推送，避免 log 多 hash 时展开已推送的祖先）；无上游：全部
+    const up = await this.exec(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']);
+    if (up.code === 0) {
+      const res = await this.exec([
+        '-c', 'core.quotepath=false',
+        'log', '-n', '200',
+        '--format=%H%x1f%an%x1f%aI%x1f%s%x1e',
+        '--name-status',
+        '@{u}..HEAD',
+      ]);
+      if (res.code !== 0) throw new Error(`git log 失败: ${res.stderr.trim()}`);
+      return parseGitLog(res.stdout);
+    }
+    const all = await this.exec([
+      '-c', 'core.quotepath=false',
+      'log', '-n', '200',
+      '--format=%H%x1f%an%x1f%aI%x1f%s%x1e',
+      '--name-status',
+    ]);
+    if (all.code !== 0) throw new Error(`git log 失败: ${all.stderr.trim()}`);
+    return parseGitLog(all.stdout);
+  }
+
+  /** 修改最近一次提交注释（--amend，-m 避免打开编辑器） */
+  async amend(message: string): Promise<VcsResult> {
+    const res = await this.exec(['commit', '--amend', '-m', message]);
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '修改注释失败' };
+    const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
+    return { ok: true, message: m ? `已修改注释 ${m[2]?.slice(0, 7)}` : '已修改注释' };
+  }
+
+  /** 撤销最近一次提交（--soft 保留工作区修改，可重新勾选提交） */
+  async resetSoft(): Promise<VcsResult> {
+    const res = await this.exec(['reset', '--soft', 'HEAD~']);
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '撤销提交失败' };
+    return { ok: true, message: '已撤销最近一次提交（修改保留在工作区，可重新提交）' };
   }
 
   /** git diff：工作区/暂存区，或版本间；可限定路径 */
