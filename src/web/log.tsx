@@ -1,5 +1,5 @@
 /** 历史视图：提交列表 + 变更文件详情，点击查看 diff；未推送提交显示绿灯可修改注释/撤销 */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, type LogEntry } from './api.js';
 import { DiffRender } from './diff-render.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
@@ -35,6 +35,17 @@ export function LogView(props: Props) {
   /** 撤销提交二次确认 */
   const [resetCfm, setResetCfm] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // 模糊过滤：按消息/作者/版本号（大小写不敏感），实时过滤提交列表
+  const [filterQ, setFilterQ] = useState('');
+  const visibleLogs = useMemo(() => {
+    if (!logs) return [];
+    const q = filterQ.trim().toLowerCase();
+    if (!q) return logs;
+    return logs.filter(
+      (l) => l.msg.toLowerCase().includes(q) || l.author.toLowerCase().includes(q) || l.rev.toLowerCase().includes(q),
+    );
+  }, [logs, filterQ]);
 
   // 左右栏比例拖拽（列表 / 详情，与 diff 界面同一套逻辑）
   const [leftRatio, setLeftRatio] = useState(38);
@@ -147,8 +158,18 @@ export function LogView(props: Props) {
   return (
     <div style={{ display: 'flex', gap: 14, height: '100%', minHeight: 0 }}>
       <div style={{ width: `${leftRatio}%`, flex: '0 0 auto', display: 'flex', flexDirection: 'column', minWidth: 220 }}>
-        <div className="dim" style={{ marginBottom: 8 }}>
+        <div className="row dim" style={{ marginBottom: 8, gap: 8 }}>
           历史: {props.path ? <span>{props.path} <a href="#" onClick={(e) => { e.preventDefault(); props.onClearPath(); }}>清除路径过滤</a></span> : '全部提交'}
+          {filterQ && <span className="small" style={{ color: 'var(--warn)' }}>{visibleLogs.length}/{logs?.length ?? 0}</span>}
+          <span className="grow" />
+          {/* 模糊过滤：按消息/作者/版本号实时过滤提交列表 */}
+          <input
+            type="text"
+            placeholder="🔍 过滤提交（消息/作者/版本号）…"
+            value={filterQ}
+            onChange={(e) => setFilterQ(e.target.value)}
+            style={{ width: 220, fontSize: 12 }}
+          />
         </div>
         {error && <div className="error">{error}</div>}
         {notice && (
@@ -158,10 +179,11 @@ export function LogView(props: Props) {
         {logs && logs.length === 0 && !error && <div className="empty">暂无提交记录</div>}
         {logs && logs.length > 0 && (
           <div className="list" style={{ overflow: 'auto', flex: 1 }}>
-            {logs.map((l, i) => {
+            {visibleLogs.length === 0 && <div className="empty">没有匹配的提交</div>}
+            {visibleLogs.map((l, i) => {
               const isUnpushed = unpushedSet.has(l.rev);
               // 只有第一条未推送（HEAD）可右键操作：amend/reset 只作用于最近一次提交
-              const opable = isUnpushed && i === headIdx;
+              const opable = isUnpushed && logs.indexOf(l) === headIdx;
               return (
                 <div
                   key={l.rev}
