@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, post } from './api.js';
 import { highlightLine, langOf } from './highlight.js';
-import { parseUnifiedDiff, type DiffLine } from './diff.js';
+import { parseUnifiedDiff, markTypesOf, type DiffLine } from './diff.js';
 import { IconFolder } from './icons.js';
 import { ConfirmModal } from './modals.js';
 import { ResizableModal } from './modal-shell.js';
@@ -75,26 +75,30 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
 
   // 双栏行映射：diff 的 - 行 = 本地（ours），+ 行 = 对方（theirs）
   const vsLines: DiffLine[] = parseUnifiedDiff(vsDiff);
-  type VsRow = { no: number; text: string; change: boolean; block: number };
+  // 变更块标记类型（新增 + / 删除 - / 修改 M）
+  const vsMarkTypes = useMemo(() => markTypesOf(vsLines), [vsLines]);
+  type VsRow = { no: number; text: string; change: boolean; block: number; ph?: boolean };
   const theirsRows = useMemo<VsRow[]>(() => {
     if (!cur) return [];
-    const mark = new Map<number, number>();
-    for (const l of vsLines) if (l.type === 'add') mark.set(l.rightNo, l.block);
-    return cur.theirs.split('\n').map((t, i) => {
-      const no = i + 1;
-      const b = mark.get(no);
-      return { no, text: t, change: b !== undefined, block: b ?? -1 };
-    });
+    // diff 的 - 行 = 本地有、对方无 → 对方栏插入占位；+ 行 = 对方内容
+    const rows: VsRow[] = [];
+    for (const l of vsLines) {
+      if (l.type === 'ctx') rows.push({ no: l.rightNo, text: l.text, change: false, block: -1 });
+      else if (l.type === 'add') rows.push({ no: l.rightNo, text: l.text, change: true, block: l.block });
+      else if (l.type === 'del') rows.push({ no: -l.block, text: '', change: true, block: l.block, ph: true });
+    }
+    return rows;
   }, [cur, vsLines]); // eslint-disable-line react-hooks/exhaustive-deps
   const oursRows = useMemo<VsRow[]>(() => {
     if (!cur) return [];
-    const mark = new Map<number, number>();
-    for (const l of vsLines) if (l.type === 'del') mark.set(l.leftNo, l.block);
-    return cur.ours.split('\n').map((t, i) => {
-      const no = i + 1;
-      const b = mark.get(no);
-      return { no, text: t, change: b !== undefined, block: b ?? -1 };
-    });
+    // diff 的 + 行 = 对方有、本地无 → 本地栏插入占位；- 行 = 本地内容
+    const rows: VsRow[] = [];
+    for (const l of vsLines) {
+      if (l.type === 'ctx') rows.push({ no: l.leftNo, text: l.text, change: false, block: -1 });
+      else if (l.type === 'del') rows.push({ no: l.leftNo, text: l.text, change: true, block: l.block });
+      else if (l.type === 'add') rows.push({ no: -l.block, text: '', change: true, block: l.block, ph: true });
+    }
+    return rows;
   }, [cur, vsLines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 放大/还原（对比区撑满）
@@ -285,12 +289,15 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                     <div
                       key={`t${r.no}`}
                       ref={(el) => {
-                        if (el) rowRefsT.current.set(r.no, el);
+                        // 占位行不注册行号 ref（无对应行号，供 goBlock 上下文定位）
+                        if (el && !r.ph) rowRefsT.current.set(r.no, el);
                       }}
-                      className={`sb-line ${r.change ? 'sb-add' : ''}`}
+                      className={`sb-line ${r.ph ? 'sb-ph' : r.change ? 'sb-add' : ''}`}
                     >
-                      <span className="sb-no">{r.no}</span>
-                      <span className="sb-marker">{r.change ? 'M' : ''}</span>
+                      <span className="sb-no">{r.ph ? '' : r.no}</span>
+                      <span className="sb-marker" style={{ color: r.ph ? 'var(--ok)' : r.change && vsMarkTypes.get(r.block) === 'add' ? 'var(--ok)' : undefined }}>
+                        {r.ph ? '+' : r.change ? (vsMarkTypes.get(r.block) === 'mod' ? 'M' : '+') : ''}
+                      </span>
                       <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
                     </div>
                   ))}
@@ -301,12 +308,14 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                     <div
                       key={`o${r.no}`}
                       ref={(el) => {
-                        if (el) rowRefsO.current.set(r.no, el);
+                        if (el && !r.ph) rowRefsO.current.set(r.no, el);
                       }}
-                      className={`sb-line ${r.change ? 'sb-del' : ''}`}
+                      className={`sb-line ${r.ph ? 'sb-ph' : r.change ? 'sb-del' : ''}`}
                     >
-                      <span className="sb-no">{r.no}</span>
-                      <span className="sb-marker">{r.change ? 'M' : ''}</span>
+                      <span className="sb-no">{r.ph ? '' : r.no}</span>
+                      <span className="sb-marker" style={{ color: r.ph ? 'var(--ok)' : r.change && vsMarkTypes.get(r.block) === 'del' ? 'var(--err)' : undefined }}>
+                        {r.ph ? '+' : r.change ? (vsMarkTypes.get(r.block) === 'mod' ? 'M' : '-') : ''}
+                      </span>
                       <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
                     </div>
                   ))}

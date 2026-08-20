@@ -378,6 +378,12 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .sb-line:hover { background: var(--panel2); }
 .sb-del { background: rgba(207, 34, 46, .10); cursor: pointer; }
 .sb-add { background: rgba(26, 127, 55, .12); cursor: pointer; }
+/* 左栏新增占位行：空行 + 绿色背景标记（提示右栏此处有新增） */
+.sb-ph {
+  background: rgba(26, 127, 55, .10); cursor: pointer;
+  min-height: 1.5em; box-shadow: inset 3px 0 0 var(--ok);
+}
+.sb-ph .sb-no { color: transparent; } /* 占位行不显示行号 */
 .sb-no {
   width: 44px; text-align: right; padding-right: 8px;
   color: var(--dim); user-select: none; flex-shrink: 0; font-size: 12px;

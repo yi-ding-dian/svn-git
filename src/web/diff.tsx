@@ -25,6 +25,48 @@ export interface DiffLine {
   block: number;
 }
 
+/**
+ * 判定每个变更块的标记类型（新增/删除/修改）：
+ * - 删除块后紧跟新增块（成对，编号连续）→ 修改（mod，显示 M）
+ * - 孤立的新增块 → 新增（add，显示 +）
+ * - 孤立的删除块 → 删除（del，显示 -）
+ */
+export function markTypesOf(lines: DiffLine[]): Map<number, 'mod' | 'add' | 'del'> {
+  const blocks = new Map<number, { hasDel: boolean; hasAdd: boolean }>();
+  for (const l of lines) {
+    if (l.type === 'add') {
+      const b = blocks.get(l.block) ?? { hasDel: false, hasAdd: false };
+      b.hasAdd = true;
+      blocks.set(l.block, b);
+    } else if (l.type === 'del') {
+      const b = blocks.get(l.block) ?? { hasDel: false, hasAdd: false };
+      b.hasDel = true;
+      blocks.set(l.block, b);
+    }
+  }
+  const ids = [...blocks.keys()].sort((a, b) => a - b);
+  const out = new Map<number, 'mod' | 'add' | 'del'>();
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i]!;
+    const b = blocks.get(id)!;
+    const nextId = ids[i + 1];
+    const next = nextId !== undefined ? blocks.get(nextId) : undefined;
+    if (b.hasDel && !b.hasAdd && next && !next.hasDel && next.hasAdd && nextId === id + 1) {
+      // 删除段紧跟新增段（成对）→ 这段替换是"修改"
+      out.set(id, 'mod');
+      out.set(nextId, 'mod');
+      i++;
+    } else if (b.hasAdd && !b.hasDel) {
+      out.set(id, 'add');
+    } else if (b.hasDel && !b.hasAdd) {
+      out.set(id, 'del');
+    } else {
+      out.set(id, 'mod'); // 同一块内混合（少见）按修改处理
+    }
+  }
+  return out;
+}
+
 export function parseUnifiedDiff(text: string): DiffLine[] {
   const out: DiffLine[] = [];
   let leftNo = 0;
@@ -70,6 +112,8 @@ export function parseUnifiedDiff(text: string): DiffLine[] {
 export function DiffView(props: Props) {
   const [versions, setVersions] = useState<{ left: string; right: string; leftLabel: string; rightLabel: string } | null>(null);
   const [diffLines, setDiffLines] = useState<DiffLine[]>([]);
+  // 变更块标记类型（新增 + / 删除 - / 修改 M）
+  const markTypes = useMemo(() => markTypesOf(diffLines), [diffLines]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -89,6 +133,8 @@ export function DiffView(props: Props) {
 
   const leftRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const rightRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  // 左栏新增占位行 refs（按 block 定位）
+  const leftPhRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const leftPane = useRef<HTMLDivElement>(null);
   const rightPane = useRef<HTMLDivElement>(null);
 
@@ -241,18 +287,17 @@ export function DiffView(props: Props) {
     return () => clearInterval(timer);
   }, [sideMode, props.target, staleTip]);
 
-  // 并排行拆分：左栏 = 原版每行 + 删除行标记 M；右栏 = 当前每行 + 新增行标记 M
+  // 并排行拆分：左栏 = 原版每行 + 删除行标记；右栏 = 当前每行 + 新增行标记。
+  // 左栏在"新增"处插入空占位行（带背景标记），左右视觉对齐、定位直观
   const leftRows = useMemo(() => {
     if (!versions) return [];
-    const delMark = new Map<number, number>(); // leftNo -> block
+    const rows: { no: number; text: string; change: boolean; block: number; ph?: boolean }[] = [];
     for (const l of diffLines) {
-      if (l.type === 'del') delMark.set(l.leftNo, l.block);
+      if (l.type === 'ctx') rows.push({ no: l.leftNo, text: l.text, change: false, block: -1 });
+      else if (l.type === 'del') rows.push({ no: l.leftNo, text: l.text, change: true, block: l.block });
+      else if (l.type === 'add') rows.push({ no: -l.block, text: '', change: true, block: l.block, ph: true }); // 占位行
     }
-    return versions.left.split('\n').map((t, i) => {
-      const no = i + 1;
-      const block = delMark.get(no);
-      return { no, text: t, change: block !== undefined, block: block ?? -1 };
-    });
+    return rows;
   }, [versions, diffLines]);
 
   const rightRows = useMemo(() => {
@@ -313,15 +358,26 @@ export function DiffView(props: Props) {
     });
   }, [blocks, leftRows.length, rightRows.length]);
 
-  // 修改块的首行号（块起点，跳转定位用）
+  // 变更块定位：本侧有对应行（del→左栏 / add→右栏）用其行号；
+  // 本侧无对应行（点击新增行跳左栏 / 删除行跳右栏）定位到该块最近位置（负数 = 左栏占位行）
   const blockFirstLeft = useMemo(() => {
     const m = new Map<number, number>();
-    for (const l of diffLines) if (l.type === 'del' && !m.has(l.block)) m.set(l.block, l.leftNo);
+    let lastCtx = 0;
+    for (const l of diffLines) {
+      if (l.type === 'ctx') lastCtx = l.leftNo;
+      else if (l.type === 'del' && !m.has(l.block)) m.set(l.block, l.leftNo);
+      else if (l.type === 'add' && !m.has(l.block)) m.set(l.block, -l.block); // 占位行
+    }
     return m;
   }, [diffLines]);
   const blockFirstRight = useMemo(() => {
     const m = new Map<number, number>();
-    for (const l of diffLines) if (l.type === 'add' && !m.has(l.block)) m.set(l.block, l.rightNo);
+    let lastCtx = 0;
+    for (const l of diffLines) {
+      if (l.type === 'ctx') lastCtx = l.rightNo;
+      else if (l.type === 'add' && !m.has(l.block)) m.set(l.block, l.rightNo);
+      else if (l.type === 'del' && !m.has(l.block)) m.set(l.block, lastCtx || 1);
+    }
     return m;
   }, [diffLines]);
 
@@ -332,11 +388,12 @@ export function DiffView(props: Props) {
     const paneRect = pane.getBoundingClientRect();
     pane.scrollTop += rect.top - paneRect.top - pane.clientHeight / 2;
   };
-  // 点击右侧修改行 → 左侧滚动到对应修改块首行
+  // 点击右侧修改行 → 左侧滚动到对应修改块首行（新增块滚到左栏占位行）
   const jumpLeft = (block: number) => {
     const no = blockFirstLeft.get(block);
     if (no === undefined) return;
-    scrollToLine(leftPane.current, leftRefs.current.get(no));
+    if (no < 0) scrollToLine(leftPane.current, leftPhRefs.current.get(-no));
+    else scrollToLine(leftPane.current, leftRefs.current.get(no));
   };
   // 点击左侧修改行 → 右侧滚动
   const jumpRight = (block: number) => {
@@ -477,14 +534,19 @@ export function DiffView(props: Props) {
                 <div
                   key={`l${r.no}`}
                   ref={(el) => {
-                    if (el) leftRefs.current.set(r.no, el);
+                    if (r.ph) {
+                      if (el) leftPhRefs.current.set(r.block, el);
+                      else leftPhRefs.current.delete(r.block);
+                    } else if (el) leftRefs.current.set(r.no, el);
                   }}
-                  className={`sb-line ${r.change ? 'sb-del' : ''} ${isHitL ? 'pv-hit' : ''} ${isCurL ? 'pv-cur' : ''}`}
+                  className={`sb-line ${r.ph ? 'sb-ph' : r.change ? 'sb-del' : ''} ${isHitL ? 'pv-hit' : ''} ${isCurL ? 'pv-cur' : ''}`}
                   onClick={() => r.change && jumpRight(r.block)}
-                  title={r.change ? '修改处（点击右侧定位）' : ''}
+                  title={r.ph ? '右栏此处有新增（点击右侧定位）' : r.change ? '修改处（点击右侧定位）' : ''}
                 >
-                  <span className="sb-no">{r.no}</span>
-                  <span className="sb-marker">{r.change ? 'M' : ''}</span>
+                  <span className="sb-no">{r.ph ? '' : r.no}</span>
+                  <span className="sb-marker" style={{ color: r.ph ? 'var(--ok)' : r.change && markTypes.get(r.block) === 'del' ? 'var(--err)' : undefined }}>
+                    {r.ph ? '+' : r.change ? (markTypes.get(r.block) === 'mod' ? 'M' : '-') : ''}
+                  </span>
                   <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
                 </div>
                 );
@@ -510,7 +572,9 @@ export function DiffView(props: Props) {
                     title={r.change ? '修改处（点击左侧定位）' : ''}
                   >
                     <span className="sb-no">{r.no}</span>
-                    <span className="sb-marker">{r.change ? 'M' : ''}</span>
+                    <span className="sb-marker" style={{ color: r.change && markTypes.get(r.block) === 'add' ? 'var(--ok)' : undefined }}>
+                      {r.change ? (markTypes.get(r.block) === 'mod' ? 'M' : '+') : ''}
+                    </span>
                     <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
                   </div>
                 );
