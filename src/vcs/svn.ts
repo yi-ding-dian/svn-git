@@ -122,8 +122,9 @@ export class SvnVcs {
 
   /** svn log -v --xml：历史记录（可限定路径） */
   async log(limit = 200, pathRel?: string): Promise<LogEntry[]> {
-    // 显式 -r HEAD：wc 根目录可能停在旧 revision（mixed revision），默认 BASE:1 会查空
-    const args = ['log', '-r', 'HEAD', '-v', '--xml', '-l', String(limit)];
+    // -r HEAD:1 范围写法：显式起点 HEAD（wc 可能停在旧 revision，mixed revision 下默认查询会查空），
+    // 注意必须是 HEAD:1 范围而非 -r HEAD 单版本（单版本只返回该 revision 一条记录）
+    const args = ['log', '-r', 'HEAD:1', '-v', '--xml', '-l', String(limit)];
     if (pathRel) args.push(pathRel);
     const res = await this.exec(args);
     if (res.code !== 0) {
