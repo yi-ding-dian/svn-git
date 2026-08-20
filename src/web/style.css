@@ -155,6 +155,11 @@ body {
   padding: 8px 20px; cursor: pointer; color: var(--text); overflow: hidden;
 }
 .history-item:hover { background: var(--panel2); color: var(--accent); }
+/* 当前正在操作的项目：高亮 + 左侧指示条 */
+.history-item.active {
+  background: var(--panel2); color: var(--accent); font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 .history-path {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.93em;
 }

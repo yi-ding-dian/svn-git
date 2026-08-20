@@ -10,6 +10,8 @@ export function Sidebar(props: {
   view: View;
   history: { path: string; type: 'svn' | 'git'; lastOpened: number }[];
   version?: string;
+  /** 当前打开的仓库根：匹配的最近项目高亮选中，标明正在操作的项目 */
+  currentRoot?: string | null;
   onNav: (v: View) => void;
   onOpenHistory: (h: { path: string }) => void;
   onRemoveHistory: (path: string) => void;
@@ -44,8 +46,8 @@ export function Sidebar(props: {
             {props.history.map((h) => (
               <div
                 key={h.path}
-                className="history-item"
-                title={`${h.path}\n点击打开 · 右键删除`}
+                className={`history-item ${h.path === props.currentRoot ? 'active' : ''}`}
+                title={`${h.path}${h.path === props.currentRoot ? '\n（当前操作的项目）' : ''}\n点击打开 · 右键删除`}
                 onClick={() => props.onOpenHistory(h)}
                 onContextMenu={(e) => {
                   e.preventDefault();

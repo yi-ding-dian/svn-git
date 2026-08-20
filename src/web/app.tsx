@@ -639,6 +639,7 @@ export function App() {
               view={view}
               history={history}
               version={info?.version}
+              currentRoot={repo?.root}
               onNav={setView}
               onOpenHistory={openHistoryItem}
               onRemoveHistory={removeHistory}
