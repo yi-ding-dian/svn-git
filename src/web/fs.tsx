@@ -881,8 +881,8 @@ export function FsView(props: Props) {
     ctxRelRef.current = null; // 空白右键：任何条目都不算"原条目"，鼠标离开即关
     setCtxLocked(false); // 空白右键不锁定任何条目（防止前一次右键的锁定残留）
     const items: CtxItem[] = [
-      { icon: '⏬', label: '更新当前目录', action: () => props.onUpdateDir(data?.dir ?? '') },
-      { icon: '📝', label: '提交修改的文件…', action: () => props.onCommitSelect(data?.dir ?? '', data?.dir ?? '') },
+      { icon: '🔄', label: '更新当前目录', action: () => props.onUpdateDir(data?.dir ?? '') },
+      { icon: '📤', label: '提交修改的文件…', action: () => props.onCommitSelect(data?.dir ?? '', data?.dir ?? '') },
       { icon: '🕘', label: '查看历史记录', action: () => props.onLog(data?.dir ?? '') },
       {
         icon: '📋',
@@ -948,7 +948,7 @@ export function FsView(props: Props) {
         items.push({ icon: '➕', label: `添加到版本库（${tNew.length} 项）`, action: () => props.onAction('add', tNew.map((x) => x.rel)) });
       }
       if (tMod.length) {
-        items.push({ icon: '📝', label: `提交修改（${tMod.length} 项）…`, action: () => props.onAction('commit', tMod.map((x) => x.rel)) });
+        items.push({ icon: '📤', label: `提交修改（${tMod.length} 项）…`, action: () => props.onAction('commit', tMod.map((x) => x.rel)) });
         items.push({ icon: '↩', label: `还原（${tMod.length} 项）`, action: () => props.onAction('revert', tMod.map((x) => x.rel)) });
         items.push({ icon: '🗑', label: `删除（${tMod.length} 项）`, danger: true, action: () => props.onAction('delete', tMod.map((x) => x.rel)) });
       }
@@ -970,9 +970,9 @@ export function FsView(props: Props) {
     if (t.isDir) {
       if (t.code !== '?') {
         // 版本化目录：更新/提交/还原/历史/忽略设置/删除（无 diff）
-        items.push({ icon: '⏬', label: '更新此目录', action: () => props.onUpdateDir(t.rel) });
+        items.push({ icon: '🔄', label: '更新此目录', action: () => props.onUpdateDir(t.rel) });
         if (t.code) {
-          items.push({ icon: '📝', label: '提交此目录修改…', action: () => props.onCommitSelect(t.rel, t.rel) });
+          items.push({ icon: '📤', label: '提交此目录修改…', action: () => props.onCommitSelect(t.rel, t.rel) });
           items.push({ sep: true });
           items.push({ icon: '↩', label: '还原目录', action: () => props.onAction('revert', [t.rel]) });
         }
@@ -1016,7 +1016,7 @@ export function FsView(props: Props) {
         const modified = t.code === 'M' || t.code === 'A' || t.code === 'D' || t.code === 'R' || t.code === 'C';
         if (modified) {
           items.push({ sep: true });
-          items.push({ icon: '📝', label: '提交此文件', action: () => props.onAction('commit', [t.rel]) });
+          items.push({ icon: '📤', label: '提交此文件', action: () => props.onAction('commit', [t.rel]) });
           items.push({ icon: '↩', label: '还原', action: () => props.onAction('revert', [t.rel]) });
         }
         // 已版本化且磁盘存在（非 '!' 缺失）才可删除：干净文件也提供删除
