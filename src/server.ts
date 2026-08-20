@@ -1609,13 +1609,24 @@ export function startServer(): Promise<ServerHandle> {
   });
 
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
+    // 固定端口(可预期、便于收藏)，被占用时自动换随机端口
+    const DEFAULT_PORT = 23456;
+    server.once('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`端口 ${DEFAULT_PORT} 被占用，改用随机端口`);
+        server.listen(0, '127.0.0.1', onListen);
+      } else {
+        throw err;
+      }
+    });
+    const onListen = () => {
       const port = (server.address() as AddressInfo).port;
       resolve({
         port,
         url: `http://127.0.0.1:${port}`,
         close: () => new Promise((r) => server.close(() => r())),
       });
-    });
+    };
+    server.listen(DEFAULT_PORT, '127.0.0.1', onListen);
   });
 }
