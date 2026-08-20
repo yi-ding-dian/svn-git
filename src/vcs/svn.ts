@@ -138,7 +138,13 @@ export class SvnVcs {
       return {
         rev: String(e['@_revision'] ?? ''),
         author: String(e.author ?? ''),
-        date: String(e.date ?? '').replace('T', ' ').replace(/\.\d+Z?$/, ''),
+        // svn log 的 date 是 UTC(如 2026-08-20T07:47:00Z):转本地时区,格式保持 "2026-08-20 15:47"
+        date: (() => {
+          const d = new Date(String(e.date ?? ''));
+          if (isNaN(d.getTime())) return String(e.date ?? '');
+          const pad = (n: number) => String(n).padStart(2, '0');
+          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        })(),
         msg: String(e.msg ?? '').trim(),
         changed,
       };
