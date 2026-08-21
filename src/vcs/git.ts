@@ -528,11 +528,11 @@ export class GitVcs {
     let res = await this.exec(['push'], { timeoutMs: 600_000, signal });
     if (res.aborted) return { ok: false, message: '推送已取消' };
     if (res.code === 0) return { ok: true, message: '推送成功' };
-    // 无上游分支：自动 git push origin <当前分支>（与 pull 的无上游自动重试一致）
+    // 无上游分支：自动 git push -u origin <当前分支>（-u 建立上游跟踪，角标才能正确归零；与 pull 的无上游自动重试一致）
     if (/没有对应的上游分支|no upstream branch|no tracking information/i.test(res.stderr)) {
       const branch = await this.branch();
       if (branch && branch !== 'HEAD') {
-        const r2 = await this.exec(['push', 'origin', branch], { timeoutMs: 600_000, signal });
+        const r2 = await this.exec(['push', '-u', 'origin', branch], { timeoutMs: 600_000, signal });
         if (r2.aborted) return { ok: false, message: '推送已取消' };
         if (r2.code === 0) return { ok: true, message: '推送成功' };
         res = r2;
