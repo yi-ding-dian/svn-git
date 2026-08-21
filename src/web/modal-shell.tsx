@@ -1,3 +1,31 @@
+/** 通用弹窗壳：遮罩 + 可调整大小容器 + 标题行 + 底部操作区（默认仅「关闭」） */
+export function ModalShell(props: {
+  title: string;
+  icon?: string;
+  width?: number;
+  /** 最小宽度（默认 480） */
+  minWidth?: number;
+  /** 底部操作区；不传时仅「关闭」按钮 */
+  foot?: React.ReactNode;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="modal-mask">
+      <ResizableModal width={props.width ?? 560} minWidth={props.minWidth}>
+        <h3>
+          {props.icon && <span style={{ marginRight: 8 }}>{props.icon}</span>}
+          {props.title}
+        </h3>
+        <div className="body">{props.children}</div>
+        <div className="foot">
+          {props.foot ?? <button onClick={props.onClose}>关闭</button>}
+        </div>
+      </ResizableModal>
+    </div>
+  );
+}
+
 /** 通用可调整大小弹窗容器(ResizableModal)
  *
  * 特性:

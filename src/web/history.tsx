@@ -6,6 +6,7 @@ import { DiffRender } from './diff-render.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { ConfirmModal, InfoModal } from './modals.js';
 import { ResizableModal } from './modal-shell.js';
+import { ClickTip } from './ui.js';
 
 interface Props {
   path?: string;
@@ -39,13 +40,8 @@ export function HistoryView(props: Props) {
   /** 撤销提交二次确认 */
   const [resetCfm, setResetCfm] = useState(false);
   const [busy, setBusy] = useState(false);
-  /** 跟随鼠标提示（修改注释成功显示在点击处，1.5s 消失） */
+  /** 跟随鼠标提示（修改注释成功显示在点击处） */
   const [clickTip, setClickTip] = useState<{ x: number; y: number; msg: string } | null>(null);
-  useEffect(() => {
-    if (!clickTip) return;
-    const t = setTimeout(() => setClickTip(null), 1500);
-    return () => clearTimeout(t);
-  }, [clickTip]);
 
   // 模糊过滤：按消息/作者/版本号（大小写不敏感），实时过滤提交列表
   const [filterQ, setFilterQ] = useState('');
@@ -364,18 +360,8 @@ export function HistoryView(props: Props) {
       {infoTip && (
         <InfoModal title="⚠ 无法操作此项" message={infoTip} onClose={() => setInfoTip('')} />
       )}
-      {/* 修改注释成功提示：跟随鼠标点击处，1.5s 消失 */}
-      {clickTip && (
-        <div
-          className="toast-tip"
-          style={{
-            left: Math.min(clickTip.x, window.innerWidth - 220),
-            top: Math.max(8, clickTip.y - 26),
-          }}
-        >
-          {clickTip.msg}
-        </div>
-      )}
+      {/* 修改注释成功提示：跟随鼠标点击处 */}
+      {clickTip && <ClickTip x={clickTip.x} y={clickTip.y} msg={clickTip.msg} onHide={() => setClickTip(null)} />}
     </div>
   );
 }

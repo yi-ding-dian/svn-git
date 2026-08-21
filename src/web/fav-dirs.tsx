@@ -1,6 +1,6 @@
 /** 常用文件夹管理弹窗：查看/移除/重新预加载（预加载后进入目录命中缓存秒开） */
 import React from 'react';
-import { ResizableModal } from './modal-shell.js';
+import { ModalShell } from './modal-shell.js';
 
 export interface FavDir {
   path: string;
@@ -16,9 +16,22 @@ export function FavDirsModal(props: {
   onClose: () => void;
 }) {
   return (
-    <div className="modal-mask">
-      <ResizableModal width={520} minWidth={440}>
-        <h3>⭐ 常用文件夹</h3>
+    <ModalShell
+      title="⭐ 常用文件夹"
+      width={520}
+      minWidth={440}
+      onClose={props.onClose}
+      foot={
+        <>
+          <button onClick={props.onClose}>关闭</button>
+          {props.favs.length > 0 && (
+            <button className="primary" disabled={props.preload?.running} onClick={props.onPreloadAll}>
+              {props.preload?.running ? '预加载中…' : '全部重新预加载'}
+            </button>
+          )}
+        </>
+      }
+    >
         <div className="body">
           <div className="dim small" style={{ marginBottom: 8, lineHeight: 1.8 }}>
             右键文件夹 →「加入常用文件夹（预加载缓存）」后，该文件夹下所有子目录会在后台递归预加载并缓存，
@@ -50,15 +63,6 @@ export function FavDirsModal(props: {
             </div>
           )}
         </div>
-        <div className="foot">
-          <button onClick={props.onClose}>关闭</button>
-          {props.favs.length > 0 && (
-            <button className="primary" disabled={props.preload?.running} onClick={props.onPreloadAll}>
-              {props.preload?.running ? '预加载中…' : '全部重新预加载'}
-            </button>
-          )}
-        </div>
-      </ResizableModal>
-    </div>
+    </ModalShell>
   );
 }

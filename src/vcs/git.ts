@@ -292,6 +292,65 @@ export class GitVcs {
     return { ok: true, message: m ? `已修改注释 ${m[2]?.slice(0, 7)}` : '已修改注释' };
   }
 
+  /**
+   * 修改任意未推送提交的注释（git rebase -i reword 自动化，不改代码内容）。
+   * 安全约束：仅允许未推送提交（已推送的修改会重写远程历史需 force push，禁止）。
+   * 实现：GIT_SEQUENCE_EDITOR 脚本把 todo 里目标行 pick 改 reword，GIT_EDITOR 脚本写入新注释，全程非交互。
+   */
+  async reword(hash: string, message: string): Promise<VcsResult> {
+    // 1. 目标提交必须存在（转完整 hash）
+    const full = await this.exec(['rev-parse', '--verify', `${hash}^{commit}`]);
+    if (full.code !== 0 || !full.stdout.trim()) return { ok: false, message: '提交不存在' };
+    const h = full.stdout.trim();
+    // 2. 必须未推送（防重写远程历史）。
+    //    双重检查：a) 不在未推送集合（有上游时精确）；b) 任何远程分支不包含它
+    //    （无上游时 unpushed() 会把全部提交视为未推送，此时靠 b 兜底）
+    const up = await this.unpushed();
+    if (!up.includes(h)) return { ok: false, message: '该提交已推送，修改注释需重写远程历史（force push），已禁止' };
+    const remoteContains = await this.exec(['branch', '-r', '--contains', h]);
+    if (remoteContains.code === 0 && remoteContains.stdout.trim()) {
+      return { ok: false, message: '该提交已推送，修改注释需重写远程历史（force push），已禁止' };
+    }
+    // 3. 确定 rebase 基点与目标在 todo 中的行号（todo 里 hash 是短 hash，须按行号定位）：
+    //    普通提交 → 基点为父提交，行号 = base..h 深度；根提交（无父）→ 基点 --root，行号 = rev-list --count h
+    const parents = await this.exec(['rev-list', '--parents', '-n', '1', h]);
+    const isRoot = parents.code !== 0 || parents.stdout.trim().split(/\s+/).filter(Boolean).length <= 1;
+    let base: string;
+    let lineNo: number;
+    if (isRoot) {
+      base = '--root';
+      const cnt = await this.exec(['rev-list', '--count', h]);
+      lineNo = Number(cnt.stdout.trim()) || 1;
+    } else {
+      const parent = await this.exec(['rev-parse', `${h}^`]);
+      if (parent.code !== 0 || !parent.stdout.trim()) return { ok: false, message: '无法确定该提交的父提交' };
+      base = parent.stdout.trim();
+      const depth = await this.exec(['rev-list', '--count', `${base}..${h}`]);
+      lineNo = Number(depth.stdout.trim()) || 1;
+    }
+    // 4. 生成临时脚本：序列编辑器（第 lineNo 行 pick→reword）+ 消息编辑器（写新注释）
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svnkit-reword-'));
+    const seq = path.join(dir, 'seq.sh');
+    fs.writeFileSync(seq, `#!/bin/sh\nsed -i "${lineNo}s/^pick /reword /" "$1"\n`, { mode: 0o700 });
+    const msgScript = path.join(dir, 'msg.sh');
+    const b64 = Buffer.from(message, 'utf8').toString('base64');
+    fs.writeFileSync(msgScript, `#!/bin/sh\nprintf '%s' '${b64}' | base64 -d > "$1"\n`, { mode: 0o700 });
+    try {
+      const res = await this.exec(['-c', 'core.quotepath=false', 'rebase', '-i', base], {
+        timeoutMs: 120_000,
+        env: { GIT_SEQUENCE_EDITOR: seq, GIT_EDITOR: msgScript },
+      });
+      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '修改注释失败（工作区有未提交修改时需先提交或还原）' };
+      return { ok: true, message: `已修改注释 ${h.slice(0, 7)}` };
+    } finally {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch {
+        /* 忽略清理失败 */
+      }
+    }
+  }
+
   /** 撤销最近一次提交（--soft 保留工作区修改，可重新勾选提交） */
   async resetSoft(): Promise<VcsResult> {
     const res = await this.exec(['reset', '--soft', 'HEAD~']);

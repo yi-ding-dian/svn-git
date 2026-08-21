@@ -1,27 +1,10 @@
 /** 版本管理对话框：分支 / 标签 / Stash / 创建仓库（git + svn 通用） */
 import React, { useEffect, useState } from 'react';
 import { get, post, type BranchInfo, type StashItem, type VcsResult } from './api.js';
-import { ResizableModal } from './modal-shell.js';
+import { ModalShell, ResizableModal } from './modal-shell.js';
 import { DirPicker } from './dir-picker.js';
 import { HelpNote, FormRow } from './ui.js';
 import { ConfirmModal } from './modals.js';
-
-function ModalShell(props: { title: string; icon?: string; width?: number; children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="modal-mask">
-      <ResizableModal width={props.width ?? 560}>
-        <h3>
-          {props.icon && <span style={{ marginRight: 8 }}>{props.icon}</span>}
-          {props.title}
-        </h3>
-        <div className="body">{props.children}</div>
-        <div className="foot">
-          <button onClick={props.onClose}>关闭</button>
-        </div>
-      </ResizableModal>
-    </div>
-  );
-}
 
 /** 操作结果提示行 */
 function ResultLine(props: { msg: string; err?: boolean }) {

@@ -4,6 +4,7 @@ import { get, post, type LogEntry } from './api.js';
 import { ResizableModal } from './modal-shell.js';
 import { ContextMenu } from './context-menu.js';
 import { ConfirmModal, InfoModal } from './modals.js';
+import { ClickTip } from './ui.js';
 
 /** 二进制/图片等不支持差异查看的文件扩展名（双击查看差异前过滤） */
 const BINARY_EXT = new Set([
@@ -41,13 +42,8 @@ export function PushConfirmModal(props: {
   const [noticeErr, setNoticeErr] = useState(false);
   /** 非 HEAD 提交右键操作的说明弹窗 */
   const [infoTip, setInfoTip] = useState('');
-  /** 跟随鼠标提示（修改注释成功显示在点击处，1.5s 消失） */
+  /** 跟随鼠标提示（修改注释成功显示在点击处） */
   const [clickTip, setClickTip] = useState<{ x: number; y: number; msg: string } | null>(null);
-  useEffect(() => {
-    if (!clickTip) return;
-    const t = setTimeout(() => setClickTip(null), 1500);
-    return () => clearTimeout(t);
-  }, [clickTip]);
 
   /** 操作完成后刷新未推送列表 */
   const reload = () => {
@@ -297,18 +293,8 @@ export function PushConfirmModal(props: {
       {infoTip && (
         <InfoModal title="⚠ 无法操作此项" message={infoTip} onClose={() => setInfoTip('')} />
       )}
-      {/* 修改注释成功提示：跟随鼠标点击处，1.5s 消失 */}
-      {clickTip && (
-        <div
-          className="toast-tip"
-          style={{
-            left: Math.min(clickTip.x, window.innerWidth - 220),
-            top: Math.max(8, clickTip.y - 26),
-          }}
-        >
-          {clickTip.msg}
-        </div>
-      )}
+      {/* 修改注释成功提示：跟随鼠标点击处 */}
+      {clickTip && <ClickTip x={clickTip.x} y={clickTip.y} msg={clickTip.msg} onHide={() => setClickTip(null)} />}
     </div>
   );
 }

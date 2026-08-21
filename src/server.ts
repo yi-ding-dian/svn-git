@@ -1182,6 +1182,25 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
+      if (p === '/api/git-reword' && req.method === 'POST') {
+        // 修改任意未推送提交的注释（rebase -i reword，仅 git）
+        const { vcs, repo } = vcsOf();
+        if (repo.type !== 'git') {
+          sendJson(res, 400, { error: '仅 git 仓库支持' });
+          return;
+        }
+        const body = await readBody(req);
+        const hash = String(body.hash ?? '').trim();
+        const message = String(body.message ?? '').trim();
+        if (!hash || !message) {
+          sendJson(res, 400, { error: '参数不完整' });
+          return;
+        }
+        const result = await (vcs as any).reword(hash, message);
+        sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
+        return;
+      }
+
       if (p === '/api/git-unpushed-count') {
         // 未推送提交数量（推送按钮角标，仅 git）
         const { vcs, repo } = vcsOf();

@@ -1,7 +1,7 @@
 /** 打开项目：目录浏览选择仓库（启动页 / 打开项目模态框共用） */
 import React, { useEffect, useRef, useState } from 'react';
 import { get, post, type BrowseResult, type RepoInfo } from './api.js';
-import { ResizableModal } from './modal-shell.js';
+import { ModalShell } from './modal-shell.js';
 import { GridIcon } from './icons.js';
 import { ContextMenu } from './context-menu.js';
 
@@ -277,16 +277,8 @@ export function OpenModal(props: {
   onClose: () => void;
 }) {
   return (
-    <div className="modal-mask">
-      <ResizableModal width={600}>
-        <h3>📂 打开项目</h3>
-        <div className="body">
-          <OpenBrowser startDir={props.startDir} onOpened={props.onOpened} onToast={props.onToast} />
-        </div>
-        <div className="foot">
-          <button onClick={props.onClose}>关闭</button>
-        </div>
-      </ResizableModal>
-    </div>
+    <ModalShell title="📂 打开项目" width={600} onClose={props.onClose}>
+      <OpenBrowser startDir={props.startDir} onOpened={props.onOpened} onToast={props.onToast} />
+    </ModalShell>
   );
 }
