@@ -1,7 +1,7 @@
 /** 根组件：侧边栏布局 + 全局状态 + 操作流程 */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo, type VcsResult, type LogEntry } from './api.js';
-import { LogView } from './log.js';
+import { HistoryView } from './history.js';
 import { DiffView, type DiffTarget } from './diff.js';
 import { FsView } from './fs.js';
 import { OpenView, OpenModal } from './open.js';
@@ -661,7 +661,7 @@ export function App() {
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
               <div style={{ display: view === 'log' ? undefined : 'none', height: '100%' }}>
-                <LogView path={logPath} tick={tick} onChanged={refresh} onBack={() => setView('browse')} />
+                <HistoryView path={logPath} tick={tick} onChanged={refresh} onBack={() => setView('browse')} />
               </div>
               <div style={{ display: view === 'diff' ? undefined : 'none', height: '100%' }}>
                 <DiffView
