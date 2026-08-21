@@ -208,7 +208,7 @@ export function BranchDialog(props: {
             key={b.name}
             className={`vcs-row ${sel === b.name ? 'selected' : ''}`}
             onClick={() => setSel(b.name)}
-            title={b.name === data.current ? '当前分支' : '点击选中，再操作右侧按钮'}
+            title={b.name === data.current ? '当前分支' : undefined}
           >
             <span className="vcs-current" style={{ visibility: b.name === data.current ? 'visible' : 'hidden' }}>●</span>
             <span className="badge" style={{ background: b.remote ? 'var(--dim)' : 'var(--ok)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>
