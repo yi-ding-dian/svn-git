@@ -301,7 +301,8 @@ export class GitVcs {
 
   /** git diff：工作区/暂存区，或版本间；可限定路径 */
   async diff(a?: string, b?: string, pathRel?: string): Promise<{ ok: boolean; output: string; error?: string }> {
-    const args = ['diff'];
+    // -c core.quotepath=false：diff 头部路径行中文不做八进制转义
+    const args = ['-c', 'core.quotepath=false', 'diff'];
     if (a && b) args.push(a, b);
     else if (a) args.push(a);
     if (pathRel) args.push('--', pathRel);
@@ -315,7 +316,8 @@ export class GitVcs {
 
   /** git show：单次提交完整内容（含 message + diff） */
   async show(rev: string, pathRel?: string): Promise<{ ok: boolean; output: string; error?: string }> {
-    const args = ['show', rev];
+    // -c core.quotepath=false：diff 头部路径行中文不做八进制转义
+    const args = ['-c', 'core.quotepath=false', 'show', rev];
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args, { timeoutMs: 120_000 });
     return {
@@ -383,7 +385,8 @@ export class GitVcs {
 
   /** git pull */
   async pull(signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }> {
-    let res = await this.exec(['pull'], { timeoutMs: 600_000, signal });
+    // -c core.quotepath=false：更新输出的中文文件名不做八进制转义
+    let res = await this.exec(['-c', 'core.quotepath=false', 'pull'], { timeoutMs: 600_000, signal });
     if (res.aborted) return { ok: false, message: '更新已取消' };
     if (res.code !== 0) {
       // 当前分支无上游跟踪信息（git pull 不知道拉哪个远程分支）：
@@ -391,7 +394,7 @@ export class GitVcs {
       if (/没有跟踪信息|no tracking information/i.test(res.stderr)) {
         const branch = (await this.exec(['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
         if (branch && branch !== 'HEAD') {
-          const retry = await this.exec(['pull', 'origin', branch], { timeoutMs: 600_000, signal });
+          const retry = await this.exec(['-c', 'core.quotepath=false', 'pull', 'origin', branch], { timeoutMs: 600_000, signal });
           if (retry.aborted) return { ok: false, message: '更新已取消' };
           if (retry.code === 0) res = retry;
           else return { ok: false, message: retry.stderr.trim() || 'git pull 失败' };
@@ -498,7 +501,8 @@ export class GitVcs {
   async ls(dir: string): Promise<{ name: string; isDir: boolean }[]> {
     // 目录参数需带尾部 /（ls-tree HEAD -- src 输出的是 src 自身，src/ 才是其内容）
     const target = dir ? `${dir.replace(/\/$/, '')}/` : '.';
-    const res = await this.exec(['ls-tree', 'HEAD', '--', target]);
+    // -c core.quotepath=false：中文文件名不做八进制转义
+    const res = await this.exec(['-c', 'core.quotepath=false', 'ls-tree', 'HEAD', '--', target]);
     if (res.code !== 0) throw new Error(`git ls-tree 失败: ${res.stderr.trim()}`);
     const out: { name: string; isDir: boolean }[] = [];
     const prefix = dir ? `${dir.replace(/\/$/, '')}/` : '';
@@ -624,7 +628,8 @@ export class GitVcs {
 
   /** 恢复 stash */
   async stashPop(index: number): Promise<VcsResult> {
-    const res = await this.exec(['stash', 'pop', `stash@{${index}}`], { timeoutMs: 60_000 });
+    // -c core.quotepath=false：恢复输出的中文文件名不做八进制转义
+    const res = await this.exec(['-c', 'core.quotepath=false', 'stash', 'pop', `stash@{${index}}`], { timeoutMs: 60_000 });
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '恢复失败（可能有冲突）' };
     return { ok: true, message: `已恢复 stash@{${index}}` };
   }
@@ -708,8 +713,8 @@ export class GitVcs {
       ahead = Number(parts[0] ?? 0) || 0;
       behind = Number(parts[1] ?? 0) || 0;
     }
-    // 本地修改文件（不含未跟踪）
-    const st = await this.exec(['status', '--porcelain=v1', '-unormal']);
+    // 本地修改文件（不含未跟踪）；-c core.quotepath=false：中文路径不做八进制转义（unquote 只解引号不解转义）
+    const st = await this.exec(['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-unormal']);
     const localChanged = new Set<string>();
     for (const line of st.stdout.split('\n')) {
       if (!line || line.length < 4) continue;
@@ -722,7 +727,7 @@ export class GitVcs {
     // 远程新提交列表（HEAD..origin/xxx），供"去查看"按提交分组显示
     let remoteLogs: LogEntry[] = [];
     if (behind > 0) {
-      const diff = await this.exec(['diff', '--name-only', `HEAD...${upstream}`], { timeoutMs: 30_000 });
+      const diff = await this.exec(['-c', 'core.quotepath=false', 'diff', '--name-only', `HEAD...${upstream}`], { timeoutMs: 30_000 });
       if (diff.code === 0) {
         for (const p of diff.stdout.split('\n')) {
           if (p.trim()) remoteChanged.add(p.trim());
@@ -782,7 +787,8 @@ export class GitVcs {
 
   /** git clean -ndx：预览将被删除的未跟踪文件（中英文输出兼容） */
   async cleanList(): Promise<string[]> {
-    const res = await this.exec(['clean', '-ndx'], { timeoutMs: 60_000 });
+    // -c core.quotepath=false：中文文件名不做八进制转义（与 status 一致，否则显示 \346\226\260…）
+    const res = await this.exec(['-c', 'core.quotepath=false', 'clean', '-ndx'], { timeoutMs: 60_000 });
     if (res.code !== 0) throw new Error(`git clean 预览失败: ${res.stderr.trim()}`);
     return res.stdout
       .split('\n')

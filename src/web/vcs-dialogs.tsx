@@ -208,7 +208,13 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
   return (
     <ModalShell title="清理未跟踪文件 (GIT)" onClose={props.onClose} width={520}>
       <div className="dim small" style={{ marginBottom: 8 }}>
-        以下文件将被永久删除（含忽略文件），不可恢复：
+        <div>
+          以下文件将被永久删除，不可恢复。清理的是工作区里存在、但<strong>没被 git 纳入版本管理</strong>的文件
+          （未跟踪文件：新建未提交、编译产物、临时文件、被忽略文件等）：
+        </div>
+        <div style={{ color: 'var(--warn)', marginTop: 6 }}>
+          ⚠ 特别提醒：如果你有自己新建的、还没想好要不要提交的文件，请先确认好再执行清理！
+        </div>
       </div>
       {files === null && !msgErr && <div className="dim" style={{ padding: '10px 6px' }}>扫描中…</div>}
       {files && (
