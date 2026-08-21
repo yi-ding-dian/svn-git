@@ -683,8 +683,6 @@ export function App() {
               onSetFav={setFav}
               theme={theme}
               setTheme={setTheme}
-              fontSize={fontSize}
-              onOpenFont={() => setModal({ type: 'font' })}
             />
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}

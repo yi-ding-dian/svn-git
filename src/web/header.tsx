@@ -1,7 +1,7 @@
 /** 顶部工具栏：仓库信息 + 版本管理操作 + 主题/字号 + 打开项目/登录/退出 */
 import React, { useState } from 'react';
 import { post, type RepoInfo } from './api.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit } from './icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont } from './icons.js';
 import { type Modal } from './modals.js';
 import { type View } from './sidebar.js';
 import { ContextMenu } from './context-menu.js';
@@ -163,6 +163,14 @@ export function AppHeader(props: {
               action: () => {
                 setMoreMenu(null);
                 props.setModal({ type: 'tags' });
+              },
+            },
+            {
+              icon: <IconFont size={14} />,
+              label: '字体设置',
+              action: () => {
+                setMoreMenu(null);
+                props.setModal({ type: 'font' });
               },
             },
             ...(repo?.type === 'git'
