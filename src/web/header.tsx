@@ -38,9 +38,7 @@ export function AppHeader(props: {
   repo: RepoInfo | null;
   conflictCount: number;
   configUser: string;
-  theme: string;
   fontSize: number;
-  setTheme: (t: string) => void;
   setFontSize: (s: number) => void;
   onRefresh: () => void;
   setModal: (m: Modal) => void;
@@ -126,17 +124,6 @@ export function AppHeader(props: {
       >
         A {props.fontSize}px
       </button>
-      <span className="row small dim nowrap" style={{ gap: 6 }} title="切换主题">
-        {THEMES.map((t) => (
-          <button
-            key={t.key}
-            className={`theme-btn ${props.theme === t.key ? 'active' : ''}`}
-            title={t.name}
-            style={{ background: t.color }}
-            onClick={() => props.setTheme(t.key)}
-          />
-        ))}
-      </span>
       <ToolBtn icon={<IconRefresh />} label="刷新" title="刷新" onClick={props.onRefresh} />
       {repo?.type === 'git' && (
         <ToolBtn icon={<IconGear />} label="Git" title="Git 信息与配置" onClick={() => props.setModal({ type: 'git-info' })} />

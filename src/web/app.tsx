@@ -528,9 +528,7 @@ export function App() {
         repo={repo}
         conflictCount={conflictCount}
         configUser={configUser}
-        theme={theme}
         fontSize={fontSize}
-        setTheme={setTheme}
         setFontSize={setFontSize}
         onRefresh={refresh}
         setModal={setModal}
@@ -657,6 +655,8 @@ export function App() {
               onOpenHistory={openHistoryItem}
               onRemoveHistory={removeHistory}
               onSetFav={setFav}
+              theme={theme}
+              setTheme={setTheme}
             />
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}

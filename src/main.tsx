@@ -125,7 +125,11 @@ async function boot() {
 
 // Electron 打包版：等 app ready 后再启动（窗口创建要求 ready）；纯 node 直接启动
 if (process.versions.electron) {
-  const { app } = require('electron') as { app: { whenReady(): Promise<unknown> } };
+  const { app } = require('electron') as { app: { whenReady(): Promise<unknown>; disableHardwareAcceleration(): void } };
+  // 仅 Windows：部分 Windows 环境（虚拟机/远程桌面/驱动缺失）下 GPU 进程崩溃
+  // 会导致渲染进程崩溃、窗口立即关闭退出；软件渲染更稳定（仅影响 2D 渲染性能）
+  // Linux 上硬件加速正常，不做此降级
+  if (process.platform === 'win32') app.disableHardwareAcceleration();
   void app.whenReady().then(boot);
 } else {
   void boot();
