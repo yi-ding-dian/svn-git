@@ -613,6 +613,21 @@ export function LoginModal(props: {
   );
 }
 
+/** 信息提示弹窗（单按钮，用于"不可操作"类说明提示） */
+export function InfoModal(props: { title: string; message: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="modal-mask">
+      <ResizableModal width={440} minWidth={420}>
+        <h3>{props.title}</h3>
+        <div className="body">{props.message}</div>
+        <div className="foot">
+          <button className="primary" onClick={props.onClose}>知道了</button>
+        </div>
+      </ResizableModal>
+    </div>
+  );
+}
+
 export function ConfirmModal(props: {
   title: string;
   message: React.ReactNode;

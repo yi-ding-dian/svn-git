@@ -237,6 +237,7 @@ export const post = {
   gitConfig: (remoteUrl: string) => api<VcsResult>('/api/git-config', json({ remoteUrl })),
   gitAuthSave: (username: string, password: string) => api<VcsResult>('/api/git-auth', json({ username, password })),
   gitAmend: (message: string) => api<VcsResult>('/api/git-amend', json({ message })),
+  gitReword: (hash: string, message: string) => api<VcsResult>('/api/git-reword', json({ hash, message })),
   gitReset: () => api<VcsResult>('/api/git-reset', json({})),
   shutdown: () => api<{ ok: boolean }>('/api/shutdown', json({})),
 };

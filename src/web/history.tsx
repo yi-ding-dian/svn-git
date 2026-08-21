@@ -4,7 +4,7 @@ import { get, post, type LogEntry } from './api.js';
 import { isBinaryFile } from './utils.js';
 import { DiffRender } from './diff-render.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
-import { ConfirmModal } from './modals.js';
+import { ConfirmModal, InfoModal } from './modals.js';
 import { ResizableModal } from './modal-shell.js';
 
 interface Props {
@@ -30,13 +30,22 @@ export function HistoryView(props: Props) {
   /** 操作成功提示 */
   const [notice, setNotice] = useState('');
   /** 右键菜单位置（仅 HEAD 未推送行可弹出） */
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);
+  /** 非 HEAD 未推送提交右键操作的说明弹窗 */
+  const [infoTip, setInfoTip] = useState('');
   /** 修改注释弹窗：当前提交 */
   const [amendOf, setAmendOf] = useState<LogEntry | null>(null);
   const [amendMsg, setAmendMsg] = useState('');
   /** 撤销提交二次确认 */
   const [resetCfm, setResetCfm] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** 跟随鼠标提示（修改注释成功显示在点击处，1.5s 消失） */
+  const [clickTip, setClickTip] = useState<{ x: number; y: number; msg: string } | null>(null);
+  useEffect(() => {
+    if (!clickTip) return;
+    const t = setTimeout(() => setClickTip(null), 1500);
+    return () => clearTimeout(t);
+  }, [clickTip]);
 
   // 模糊过滤：按消息/作者/版本号（大小写不敏感），实时过滤提交列表
   const [filterQ, setFilterQ] = useState('');
@@ -105,19 +114,22 @@ export function HistoryView(props: Props) {
   const unpushedSet = new Set(unpushed.map((h) => h.slice(0, 7)));
   const headIdx = logs ? logs.findIndex((l) => unpushedSet.has(l.rev)) : -1;
 
-  /** 修改注释确认 */
-  const doAmend = async () => {
+  /** 修改注释确认（HEAD 用 amend；其余未推送提交用 reword 重写注释，代码内容不变） */
+  const doAmend = async (x: number, y: number) => {
     if (!amendOf) return;
     const msg = amendMsg.trim();
     if (!msg) return;
     setBusy(true);
     try {
-      const r = await post.gitAmend(msg);
-      setNotice(r.message);
+      const isHead = logs && logs[headIdx] ? amendOf.rev === logs[headIdx]!.rev : false;
+      const r = isHead ? await post.gitAmend(msg) : await post.gitReword(amendOf.rev, msg);
       if (r.ok) {
+        setClickTip({ x, y, msg: r.message }); // 成功提示显示在鼠标点击处
         setAmendOf(null);
         setReloadKey((k) => k + 1);
         props.onChanged?.();
+      } else {
+        setNotice(r.message); // 失败信息显示在标题栏下方
       }
     } catch (e) {
       setNotice((e as Error).message);
@@ -201,10 +213,10 @@ export function HistoryView(props: Props) {
                     setDiffOf(null);
                   }}
                   onContextMenu={
-                    opable
+                    isUnpushed
                       ? (e) => {
                           e.preventDefault();
-                          setMenu({ x: e.clientX, y: e.clientY });
+                          setMenu({ x: e.clientX, y: e.clientY, index: logs.indexOf(l) });
                         }
                       : undefined
                   }
@@ -271,16 +283,32 @@ export function HistoryView(props: Props) {
           </>
         )}
       </div>
-      {/* 未推送提交右键菜单（仅 HEAD） */}
-      {menu && logs && headIdx >= 0 && (
+      {/* 未推送提交右键菜单（仅第一条=HEAD 可操作；其余项提示先撤销前面的提交） */}
+      {menu && logs && headIdx >= 0 && logs[menu.index] && (
         <ContextMenu
           x={menu.x}
           y={menu.y}
           mask
           items={[
-            { icon: '✏️', label: '修改注释', action: () => { setAmendOf(logs[headIdx]!); setAmendMsg(logs[headIdx]!.msg); } },
+            {
+              icon: '✏️',
+              label: '修改注释',
+              action: () => {
+                // 所有未推送提交都可改注释：HEAD 走 amend，其余走 reword（重写注释、代码不变）
+                setAmendOf(logs[menu.index]!);
+                setAmendMsg(logs[menu.index]!.msg);
+              },
+            },
             { sep: true },
-            { icon: '↩', label: '撤销提交', danger: true, action: () => setResetCfm(true) },
+            {
+              icon: '↩',
+              label: '撤销提交',
+              danger: true,
+              action: () => {
+                if (menu.index === headIdx) setResetCfm(true);
+                else setInfoTip(`仅支持撤销最近一次提交。此项之前还有 ${headIdx - menu.index} 个更新提交，需先逐一撤销前面的提交后，此项才可操作`);
+              },
+            },
           ]}
           onClose={() => setMenu(null)}
         />
@@ -305,7 +333,11 @@ export function HistoryView(props: Props) {
             </div>
             <div className="foot">
               <button onClick={() => setAmendOf(null)} disabled={busy}>取消</button>
-              <button className="primary" disabled={busy || !amendMsg.trim()} onClick={() => void doAmend()}>
+              <button
+                className="primary"
+                disabled={busy || !amendMsg.trim()}
+                onClick={(e) => void doAmend(e.clientX, e.clientY)}
+              >
                 确认修改
               </button>
             </div>
@@ -327,6 +359,22 @@ export function HistoryView(props: Props) {
           onConfirm={() => void doReset()}
           onCancel={() => setResetCfm(false)}
         />
+      )}
+      {/* 非 HEAD 未推送提交操作说明弹窗 */}
+      {infoTip && (
+        <InfoModal title="⚠ 无法操作此项" message={infoTip} onClose={() => setInfoTip('')} />
+      )}
+      {/* 修改注释成功提示：跟随鼠标点击处，1.5s 消失 */}
+      {clickTip && (
+        <div
+          className="toast-tip"
+          style={{
+            left: Math.min(clickTip.x, window.innerWidth - 220),
+            top: Math.max(8, clickTip.y - 26),
+          }}
+        >
+          {clickTip.msg}
+        </div>
       )}
     </div>
   );
