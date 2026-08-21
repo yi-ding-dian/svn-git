@@ -101,10 +101,9 @@ export function AppHeader(props: {
           <ToolBtn icon={<IconStash />} label="Stash" title="Stash 暂存区" onClick={() => props.setModal({ type: 'stash' })} />
         </>
       )}
-      {/* ③ 版本管理 */}
+      {/* ③ 版本管理（分支高频保留；标签低频在 ⋯ 菜单） */}
       <Sep />
       <ToolBtn icon={<IconBranch />} label="分支" title="分支管理" onClick={() => props.setModal({ type: 'branches' })} />
-      <ToolBtn icon={<IconTag />} label="标签" title="标签管理" onClick={() => props.setModal({ type: 'tags' })} />
       {/* ④ 仓库 */}
       <Sep />
       <ToolBtn icon={<IconFolder />} label="打开项目" title="打开项目" onClick={() => props.setModal({ type: 'open' })} />
@@ -159,6 +158,14 @@ export function AppHeader(props: {
               action: () => {
                 setMoreMenu(null);
                 props.setModal({ type: 'create-repo' });
+              },
+            },
+            {
+              icon: <IconTag size={14} />,
+              label: '标签',
+              action: () => {
+                setMoreMenu(null);
+                props.setModal({ type: 'tags' });
               },
             },
             ...(repo?.type === 'git'

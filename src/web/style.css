@@ -471,8 +471,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .theme-btn:hover { transform: scale(1.15); }
 .theme-btn.active { border-color: var(--text); }
-/* 侧边栏外观区字号档位（窄栏紧凑排布） */
-.font-size-btn { padding: 1px 6px; font-size: 0.82em; border-radius: 5px; }
+/* 侧边栏外观区字号档位（窄栏紧凑排布，160px 栏 4 档需 <120px 内容宽） */
+.font-size-btn { padding: 1px 4px; font-size: 0.78em; border-radius: 5px; }
 
 /* ---------- 列表/表格 ---------- */
 .list { display: flex; flex-direction: column; gap: 2px; }

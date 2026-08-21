@@ -62,7 +62,7 @@ export function Sidebar(props: {
           />
         ))}
       </div>
-      <div className="row small dim nowrap" style={{ gap: 5, padding: '0 20px 6px' }} title="切换字号">
+      <div className="row small dim nowrap" style={{ gap: 3, padding: '0 18px 6px' }} title="切换字号">
         {FONT_SIZES.map((s) => (
           <button
             key={s}
