@@ -114,6 +114,8 @@ export function FsView(props: Props) {
   const lastWasDragRef = useRef(false);
   const [ignoreModal, setIgnoreModal] = useState<{ dir: string } | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
+  // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
+  const [tip, setTip] = useState<{ x: number; y: number; name: string; count?: number; codes?: string[] } | null>(null);
 
   // 原文预览搜索
   const [searchQ, setSearchQ] = useState('');
@@ -1491,6 +1493,12 @@ export function FsView(props: Props) {
               const rel = relOf(e);
               const focused = i === focusIndex;
               const multi = selected.has(rel);
+              // 网格模式：目录状态字母最多显示 2 个（按优先级 C>!>D>M>A>R>~>U，多字母横排会超出图标宽度），
+              // 完整状态集合放进悬浮提示
+              const dirCodes =
+                e.isDir && e.codes && e.codes.length > 2
+                  ? [...e.codes].sort((a, b) => codeRank(b) - codeRank(a)).slice(0, 2)
+                  : e.codes;
               return (
                 <div
                   key={rel}
@@ -1502,21 +1510,30 @@ export function FsView(props: Props) {
                   onMouseEnter={(ev) => {
                     if (!ctxLocked) setFocusIndex(-1);
                     else if (ctxRelRef.current === rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
+                    // 目录且有状态字母：显示自定义悬浮提示（彩色徽标 + 紧凑描述）；其余保留原生 title
+                    if (e.isDir && e.codes && e.codes.length > 0) {
+                      setTip({ x: ev.clientX, y: ev.clientY, name: e.name, count: e.count, codes: e.codes });
+                    } else {
+                      setTip(null);
+                    }
                   }}
-                  onMouseLeave={closeCtxSoon}
+                  onMouseLeave={() => {
+                    closeCtxSoon();
+                    setTip(null);
+                  }}
                   onClick={(ev) => onRowClick(rel, i, ev, e)}
                   onDoubleClick={() => {
                     if (e.isDir) setDir(rel);
                     else void openFile(e.name, e.code, rel);
                   }}
                   onContextMenu={(ev) => onRowContext(ev, { isDir: e.isDir, code: e.code, rel, name: e.name }, i)}
-                  title={`${e.name}${e.count ? `（${e.count} 项）` : ''}\n双击${e.isDir ? '进入' : '查看'}`}
+                  title={e.isDir && e.codes && e.codes.length > 0 ? undefined : `${e.name}${e.count ? `（${e.count} 项）` : ''}\n双击${e.isDir ? '进入' : '查看'}`}
                 >
                   {/* 图标 + 状态角标（叠在图标右下角，文件管理器风格） */}
                   <span className="grid-icon-wrap">
                     <GridIcon isDir={e.isDir} name={e.name} />
                     <span className="grid-badge">
-                      {e.isDir ? <DirBadge codes={e.codes} /> : <CodeBadge code={e.code} />}
+                      {e.isDir ? <DirBadge codes={dirCodes} /> : <CodeBadge code={e.code} />}
                       {/* 目录：修改项数量标识（如 M 旁 15） */}
                       {e.isDir && e.count ? <span className="grid-count" title={`${e.count} 项有变更`}>{e.count}</span> : null}
                       {data?.selfLocked?.includes(rel) && <IconLock size={13} />}
@@ -1701,6 +1718,41 @@ export function FsView(props: Props) {
           onMouseEnter={cancelCtxClose} // 鼠标移入菜单 → 取消延迟关闭
           onMouseLeave={closeCtxSoon} // 鼠标移出菜单 → 延迟关闭
         />
+      )}
+      {/* 网格目录悬浮提示：彩色状态徽标 + 紧凑描述（原生 title 无法着色，自定义浮层替代） */}
+      {tip && (
+        <div
+          style={{
+            position: 'fixed',
+            left: Math.min(tip.x + 12, window.innerWidth - 300),
+            top: Math.min(tip.y + 14, window.innerHeight - 110),
+            zIndex: 400,
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            boxShadow: '0 4px 16px rgba(0,0,0,.18)',
+            padding: '8px 10px',
+            fontSize: 12,
+            maxWidth: 280,
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {tip.name}
+            {tip.count ? <span className="dim">（{tip.count} 项有变更）</span> : null}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+            {[...tip.codes!]
+              .sort((a, b) => codeRank(b) - codeRank(a))
+              .map((c) => (
+                <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  <CodeBadge code={c} />
+                  <span>{CODE_DESC[c] ?? c}</span>
+                </span>
+              ))}
+          </div>
+          <div className="dim" style={{ fontSize: 11 }}>双击进入 · 右键操作</div>
+        </div>
       )}
     </div>
   );

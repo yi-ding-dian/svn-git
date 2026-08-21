@@ -28,6 +28,19 @@ export function setPickDirHandler(fn: () => Promise<string | null>): void {
   pickDirHandler = fn;
 }
 
+/** 二进制文件扩展名（与前端 utils.isBinaryFile 一致；Word/PDF/图片/压缩包等不支持文本对比） */
+const BINARY_EXTS = new Set([
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'pdf',
+  'zip', 'rar', '7z', 'jar', 'gz', 'bz2', 'xz',
+  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'psd', 'mp3', 'mp4',
+  'exe', 'dll', 'so', 'dylib', 'bin', 'dat', 'db', 'sqlite', 'class', 'o', 'a',
+]);
+function isBinaryFile(p: string): boolean {
+  const name = p.split('/').pop() ?? '';
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
+  return BINARY_EXTS.has(ext);
+}
+
 /** 最近打开的项目历史（服务端持久化：浏览器端口随机，localStorage 不可靠） */
 const HISTORY_PATH = path.join(os.homedir(), '.config', 'svnkit', 'history.json');
 const HISTORY_MAX = 20;
@@ -909,6 +922,10 @@ export function startServer(): Promise<ServerHandle> {
       if (p === '/api/diff') {
         const { vcs, repo } = vcsOf();
         const pathRel = url.searchParams.get('path') || undefined;
+        if (pathRel && isBinaryFile(pathRel)) {
+          sendJson(res, 200, { ok: false, output: '', error: `二进制文件（${pathRel}），不支持文本对比` });
+          return;
+        }
         const a = url.searchParams.get('a') || undefined;
         const b = url.searchParams.get('b') || undefined;
         const d = await vcs.diff(a, b, pathRel);
@@ -926,6 +943,10 @@ export function startServer(): Promise<ServerHandle> {
         const { vcs, repo } = vcsOf();
         const rev = url.searchParams.get('rev') || '';
         const pathRel = url.searchParams.get('path') || undefined;
+        if (pathRel && isBinaryFile(pathRel)) {
+          sendJson(res, 200, { ok: false, output: '', error: `二进制文件（${pathRel}），不支持文本对比` });
+          return;
+        }
         if (repo.type === 'git') {
           const s = await (vcs as any).show(rev, pathRel);
           sendJson(res, 200, s);
@@ -1312,41 +1333,45 @@ export function startServer(): Promise<ServerHandle> {
         const items = (await vcs.status()) as { code: string; path: string }[];
         const conflictPaths = items.filter((i) => i.code === 'C').map((i) => i.path);
         const read = (p: string) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '');
-        const out: { path: string; ours: string; theirs: string; base: string; work: string }[] = [];
+        const out: { path: string; ours: string; theirs: string; base: string; work: string; binary: boolean }[] = [];
         for (const rel of conflictPaths) {
           const abs = path.join(repo.root, rel);
+          // 二进制文件（Word/PDF/图片等）：不读内容（utf8 读取是乱码，对比无意义），界面显示提示块
+          const binary = isBinaryFile(rel);
           let ours = '';
           let theirs = '';
           let base = '';
-          let work = read(abs);
-          if (repo.type === 'git') {
-            const show = async (stage: string): Promise<string> => {
-              const r = await run('git', ['show', `:${stage}:${rel}`], { cwd: repo.root, timeoutMs: 30_000 });
-              return r.code === 0 ? r.stdout : '';
-            };
-            base = await show('1');
-            ours = await show('2');
-            theirs = await show('3');
-          } else {
-            // svn 冲突文件：xxx.mine（本地）、xxx.r<新>（对方）、xxx.r<旧>（基础）
-            const dir = path.dirname(abs);
-            const basename = path.basename(abs);
-            let rnums: number[] = [];
-            try {
-              rnums = fs
-                .readdirSync(dir)
-                .filter((n) => n.startsWith(basename + '.r'))
-                .map((n) => Number(n.slice(basename.length + 2)))
-                .filter((n) => !Number.isNaN(n))
-                .sort((a, b) => a - b);
-            } catch {
-              /* ignore */
+          let work = binary ? '' : read(abs);
+          if (!binary) {
+            if (repo.type === 'git') {
+              const show = async (stage: string): Promise<string> => {
+                const r = await run('git', ['show', `:${stage}:${rel}`], { cwd: repo.root, timeoutMs: 30_000 });
+                return r.code === 0 ? r.stdout : '';
+              };
+              base = await show('1');
+              ours = await show('2');
+              theirs = await show('3');
+            } else {
+              // svn 冲突文件：xxx.mine（本地）、xxx.r<新>（对方）、xxx.r<旧>（基础）
+              const dir = path.dirname(abs);
+              const basename = path.basename(abs);
+              let rnums: number[] = [];
+              try {
+                rnums = fs
+                  .readdirSync(dir)
+                  .filter((n) => n.startsWith(basename + '.r'))
+                  .map((n) => Number(n.slice(basename.length + 2)))
+                  .filter((n) => !Number.isNaN(n))
+                  .sort((a, b) => a - b);
+              } catch {
+                /* ignore */
+              }
+              ours = read(abs + '.mine');
+              theirs = rnums.length > 0 ? read(abs + '.r' + rnums[rnums.length - 1]!) : '';
+              base = rnums.length > 1 ? read(abs + '.r' + rnums[0]!) : '';
             }
-            ours = read(abs + '.mine');
-            theirs = rnums.length > 0 ? read(abs + '.r' + rnums[rnums.length - 1]!) : '';
-            base = rnums.length > 1 ? read(abs + '.r' + rnums[0]!) : '';
           }
-          out.push({ path: rel, ours, theirs, base, work });
+          out.push({ path: rel, ours, theirs, base, work, binary });
         }
         sendJson(res, 200, { conflicts: out });
         return;

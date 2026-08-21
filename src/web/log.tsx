@@ -1,6 +1,7 @@
 /** 历史视图：提交列表 + 变更文件详情，点击查看 diff；未推送提交显示绿灯可修改注释/撤销 */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, type LogEntry } from './api.js';
+import { isBinaryFile } from './utils.js';
 import { DiffRender } from './diff-render.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { ConfirmModal } from './modals.js';
@@ -145,8 +146,13 @@ export function LogView(props: Props) {
     setDiffOf({ rev, prev, path });
     setDiffLoading(true);
     try {
+      // 二进制文件（Word/PDF/图片等）：文本对比无意义，直接提示
+      if (path && isBinaryFile(path)) {
+        setDiffText('该文件为二进制文件（Word 文档 / PDF / 图片等），不支持文本对比');
+        return;
+      }
       const r = await get.show(rev, path);
-      setDiffText(r.output || '(无差异)');
+      setDiffText(r.output || r.error || '(无差异)');
     } catch (e) {
       setDiffText(`读取失败: ${(e as Error).message}`);
     } finally {

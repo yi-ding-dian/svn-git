@@ -12,7 +12,7 @@ import { ConflictResolverModal } from './conflicts.js';
 import { RemoteConflictModal } from './remote-conflicts.js';
 import { AppHeader, THEMES, FONT_SIZES } from './header.js';
 import { Sidebar, type View } from './sidebar.js';
-import { pathAutoWidth } from './utils.js';
+import { pathAutoWidth, isBinaryFile } from './utils.js';
 
 type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'push';
 
@@ -282,6 +282,11 @@ export function App() {
   // 跳转 diff 视图（提交冲突提示"双击查看差异"使用；定义在 handleAction 之前供其依赖）
   const gotoDiff = useCallback(
     (path?: string, a?: string, b?: string) => {
+      // 二进制文件（Word/PDF/图片等）：不支持文本对比，提示而不进入差异视图
+      if (path && isBinaryFile(path)) {
+        setToast('二进制文件，不支持文本对比');
+        return;
+      }
       setDiffFrom(view);
       setDiffTarget({ path, a, b });
       if (path) setLogPath(path); // 历史视图联动记住当前文件

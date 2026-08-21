@@ -13,6 +13,8 @@ interface Conflict {
   theirs: string;
   base: string;
   work: string;
+  /** 二进制文件（Word/PDF/图片等）：不读内容、不对比，仅可选用本地/对方版本 */
+  binary?: boolean;
 }
 
 type Tab = 'base' | 'ours' | 'theirs';
@@ -56,10 +58,10 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
   const cur = conflicts[sel] ?? null;
   const lang = cur ? langOf(cur.path) : undefined;
 
-  // 本地 vs 对方 的 diff（选中文件时拉取）
+  // 本地 vs 对方 的 diff（选中文件时拉取；二进制文件不对比）
   const [vsDiff, setVsDiff] = useState('');
   useEffect(() => {
-    if (!cur) return;
+    if (!cur || cur.binary) return;
     let cancelled = false;
     setVsDiff('');
     post
@@ -253,6 +255,26 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                   </span>
                 )}
               </div>
+              {/* 二进制冲突文件：不读内容不对比，提示改用本地/对方版本 */}
+              {cur.binary ? (
+                <div
+                  className="dim"
+                  style={{
+                    flex: 1, minHeight: 200, display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', gap: 8,
+                    border: '1px dashed var(--border)', borderRadius: 8, marginTop: 8, textAlign: 'center', padding: 16,
+                  }}
+                >
+                  <div style={{ fontSize: 26 }}>📎</div>
+                  <div>
+                    该文件为 <b>二进制文件</b>（Word 文档 / PDF / 图片等），<b>不支持文本对比</b>
+                  </div>
+                  <div className="small" style={{ maxWidth: 420 }}>
+                    请用「采用本地 / 采用对方」直接选择一个版本保留，或在外部程序中打开文件手动处理
+                  </div>
+                </div>
+              ) : (
+                <>
               {!expanded && (
                 <pre className="diff" style={{ flex: 1, maxHeight: 140, overflow: 'auto', fontSize: 12 }}>
                   {(tab === 'base' ? cur.base : tab === 'ours' ? cur.ours : cur.theirs || '（无内容）')
@@ -347,10 +369,12 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                   />
                 </>
               )}
+                </>
+              )}
               <div className="row" style={{ marginTop: 10, gap: 6 }}>
                 <button className="primary" disabled={busy} onClick={() => void resolve('ours')}>✅ 采用本地</button>
                 <button disabled={busy} onClick={() => void resolve('theirs')}>采用对方</button>
-                <button disabled={busy} onClick={() => void resolve('manual')}>💾 保存手动编辑</button>
+                {!cur.binary && <button disabled={busy} onClick={() => void resolve('manual')}>💾 保存手动编辑</button>}
                 <button
                   className="mini tool-btn"
                   title="打开冲突文件所在文件夹"

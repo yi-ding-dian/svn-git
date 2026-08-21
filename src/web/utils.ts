@@ -13,6 +13,25 @@ export function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/** 二进制文件扩展名（Office/PDF/图片/压缩包/可执行等，不支持文本对比） */
+const BINARY_EXTS = new Set([
+  // Office / PDF
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'pdf',
+  // 压缩包
+  'zip', 'rar', '7z', 'jar', 'gz', 'bz2', 'xz',
+  // 图片 / 音视频
+  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'psd', 'mp3', 'mp4',
+  // 可执行 / 二进制数据
+  'exe', 'dll', 'so', 'dylib', 'bin', 'dat', 'db', 'sqlite', 'class', 'o', 'a',
+]);
+
+/** 是否为二进制文件（不支持文本对比） */
+export function isBinaryFile(path: string): boolean {
+  const name = path.split('/').pop() ?? '';
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
+  return BINARY_EXTS.has(ext);
+}
+
 /** 勾选集合（checkbox 列表）：初始集合 + 单项切换 */
 export function useCheckedSet(initial: string[]) {
   const [checked, setChecked] = useState<Set<string>>(() => new Set(initial));
