@@ -536,7 +536,7 @@ export function FsView(props: Props) {
   /** 打开文件：有变更 → diff；无变更 → 原文 */
   const openFile = useCallback(
     async (name: string, code: string, rel: string) => {
-      if (code && code !== '?') {
+      if (code && code !== '?' && code !== 'I') {
         props.onDiff(rel);
         return;
       }
