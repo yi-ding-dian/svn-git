@@ -27,3 +27,9 @@ svn-untracked.txt
 
 # 本地测试仓库（不提交）
 svnkit-test/
+!record.md
+record.md
+record.md
+record.md
+!record.md
+record.md

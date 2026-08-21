@@ -24,6 +24,7 @@ function CodeBadge({ code, title }: { code: string; title?: string }) {
 
 /** 目录徽标：同时显示 M/A/D 等全部操作标识；无操作一律显示 √（文件夹不显示 ?，未版本化由文件体现） */
 const DIR_CODE_TITLE: Record<string, string> = {
+  '?': '整个目录未版本化（未加入版本库）',
   M: '有修改的文件',
   A: '有添加的文件',
   D: '有删除的文件',

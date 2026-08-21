@@ -11,6 +11,7 @@ import { renderMarkdown } from './markdown.js';
 import { fmtSize } from './utils.js';
 import { ModalShell } from './modal-shell.js';
 import { FormRow } from './ui.js';
+import { ConfirmModal } from './modals.js';
 
 interface Props {
   tick: number;
@@ -118,6 +119,8 @@ export function FsView(props: Props) {
   /** 加入忽略输入弹窗（替代 window.prompt：目标文件 + 规则输入） */
   const [ignoreAsk, setIgnoreAsk] = useState<{ rel: string; name: string } | null>(null);
   const [ignorePattern, setIgnorePattern] = useState('');
+  /** 取消忽略确认弹窗（忽略项右键：git 追加 !规则 / svn 删规则 → 变回未版本化 ?） */
+  const [unignoreAsk, setUnignoreAsk] = useState<{ rel: string; name: string; isDir: boolean } | null>(null);
   /** md 预览图片放大查看（点击图片 → 全屏显示原图） */
   const [imgViewer, setImgViewer] = useState<string | null>(null);
   useEffect(() => {
@@ -992,7 +995,15 @@ export function FsView(props: Props) {
     // 单选（原有逻辑）：右键不在选中集合时，清空多选只留右键项
     setSelected(new Set([t.rel]));
     if (t.isDir) {
-      if (t.code !== '?') {
+      if (t.code === 'I') {
+        // 忽略目录：无版本操作（更新/提交/还原/历史均无意义），仅忽略设置/取消忽略/删除(git 可磁盘删)
+        items.push({ icon: <IconIgnore />, label: '忽略设置…', action: () => setIgnoreModal({ dir: t.rel }) });
+        items.push({ icon: <IconEyeOff />, label: '取消忽略', action: () => setUnignoreAsk({ rel: t.rel, name: t.name, isDir: true }) });
+        if (props.repoType === 'git') {
+          items.push({ sep: true });
+          items.push({ icon: <IconClean />, label: '删除目录', danger: true, action: () => props.onAction('delete', [t.rel]) });
+        }
+      } else if (t.code !== '?') {
         // 版本化目录：更新/提交/还原/历史/忽略设置/删除（无 diff）
         items.push({ icon: <IconRefresh />, label: '更新此目录', action: () => props.onUpdateDir(t.rel) });
         if (t.code) {
@@ -1031,32 +1042,43 @@ export function FsView(props: Props) {
       }
     } else {
       // 文件
-      if (t.code && t.code !== '?') items.push({ icon: <IconDiff />, label: '查看差异', action: () => props.onDiff(t.rel) });
-      if (t.code === '?') {
-        // 未版本化文件：只能添加/忽略（不可删除——不在版本管理里）
-        items.push({ icon: <IconPlus />, label: '添加到版本库', action: () => props.onAction('add', [t.rel]) });
-        items.push({ icon: <IconIgnore />, label: '加入忽略…', action: () => ignoreFile(t) });
-      } else {
-        const modified = t.code === 'M' || t.code === 'A' || t.code === 'D' || t.code === 'R' || t.code === 'C';
-        if (modified) {
-          items.push({ sep: true });
-          items.push({ icon: <IconUpload />, label: '提交此文件', action: () => props.onAction('commit', [t.rel]) });
-          items.push({ icon: <IconRevert />, label: '还原', action: () => props.onAction('revert', [t.rel]) });
-        }
-        // 已版本化且磁盘存在（非 '!' 缺失）才可删除：干净文件也提供删除
-        if (t.code !== '!') {
+      if (t.code === 'I') {
+        // 忽略文件：仅取消忽略/删除(git 可磁盘删)/查看内容（无版本操作：差异/历史/锁定均无意义）
+        items.push({ icon: <IconEyeOff />, label: '取消忽略', action: () => setUnignoreAsk({ rel: t.rel, name: t.name, isDir: false }) });
+        if (props.repoType === 'git') {
           items.push({ sep: true });
           items.push({ icon: <IconClean />, label: '删除', danger: true, action: () => props.onAction('delete', [t.rel]) });
         }
-      }
-      items.push({ sep: true });
-      items.push({ icon: <IconFile />, label: '查看内容', action: () => void openFile(t.name, t.code, t.rel) });
-      // 未版本化文件无历史记录 → 不显示"查看历史"
-      if (t.code !== '?') items.push({ icon: <IconHistory />, label: '查看历史', action: () => viewHistory(t.rel, e) });
-      if (props.repoType === 'svn' && t.code !== '?') {
         items.push({ sep: true });
-        items.push({ icon: <IconLock />, label: '锁定', action: () => svnLock(t.rel, 'lock') });
-        items.push({ icon: <IconUnlock />, label: '解锁', action: () => svnLock(t.rel, 'unlock') });
+        items.push({ icon: <IconFile />, label: '查看内容', action: () => void openFile(t.name, t.code, t.rel) });
+      } else {
+        if (t.code && t.code !== '?') items.push({ icon: <IconDiff />, label: '查看差异', action: () => props.onDiff(t.rel) });
+        if (t.code === '?') {
+          // 未版本化文件：只能添加/忽略（不可删除——不在版本管理里）
+          items.push({ icon: <IconPlus />, label: '添加到版本库', action: () => props.onAction('add', [t.rel]) });
+          items.push({ icon: <IconIgnore />, label: '加入忽略…', action: () => ignoreFile(t) });
+        } else {
+          const modified = t.code === 'M' || t.code === 'A' || t.code === 'D' || t.code === 'R' || t.code === 'C';
+          if (modified) {
+            items.push({ sep: true });
+            items.push({ icon: <IconUpload />, label: '提交此文件', action: () => props.onAction('commit', [t.rel]) });
+            items.push({ icon: <IconRevert />, label: '还原', action: () => props.onAction('revert', [t.rel]) });
+          }
+          // 已版本化且磁盘存在（非 '!' 缺失）才可删除：干净文件也提供删除
+          if (t.code !== '!') {
+            items.push({ sep: true });
+            items.push({ icon: <IconClean />, label: '删除', danger: true, action: () => props.onAction('delete', [t.rel]) });
+          }
+        }
+        items.push({ sep: true });
+        items.push({ icon: <IconFile />, label: '查看内容', action: () => void openFile(t.name, t.code, t.rel) });
+        // 未版本化文件无历史记录 → 不显示"查看历史"
+        if (t.code !== '?') items.push({ icon: <IconHistory />, label: '查看历史', action: () => viewHistory(t.rel, e) });
+        if (props.repoType === 'svn' && t.code !== '?') {
+          items.push({ sep: true });
+          items.push({ icon: <IconLock />, label: '锁定', action: () => svnLock(t.rel, 'lock') });
+          items.push({ icon: <IconUnlock />, label: '解锁', action: () => svnLock(t.rel, 'unlock') });
+        }
       }
     }
     items.push({ sep: true });
@@ -1090,9 +1112,31 @@ export function FsView(props: Props) {
     if (!pattern) return;
     post
       .ignore(ignoreAsk.rel, pattern)
-      .then((r) => props.onToast(r.message))
+      .then((r) => {
+        props.onToast(r.message);
+        if (r.ok) {
+          if (mode === 'tree') loadNode('', true);
+          else void load(dir, true);
+        }
+      })
       .catch((err: Error) => props.onToast(`忽略失败: ${err.message}`));
     setIgnoreAsk(null);
+  };
+
+  /** 取消忽略：确认后调接口，该项变回未版本化(?)（具体规则由接口返回,toast 展示） */
+  const doUnignore = () => {
+    if (!unignoreAsk) return;
+    post
+      .unignore(unignoreAsk.rel)
+      .then((r) => {
+        props.onToast(r.message);
+        if (r.ok) {
+          if (mode === 'tree') loadNode('', true);
+          else void load(dir, true);
+        }
+      })
+      .catch((err: Error) => props.onToast(`取消忽略失败: ${err.message}`));
+    setUnignoreAsk(null);
   };
 
   /** 列表/浏览模式共用的条目行渲染 */
@@ -1757,6 +1801,36 @@ export function FsView(props: Props) {
             />
           </FormRow>
         </ModalShell>
+      )}
+
+      {/* 取消忽略确认弹窗：变回未版本化(?)后可右键「添加到版本库」 */}
+      {unignoreAsk && (
+        <ConfirmModal
+          title="取消忽略"
+          message={
+            <div style={{ lineHeight: 1.7 }}>
+              <div className="dim small mono" style={{ wordBreak: 'break-all' }}>
+                {unignoreAsk.rel}（{unignoreAsk.isDir ? '目录' : '文件'}）
+              </div>
+              {props.repoType === 'git' ? (
+                <div style={{ marginTop: 8 }}>
+                  将向 <span className="mono">.gitignore</span> 追加否定规则，该项将变为未版本化（<b>?</b>），之后可右键「添加到版本库」。
+                  {unignoreAsk.isDir && (
+                    <div className="dim" style={{ marginTop: 6 }}>若匹配的是父目录规则，该目录下其他文件将按剩余规则重新判定。</div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  将删除匹配的忽略规则，该项将变为未版本化（<b>?</b>），之后可右键「添加到版本库」。
+                  <div className="dim" style={{ marginTop: 6 }}>同目录下匹配该规则的其他文件也会一起变为未版本化（?）。</div>
+                </div>
+              )}
+            </div>
+          }
+          confirmLabel="取消忽略"
+          onConfirm={doUnignore}
+          onCancel={() => setUnignoreAsk(null)}
+        />
       )}
 
       {/* 常用文件夹管理弹窗 */}

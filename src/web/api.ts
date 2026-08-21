@@ -229,6 +229,7 @@ export const post = {
   svnLock: (action: 'lock' | 'unlock', path: string, force = false) => api<VcsResult>('/api/svn-lock', json({ action, path, force })),
   ignoreRemove: (path: string, pattern: string) => api<VcsResult>('/api/ignore-remove', json({ path, pattern })),
   ignore: (path: string, pattern: string) => api<VcsResult>('/api/ignore', json({ path, pattern })),
+  unignore: (path: string) => api<VcsResult>('/api/unignore', json({ path })),
   config: (cfg: { username: string; password: string; trustServerCert: boolean }) => api<{ ok: boolean }>('/api/config', json(cfg)),
   historyRemove: (path: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remove', json({ path })),
   historyFav: (path: string, fav: boolean) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-fav', json({ path, fav })),

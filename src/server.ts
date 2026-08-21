@@ -169,6 +169,22 @@ function getSvnIgnoreMap(root: string): Promise<Map<string, string[]>> {
   void p.finally(() => svnIgnoreMapInflight.delete(root));
   return p;
 }
+
+/** 单条忽略规则是否匹配条目名（git .gitignore / svn:ignore 通用；规则尾部 / 视为目录规则） */
+function isIgnoredByRules(rules: string[], name: string): boolean {
+  for (const rule of rules) {
+    const r = rule.trim().replace(/\/+$/, '');
+    if (!r) continue;
+    if (r.includes('*')) {
+      const re = new RegExp('^' + r.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+      if (re.test(name)) return true;
+    } else if (r === name) {
+      return true;
+    }
+  }
+  return false;
+}
+
 const STATUS_TTL = 30_000;
 
 // 当前操作范围：大仓库中打开的子项目(相对仓库根路径)。状态扫描限定在该范围内,避免全仓库扫描卡顿
@@ -686,19 +702,6 @@ export function startServer(): Promise<ServerHandle> {
           const map = await getSvnIgnoreMap(repo.root);
           return map.get(dirRel) ?? [];
         };
-        const isIgnoredByRules = (rules: string[], name: string): boolean => {
-          for (const rule of rules) {
-            const r = rule.trim().replace(/\/+$/, '');
-            if (!r) continue;
-            if (r.includes('*')) {
-              const re = new RegExp('^' + r.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
-              if (re.test(name)) return true;
-            } else if (r === name) {
-              return true;
-            }
-          }
-          return false;
-        };
         // 祖先链上有被忽略目录（如 .gitignore 的 node_modules/）→ 内部所有内容都算忽略（I）
         // （被忽略目录不在 status 条目里，需逐级用忽略规则匹配祖先目录名）
         let ignoredAncestor = false;
@@ -766,6 +769,8 @@ export function startServer(): Promise<ServerHandle> {
           }
           // 目录自身被忽略(I)：子级无操作时徽标也应显示 I（避免被误显示为干净的 √）
           if (code === 'I' && !codes) codes = ['I'];
+          // 目录自身未版本化（整个目录不在版本库）：徽标显示 '?'（与文件一致，避免误显干净的 √）
+          if (code === '?' && !codes) codes = ['?'];
           // 目录自身是外部引用（svn:externals 拉取的内容）：自身显示链环标识（父目录不显示）
           if (code === 'X' && !codes?.includes('X')) codes = codes ? [...codes, 'X'] : ['X'];
           // 目录在磁盘上存在就总是显示（svn/git status 对干净目录无条目，不 push 会丢失目录）
@@ -1654,6 +1659,97 @@ export function startServer(): Promise<ServerHandle> {
           }
         }
         sendJson(res, 200, { ok: true, message: `已删除规则: ${pattern}` });
+        return;
+      }
+
+      if (p === '/api/unignore' && req.method === 'POST') {
+        // 取消忽略：git 追加否定规则 !<路径>（覆盖前面的排除）；svn 删除承载该路径的匹配规则
+        const { repo } = vcsOf();
+        const body = await readBody(req);
+        const rel = String(body.path ?? '').replace(/^\/+/, '');
+        if (!rel) {
+          sendJson(res, 400, { error: '缺少路径' });
+          return;
+        }
+        const parts = rel.split('/').filter(Boolean);
+        if (repo.type === 'git') {
+          // git：规则全部在根 .gitignore，从根逐级找第一级被匹配的段 → 追加 !<段>（目录带 /）
+          const g = path.join(repo.root, '.gitignore');
+          let rules: string[] = [];
+          if (fs.existsSync(g)) {
+            rules = fs
+              .readFileSync(g, 'utf8')
+              .split('\n')
+              .map((s) => s.trim())
+              .filter((s) => s && !s.startsWith('#'));
+          }
+          let matched = ''; // 被匹配段（可能为祖先目录）
+          let acc = '';
+          for (const part of parts) {
+            acc = acc ? `${acc}/${part}` : part;
+            if (isIgnoredByRules(rules, part)) {
+              matched = acc;
+              break;
+            }
+          }
+          if (!matched) {
+            sendJson(res, 200, { ok: false, message: `未找到忽略 ${rel} 的规则（可能来自 .git/info/exclude 或全局配置，请手动处理）` });
+            return;
+          }
+          // 匹配段是祖先（非最后一段）→ 必为目录；是路径自身 → 按磁盘类型判断
+          const isLast = matched === rel;
+          let isDir = !isLast;
+          if (isLast) {
+            try {
+              isDir = fs.statSync(path.join(repo.root, matched)).isDirectory();
+            } catch {
+              isDir = false;
+            }
+          }
+          const neg = isDir ? `!${matched}/` : `!${matched}`;
+          try {
+            let content = '';
+            if (fs.existsSync(g)) content = fs.readFileSync(g, 'utf8');
+            if (!content.endsWith('\n') && content) content += '\n';
+            fs.writeFileSync(g, content + neg + '\n');
+          } catch (err) {
+            sendJson(res, 200, { ok: false, message: `写入 .gitignore 失败: ${(err as Error).message}` });
+            return;
+          }
+          sendJson(res, 200, { ok: true, message: `已取消忽略: ${neg}（${isDir ? '目录下文件将按剩余规则重新判定' : rel + ' 变为未版本化'}）` });
+          return;
+        }
+        // svn：逐级（根→自身）找承载匹配规则的目录，删除该条规则（svn:ignore 不支持否定语法）
+        let found: { dir: string; rule: string } | null = null;
+        let acc2 = '';
+        for (const part of parts) {
+          acc2 = acc2 ? `${acc2}/${part}` : part;
+          const parentOf = path.dirname(acc2);
+          const dir = parentOf === '.' ? '.' : parentOf;
+          const rules = (await getSvnIgnoreMap(repo.root)).get(dir) ?? [];
+          if (rules.length) {
+            const rule = rules.find((r) => isIgnoredByRules([r], part));
+            if (rule) {
+              found = { dir, rule };
+              break;
+            }
+          }
+        }
+        if (!found) {
+          sendJson(res, 200, { ok: false, message: `未找到忽略 ${rel} 的规则（可能来自全局 ignore，请手动处理）` });
+          return;
+        }
+        const getRes = await run('svn', ['propget', 'svn:ignore', found.dir], { cwd: repo.root, timeoutMs: 30_000 });
+        const remaining = getRes.stdout
+          .split('\n')
+          .map((s) => s.trim())
+          .filter((s) => s && s !== found!.rule);
+        const setRes = await run('svn', ['propset', 'svn:ignore', remaining.join('\n'), found.dir], { cwd: repo.root, timeoutMs: 30_000 });
+        if (setRes.code !== 0) {
+          sendJson(res, 200, { ok: false, message: setRes.stderr.trim() || '取消忽略失败' });
+          return;
+        }
+        sendJson(res, 200, { ok: true, message: `已取消忽略: 删除 ${found.dir === '.' ? '根目录' : found.dir} 的规则「${found.rule}」，同目录匹配该规则的文件将变为未版本化` });
         return;
       }
 
