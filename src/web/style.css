@@ -163,6 +163,10 @@ body {
 .history-path {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.93em;
 }
+/* 常用项目星号标记（项目名后） */
+.fav-star {
+  flex-shrink: 0; color: #f5a623; font-size: 1.05em; line-height: 1;
+}
 
 .content { flex: 1; padding: 16px; overflow: auto; min-width: 0; }
 

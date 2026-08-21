@@ -1,5 +1,7 @@
 /** 入口：启动本地 HTTP 服务。Electron 打包版用内嵌窗口展示（不依赖系统浏览器）；纯 node 用外部浏览器 */
 import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import { startServer, setPickDirHandler } from './server.js';
 import { detectRepo } from './vcs/detect.js';
@@ -66,7 +68,24 @@ process.on('SIGHUP', () => {
 
 async function boot() {
   // 预检测仓库（仅提示用，界面内可重新选择）
-  const repo = detectRepo(START_DIR);
+  let repo = detectRepo(START_DIR);
+  // 启动目录不是仓库时，优先打开最近使用的常用项目（星号标记）；显式指定目录则尊重指定
+  if (!repo) {
+    try {
+      const histPath = path.join(os.homedir(), '.config', 'svnkit', 'history.json');
+      if (fs.existsSync(histPath)) {
+        const hist = JSON.parse(fs.readFileSync(histPath, 'utf8')) as { path: string; fav?: boolean; lastOpened: number }[];
+        const favs = (Array.isArray(hist) ? hist : []).filter((h) => h.fav && h.path);
+        if (favs.length) {
+          favs.sort((a, b) => b.lastOpened - a.lastOpened); // 最近打开的常用项目优先
+          process.env.SVNKIT_REPO_DIR = favs[0]!.path;
+          repo = detectRepo(favs[0]!.path);
+        }
+      }
+    } catch {
+      /* 历史文件损坏时忽略，走默认启动 */
+    }
+  }
   const repoHint = repo ? `（检测到 ${repo.type.toUpperCase()} 仓库: ${repo.root}）` : '';
 
   // Electron 环境：注入系统目录选择对话框（供网页"选择目录"使用）

@@ -56,6 +56,14 @@ export interface LsResult {
   repoType: 'svn' | 'git';
 }
 
+/** 最近项目记录（含常用标记） */
+export interface HistoryItem {
+  path: string;
+  type: 'svn' | 'git';
+  lastOpened: number;
+  fav?: boolean;
+}
+
 export interface FsEntry {
   name: string;
   isDir: boolean;
@@ -141,7 +149,7 @@ export const get = {
   fs: (dir?: string, force?: boolean) =>
     api<FsData>(`/api/fs?dir=${encodeURIComponent(dir ?? '')}${force ? '&force=1' : ''}`),
   config: () => api<{ username: string; trustServerCert: boolean }>('/api/config'),
-  history: () => api<{ items: { path: string; type: 'svn' | 'git'; lastOpened: number }[] }>('/api/history'),
+  history: () => api<{ items: HistoryItem[] }>('/api/history'),
   search: (query: string, dir = '') =>
     api<{ paths: string[] }>(`/api/search?query=${encodeURIComponent(query)}&dir=${encodeURIComponent(dir)}`),
   envCheck: () => api<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } }>('/api/env-check'),
@@ -222,7 +230,8 @@ export const post = {
   ignoreRemove: (path: string, pattern: string) => api<VcsResult>('/api/ignore-remove', json({ path, pattern })),
   ignore: (path: string, pattern: string) => api<VcsResult>('/api/ignore', json({ path, pattern })),
   config: (cfg: { username: string; password: string; trustServerCert: boolean }) => api<{ ok: boolean }>('/api/config', json(cfg)),
-  historyRemove: (path: string) => api<{ ok: boolean; items: { path: string; type: 'svn' | 'git'; lastOpened: number }[] }>('/api/history-remove', json({ path })),
+  historyRemove: (path: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remove', json({ path })),
+  historyFav: (path: string, fav: boolean) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-fav', json({ path, fav })),
   mkdir: (path: string) => api<{ ok: boolean }>('/api/mkdir', json({ path })),
   rename: (from: string, to: string) => api<{ ok: boolean }>('/api/rename', json({ from, to })),
   gitConfig: (remoteUrl: string) => api<VcsResult>('/api/git-config', json({ remoteUrl })),

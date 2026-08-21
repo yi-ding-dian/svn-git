@@ -149,6 +149,14 @@ export function App() {
       .catch(() => setToast('删除失败'));
   }, []);
 
+  // 设置/取消常用项目（侧边栏右键菜单）：星号标记，下次启动优先打开
+  const setFav = useCallback((path: string, fav: boolean) => {
+    void post
+      .historyFav(path, fav)
+      .then((r) => setHistory(r.items))
+      .catch(() => setToast(fav ? '设置常用失败' : '取消常用失败'));
+  }, []);
+
   // 环境缺失:只提示「当前仓库类型需要」的引擎;未打开仓库时任一缺失都提示
   // (用户可能只用 Git 或只用 SVN,不强制两者都装)
   const needSvn = !repo?.type || repo.type === 'svn';
@@ -643,6 +651,7 @@ export function App() {
               onNav={setView}
               onOpenHistory={openHistoryItem}
               onRemoveHistory={removeHistory}
+              onSetFav={setFav}
             />
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}

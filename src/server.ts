@@ -36,6 +36,8 @@ export interface HistoryItem {
   path: string;
   type: 'svn' | 'git';
   lastOpened: number;
+  /** 常用项目标记（星号，启动时优先打开） */
+  fav?: boolean;
 }
 
 function loadHistory(): HistoryItem[] {
@@ -52,8 +54,9 @@ function loadHistory(): HistoryItem[] {
 
 function addHistory(entry: { path: string; type: 'svn' | 'git' }): void {
   try {
+    const existed = loadHistory().find((h) => h.path === entry.path);
     const list = loadHistory().filter((h) => h.path !== entry.path);
-    list.unshift({ ...entry, lastOpened: Date.now() });
+    list.unshift({ ...entry, lastOpened: Date.now(), fav: existed?.fav }); // 保留常用标记（打开项目不丢星号）
     fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
     fs.writeFileSync(HISTORY_PATH, JSON.stringify(list.slice(0, HISTORY_MAX), null, 2));
     fs.chmodSync(HISTORY_PATH, 0o600); // 与 config 一致，仅本人可读写
@@ -418,6 +421,25 @@ export function startServer(): Promise<ServerHandle> {
         const hp = String(body.path ?? '');
         if (hp) {
           const list = loadHistory().filter((h) => h.path !== hp);
+          try {
+            fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
+            fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));
+            fs.chmodSync(HISTORY_PATH, 0o600);
+          } catch {
+            /* 忽略写失败 */
+          }
+        }
+        sendJson(res, 200, { ok: true, items: loadHistory() });
+        return;
+      }
+
+      if (p === '/api/history-fav' && req.method === 'POST') {
+        // 设置/取消常用项目标记（星号）
+        const body = await readBody(req);
+        const hp = String(body.path ?? '');
+        const fav = Boolean(body.fav);
+        if (hp) {
+          const list = loadHistory().map((h) => (h.path === hp ? { ...h, fav } : h));
           try {
             fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
             fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));

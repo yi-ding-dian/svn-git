@@ -1,24 +1,27 @@
-/** 侧边栏：视图导航 + 最近项目列表（右键删除）+ 版本号 */
+/** 侧边栏：视图导航 + 最近项目列表（右键删除/设常用）+ 版本号 */
 import React, { useState } from 'react';
 import { IconClock, IconFolder } from './icons.js';
 // import { IconDiff } from './icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from './context-menu.js';
+import type { HistoryItem } from './api.js';
 
 /** 主视图类型（侧边栏导航目标） */
 export type View = 'log' | 'diff' | 'browse';
 
 export function Sidebar(props: {
   view: View;
-  history: { path: string; type: 'svn' | 'git'; lastOpened: number }[];
+  history: HistoryItem[];
   version?: string;
   /** 当前打开的仓库根：匹配的最近项目高亮选中，标明正在操作的项目 */
   currentRoot?: string | null;
   onNav: (v: View) => void;
   onOpenHistory: (h: { path: string }) => void;
   onRemoveHistory: (path: string) => void;
+  /** 设置/取消常用项目（星号标记，启动时优先打开） */
+  onSetFav: (path: string, fav: boolean) => void;
 }) {
-  // 最近项目右键菜单（删除 / 取消）
-  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  // 最近项目右键菜单（设常用 / 删除 / 取消）
+  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean } | null>(null);
 
   const NAV = [
     { key: 'log' as View, label: '历史', icon: <IconClock size={16} /> },
@@ -49,20 +52,21 @@ export function Sidebar(props: {
               <div
                 key={h.path}
                 className={`history-item ${h.path === props.currentRoot ? 'active' : ''}`}
-                title={`${h.path}${h.path === props.currentRoot ? '\n（当前操作的项目）' : ''}\n点击打开 · 右键删除`}
+                title={`${h.path}${h.path === props.currentRoot ? '\n（当前操作的项目）' : ''}${h.fav ? '\n（常用项目）' : ''}\n点击打开 · 右键删除/设常用`}
                 onClick={() => props.onOpenHistory(h)}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  setRmMenu({ x: e.clientX, y: e.clientY, path: h.path });
+                  setRmMenu({ x: e.clientX, y: e.clientY, path: h.path, fav: Boolean(h.fav) });
                 }}
               >
                 <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>
                   {h.type.toUpperCase()}
                 </span>
                 <span className="history-path">{h.path.split('/').filter(Boolean).pop()}</span>
+                {h.fav && <span className="fav-star" title="常用项目（启动时优先打开）">★</span>}
               </div>
             ))}
-            {/* 右键菜单：删除 / 取消 */}
+            {/* 右键菜单：设为常用 / 删除 / 取消 */}
             {rmMenu && (
               <ContextMenu
                 x={rmMenu.x}
@@ -71,14 +75,11 @@ export function Sidebar(props: {
                 onClose={() => setRmMenu(null)}
                 items={[
                   {
-                    icon: '🗑',
-                    label: '删除',
-                    danger: true,
-                    action: () => {
-                      const p = rmMenu.path;
-                      props.onRemoveHistory(p);
-                    },
+                    icon: rmMenu.fav ? '★' : '☆',
+                    label: rmMenu.fav ? '取消常用' : '设为常用',
+                    action: () => props.onSetFav(rmMenu.path, !rmMenu.fav),
                   },
+                  { icon: '🗑', label: '删除', danger: true, action: () => props.onRemoveHistory(rmMenu.path) },
                   { icon: '✕', label: '取消' },
                 ]}
               />
