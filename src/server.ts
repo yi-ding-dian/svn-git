@@ -746,12 +746,15 @@ export function startServer(): Promise<ServerHandle> {
             count = sub.filter((s) => s.code !== '?').length;
             // 内部未版本化数量（'?' 不在徽标显示，但筛选"仅新文件"时需要提示新文件在哪）
             unversionedCount = sub.filter((s) => s.code === '?').length;
-            // 目录操作集合：同时显示 M/A/D 等全部操作标识；排除未版本化 '?' 与无变更 ' '
-            codes = [...new Set(sub.map((s) => s.code).filter((c) => c && c !== '?' && c !== ' ' && c !== 'none'))];
+            // 目录操作集合：同时显示 M/A/D 等全部操作标识；排除未版本化 '?' 与无变更 ' '；
+            // 外部引用 'X' 不进父目录集合（只显示在引用目录自身，避免 src/trunk 等全带标识）
+            codes = [...new Set(sub.map((s) => s.code).filter((c) => c && c !== '?' && c !== ' ' && c !== 'none' && c !== 'X'))];
             codes.sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b));
           }
           // 目录自身被忽略(I)：子级无操作时徽标也应显示 I（避免被误显示为干净的 √）
           if (code === 'I' && !codes) codes = ['I'];
+          // 目录自身是外部引用（svn:externals 拉取的内容）：自身显示链环标识（父目录不显示）
+          if (code === 'X' && !codes?.includes('X')) codes = codes ? [...codes, 'X'] : ['X'];
           // 目录在磁盘上存在就总是显示（svn/git status 对干净目录无条目，不 push 会丢失目录）
           entries.push({ name: d, isDir: true, size: 0, mtime: '', code, count, codes, unversionedCount: unversionedCount || undefined });
         }

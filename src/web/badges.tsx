@@ -1,14 +1,24 @@
 /** 状态徽标：文件状态码徽标（CodeBadge）与目录操作集合徽标（DirBadge） */
 import React from 'react';
 import { CODE_DESC } from './api.js';
+import { IconExternal } from './icons.js';
 
 function CodeBadge({ code, title }: { code: string; title?: string }) {
   // ✓(无状态)不显示描边、绿色表示干净；悬浮显示状态含义
   const tip = title ?? (code ? CODE_DESC[code] : '');
-  return code ? (
+  if (!code) {
+    return <span className="code" style={{ background: 'transparent', boxShadow: 'none', color: 'var(--ok)' }}>✓</span>;
+  }
+  // 外部引用：链环图标（不用字母 X，仅显示在引用目录自身）
+  if (code === 'X') {
+    return (
+      <span className="code X" title={tip || undefined}>
+        <IconExternal size={12} />
+      </span>
+    );
+  }
+  return (
     <span className={`code ${code}`} title={tip || undefined}>{code}</span>
-  ) : (
-    <span className="code" style={{ background: 'transparent', boxShadow: 'none', color: 'var(--ok)' }}>✓</span>
   );
 }
 

@@ -190,10 +190,12 @@ body {
 .code.D { background: transparent; color: var(--err); }
 .code.\? { background: transparent; color: var(--dim); }
 .grid-badge .code.M, .grid-badge .code.A, .grid-badge .code.D, .grid-badge .code.\? { box-shadow: none; } /* 角标不描边 */
+.grid-badge .code.X { background: var(--dim); box-shadow: 0 0 0 2px var(--panel); } /* 网格角标小，保留灰块保证可见 */
 .code.\! { background: var(--purple); }
 .code.C { background: var(--err); color: #fff; }
 .code.R { background: var(--ok); }
-.code.X, .code.I { background: var(--dim); }
+.code.X { background: transparent; color: var(--dim); box-shadow: none; } /* 外部引用：透明底链环（不显眼） */
+.code.I { background: var(--dim); }
 .code.U { background: var(--accent); }
 .code.\~ { background: var(--warn); }
 .codes-row { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
