@@ -1,4 +1,9 @@
 /* SVNKIT Web 界面 — 浅色主题（默认浅白） */
+/* 字体变量：JS 按设置注入 --code-font / body inline 覆盖 --ui-font；空值时回退默认栈 */
+:root {
+  --ui-font: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --code-font: "JetBrains Mono", Consolas, "Courier New", monospace;
+}
 :root, body[data-theme="light"] {
   --bg: #ffffff;
   --panel: #f6f8fa;
@@ -113,11 +118,11 @@ html, body, #root { height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--ui-font, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
   font-size: var(--font-size, 14px);
 }
 
-.mono { font-family: "JetBrains Mono", Consolas, "Courier New", monospace; }
+.mono { font-family: var(--code-font, "JetBrains Mono", Consolas, "Courier New", monospace); }
 
 /* ---------- 布局 ---------- */
 .app { display: flex; flex-direction: column; height: 100%; }
@@ -326,7 +331,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .install-log {
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-  padding: 8px 12px; font-family: Consolas, monospace; font-size: 12px; color: var(--text);
+  padding: 8px 12px; font-family: var(--code-font, Consolas, monospace); font-size: 12px; color: var(--text);
 }
 
 /* ---------- 文件更新提示条 ---------- */
@@ -355,7 +360,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .search-item:hover .dim, .search-item.active .dim { color: #ffffff; }
 .search-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.pv-line { white-space: pre-wrap; word-break: break-all; line-height: 1.55; }
+.pv-line { white-space: pre-wrap; word-break: break-all; line-height: 1.55; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
 .blame-meta {
   display: inline-block; min-width: 130px; margin-right: 10px;
   color: var(--dim); font-size: 0.85em; user-select: none; font-family: Consolas, monospace;
@@ -397,7 +402,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   color: var(--dim); user-select: none; flex-shrink: 0; font-size: 12px;
 }
 .sb-marker { width: 20px; text-align: center; color: var(--warn); font-weight: 700; flex-shrink: 0; }
-.sb-code { flex: 1; white-space: pre-wrap; word-break: break-all; }
+.sb-code { flex: 1; white-space: pre-wrap; word-break: break-all; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
 
 /* 语法高亮（浅色主题适配） */
 .hljs-keyword, .hljs-literal, .hljs-selector-tag { color: #cf222e; }
@@ -471,8 +476,6 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .theme-btn:hover { transform: scale(1.15); }
 .theme-btn.active { border-color: var(--text); }
-/* 侧边栏外观区字号档位（窄栏紧凑排布，160px 栏 4 档需 <120px 内容宽） */
-.font-size-btn { padding: 1px 4px; font-size: 0.78em; border-radius: 5px; }
 
 /* ---------- 列表/表格 ---------- */
 .list { display: flex; flex-direction: column; gap: 2px; }
@@ -505,7 +508,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ---------- diff ---------- */
 .diff { font-family: Consolas, "Courier New", monospace; font-size: 13px; line-height: 1.5; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; }
-.diff .line { white-space: pre-wrap; word-break: break-all; }
+.diff .line { white-space: pre-wrap; word-break: break-all; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
 .diff .add { color: var(--ok); background: rgba(63,185,80,.08); }
 .diff .del { color: var(--err); background: rgba(248,81,73,.08); }
 .diff .hunk { color: var(--accent); }
@@ -557,7 +560,7 @@ textarea { resize: vertical; font-family: inherit; }
 .md-render h4 { font-size: 1.05em; }
 .md-render p { margin: 6px 0; }
 .md-render code { background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 0.92em; }
-.md-render pre { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow: auto; font-size: 0.9em; line-height: 1.5; }
+.md-render pre { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow: auto; font-size: 0.9em; line-height: 1.5; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
 .md-render pre code { background: none; border: none; padding: 0; }
 .md-render blockquote { border-left: 3px solid var(--accent); background: var(--panel2); margin: 8px 0; padding: 6px 12px; color: var(--dim); border-radius: 0 6px 6px 0; }
 .md-render ul, .md-render ol { margin: 6px 0; padding-left: 24px; }

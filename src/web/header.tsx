@@ -16,9 +16,6 @@ export const THEMES = [
   { key: 'rose', name: '玫瑰', color: '#f6e2e6' },
 ];
 
-/** 字号档位 */
-export const FONT_SIZES = [12, 14, 16, 18];
-
 /** 顶部工具按钮（图标 + 文字，统一样式） */
 function ToolBtn(props: {
   icon: React.ReactNode;

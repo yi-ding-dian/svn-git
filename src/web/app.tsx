@@ -10,8 +10,9 @@ import { BranchDialog, TagDialog, StashDialog, CreateRepoDialog, CleanDialog, Gi
 import { PushConfirmModal } from './push-confirm.js';
 import { ConflictResolverModal } from './conflicts.js';
 import { RemoteConflictModal } from './remote-conflicts.js';
-import { AppHeader, THEMES, FONT_SIZES } from './header.js';
+import { AppHeader, THEMES } from './header.js';
 import { Sidebar, type View } from './sidebar.js';
+import { FontModal, FONT_MIN, FONT_MAX } from './font-modal.js';
 import { pathAutoWidth, isBinaryFile } from './utils.js';
 
 type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'push';
@@ -62,9 +63,24 @@ export function App() {
   const [fontSize, setFontSize] = useState(() => {
     try {
       const n = Number(localStorage.getItem('svnkit-fontsize'));
-      return FONT_SIZES.includes(n) ? n : 14;
+      return Number.isFinite(n) && n >= FONT_MIN && n <= FONT_MAX ? n : 14;
     } catch {
       return 14;
+    }
+  });
+  // 界面字体 / 代码字体（空 = 系统默认，随弹窗即时应用并持久化）
+  const [uiFont, setUiFont] = useState(() => {
+    try {
+      return localStorage.getItem('svnkit-uifont') ?? '';
+    } catch {
+      return '';
+    }
+  });
+  const [codeFont, setCodeFont] = useState(() => {
+    try {
+      return localStorage.getItem('svnkit-codefont') ?? '';
+    } catch {
+      return '';
     }
   });
 
@@ -87,6 +103,18 @@ export function App() {
       /* ignore */
     }
   }, [fontSize]);
+
+  // 应用界面/代码字体：空值移除 inline 覆盖，回退 CSS 默认栈
+  useEffect(() => {
+    document.body.style.fontFamily = uiFont || '';
+    document.documentElement.style.setProperty('--code-font', codeFont || '');
+    try {
+      localStorage.setItem('svnkit-uifont', uiFont);
+      localStorage.setItem('svnkit-codefont', codeFont);
+    } catch {
+      /* ignore */
+    }
+  }, [uiFont, codeFont]);
 
   // 未推送提交数（推送按钮角标；git 仓库有效，svn 保持 null 不显示）
   const [unpushedCount, setUnpushedCount] = useState<number | null>(null);
@@ -656,7 +684,7 @@ export function App() {
               theme={theme}
               setTheme={setTheme}
               fontSize={fontSize}
-              setFontSize={setFontSize}
+              onOpenFont={() => setModal({ type: 'font' })}
             />
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
@@ -735,6 +763,17 @@ export function App() {
           startDir={info?.home ?? info?.startDir ?? ''}
           onOpened={(r) => { setInfo(r); refresh(); setModal(null); loadHistory(); }}
           onToast={setToast}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.type === 'font' && (
+        <FontModal
+          fontSize={fontSize}
+          setFontSize={setFontSize}
+          uiFont={uiFont}
+          setUiFont={setUiFont}
+          codeFont={codeFont}
+          setCodeFont={setCodeFont}
           onClose={() => setModal(null)}
         />
       )}

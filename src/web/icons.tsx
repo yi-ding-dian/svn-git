@@ -419,3 +419,12 @@ export function IconFile({ size = 16 }: IconProps) {
     </svg>
   );
 }
+
+/** 字体：A 与下划线（字体设置弹窗入口） */
+export function IconFont({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M6 18L10.5 6h3L18 18M8 13.5h8" />
+    </svg>
+  );
+}
