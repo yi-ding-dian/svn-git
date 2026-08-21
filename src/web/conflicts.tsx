@@ -213,9 +213,9 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
         onToggleMax={() => setExpanded(false)}
       >
         <h3>⚠ 解决冲突（{conflicts.length}）</h3>
-        <div className="body" style={{ display: 'flex', gap: 12, minHeight: expanded ? 'calc(96vh - 90px)' : 460 }}>
-          {/* 左：冲突文件列表 */}
-          <div className="vcs-list" style={{ width: 200, flexShrink: 0, minHeight: 120 }}>
+        <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: expanded ? 'calc(96vh - 90px)' : 460 }}>
+          {/* 上：冲突文件列表（横排铺满窗口宽；最多显示 3 个，超出滚动，少于自动收缩高度） */}
+          <div className="vcs-list" style={{ width: '100%', flexShrink: 0, maxHeight: 106 }}>
             {loading && <div className="dim" style={{ padding: 10 }}>加载中…</div>}
             {!loading && conflicts.length === 0 && <div className="dim" style={{ padding: 10 }}>暂无冲突</div>}
             {conflicts.map((c, i) => (
@@ -232,9 +232,9 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
               </div>
             ))}
           </div>
-          {/* 右：内容与操作 */}
+          {/* 下：内容与操作 */}
           {cur && (
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="row" style={{ marginBottom: 6 }}>
                 <span className="mono small dim" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {cur.path}
