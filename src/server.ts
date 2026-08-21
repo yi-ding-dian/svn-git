@@ -1178,6 +1178,26 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
+      if (p === '/api/switch-check') {
+        // 切换分支前检查：工作区改动统计 + 与目标分支冲突文件（前端据此决定直接切/提示确认）
+        const branch = String(url.searchParams.get('branch') ?? '');
+        if (!branch) {
+          sendJson(res, 400, { error: '缺少分支名' });
+          return;
+        }
+        const { vcs } = vcsOf();
+        if (typeof (vcs as any).switchCheck !== 'function') {
+          sendJson(res, 400, { error: '当前仓库不支持切换检查' });
+          return;
+        }
+        try {
+          sendJson(res, 200, await (vcs as any).switchCheck(branch));
+        } catch (e) {
+          sendJson(res, 500, { error: (e as Error).message });
+        }
+        return;
+      }
+
       if (p === '/api/branch' && req.method === 'POST') {
         const { vcs } = vcsOf();
         const body = await readBody(req);

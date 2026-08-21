@@ -170,6 +170,10 @@ export const get = {
   conflictDetail: (path: string) =>
     api<{ path: string; theirsDiff: string; myDiff: string }>(`/api/conflict-detail?path=${encodeURIComponent(path)}`),
   branches: () => api<BranchInfo>('/api/branches'),
+  switchCheck: (branch: string) =>
+    api<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>(
+      `/api/switch-check?branch=${encodeURIComponent(branch)}`,
+    ),
   tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),
   blame: (path: string) => api<{ lines: { rev: string; author: string; date: string; line: number; text: string }[] }>(`/api/blame?path=${encodeURIComponent(path)}`),

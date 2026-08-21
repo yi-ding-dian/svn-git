@@ -553,6 +553,16 @@ export class SvnVcs {
   }
 
   /** 切换分支：svn switch <root>/branches/<name>；name=trunk/root 时切回主干 */
+  /** 切换分支前的改动检查：svn switch 是 update 语义，本地改动尽量保留（可能冲突），只统计数量 */
+  async switchCheck(_branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }> {
+    const res = await this.exec(['status']);
+    if (res.code !== 0) throw new Error(`svn status 失败: ${res.stderr.trim()}`);
+    const lines = res.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+    const untracked = lines.filter((l) => l.startsWith('?')).length;
+    const tracked = lines.length - untracked;
+    return { changed: lines.length, tracked, untracked, conflicts: [] };
+  }
+
   async branchSwitch(name: string): Promise<VcsResult> {
     const root = await this.repoRootUrl();
     let target: string;

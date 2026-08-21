@@ -63,8 +63,13 @@ export function BranchDialog(props: {
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 科普折叠块展开状态（新手教学，默认收起不打扰）
+  const [showHelp, setShowHelp] = useState(false);
   // 工具风格二次确认
   const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void } | null>(null);
+
+  /** 主干分支：git main/master、svn trunk（团队稳定版本，禁止删除） */
+  const isTrunkName = (name: string) => name === 'main' || name === 'master' || name === 'trunk';
 
   const load = () => {
     get
@@ -96,18 +101,34 @@ export function BranchDialog(props: {
   };
 
   // 切换 / 合并为影响工作区的操作，统一走二次确认（复用 ConfirmModal）。
-  // 文案区分 git/svn 语义：git 未提交修改会被保护（冲突时切换失败）；svn 改动尽量带过去（可能冲突）
-  const confirmSwitch = (name: string, isTrunk = false) => {
+  // 切换前先扫描工作区：无修改直接切换（零打扰）；有修改精确提示数量与风险文件（git 判断哪些会被拒绝）
+  const confirmSwitch = async (name: string, isTrunk = false) => {
+    let check: { changed: number; tracked: number; untracked: number; conflicts: string[] } | null = null;
+    try {
+      check = await get.switchCheck(name);
+    } catch {
+      /* 检查失败不阻塞，走默认确认流程 */
+    }
+    // 工作区干净 → 直接切换，不弹确认
+    if (check && check.changed === 0) {
+      act('switch', name);
+      return;
+    }
     let msg: string;
-    if (isTrunk) {
-      msg = '确认切回主干（trunk）？未提交的改动会尽量保留（可能产生冲突）。';
-    } else if (props.repoType === 'git' && name.includes('/')) {
+    if (props.repoType === 'svn') {
+      msg = `当前有 ${check?.changed ?? '?'} 个文件的本地改动，切换分支会尽量保留（可能产生冲突）。建议先提交；仍要切换？`;
+    } else if (name.includes('/')) {
       const local = name.split('/').slice(1).join('/');
-      msg = `确认切换到远程分支 ${name}？将自动创建本地跟踪分支 ${local} 并切换过去；工作区有未提交修改时切换会失败（请先提交或暂存）。`;
-    } else if (props.repoType === 'git') {
-      msg = `确认切换到分支 ${name}？工作区有未提交修改且会被覆盖时，切换会失败（请先提交或暂存）。`;
+      msg = `确认切换到远程分支 ${name}？将自动创建本地跟踪分支 ${local} 并切换过去。`;
+      if (check) msg += `当前有 ${check.changed} 个文件未提交/未暂存（已跟踪 ${check.tracked} 个、未跟踪 ${check.untracked} 个），建议先提交或暂存。`;
+    } else if (check) {
+      // git 本地分支：能带过去的 vs 会被拒绝的（目标分支也改过这些文件）
+      const carry = check.tracked - check.conflicts.length;
+      msg = `当前有 ${check.changed} 个文件未提交/未暂存：已跟踪 ${check.tracked} 个（其中 ${carry} 个可安全带过去、${check.conflicts.length} 个会被拒绝——目标分支也改过这些文件），未跟踪 ${check.untracked} 个。`;
+      if (check.conflicts.length > 0) msg += `\n可能被覆盖的文件：${check.conflicts.join('、')}`;
+      msg += `\n建议先提交或暂存；仍要切换？`;
     } else {
-      msg = `确认切换到分支 ${name}？未提交的改动会尽量保留（可能产生冲突）。`;
+      msg = `确认切换到分支 ${name}？工作区有未提交修改且会被覆盖时，切换会失败（请先提交或暂存）。`;
     }
     setCfm({ title: isTrunk ? '切回主干' : '切换分支', msg, action: () => act('switch', name) });
   };
@@ -120,11 +141,41 @@ export function BranchDialog(props: {
 
   return (
     <ModalShell icon="🪵" title={`分支管理 (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={640}>
-      <HelpNote>
-        {props.repoType === 'git'
-          ? '分支是独立的开发线，互不干扰。用法：在上方输入名称回车 = 从当前提交新建分支；点选列表中的分支后，可「切换」到它、「合并」到当前分支（把该分支改动带过来）、或「删除」它。绿色标记 = 当前所在分支。'
-          : 'SVN 分支是版本库里的目录复制（branches/）。用法：输入名称回车 = 复制 trunk（或当前目录）创建分支；「切换」= 工作副本指向该分支；「合并」= 把该分支的改动并入当前工作副本（合并前请先更新）。绿色标记 = 当前分支。'}
-      </HelpNote>
+      {/* 科普折叠块：新手教学，默认收起不打扰老用户 */}
+      <div
+        className="row small dim nowrap"
+        style={{ gap: 6, cursor: 'pointer', userSelect: 'none', padding: '2px 0', marginBottom: showHelp ? 6 : 0 }}
+        onClick={() => setShowHelp((s) => !s)}
+        title={showHelp ? '收起' : '展开'}
+      >
+        <span style={{ display: 'inline-block', transition: 'transform .15s', transform: showHelp ? 'rotate(90deg)' : '', fontSize: 10 }}>▶</span>
+        <span>{showHelp ? '收起分支使用说明' : '❓ 分支使用说明（新手必读，点击展开）'}</span>
+      </div>
+      {showHelp && (
+        <HelpNote>
+          {props.repoType === 'git' ? (
+            <>
+              分支 = 同一份代码的<strong>平行工作空间</strong>，互不干扰。在分支上改代码不会影响主干。
+              <br />· <strong>新建</strong>：输入名称回车 = 从当前代码状态开一条新线
+              <br />· <strong>切换</strong>：换到另一个分支工作。未提交的修改能否带过去，取决于目标分支有没有动过那些文件——目标分支没动 → 改动跟着你走；目标分支也改过 → 切换会被拒绝，需先提交或暂存（未跟踪的新文件永远能带过去）
+              <br />· <strong>合并</strong>：把别的分支的改动搬进当前分支。<strong>先切到目的地分支，再点来源分支的「合并」</strong>（站在哪，哪就是目的地）
+              <br />· <strong>删除</strong>：已合并的分支可删除（内容已进目标分支，不丢失）。主干（main/master）是团队稳定版本，不能删除
+              <br />
+              绿色 ● = 当前所在分支
+            </>
+          ) : (
+            <>
+              SVN 分支是版本库里的目录复制（branches/）。默认在 trunk 上开发，需要独立改动时复制一份到 branches/ 再继续。
+              <br />· <strong>新建</strong>：输入名称回车 = 复制 trunk（或当前目录）创建分支
+              <br />· <strong>切换</strong>：工作副本指向该分支（本地改动会尽量保留，可能冲突）
+              <br />· <strong>合并</strong>：把该分支的改动并入当前工作副本（合并前请先更新）
+              <br />· <strong>删除</strong>：已合并分支可删除。主干（trunk）是团队稳定版本，不能删除
+              <br />
+              绿色 ● = 当前分支
+            </>
+          )}
+        </HelpNote>
+      )}
       {/* 仓库布局提示（svn 非标准布局时提醒） */}
       {props.repoType === 'svn' && data?.layout && <LayoutNote layout={data.layout} />}
       {/* 新建分支 */}
@@ -173,7 +224,8 @@ export function BranchDialog(props: {
                     <button className="mini btn-accent" disabled={busy} onClick={() => confirmMerge(b.name)} title="把该分支的改动合并到当前分支（先确保已切到目标分支）">🔀 合并</button>
                     <button
                       className="mini danger"
-                      disabled={busy}
+                      disabled={busy || isTrunkName(b.name)}
+                      title={isTrunkName(b.name) ? '主干分支不能删除（团队稳定版本，防止误删）' : '删除分支（已合并的分支才能删）'}
                       onClick={() =>
                         setCfm({
                           title: '删除分支',

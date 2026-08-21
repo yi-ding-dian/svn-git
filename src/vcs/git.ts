@@ -608,6 +608,34 @@ export class GitVcs {
     return { ok: true, message: `已创建分支 ${name}` };
   }
 
+  /** 切换分支前的改动检查：工作区改动统计 + 与目标分支冲突的文件（目标分支也改过的已跟踪文件 = 切换会被拒绝）
+   *
+   * 依据：checkout 时工作区已跟踪文件的修改能否带过去，取决于目标分支是否也改过该文件——
+   * 目标分支没动 → 改动跟着走；目标分支也改过 → 拒绝并保护（需先提交/暂存）。未跟踪文件永远能带。
+   */
+  async switchCheck(branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }> {
+    // 1. 工作区改动（porcelain，中文不转义）
+    const st = await this.exec(['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-unormal']);
+    const tracked: string[] = [];
+    const untracked: string[] = [];
+    for (const line of st.stdout.split('\n')) {
+      if (!line || line.length < 4) continue;
+      const xy = line.slice(0, 2);
+      let pname = line.slice(3);
+      const arrow = pname.indexOf(' -> ');
+      if (arrow > 0) pname = pname.slice(arrow + 4);
+      const rel = unquote(pname.trim()).replace(/\/$/, ''); // 未跟踪目录尾部斜杠去掉
+      if (xy === '??') untracked.push(rel);
+      else tracked.push(rel);
+    }
+    // 2. 目标分支相对当前分支改过的文件
+    const df = await this.exec(['diff', '--name-only', 'HEAD', branch]);
+    const targetFiles = new Set(df.code === 0 ? df.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : []);
+    // 3. 交集 = 切换会被拒绝的文件
+    const conflicts = tracked.filter((f) => targetFiles.has(f));
+    return { changed: tracked.length + untracked.length, tracked: tracked.length, untracked: untracked.length, conflicts };
+  }
+
   /** 切换分支（git 2.20 无 switch，用 checkout） */
   async branchSwitch(name: string): Promise<VcsResult> {
     // 远程分支（origin/xxx，refs/remotes 下存在）：
