@@ -12,6 +12,8 @@ interface Props {
   tick: number;
   /** 提交操作（修改注释/撤销提交）后通知父级刷新文件状态 */
   onChanged?: () => void;
+  /** 返回按钮：退出历史视图回到文件浏览 */
+  onBack: () => void;
 }
 
 export function LogView(props: Props) {
@@ -229,6 +231,11 @@ export function LogView(props: Props) {
         {!sel && <div className="empty">选择提交查看详情</div>}
         {sel && !diffOf && (
           <>
+            {/* 返回按钮行：与左栏标题栏同一水平线（marginBottom/高度一致，视觉同行） */}
+            <div className="row" style={{ marginBottom: 8, height: 24, alignItems: 'center' }}>
+              <button className="mini" onClick={props.onBack}>← 返回</button>
+              <span className="grow" />
+            </div>
             <div className="row" style={{ marginBottom: 10 }}>
               <span className="rev" style={{ fontSize: 15 }}>{sel.rev}</span>
               <span className="dim">{sel.author} · {sel.date}</span>
