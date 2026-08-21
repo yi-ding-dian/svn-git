@@ -170,7 +170,7 @@ export function BranchDialog(props: {
                 <button className="mini primary" disabled={busy} onClick={() => confirmSwitch(b.name)}>切换</button>
                 {!b.remote && (
                   <>
-                    <button className="mini" disabled={busy} onClick={() => confirmMerge(b.name)}>合并</button>
+                    <button className="mini btn-accent" disabled={busy} onClick={() => confirmMerge(b.name)} title="把该分支的改动合并到当前分支（先确保已切到目标分支）">🔀 合并</button>
                     <button
                       className="mini danger"
                       disabled={busy}

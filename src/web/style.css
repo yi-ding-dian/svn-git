@@ -238,6 +238,9 @@ button.primary { background: var(--accent); color: #ffffff; border-color: var(--
 button.primary:hover { background: #79c0ff; }
 button.danger { color: var(--err); border-color: var(--err); }
 button.danger:hover { background: rgba(248,81,73,.15); }
+/* 强调按钮：介于 primary(实心) 与普通之间的次级强调（分支「合并」等核心操作） */
+button.btn-accent { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+button.btn-accent:hover { background: rgba(9,105,218,.12); }
 button.mini { padding: 3px 10px; font-size: 0.88em; border-radius: 6px; }
 .mini.tool-btn { display: inline-flex; align-items: center; gap: 5px; }
 .mini.tool-btn svg { display: block; }
