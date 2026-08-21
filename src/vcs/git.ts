@@ -589,8 +589,11 @@ export class GitVcs {
       const t = line.trim();
       if (!t) continue;
       // "* master" 当前分支（去星号）；"remotes/origin/xxx" 远程
-      if (t.startsWith('remotes/')) branches.push({ name: t.replace(/^remotes\//, ''), remote: true });
-      else if (t !== 'HEAD') {
+      if (t.startsWith('remotes/')) {
+        // 过滤符号引用（remotes/origin/HEAD -> origin/main）：非真实分支，checkout 会失败
+        if (t.includes(' -> ')) continue;
+        branches.push({ name: t.replace(/^remotes\//, ''), remote: true });
+      } else if (t !== 'HEAD') {
         const name = t.replace(/^\*\s*/, '');
         if (name) branches.push({ name, remote: false });
       }
@@ -607,6 +610,20 @@ export class GitVcs {
 
   /** 切换分支（git 2.20 无 switch，用 checkout） */
   async branchSwitch(name: string): Promise<VcsResult> {
+    // 远程分支（origin/xxx，refs/remotes 下存在）：
+    // 直接 checkout origin/xxx 会进游离 HEAD（detached），改动不在任何分支上易丢失；
+    // 本地已有同名分支则切本地（跟踪关系保留），否则自动创建本地跟踪分支。
+    const remoteRef = await this.exec(['rev-parse', '--verify', '--quiet', `refs/remotes/${name}`]);
+    if (remoteRef.code === 0) {
+      const local = name.split('/').slice(1).join('/');
+      const hasLocal = await this.exec(['rev-parse', '--verify', '--quiet', `refs/heads/${local}`]);
+      if (hasLocal.code !== 0) {
+        const res = await this.exec(['checkout', '-b', local, name], { timeoutMs: 60_000 });
+        if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '切换分支失败' };
+        return { ok: true, message: `已切换到 ${name}（自动创建本地跟踪分支 ${local}）` };
+      }
+      name = local; // 本地已有同名分支，直接切换（保留跟踪关系）
+    }
     const res = await this.exec(['checkout', name], { timeoutMs: 60_000 });
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '切换分支失败' };
     return { ok: true, message: `已切换到 ${name}` };

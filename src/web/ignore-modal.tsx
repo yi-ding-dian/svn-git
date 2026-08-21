@@ -51,8 +51,7 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
 
   return (
     <ModalShell title="⚠ 忽略设置" width={480} onClose={props.onClose}>
-        <div className="body">
-          <div className="dim small" style={{ marginBottom: 8, wordBreak: 'break-all' }}>目录: {props.dir || '（仓库根）'}</div>
+      <div className="dim small" style={{ marginBottom: 8, wordBreak: 'break-all' }}>目录: {props.dir || '（仓库根）'}</div>
           <div className="vcs-list" style={{ minHeight: 100 }}>
             {rules.length === 0 && <div className="dim" style={{ padding: 10 }}>暂无忽略规则</div>}
             {rules.map((r) => (
@@ -78,7 +77,6 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
             <button className="mini primary" disabled={busy || !pattern.trim()} onClick={add}>添加</button>
           </div>
           {msg && <div className="small" style={{ marginTop: 8, color: 'var(--dim)' }}>{msg}</div>}
-        </div>
     </ModalShell>
   );
 }

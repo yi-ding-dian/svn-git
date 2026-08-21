@@ -1273,7 +1273,9 @@ export function startServer(): Promise<ServerHandle> {
       if (p === '/api/tags') {
         const { vcs } = vcsOf();
         const tags = await (vcs as any).tagList();
-        sendJson(res, 200, { tags });
+        // svn 附带仓库布局探测（git 无 layout 方法，跳过）
+        const layout = await (vcs as any).layout?.().catch(() => undefined);
+        sendJson(res, 200, layout ? { tags, layout } : { tags });
         return;
       }
 
@@ -1345,18 +1347,33 @@ export function startServer(): Promise<ServerHandle> {
             result = r.code === 0 ? { ok: true, message: `已初始化仓库 ${target}`, repoDir: target } : { ok: false, message: r.stderr.trim() || 'git init 失败' };
           }
         } else if (type === 'svn') {
-          // svnadmin create（本地仓库）+ 可选工作副本
+          // svnadmin create（本地仓库）+ 可选标准布局 + 工作副本
           fs.mkdirSync(target, { recursive: true });
           const r = await run('svnadmin', ['create', target], { timeoutMs: 120_000 });
           if (r.code !== 0) {
             result = { ok: false, message: r.stderr.trim() || 'svnadmin create 失败' };
           } else {
-            // 自动 checkout 一个工作副本目录
+            let wcUrl = `file://${target}`;
+            const standard = body.standard !== false;
+            if (standard) {
+              // 标准布局：创建 trunk/branches/tags（svn 分支机制依赖目录约定）
+              const mk = await run(
+                'svn',
+                ['mkdir', '-q', `${wcUrl}/trunk`, `${wcUrl}/branches`, `${wcUrl}/tags`, '-m', '创建标准布局 trunk/branches/tags'],
+                { timeoutMs: 60_000 }
+              );
+              if (mk.code !== 0) {
+                sendJson(res, 200, { ok: false, message: `标准布局创建失败: ${mk.stderr.trim() || '未知'}`, authError: false });
+                return;
+              }
+              // 工作副本检出 trunk（根下只有布局目录，检出根会把 branches 全部拖进来）
+              wcUrl += '/trunk';
+            }
             const wcDir = target + '-wc';
-            const c = await run('svn', ['checkout', '-q', `file://${target}`, wcDir], { timeoutMs: 120_000 });
+            const c = await run('svn', ['checkout', '-q', wcUrl, wcDir], { timeoutMs: 120_000 });
             result = c.code === 0
-              ? { ok: true, message: `已创建 SVN 仓库 ${target}（工作副本 ${wcDir}）`, repoDir: wcDir }
-              : { ok: true, message: `已创建 SVN 仓库 ${target}（工作副本检出失败: ${c.stderr.trim() || '未知'}）`, repoDir: wcDir };
+              ? { ok: true, message: `已创建 SVN 仓库 ${target}${standard ? '（标准布局，工作副本检出 trunk）' : ''}（工作副本 ${wcDir}）`, repoDir: wcDir }
+              : { ok: true, message: `已创建 SVN 仓库 ${target}${standard ? '（标准布局）' : ''}（工作副本检出失败: ${c.stderr.trim() || '未知'}）`, repoDir: wcDir };
           }
         } else {
           sendJson(res, 400, { error: '未知仓库类型' });

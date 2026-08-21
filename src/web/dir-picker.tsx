@@ -153,8 +153,8 @@ export function DirPicker(props: {
           ]}
         />
       )}
-      {/* 底部：当前路径 + 确定/取消 */}
-      <div className="row" style={{ marginTop: 12, gap: 8 }}>
+      {/* 底部：当前路径 + 确定/取消（foot 风格：分隔线 + 贴底右对齐） */}
+      <div className="foot" style={{ margin: 0, padding: '12px 0 0' }}>
         <span className="dim small" style={{ flex: 1, wordBreak: 'break-all' }}>当前: {dir}</span>
         <button onClick={props.onClose}>取消</button>
         <button className="primary" onClick={() => props.onPick(dir)}>选择此目录</button>

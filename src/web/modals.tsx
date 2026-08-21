@@ -271,10 +271,14 @@ export function EnvInstallModal(props: {
   const [manual, setManual] = useState('');
   const [busyTool, setBusyTool] = useState<'svn' | 'git' | ''>('');
   const logRef = useRef<HTMLDivElement>(null);
+  const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [logs]);
+
+  // 卸载时关闭 SSE（避免弹窗关闭后安装流还在后台跑）
+  useEffect(() => () => esRef.current?.close(), []);
 
   const install = (tool: 'svn' | 'git') => {
     setStatus('running');
@@ -282,12 +286,14 @@ export function EnvInstallModal(props: {
     setLogs([]);
     setManual('');
     const es = new EventSource(`/api/env-install/stream?tool=${tool}`);
+    esRef.current = es;
     es.onmessage = (e) => {
       try {
         const d = JSON.parse(e.data);
         if (d.line) setLogs((l) => [...l, d.line]);
         if (d.done) {
           es.close();
+          esRef.current = null;
           setBusyTool('');
           if (d.code === 0) {
             setStatus('done');
@@ -302,9 +308,19 @@ export function EnvInstallModal(props: {
     };
     es.onerror = () => {
       es.close();
+      esRef.current = null;
       setBusyTool('');
       setStatus('error');
     };
+  };
+
+  /** 取消安装：关闭 SSE 流，回到可重新安装状态 */
+  const cancelInstall = () => {
+    esRef.current?.close();
+    esRef.current = null;
+    setBusyTool('');
+    setStatus('idle');
+    setLogs((l) => [...l, '【已取消安装】']);
   };
 
   const Row = (props: { name: string; info: { installed: boolean; version: string }; tool: 'svn' | 'git' }) => (
@@ -366,6 +382,7 @@ export function EnvInstallModal(props: {
         </div>
         <div className="foot">
           <button onClick={props.onClose} disabled={status === 'running'}>关闭</button>
+          {status === 'running' && <button onClick={cancelInstall}>取消安装</button>}
           {status === 'done' && <button className="primary" onClick={props.onInstalled}>🔄 刷新页面</button>}
         </div>
       </ResizableModal>
@@ -515,6 +532,7 @@ export function CommitSelectModal(props: {
           {err && <div className="error mt8">{err}</div>}
         </div>
         <div className="foot">
+          <button onClick={props.onClose}>取消</button>
           <button className="primary" onClick={submit} disabled={props.items.length === 0}>
             ✅ 提交勾选的 {checked.size} 个文件
           </button>

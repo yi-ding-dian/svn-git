@@ -201,10 +201,10 @@ export function PushConfirmModal(props: {
               </div>
             ))}
           </div>
+          {notice && (
+            <div className={noticeErr ? 'error' : 'small'} style={{ marginTop: 8 }}>{notice}</div>
+          )}
         </div>
-        {notice && (
-          <div className={noticeErr ? 'error' : 'small'} style={{ marginTop: 8 }}>{notice}</div>
-        )}
         <div className="foot">
           <button onClick={props.onCancel}>取消</button>
           <button className="primary" disabled={unpushed.length === 0} onClick={props.onConfirm}>

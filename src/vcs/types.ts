@@ -68,3 +68,10 @@ export const CODE_DESC: Record<string, string> = {
   '~': '类型变更',
   ' ': '无变化',
 };
+
+/** SVN 仓库布局探测：标准布局 trunk/branches/tags 目录是否存在 */
+export interface SvnLayout {
+  trunk: boolean;
+  branches: boolean;
+  tags: boolean;
+}

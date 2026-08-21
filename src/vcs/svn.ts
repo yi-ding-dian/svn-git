@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { XMLParser } from 'fast-xml-parser';
 import { run } from './exec.js';
-import type { FileStatus, LogEntry, RepoInfo, VcsResult } from './types.js';
+import type { FileStatus, LogEntry, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
 export interface SvnCred {
   username: string;
@@ -457,8 +457,22 @@ export class SvnVcs {
     return m?.[1] ?? 'trunk';
   }
 
-  /** 分支列表（svn list <root>/branches） */
-  async branchList(): Promise<{ current: string; branches: { name: string; remote: boolean }[] }> {
+  /** 仓库布局探测：标准布局 trunk/branches/tags 目录是否存在（非标准布局时前端提示） */
+  private async layout(): Promise<SvnLayout> {
+    const root = await this.repoRootUrl();
+    const exists = async (url: string): Promise<boolean> => {
+      try {
+        await this.ls(url + '/');
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    return { trunk: await exists(`${root}/trunk`), branches: await exists(`${root}/branches`), tags: await exists(`${root}/tags`) };
+  }
+
+  /** 分支列表（svn list <root>/branches），附带仓库布局探测结果 */
+  async branchList(): Promise<{ current: string; branches: { name: string; remote: boolean }[]; layout: SvnLayout }> {
     const root = await this.repoRootUrl();
     let names: { name: string; isDir: boolean }[] = [];
     try {
@@ -470,15 +484,19 @@ export class SvnVcs {
     return {
       current,
       branches: names.filter((n) => n.isDir).map((n) => ({ name: n.name.replace(/\/$/, ''), remote: false })),
+      layout: await this.layout(),
     };
   }
 
   /** 仓库根 URL */
   private async repoRootUrl(): Promise<string> {
-    const info = await this.info();
-    // info.url 是 wc URL；repository root 从 info() 拿？SvnVcs.info() 返回 url（wc URL）
-    // 找 root：从 URL 去掉 trunk/branches/tags 段
-    const url = info.url ?? '';
+    // 优先官方命令 repos-root-url（svn 1.9+）：返回真实仓库根，
+    // 非标准布局深层检出（如 dev/branches/xxx）也不会被正则误判为根
+    const res = await this.exec(['info', '--show-item', 'repos-root-url'], { timeoutMs: 60_000 });
+    const root = res.code === 0 ? res.stdout.trim().split('\n')[0] : '';
+    if (root) return root;
+    // 兜底：从 wc URL 去掉 trunk/branches/tags 段
+    const url = (await this.info()).url ?? '';
     return url.replace(/\/(trunk|branches|tags)(\/.*)?$/, '');
   }
 
@@ -534,17 +552,19 @@ export class SvnVcs {
     return { ok: true, message: `已删除分支 ${name}` };
   }
 
-  /** 切换分支：svn switch <root>/branches/<name>；name=trunk/root 时切回主干（无 trunk 用仓库根） */
+  /** 切换分支：svn switch <root>/branches/<name>；name=trunk/root 时切回主干 */
   async branchSwitch(name: string): Promise<VcsResult> {
     const root = await this.repoRootUrl();
     let target: string;
     if (name === 'trunk' || name === 'root' || name === '') {
       try {
         await this.ls(`${root}/trunk/`);
-        target = `${root}/trunk`;
       } catch {
-        target = root;
+        // 无 trunk 时不能 fallback 到仓库根：svn 1.10 要求切换目标与当前 URL 有共同祖先，
+        // 子目录工作副本 switch 到根必报 E195012，且提示"已切换到主干"是误报
+        return { ok: false, message: '仓库没有 trunk 目录，无法切回主干（请确认仓库布局或直接切换到其他分支）' };
       }
+      target = `${root}/trunk`;
     } else {
       target = `${root}/branches/${name}`;
     }
@@ -553,7 +573,11 @@ export class SvnVcs {
       const auth = this.authError(res);
       return { ok: false, message: auth ?? (res.stderr.trim() || '切换分支失败') };
     }
-    return { ok: true, message: `已切换到${name === 'trunk' || name === 'root' ? '主干' : `分支 ${name}`}` };
+    const base = `已切换到${name === 'trunk' || name === 'root' ? '主干' : `分支 ${name}`}`;
+    // svn switch 遇文本冲突时退出码仍为 0，需从输出识别冲突并提示用户处理
+    const out = (res.stdout ?? '') + (res.stderr ?? '');
+    if (/冲突概要|conflict/i.test(out)) return { ok: true, message: `${base}；⚠ 切换时产生冲突，请打开冲突视图处理冲突文件` };
+    return { ok: true, message: base };
   }
 
   /** 合并分支到工作副本：svn merge <root>/branches/<name> */
@@ -564,7 +588,11 @@ export class SvnVcs {
       const auth = this.authError(res);
       return { ok: false, message: auth ?? (res.stderr.trim() || '合并失败（可能有冲突）') };
     }
-    return { ok: true, message: `已合并分支 ${branchName} 的改动` };
+    const base = `已合并分支 ${branchName} 的改动`;
+    // svn merge 遇文本冲突退出码仍为 0，需从输出识别冲突并提示用户处理
+    const out = (res.stdout ?? '') + (res.stderr ?? '');
+    if (/冲突概要|conflict/i.test(out)) return { ok: true, message: `${base}；⚠ 合并产生冲突，请打开冲突视图处理冲突文件` };
+    return { ok: true, message: base };
   }
 
   /** 标签列表（svn list <root>/tags） */

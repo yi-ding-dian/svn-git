@@ -1,6 +1,6 @@
 /** 版本管理对话框：分支 / 标签 / Stash / 创建仓库（git + svn 通用） */
 import React, { useEffect, useState } from 'react';
-import { get, post, type BranchInfo, type StashItem, type VcsResult } from './api.js';
+import { get, post, type BranchInfo, type StashItem, type SvnLayout, type VcsResult } from './api.js';
 import { ModalShell, ResizableModal } from './modal-shell.js';
 import { DirPicker } from './dir-picker.js';
 import { HelpNote, FormRow } from './ui.js';
@@ -25,6 +25,29 @@ async function runAction(
   } catch (e) {
     onMsg((e as Error).message, true);
   }
+}
+
+// ==================== SVN 布局提示条 ====================
+
+/** SVN 仓库布局提示条：标准布局绿色确认，非标准布局黄色提醒（分支/标签弹窗共用） */
+function LayoutNote(props: { layout: SvnLayout }) {
+  const { trunk, branches, tags } = props.layout;
+  if (trunk && branches && tags) {
+    return <div className="small" style={{ color: 'var(--ok)', margin: '6px 0' }}>✓ 标准布局（trunk / branches / tags）</div>;
+  }
+  const missing: string[] = [];
+  if (!trunk) missing.push('trunk/');
+  if (!branches) missing.push('branches/');
+  if (!tags) missing.push('tags/');
+  const tips: string[] = [];
+  if (!branches) tips.push('分支列表为空，可先「新建分支」自动创建该目录');
+  if (!trunk) tips.push('无法切回主干，新建分支将以当前目录为来源');
+  if (!tags) tips.push('标签列表为空，可先「创建标签」自动创建该目录');
+  return (
+    <div className="small" style={{ color: 'var(--warn)', margin: '6px 0' }}>
+      ⚠ 仓库缺少 {missing.join('、')}（非标准布局）。{tips.join(' ')}
+    </div>
+  );
 }
 
 // ==================== 分支管理 ====================
@@ -72,6 +95,29 @@ export function BranchDialog(props: {
     ).finally(() => setBusy(false));
   };
 
+  // 切换 / 合并为影响工作区的操作，统一走二次确认（复用 ConfirmModal）。
+  // 文案区分 git/svn 语义：git 未提交修改会被保护（冲突时切换失败）；svn 改动尽量带过去（可能冲突）
+  const confirmSwitch = (name: string, isTrunk = false) => {
+    let msg: string;
+    if (isTrunk) {
+      msg = '确认切回主干（trunk）？未提交的改动会尽量保留（可能产生冲突）。';
+    } else if (props.repoType === 'git' && name.includes('/')) {
+      const local = name.split('/').slice(1).join('/');
+      msg = `确认切换到远程分支 ${name}？将自动创建本地跟踪分支 ${local} 并切换过去；工作区有未提交修改时切换会失败（请先提交或暂存）。`;
+    } else if (props.repoType === 'git') {
+      msg = `确认切换到分支 ${name}？工作区有未提交修改且会被覆盖时，切换会失败（请先提交或暂存）。`;
+    } else {
+      msg = `确认切换到分支 ${name}？未提交的改动会尽量保留（可能产生冲突）。`;
+    }
+    setCfm({ title: isTrunk ? '切回主干' : '切换分支', msg, action: () => act('switch', name) });
+  };
+  const confirmMerge = (name: string) =>
+    setCfm({
+      title: '合并分支',
+      msg: `确认将分支 ${name} 合并到当前分支？可能产生冲突，请提前确认工作区状态。`,
+      action: () => act('merge', name),
+    });
+
   return (
     <ModalShell icon="🪵" title={`分支管理 (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={640}>
       <HelpNote>
@@ -79,6 +125,8 @@ export function BranchDialog(props: {
           ? '分支是独立的开发线，互不干扰。用法：在上方输入名称回车 = 从当前提交新建分支；点选列表中的分支后，可「切换」到它、「合并」到当前分支（把该分支改动带过来）、或「删除」它。绿色标记 = 当前所在分支。'
           : 'SVN 分支是版本库里的目录复制（branches/）。用法：输入名称回车 = 复制 trunk（或当前目录）创建分支；「切换」= 工作副本指向该分支；「合并」= 把该分支的改动并入当前工作副本（合并前请先更新）。绿色标记 = 当前分支。'}
       </HelpNote>
+      {/* 仓库布局提示（svn 非标准布局时提醒） */}
+      {props.repoType === 'svn' && data?.layout && <LayoutNote layout={data.layout} />}
       {/* 新建分支 */}
       <div className="row" style={{ margin: '12px 0' }}>
         <input
@@ -95,7 +143,7 @@ export function BranchDialog(props: {
           ➕ 新建分支
         </button>
         {props.repoType === 'svn' && data?.current && data.current !== 'trunk' && (
-          <button className="mini" disabled={busy} onClick={() => act('switch', 'trunk')} title="切回 trunk（无 trunk 时切回仓库根）">
+          <button className="mini" disabled={busy} onClick={() => confirmSwitch('trunk', true)} title="切回 trunk">
             ↩ 切回主干
           </button>
         )}
@@ -116,23 +164,28 @@ export function BranchDialog(props: {
               {b.name === data.current ? '当前' : b.remote ? '远程' : '本地'}
             </span>
             <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
-            {!b.remote && b.name !== data.current && (
+            {b.name !== data.current && (
               <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                <button className="mini primary" disabled={busy} onClick={() => act('switch', b.name)}>切换</button>
-                <button className="mini" disabled={busy} onClick={() => act('merge', b.name)}>合并</button>
-                <button
-                  className="mini danger"
-                  disabled={busy}
-                  onClick={() =>
-                    setCfm({
-                      title: '删除分支',
-                      msg: `确认删除分支 ${b.name}？未合并的改动会丢失（可强制删除）。`,
-                      action: () => act('delete', b.name, false),
-                    })
-                  }
-                >
-                  删除
-                </button>
+                {/* 切换对所有非当前分支开放（远程分支由后端自动创建本地跟踪分支） */}
+                <button className="mini primary" disabled={busy} onClick={() => confirmSwitch(b.name)}>切换</button>
+                {!b.remote && (
+                  <>
+                    <button className="mini" disabled={busy} onClick={() => confirmMerge(b.name)}>合并</button>
+                    <button
+                      className="mini danger"
+                      disabled={busy}
+                      onClick={() =>
+                        setCfm({
+                          title: '删除分支',
+                          msg: `确认删除分支 ${b.name}？未合并的改动会丢失（可强制删除）。`,
+                          action: () => act('delete', b.name, false),
+                        })
+                      }
+                    >
+                      删除
+                    </button>
+                  </>
+                )}
               </span>
             )}
           </div>
@@ -189,7 +242,19 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
   };
 
   return (
-    <ModalShell title="清理未跟踪文件 (GIT)" onClose={props.onClose} width={520}>
+    <ModalShell
+      title="清理未跟踪文件 (GIT)"
+      onClose={props.onClose}
+      width={520}
+      foot={
+        <>
+          <button onClick={props.onClose}>关闭</button>
+          <button className="danger" disabled={busy || !files || files.length === 0} onClick={doClean}>
+            {busy ? '清理中…' : '确认清理'}
+          </button>
+        </>
+      }
+    >
       <div className="dim small" style={{ marginBottom: 8 }}>
         <div>
           以下文件将被永久删除，不可恢复。清理的是工作区里存在、但<strong>没被 git 纳入版本管理</strong>的文件
@@ -212,11 +277,6 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
         </div>
       )}
       <ResultLine msg={msg} err={msgErr} />
-      <div className="foot" style={{ padding: '12px 0 0', borderTop: 'none' }}>
-        <button className="danger" disabled={busy || !files || files.length === 0} onClick={doClean}>
-          {busy ? '清理中…' : '确认清理'}
-        </button>
-      </div>
     </ModalShell>
   );
 }
@@ -224,7 +284,7 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
 // ==================== 标签管理 ====================
 
 export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void; onChanged: () => void }) {
-  const [tags, setTags] = useState<string[]>([]);
+  const [data, setData] = useState<{ tags: string[]; layout?: SvnLayout } | null>(null);
   const [newName, setNewName] = useState('');
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
@@ -235,7 +295,7 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
   const load = () => {
     get
       .tags()
-      .then((r) => setTags(r.tags))
+      .then((r) => setData(r))
       .catch((e: Error) => {
         setMsg(e.message);
         setMsgErr(true);
@@ -265,6 +325,8 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
           ? '标签是给当前提交打的固定名字，常用于标记发布版本（v1.0、v2.0 等）。用法：输入名称回车 = 给当前代码打标签；列表中的标签可「删除」。'
           : 'SVN 标签是版本库中的目录快照（tags/），只读性质，用于标记发布版本。用法：输入名称回车 = 复制 trunk（或当前目录）创建标签；列表中的标签可「删除」（危险操作会确认）。'}
       </HelpNote>
+      {/* 仓库布局提示（svn 非标准布局时提醒） */}
+      {props.repoType === 'svn' && data?.layout && <LayoutNote layout={data.layout} />}
       <div className="row" style={{ margin: '12px 0' }}>
         <input
           type="text"
@@ -281,8 +343,9 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
         </button>
       </div>
       <div className="vcs-list" style={{ maxHeight: 260 }}>
-        {tags.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>暂无标签</div>}
-        {tags.map((t) => (
+        {!data && <div className="dim" style={{ padding: '10px 6px' }}>加载中…</div>}
+        {data && data.tags.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>暂无标签</div>}
+        {data?.tags.map((t) => (
           <div key={t} className="changed-row">
             <span style={{ color: 'var(--accent)' }}>🏷</span>
             <span className="mono" style={{ flex: 1 }}>{t}</span>
@@ -411,7 +474,19 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
             <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               stash@{it.index}: {it.label}
             </span>
-            <button className="mini" disabled={busy} onClick={() => act('pop', it.index)}>恢复</button>
+            <button
+              className="mini"
+              disabled={busy}
+              onClick={() =>
+                setCfm({
+                  title: '恢复 Stash',
+                  msg: `确认恢复 stash@{${it.index}}？改动将合入工作区（如产生冲突会保留该条 Stash 供处理）。`,
+                  action: () => act('pop', it.index),
+                })
+              }
+            >
+              恢复
+            </button>
             <button
               className="mini danger"
               disabled={busy}
@@ -648,6 +723,7 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
   const [dir, setDir] = useState(props.home ?? '');
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
+  const [standard, setStandard] = useState(true); // svn 标准布局（trunk/branches/tags），默认勾选
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -662,7 +738,7 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
     setBusy(true);
     const repoType = type === 'clone' ? 'git' : type;
     void runAction(
-      () => post.repoCreate(repoType, dir.trim(), name.trim(), type === 'clone' ? url.trim() : ''),
+      () => post.repoCreate(repoType, dir.trim(), name.trim(), type === 'clone' ? url.trim() : '', standard),
       (m, err) => {
         setMsg(m);
         setMsgErr(Boolean(err));
@@ -672,9 +748,22 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
   };
 
   return (
-    <ModalShell icon="➕" title="创建 / 克隆仓库" onClose={props.onClose} width={540}>
+    <ModalShell
+      icon="➕"
+      title="创建 / 克隆仓库"
+      onClose={props.onClose}
+      width={540}
+      foot={
+        <>
+          <button onClick={props.onClose}>关闭</button>
+          <button className="primary" disabled={busy} onClick={submit}>
+            {busy ? '创建中…' : '创建'}
+          </button>
+        </>
+      }
+    >
       <HelpNote>
-        三种方式：Git 仓库 = 在本地目录初始化新仓库（git init）；Git 克隆 = 从远程地址复制一份到本地（git clone）；SVN 仓库 = 用 svnadmin 创建本地仓库并自动检出工作副本（目录名 + "-wc"）。
+        三种方式：Git 仓库 = 在本地目录初始化新仓库（git init）；Git 克隆 = 从远程地址复制一份到本地（git clone）；SVN 仓库 = 用 svnadmin 创建本地仓库，默认创建标准布局（trunk / branches / tags）并检出 trunk 作为工作副本（目录名 + "-wc"）。
       </HelpNote>
       <div style={{ marginTop: 12 }} />
       <div className="row" style={{ marginBottom: 12, gap: 6 }}>
@@ -719,12 +808,21 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
         {type === 'clone' && 'git clone 远程仓库到本地'}
         {type === 'svn' && 'svnadmin create 创建本地 SVN 仓库，并自动检出工作副本（目录名 + "-wc"）'}
       </div>
+      {/* SVN 标准布局选项（默认勾选，非标准布局仓库分支管理受限） */}
+      {type === 'svn' && (
+        <>
+          <label className="row" style={{ gap: 6, marginTop: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={standard} onChange={(e) => setStandard(e.target.checked)} />
+            <span className="small">创建标准布局（trunk / branches / tags），工作副本检出 trunk</span>
+          </label>
+          {!standard && (
+            <div className="small" style={{ color: 'var(--warn)', marginTop: 4 }}>
+              ⚠ 不创建标准布局：分支 / 标签管理将不可用（后续无法自动创建分支和标签）
+            </div>
+          )}
+        </>
+      )}
       <ResultLine msg={msg} err={msgErr} />
-      <div className="foot" style={{ padding: '12px 0 0', borderTop: 'none' }}>
-        <button className="primary" disabled={busy} onClick={submit}>
-          {busy ? '创建中…' : '创建'}
-        </button>
-      </div>
       {/* 文件夹浏览选择器：新建/重命名，确定填充所在目录 */}
       {picker && (
         <div className="modal-mask">

@@ -170,7 +170,7 @@ export const get = {
   conflictDetail: (path: string) =>
     api<{ path: string; theirsDiff: string; myDiff: string }>(`/api/conflict-detail?path=${encodeURIComponent(path)}`),
   branches: () => api<BranchInfo>('/api/branches'),
-  tags: () => api<{ tags: string[] }>('/api/tags'),
+  tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),
   blame: (path: string) => api<{ lines: { rev: string; author: string; date: string; line: number; text: string }[] }>(`/api/blame?path=${encodeURIComponent(path)}`),
   gitClean: () => api<{ files: string[] }>('/api/git-clean'),
@@ -192,9 +192,18 @@ export interface FilterTreeNode {
   children: FilterTreeNode[];
 }
 
+/** SVN 仓库布局探测：标准布局 trunk/branches/tags 目录是否存在 */
+export interface SvnLayout {
+  trunk: boolean;
+  branches: boolean;
+  tags: boolean;
+}
+
 export interface BranchInfo {
   current: string;
   branches: { name: string; remote: boolean }[];
+  /** svn 仓库布局探测结果（git 无此概念，不返回） */
+  layout?: SvnLayout;
 }
 
 export interface StashItem {
@@ -217,8 +226,8 @@ export const post = {
   tag: (action: 'create' | 'delete', name: string) => api<VcsResult>('/api/tag', json({ action, name })),
   stash: (action: 'push' | 'pop' | 'drop', message = '', index = 0) =>
     api<VcsResult>('/api/stash', json({ action, message, index })),
-  repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '') =>
-    api<VcsResult & { repoDir?: string }>('/api/repo-create', json({ type, dir, name, url })),
+  repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true) =>
+    api<VcsResult & { repoDir?: string }>('/api/repo-create', json({ type, dir, name, url, standard })),
   svnExtra: (action: 'cleanup' | 'resolve' | 'propset-ignore', path = '', accept = 'working', pattern = '') =>
     api<VcsResult>('/api/svn-extra', json({ action, path, accept, pattern })),
   gitClean: () => api<VcsResult>('/api/git-clean', json({})),
