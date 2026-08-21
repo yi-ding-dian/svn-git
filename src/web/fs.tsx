@@ -9,6 +9,8 @@ import { IgnoreModal } from './ignore-modal.js';
 import { FavDirsModal } from './fav-dirs.js';
 import { renderMarkdown } from './markdown.js';
 import { fmtSize } from './utils.js';
+import { ModalShell } from './modal-shell.js';
+import { FormRow } from './ui.js';
 
 interface Props {
   tick: number;
@@ -113,6 +115,9 @@ export function FsView(props: Props) {
   const selDragRef = useRef<{ startX: number; startY: number } | null>(null);
   const lastWasDragRef = useRef(false);
   const [ignoreModal, setIgnoreModal] = useState<{ dir: string } | null>(null);
+  /** 加入忽略输入弹窗（替代 window.prompt：目标文件 + 规则输入） */
+  const [ignoreAsk, setIgnoreAsk] = useState<{ rel: string; name: string } | null>(null);
+  const [ignorePattern, setIgnorePattern] = useState('');
   const [focusIndex, setFocusIndex] = useState(0);
   // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
   const [tip, setTip] = useState<{ x: number; y: number; name: string; count?: number; codes?: string[] } | null>(null);
@@ -1059,14 +1064,20 @@ export function FsView(props: Props) {
     setCtx({ ...ctxPos(e, items.length), items });
   };
 
-  /** 加入忽略：git 写 .gitignore / svn 设置 svn:ignore */
+  /** 加入忽略：git 写 .gitignore / svn 设置 svn:ignore（弹自定义输入框替代 window.prompt） */
   const ignoreFile = (e: { code: string; rel: string; name: string }) => {
-    const pattern = window.prompt(`加入忽略（规则，默认当前文件名）：\n${e.rel}`, e.name)?.trim();
+    setIgnorePattern(e.name);
+    setIgnoreAsk(e);
+  };
+  const doIgnore = () => {
+    if (!ignoreAsk) return;
+    const pattern = ignorePattern.trim();
     if (!pattern) return;
     post
-      .ignore(e.rel, pattern)
+      .ignore(ignoreAsk.rel, pattern)
       .then((r) => props.onToast(r.message))
       .catch((err: Error) => props.onToast(`忽略失败: ${err.message}`));
+    setIgnoreAsk(null);
   };
 
   /** 列表/浏览模式共用的条目行渲染 */
@@ -1693,6 +1704,38 @@ export function FsView(props: Props) {
           onChanged={() => (mode === 'tree' ? loadNode('', true) : void load(dir, true))}
           onToast={props.onToast}
         />
+      )}
+      {/* 加入忽略输入弹窗（替代 window.prompt） */}
+      {ignoreAsk && (
+        <ModalShell
+          title="⚠ 加入忽略"
+          width={440}
+          onClose={() => setIgnoreAsk(null)}
+          foot={
+            <>
+              <button onClick={() => setIgnoreAsk(null)}>取消</button>
+              <button className="primary" disabled={!ignorePattern.trim()} onClick={doIgnore}>
+                加入忽略
+              </button>
+            </>
+          }
+        >
+          <div className="dim small" style={{ marginBottom: 8, wordBreak: 'break-all' }}>
+            加入忽略规则（默认当前文件名）：<span className="mono">{ignoreAsk.rel}</span>
+          </div>
+          <FormRow label="规则">
+            <input
+              type="text"
+              placeholder="如 *.log 或 目录名/"
+              value={ignorePattern}
+              onChange={(e) => setIgnorePattern(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && ignorePattern.trim()) doIgnore();
+              }}
+              autoFocus
+            />
+          </FormRow>
+        </ModalShell>
       )}
 
       {/* 常用文件夹管理弹窗 */}
