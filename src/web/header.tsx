@@ -1,9 +1,10 @@
 /** 顶部工具栏：仓库信息 + 版本管理操作 + 主题/字号 + 打开项目/登录/退出 */
-import React from 'react';
+import React, { useState } from 'react';
 import { post, type RepoInfo } from './api.js';
 import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit } from './icons.js';
 import { type Modal } from './modals.js';
 import { type View } from './sidebar.js';
+import { ContextMenu } from './context-menu.js';
 
 /** 主题列表（浅色系，色块按钮） */
 export const THEMES = [
@@ -33,13 +34,16 @@ function ToolBtn(props: {
   );
 }
 
+/** 分组分隔线：按语义划分按钮组（传输 / 版本管理 / 仓库 / 维护 / 外观退出） */
+function Sep() {
+  return <span className="header-sep" />;
+}
+
 export function AppHeader(props: {
   view: View;
   repo: RepoInfo | null;
   conflictCount: number;
   configUser: string;
-  fontSize: number;
-  setFontSize: (s: number) => void;
   onRefresh: () => void;
   setModal: (m: Modal) => void;
   onToast: (m: string) => void;
@@ -49,6 +53,8 @@ export function AppHeader(props: {
   unpushedCount?: number | null;
 }) {
   const repo = props.repo;
+  // 「⋯」更多菜单（低频操作：新建仓库 / Git 信息 / SVN 登录）定位
+  const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
   return (
     <div className="header" style={{ display: props.view === 'diff' ? 'none' : undefined }}>
       <span className="logo" style={{ display: 'flex', alignItems: 'center' }} title="svn-git文件版本管理">
@@ -59,6 +65,7 @@ export function AppHeader(props: {
       {repo?.url ? <span className="dim small nowrap">{repo.url}</span> : null}
       {repo?.revOrBranch ? <span className="dim small nowrap">[{repo.revOrBranch}]</span> : null}
       <span className="spacer" />
+      {/* ① 冲突处理（有冲突时置顶，无分隔前缀） */}
       {props.conflictCount > 0 && (
         <ToolBtn
           icon={<IconClean />}
@@ -67,9 +74,10 @@ export function AppHeader(props: {
           onClick={() => props.setModal({ type: 'conflicts' })}
         />
       )}
+      {/* ② 传输 + 暂存（git） */}
       {repo?.type === 'git' && (
         <>
-          <ToolBtn icon={<IconStash />} label="Stash" title="Stash 暂存区" onClick={() => props.setModal({ type: 'stash' })} />
+          <Sep />
           <ToolBtn
             icon={<IconCommit />}
             label={
@@ -90,12 +98,21 @@ export function AppHeader(props: {
             onClick={props.onPush}
             disabled={props.unpushedCount != null && props.unpushedCount <= 0}
           />
-          <ToolBtn icon={<IconClean />} label="清理" title="清理未跟踪文件" onClick={() => props.setModal({ type: 'clean' })} />
+          <ToolBtn icon={<IconStash />} label="Stash" title="Stash 暂存区" onClick={() => props.setModal({ type: 'stash' })} />
         </>
       )}
+      {/* ③ 版本管理 */}
+      <Sep />
       <ToolBtn icon={<IconBranch />} label="分支" title="分支管理" onClick={() => props.setModal({ type: 'branches' })} />
       <ToolBtn icon={<IconTag />} label="标签" title="标签管理" onClick={() => props.setModal({ type: 'tags' })} />
-      <ToolBtn icon={<IconPlus />} label="新建仓库" title="创建/克隆仓库" onClick={() => props.setModal({ type: 'create-repo' })} />
+      {/* ④ 仓库 */}
+      <Sep />
+      <ToolBtn icon={<IconFolder />} label="打开项目" title="打开项目" onClick={() => props.setModal({ type: 'open' })} />
+      {/* ⑤ 维护 */}
+      <Sep />
+      {repo?.type === 'git' && (
+        <ToolBtn icon={<IconClean />} label="清理" title="清理未跟踪文件" onClick={() => props.setModal({ type: 'clean' })} />
+      )}
       {repo?.type === 'svn' && (
         <ToolBtn
           icon={<IconClean />}
@@ -117,26 +134,62 @@ export function AppHeader(props: {
           }
         />
       )}
-      <button
-        className="mini"
-        title="切换字号"
-        onClick={() => props.setFontSize(FONT_SIZES[(FONT_SIZES.indexOf(props.fontSize) + 1) % FONT_SIZES.length]!)}
-      >
-        A {props.fontSize}px
-      </button>
       <ToolBtn icon={<IconRefresh />} label="刷新" title="刷新" onClick={props.onRefresh} />
-      {repo?.type === 'git' && (
-        <ToolBtn icon={<IconGear />} label="Git" title="Git 信息与配置" onClick={() => props.setModal({ type: 'git-info' })} />
-      )}
-      <ToolBtn icon={<IconFolder />} label="打开项目" title="打开项目" onClick={() => props.setModal({ type: 'open' })} />
-      {repo?.type === 'svn' && (
-        <ToolBtn
-          icon={<IconLogin />}
-          label={props.configUser ? `SVN: ${props.configUser}` : 'SVN 登录'}
-          title="SVN 账号设置"
-          onClick={() => props.setModal({ type: 'login' })}
+      {/* 低频操作收进「⋯」菜单（新建仓库 / Git 信息 / SVN 登录） */}
+      <button
+        className="mini tool-btn"
+        title="更多操作（新建仓库 / Git 信息 / SVN 登录）"
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setMoreMenu({ x: Math.max(8, r.right - 180), y: r.bottom + 4 });
+        }}
+      >
+        ⋯
+      </button>
+      {moreMenu && (
+        <ContextMenu
+          x={moreMenu.x}
+          y={moreMenu.y}
+          mask
+          onClose={() => setMoreMenu(null)}
+          items={[
+            {
+              icon: <IconPlus size={14} />,
+              label: '新建仓库',
+              action: () => {
+                setMoreMenu(null);
+                props.setModal({ type: 'create-repo' });
+              },
+            },
+            ...(repo?.type === 'git'
+              ? [
+                  {
+                    icon: <IconGear size={14} />,
+                    label: 'Git 信息与配置',
+                    action: () => {
+                      setMoreMenu(null);
+                      props.setModal({ type: 'git-info' });
+                    },
+                  },
+                ]
+              : []),
+            ...(repo?.type === 'svn'
+              ? [
+                  {
+                    icon: <IconLogin size={14} />,
+                    label: props.configUser ? `SVN 账号: ${props.configUser}` : 'SVN 登录',
+                    action: () => {
+                      setMoreMenu(null);
+                      props.setModal({ type: 'login' });
+                    },
+                  },
+                ]
+              : []),
+          ]}
         />
       )}
+      {/* ⑥ 退出 */}
+      <Sep />
       <ToolBtn
         icon={<IconExit />}
         label="退出应用"

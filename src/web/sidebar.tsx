@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { IconClock, IconFolder } from './icons.js';
 // import { IconDiff } from './icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from './context-menu.js';
-import { THEMES } from './header.js';
+import { THEMES, FONT_SIZES } from './header.js';
 import type { HistoryItem } from './api.js';
 
 /** 主视图类型（侧边栏导航目标） */
@@ -20,9 +20,11 @@ export function Sidebar(props: {
   onRemoveHistory: (path: string) => void;
   /** 设置/取消常用项目（星号标记，启动时优先打开） */
   onSetFav: (path: string, fav: boolean) => void;
-  /** 主题（色块按钮，位于最近项目上方） */
+  /** 外观区：主题色块 + 字号档位（位于最近项目上方） */
   theme: string;
   setTheme: (t: string) => void;
+  fontSize: number;
+  setFontSize: (s: number) => void;
 }) {
   // 最近项目右键菜单（设常用 / 删除 / 取消）
   const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean } | null>(null);
@@ -47,8 +49,9 @@ export function Sidebar(props: {
         </div>
       ))}
       <div style={{ flex: 1 }} />
-      {/* 主题切换（色块按钮，位于最近项目上方；侧边栏底部空间有限，色块紧凑排布） */}
-      <div className="row small dim nowrap" style={{ gap: 5, padding: '8px 20px 4px' }} title="切换主题">
+      {/* 外观区：主题色块 + 字号档位（位于最近项目上方） */}
+      <div className="sidebar-title" style={{ marginTop: 4 }}>外观</div>
+      <div className="row small dim nowrap" style={{ gap: 5, padding: '2px 20px 4px' }} title="切换主题">
         {THEMES.map((t) => (
           <button
             key={t.key}
@@ -57,6 +60,18 @@ export function Sidebar(props: {
             style={{ background: t.color, width: 18, height: 18 }}
             onClick={() => props.setTheme(t.key)}
           />
+        ))}
+      </div>
+      <div className="row small dim nowrap" style={{ gap: 5, padding: '0 20px 6px' }} title="切换字号">
+        {FONT_SIZES.map((s) => (
+          <button
+            key={s}
+            className={`mini font-size-btn ${props.fontSize === s ? 'primary' : ''}`}
+            title={`字号 ${s}px`}
+            onClick={() => props.setFontSize(s)}
+          >
+            {s}
+          </button>
         ))}
       </div>
       {/* 最近项目：底部区域（版本号上方） */}

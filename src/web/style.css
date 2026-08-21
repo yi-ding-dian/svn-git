@@ -131,6 +131,8 @@ body {
 .header .path { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .header .spacer { flex: 1; }
 .header button { margin-left: 4px; }
+/* 按钮分组分隔线（传输 / 版本管理 / 仓库 / 维护 / 外观退出） */
+.header-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; margin-left: 4px; }
 
 .main { display: flex; flex: 1; min-height: 0; }
 
@@ -469,6 +471,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .theme-btn:hover { transform: scale(1.15); }
 .theme-btn.active { border-color: var(--text); }
+/* 侧边栏外观区字号档位（窄栏紧凑排布） */
+.font-size-btn { padding: 1px 6px; font-size: 0.82em; border-radius: 5px; }
 
 /* ---------- 列表/表格 ---------- */
 .list { display: flex; flex-direction: column; gap: 2px; }

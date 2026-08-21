@@ -1239,9 +1239,7 @@ export function FsView(props: Props) {
           >
             <IconHome /> 根目录
           </button>
-          <button className="mini tool-btn" onClick={() => (mode === 'tree' ? loadNode('', true) : void load(dir, true))} title="刷新">
-            <IconRefresh /> 刷新
-          </button>
+          {/* 刷新已由顶部工具栏全局刷新覆盖（tick 机制连带重载本视图），不重复提供 */}
           <button className="mini tool-btn" onClick={() => setShowHidden((s) => !s)} title="显示/隐藏隐藏文件">
             {showHidden ? <IconEye /> : <IconEyeOff />} {showHidden ? '隐藏' : '隐藏文件'}
           </button>
