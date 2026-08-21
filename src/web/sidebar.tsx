@@ -47,8 +47,7 @@ export function Sidebar(props: {
         </div>
       ))}
       <div style={{ flex: 1 }} />
-      {/* 外观区：主题色块 + 字号档位（位于最近项目上方） */}
-      <div className="sidebar-title" style={{ marginTop: 4 }}>外观</div>
+      {/* 外观区：主题色块（无标题，简洁一排；字体设置在顶栏 ⋯ 菜单） */}
       <div className="row small dim nowrap" style={{ gap: 5, padding: '2px 20px 4px' }} title="切换主题">
         {THEMES.map((t) => (
           <button

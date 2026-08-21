@@ -101,10 +101,7 @@ export function AppHeader(props: {
       {/* ③ 版本管理（分支高频保留；标签低频在 ⋯ 菜单） */}
       <Sep />
       <ToolBtn icon={<IconBranch />} label="分支" title="分支管理" onClick={() => props.setModal({ type: 'branches' })} />
-      {/* ④ 仓库 */}
-      <Sep />
-      <ToolBtn icon={<IconFolder />} label="打开项目" title="打开项目" onClick={() => props.setModal({ type: 'open' })} />
-      {/* ⑤ 维护 */}
+      {/* ④ 维护 */}
       <Sep />
       {repo?.type === 'git' && (
         <ToolBtn icon={<IconClean />} label="清理" title="清理未跟踪文件" onClick={() => props.setModal({ type: 'clean' })} />
@@ -149,6 +146,14 @@ export function AppHeader(props: {
           mask
           onClose={() => setMoreMenu(null)}
           items={[
+            {
+              icon: <IconFolder size={14} />,
+              label: '打开项目',
+              action: () => {
+                setMoreMenu(null);
+                props.setModal({ type: 'open' });
+              },
+            },
             {
               icon: <IconPlus size={14} />,
               label: '新建仓库',
