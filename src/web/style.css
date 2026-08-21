@@ -544,19 +544,27 @@ textarea, input[type=text], input[type=password] {
 }
 textarea:focus, input:focus { outline: none; border-color: var(--accent); }
 textarea { resize: vertical; font-family: inherit; }
-/* ---------- Markdown 渲染预览 ---------- */
+/* ---------- Markdown 渲染预览（marked 输出原生标签） ---------- */
 .md-render { padding: 8px 14px; line-height: 1.75; word-break: break-word; }
-.md-render .md-h1, .md-render .md-h2, .md-render .md-h3, .md-render .md-h4, .md-render .md-h5, .md-render .md-h6 { margin: 14px 0 6px; line-height: 1.4; }
-.md-render .md-h1 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-.md-render .md-h2 { font-size: 1.28em; }
-.md-render .md-h3 { font-size: 1.12em; }
-.md-render .md-line { min-height: 1.5em; }
-.md-render .md-inline { background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 0.92em; }
-.md-render .md-code { display: block; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow: auto; font-size: 0.9em; line-height: 1.5; }
-.md-render .md-quote { border-left: 3px solid var(--accent); background: var(--panel2); margin: 8px 0; padding: 6px 12px; color: var(--dim); border-radius: 0 6px 6px 0; }
-.md-render .md-li { padding-left: 4px; }
-.md-render .md-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.md-render h1, .md-render h2, .md-render h3, .md-render h4, .md-render h5, .md-render h6 { margin: 14px 0 6px; line-height: 1.4; }
+.md-render h1 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.md-render h2 { font-size: 1.28em; }
+.md-render h3 { font-size: 1.12em; }
+.md-render h4 { font-size: 1.05em; }
+.md-render p { margin: 6px 0; }
+.md-render code { background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 0.92em; }
+.md-render pre { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow: auto; font-size: 0.9em; line-height: 1.5; }
+.md-render pre code { background: none; border: none; padding: 0; }
+.md-render blockquote { border-left: 3px solid var(--accent); background: var(--panel2); margin: 8px 0; padding: 6px 12px; color: var(--dim); border-radius: 0 6px 6px 0; }
+.md-render ul, .md-render ol { margin: 6px 0; padding-left: 24px; }
+.md-render hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 .md-render a { color: var(--accent); }
+.md-render img { max-width: 100%; border-radius: 6px; margin: 6px 0; }
+/* 表格：并排双列/边框（README 功能预览等） */
+.md-render table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+.md-render th, .md-render td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; font-size: 0.95em; }
+.md-render th { background: var(--panel2); font-weight: 600; }
+.md-render tr:nth-child(even) td { background: var(--panel2); }
 /* 更新中转圈 */
 .spinner {
   width: 36px; height: 36px; border: 3px solid var(--border2); border-top-color: var(--accent);

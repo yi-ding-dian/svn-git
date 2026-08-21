@@ -1051,6 +1051,34 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
+      if (p === '/api/file') {
+        // md 预览图片：读取仓库内文件（仅图片扩展名 + 防目录穿越）
+        const { repo } = vcsOf();
+        const fileRel = url.searchParams.get('path') || '';
+        if (!/\.(png|jpe?g|gif|svg|webp|bmp|ico)$/i.test(fileRel)) {
+          sendJson(res, 400, { error: '仅支持图片文件' });
+          return;
+        }
+        const root = path.resolve(repo.root);
+        const abs = path.resolve(root, fileRel);
+        if (abs !== root && !abs.startsWith(root + path.sep)) {
+          sendJson(res, 400, { error: '路径越界' });
+          return;
+        }
+        if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+          sendJson(res, 404, { error: '文件不存在' });
+          return;
+        }
+        const ext = abs.split('.').pop()!.toLowerCase();
+        const MIME: Record<string, string> = {
+          png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+          svg: 'image/svg+xml', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon',
+        };
+        res.writeHead(200, { 'Content-Type': MIME[ext] ?? 'application/octet-stream', 'Cache-Control': 'no-store' });
+        res.end(fs.readFileSync(abs));
+        return;
+      }
+
       if (p === '/api/git-auth' && req.method === 'GET') {
         // Git 推送认证信息（不回传密码本体）
         const cfg = loadConfig();

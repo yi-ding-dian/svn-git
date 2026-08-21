@@ -118,6 +118,21 @@ export function FsView(props: Props) {
   /** 加入忽略输入弹窗（替代 window.prompt：目标文件 + 规则输入） */
   const [ignoreAsk, setIgnoreAsk] = useState<{ rel: string; name: string } | null>(null);
   const [ignorePattern, setIgnorePattern] = useState('');
+  /** md 预览图片放大查看（点击图片 → 全屏显示原图） */
+  const [imgViewer, setImgViewer] = useState<string | null>(null);
+  useEffect(() => {
+    if (!imgViewer) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setImgViewer(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [imgViewer]);
+  /** md-render 容器点击：目标是图片则放大查看 */
+  const onMdRenderClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const t = e.target as HTMLElement;
+    if (t.tagName === 'IMG') setImgViewer((t as HTMLImageElement).src);
+  };
   const [focusIndex, setFocusIndex] = useState(0);
   // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
   const [tip, setTip] = useState<{ x: number; y: number; name: string; count?: number; codes?: string[] } | null>(null);
@@ -1616,9 +1631,15 @@ export function FsView(props: Props) {
               <button className="mini" onClick={() => setPreview(null)}>← 返回列表</button>
             </div>
             <div className="diff" style={{ flex: 1, overflow: 'auto' }}>
-              {/* Markdown 渲染预览（md 文件开启预览时） */}
+              {/* Markdown 渲染预览（md 文件开启预览时）；图片相对路径按 md 文件所在目录解析 */}
               {mdPreview && preview.name.toLowerCase().endsWith('.md') ? (
-                <div className="md-render" dangerouslySetInnerHTML={{ __html: renderMarkdown(preview.text) }} />
+                <div
+                  className="md-render"
+                  onClick={onMdRenderClick}
+                  dangerouslySetInnerHTML={{
+                    __html: renderMarkdown(preview.text, { baseDir: preview.rel.includes('/') ? preview.rel.slice(0, preview.rel.lastIndexOf('/')) : '' }),
+                  }}
+                />
               ) : blameMode ? (
                 // Blame 视图：行前缀显示 版本+作者
                 blameData.map((b, i) => {
@@ -1761,6 +1782,28 @@ export function FsView(props: Props) {
           onMouseEnter={cancelCtxClose} // 鼠标移入菜单 → 取消延迟关闭
           onMouseLeave={closeCtxSoon} // 鼠标移出菜单 → 延迟关闭
         />
+      )}
+      {/* md 预览图片放大查看：全屏深色遮罩 + 原图自适应，点击遮罩 / ESC 关闭 */}
+      {imgViewer && (
+        <div
+          className="modal-mask"
+          style={{
+            background: 'rgba(0,0,0,.78)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'zoom-out',
+            zIndex: 500,
+          }}
+          onClick={() => setImgViewer(null)}
+          title="点击关闭（ESC）"
+        >
+          <img
+            src={imgViewer}
+            style={{ maxWidth: '92vw', maxHeight: '92vh', objectFit: 'contain', borderRadius: 8, boxShadow: '0 12px 48px rgba(0,0,0,.55)' }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
       )}
       {/* 网格目录悬浮提示：彩色状态徽标 + 紧凑描述（原生 title 无法着色，自定义浮层替代） */}
       {tip && (
