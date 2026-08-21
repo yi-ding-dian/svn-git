@@ -1107,9 +1107,13 @@ export function startServer(): Promise<ServerHandle> {
         else if (p === '/api/commit') result = await v.commit(paths, msg);
         else if (p === '/api/update') {
           const dir = String(body.path ?? '');
-          // 前端取消更新（请求断开）→ 终止 svn/git 子进程
+          // 前端取消更新（请求断开）→ 终止 svn/git 子进程。
+          // 注意：req 'aborted' 事件在 Node 18.17+ 已弃用不再触发，改用 res 'close' +
+          // writableEnded 判断客户端是否异常断开（正常响应完成时 writableEnded=true 不误杀）
           const ac = new AbortController();
-          req.on('aborted', () => ac.abort());
+          res.on('close', () => {
+            if (!res.writableEnded) ac.abort();
+          });
           result = repo.type === 'git' ? await v.pull(ac.signal) : await v.update(dir || undefined, ac.signal);
           // 更新成功后自动恢复缺失文件（磁盘删除但版本库还在 → 拉回，消除 ! 标识）
           if (result.ok) {

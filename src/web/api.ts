@@ -208,7 +208,7 @@ export const post = {
   add: (paths: string[]) => api<VcsResult>('/api/add', json({ paths })),
   commit: (paths: string[], message: string) => api<VcsResult>('/api/commit', json({ paths, message })),
   update: (path?: string, signal?: AbortSignal) =>
-    api<VcsResult & { path?: string; files?: { path: string; status: string; code?: string }[] }>('/api/update', json({ path, signal })),
+    api<VcsResult & { path?: string; files?: { path: string; status: string; code?: string }[] }>('/api/update', json({ path }, signal)),
   revert: (paths: string[]) => api<VcsResult>('/api/revert', json({ paths })),
   delete: (paths: string[]) => api<VcsResult>('/api/delete', json({ paths })),
   push: (signal?: AbortSignal) => api<VcsResult>('/api/push', json({}, signal)),
