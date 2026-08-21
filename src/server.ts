@@ -925,13 +925,13 @@ export function startServer(): Promise<ServerHandle> {
             }
           }
           // 转换失败（提交路径不属于当前工作副本，如其他分支/标签的提交）→
-          // 尝试从服务器 URL 直接 diff（不依赖本地工作副本，需网络）；失败再明确提示
+          // 尝试从服务器 URL 直接 diff（不依赖本地工作副本，需网络）；失败再明确提示。
+          // URL 用 ^/ 仓库根相对语法：在 wc 内由 svn 自己解析仓库根，绕开 URL 映射
+          // （入口 /software2 与仓库内路径 /projects 不一致）拼接错误的问题
           if (pathRel && y === '') {
             try {
-              const rootUrl = await (vcs as any).repositoryRootUrl();
-              if (rootUrl && pathRel.startsWith('/')) {
-                const url = rootUrl.replace(/\/+$/, '') + pathRel;
-                const du = await (vcs as any).diffUrl(String(n - 1), rev, url);
+              if (pathRel.startsWith('/')) {
+                const du = await (vcs as any).diffUrl(String(n - 1), rev, '^' + pathRel);
                 if (du.ok || du.output) {
                   sendJson(res, 200, du);
                   return;
@@ -949,27 +949,25 @@ export function startServer(): Promise<ServerHandle> {
           // URL 也失败时（极端场景）用 svn cat 取内容构造"整文件新增"
           if ((!d.ok || !d.output.trim()) && pathRel && pathRel.startsWith('/')) {
             try {
-              const rootUrl = await (vcs as any).repositoryRootUrl();
-              if (rootUrl) {
-                const url = rootUrl.replace(/\/+$/, '') + pathRel;
-                const du = await (vcs as any).diffUrl(String(n - 1), rev, url);
-                if (du.ok || du.output) {
-                  sendJson(res, 200, du);
-                  return;
-                }
-                const cat = await (vcs as any).catRev(rev, url);
-                if (cat.ok && cat.output) {
-                  const lines = cat.output.split('\n');
-                  if (lines.length && lines[lines.length - 1] === '') lines.pop();
-                  const range = lines.length === 0 ? '0,0' : `1,${lines.length}`;
-                  sendJson(res, 200, {
-                    ok: true,
-                    output:
-                      `--- ${pathRel}\t(不存在的)\n+++ ${pathRel}\t(版本 ${rev})\n@@ -0,0 +${range} @@\n` +
-                      lines.map((l: string) => '+' + l).join('\n'),
-                  });
-                  return;
-                }
+              const url = '^' + pathRel;
+              const du = await (vcs as any).diffUrl(String(n - 1), rev, url);
+              if (du.ok || du.output) {
+                sendJson(res, 200, du);
+                return;
+              }
+              // cat 兜底：URL 带 @rev peg（路径在 HEAD 已删除时无 peg 会解析失败）
+              const cat = await (vcs as any).catRev(rev, `${url}@${rev}`);
+              if (cat.ok && cat.output) {
+                const lines = cat.output.split('\n');
+                if (lines.length && lines[lines.length - 1] === '') lines.pop();
+                const range = lines.length === 0 ? '0,0' : `1,${lines.length}`;
+                sendJson(res, 200, {
+                  ok: true,
+                  output:
+                    `--- ${pathRel}\t(不存在的)\n+++ ${pathRel}\t(版本 ${rev})\n@@ -0,0 +${range} @@\n` +
+                    lines.map((l: string) => '+' + l).join('\n'),
+                });
+                return;
               }
             } catch {
               /* 保持原结果 */

@@ -182,6 +182,16 @@ export class SvnVcs {
     };
   }
 
+  /** svn diff -r a:b URL（URL 用 ^/ 仓库根相对或完整 URL，不依赖本地工作副本） */
+  async diffUrl(a: string, b: string, url: string): Promise<{ ok: boolean; output: string; error?: string }> {
+    const res = await this.exec(['diff', '-r', `${a}:${b}`, url], { timeoutMs: 120_000 });
+    return {
+      ok: res.code === 0,
+      output: res.stdout,
+      error: res.code !== 0 ? res.stderr.trim() : undefined,
+    };
+  }
+
   /** svn add（svn add 默认递归目录）；已版本化文件（W150002）自动跳过不报错 */
   async add(relPaths: string[]): Promise<VcsResult> {
     const res = await this.exec(['add', '--parents', ...relPaths]);

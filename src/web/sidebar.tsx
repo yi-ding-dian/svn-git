@@ -1,6 +1,7 @@
 /** 侧边栏：视图导航 + 最近项目列表（右键删除）+ 版本号 */
 import React, { useState } from 'react';
-import { IconClock, IconDiff, IconFolder } from './icons.js';
+import { IconClock, IconFolder } from './icons.js';
+// import { IconDiff } from './icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from './context-menu.js';
 
 /** 主视图类型（侧边栏导航目标） */
@@ -21,7 +22,8 @@ export function Sidebar(props: {
 
   const NAV = [
     { key: 'log' as View, label: '历史', icon: <IconClock size={16} /> },
-    { key: 'diff' as View, label: '差异', icon: <IconDiff size={16} /> },
+    // 差异入口隐藏：提交弹窗双击文件/冲突界面仍可进入差异视图
+    // { key: 'diff' as View, label: '差异', icon: <IconDiff size={16} /> },
     { key: 'browse' as View, label: '文件夹', icon: <IconFolder size={16} /> },
   ];
 

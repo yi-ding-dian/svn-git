@@ -647,7 +647,7 @@ export function App() {
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
               <div style={{ display: view === 'log' ? undefined : 'none', height: '100%' }}>
-                <LogView path={logPath} tick={tick} onClearPath={() => setLogPath(undefined)} onChanged={refresh} />
+                <LogView path={logPath} tick={tick} onChanged={refresh} />
               </div>
               <div style={{ display: view === 'diff' ? undefined : 'none', height: '100%' }}>
                 <DiffView

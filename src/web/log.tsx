@@ -9,7 +9,6 @@ import { ResizableModal } from './modal-shell.js';
 interface Props {
   path?: string;
   tick: number;
-  onClearPath: () => void;
   /** 提交操作（修改注释/撤销提交）后通知父级刷新文件状态 */
   onChanged?: () => void;
 }
@@ -159,7 +158,7 @@ export function LogView(props: Props) {
     <div style={{ display: 'flex', gap: 14, height: '100%', minHeight: 0 }}>
       <div style={{ width: `${leftRatio}%`, flex: '0 0 auto', display: 'flex', flexDirection: 'column', minWidth: 220 }}>
         <div className="row dim" style={{ marginBottom: 8, gap: 8 }}>
-          历史: {props.path ? <span>{props.path} <a href="#" onClick={(e) => { e.preventDefault(); props.onClearPath(); }}>清除路径过滤</a></span> : '全部提交'}
+          历史: {props.path ? <span>{props.path}</span> : '全部提交'}
           {filterQ && <span className="small" style={{ color: 'var(--warn)' }}>{visibleLogs.length}/{logs?.length ?? 0}</span>}
           <span className="grow" />
           {/* 模糊过滤：按消息/作者/版本号实时过滤提交列表 */}
