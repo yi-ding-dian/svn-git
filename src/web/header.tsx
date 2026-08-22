@@ -96,11 +96,15 @@ function ToolBtn(props: {
   disabled?: boolean;
   /** 危险操作：红色强调（防误触,如退出应用） */
   danger?: boolean;
+  /** 命令预览：悬浮按钮时显示将执行的命令（title 追加） */
+  cmd?: string;
 }) {
   return (
     <button
       className="tool-btn"
-      title={props.title}
+      title={props.cmd ? `${props.title ?? ''}
+
+命令行: ${props.cmd}` : props.title}
       onClick={props.onClick}
       disabled={props.disabled}
       style={props.danger ? { color: 'var(--err)' } : undefined}
@@ -174,6 +178,7 @@ export function AppHeader(props: {
             }
             onClick={props.onPush}
             disabled={props.unpushedCount != null && props.unpushedCount <= 0}
+            cmd="git push"
           />
           <ToolBtn icon={<IconStash />} label="Stash" title="Stash 暂存区" onClick={() => props.setModal({ type: 'stash' })} />
         </>
@@ -191,6 +196,7 @@ export function AppHeader(props: {
           icon={<IconClean />}
           label="清理"
           title="svn cleanup"
+          cmd="svn cleanup"
           onClick={() =>
             props.setModal({
               type: 'confirm',

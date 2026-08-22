@@ -13,6 +13,8 @@ export interface CtxMenuItem {
   danger?: boolean;
   /** 分隔线（渲染时忽略其他字段） */
   sep?: boolean;
+  /** 命令预览：悬浮该项时在菜单底部显示将执行的命令（教学/透明层） */
+  cmd?: string;
   action?: () => void;
 }
 
@@ -55,6 +57,7 @@ export function ContextMenu(props: {
                 props.onClose();
                 it.action?.();
               }}
+              title={it.cmd ?? undefined}
             >
               <span className="ctx-icon">{it.icon}</span>
               <span>{it.label}</span>

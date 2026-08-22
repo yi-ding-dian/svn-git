@@ -5,6 +5,7 @@ import { ModalShell, ResizableModal } from './modal-shell.js';
 import { DirPicker } from './dir-picker.js';
 import { HelpNote, FormRow } from './ui.js';
 import { ConfirmModal } from './modals.js';
+import { cmdOfRepo } from './cmd-preview.js';
 
 /** 操作结果提示行 */
 function ResultLine(props: { msg: string; err?: boolean }) {
@@ -190,7 +191,12 @@ export function BranchDialog(props: {
           }}
           style={{ flex: 1 }}
         />
-        <button className="primary" disabled={busy || !newName.trim()} onClick={() => act('create', newName.trim())}>
+        <button
+          className="primary"
+          disabled={busy || !newName.trim()}
+          onClick={() => act('create', newName.trim())}
+          title={cmdOfRepo(props.repoType, 'branch_create', { name: newName.trim() || '…' })}
+        >
           ➕ 新建分支
         </button>
         {props.repoType === 'svn' && data?.current && data.current !== 'trunk' && (
@@ -218,14 +224,16 @@ export function BranchDialog(props: {
             {b.name !== data.current && (
               <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
                 {/* 切换对所有非当前分支开放（远程分支由后端自动创建本地跟踪分支） */}
-                <button className="mini primary" disabled={busy} onClick={() => confirmSwitch(b.name)}>切换</button>
+                <button className="mini primary" disabled={busy} onClick={() => confirmSwitch(b.name)} title={cmdOfRepo(props.repoType, 'branch_switch', { name: b.name })}>切换</button>
                 {!b.remote && (
                   <>
-                    <button className="mini btn-accent" disabled={busy} onClick={() => confirmMerge(b.name)} title="把该分支的改动合并到当前分支（先确保已切到目标分支）">🔀 合并</button>
+                    <button className="mini btn-accent" disabled={busy} onClick={() => confirmMerge(b.name)} title={`${cmdOfRepo(props.repoType, 'branch_merge', { name: b.name })}\n\n把该分支的改动合并到当前分支（先确保已切到目标分支）`}>🔀 合并</button>
                     <button
                       className="mini danger"
                       disabled={busy || isTrunkName(b.name)}
-                      title={isTrunkName(b.name) ? '主干分支不能删除（团队稳定版本，防止误删）' : '删除分支（已合并的分支才能删）'}
+                      title={isTrunkName(b.name)
+                        ? '主干分支不能删除（团队稳定版本，防止误删）'
+                        : `${cmdOfRepo(props.repoType, 'branch_delete', { name: b.name })}\n\n删除分支（已合并的分支才能删）`}
                       onClick={() =>
                         setCfm({
                           title: '删除分支',
@@ -390,7 +398,12 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
           }}
           style={{ flex: 1 }}
         />
-        <button className="primary" disabled={busy || !newName.trim()} onClick={() => act('create', newName.trim())}>
+        <button
+          className="primary"
+          disabled={busy || !newName.trim()}
+          onClick={() => act('create', newName.trim())}
+          title={cmdOfRepo(props.repoType, 'tag_create', { name: newName.trim() || '…', msg: '…' })}
+        >
           🏷 创建标签
         </button>
       </div>
@@ -411,6 +424,7 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
                   action: () => act('delete', t),
                 })
               }
+              title={cmdOfRepo(props.repoType, 'tag_delete', { name: t })}
             >
               删除
             </button>
