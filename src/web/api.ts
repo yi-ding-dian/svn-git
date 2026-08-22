@@ -153,6 +153,8 @@ export const get = {
   search: (query: string, dir = '') =>
     api<{ paths: string[] }>(`/api/search?query=${encodeURIComponent(query)}&dir=${encodeURIComponent(dir)}`),
   envCheck: () => api<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } }>('/api/env-check'),
+  /** 远程连通性检测（网络灯）：ok=网络通;reason=认证失败/连接错误说明 */
+  netCheck: () => api<{ ok: boolean; reason: string }>('/api/net-check'),
   preflight: (signal?: AbortSignal) =>
     api<{
       remoteHasUpdate: boolean;

@@ -1099,6 +1099,54 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
+      if (p === '/api/net-check') {
+        // 远程连通性检测（网络灯）：只握手不取数据(git ls-remote / svn ls),8s 超时。
+        // 区分"网络断"与"认证失败"：认证失败=网络通的（前端显示绿,tooltip 说明认证问题）
+        const { repo } = vcsOf();
+        let ok = false;
+        let reason = '未知错误';
+        try {
+          if (repo.type === 'git') {
+            const u = await run('git', ['remote', 'get-url', 'origin'], { cwd: repo.root, timeoutMs: 8_000 });
+            if (u.code !== 0 || !u.stdout.trim()) {
+              ok = true; // 未配置远程：无远程可检,不视为离线
+              reason = '未配置远程';
+            } else {
+              const r = await run('git', ['ls-remote', 'origin'], { cwd: repo.root, timeoutMs: 8_000 });
+              const errText = (r.stderr + '\n' + r.stdout).trim();
+              if (r.code === 0) {
+                ok = true; reason = '网络正常';
+              } else if (/auth|credential|401|403|could not read Username|terminal prompts/i.test(errText)) {
+                ok = true; reason = '已连通（认证失败，需检查令牌）';
+              } else {
+                ok = false; reason = errText.split('\n')[0] || '连接失败';
+              }
+            }
+          } else {
+            // svn: 访问仓库 URL（工作副本 svn info 无网络请求,必须直接打 URL）
+            const url = repo.url;
+            if (!url) {
+              ok = true; reason = '未配置仓库 URL';
+            } else {
+              const r = await run('svn', ['ls', url], { timeoutMs: 8_000 });
+              const errText = r.stderr.trim();
+              if (r.code === 0) {
+                ok = true; reason = '网络正常';
+              } else if (/E170001|Authorization failed|Authentication failed/i.test(errText)) {
+                ok = true; reason = '已连通（认证失败，请检查账号）';
+              } else {
+                ok = false; reason = errText.split('\n')[0] || '连接失败';
+              }
+            }
+          }
+        } catch (e) {
+          ok = false;
+          reason = (e as Error).message;
+        }
+        sendJson(res, 200, { ok, reason });
+        return;
+      }
+
       if (p === '/api/env-install/stream') {
         // SSE：流式执行系统安装，前端显示实时日志/进度
         const tool = url.searchParams.get('tool') ?? 'both';

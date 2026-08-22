@@ -1,6 +1,6 @@
 /** 顶部工具栏：仓库信息 + 版本管理操作 + 主题/字号 + 打开项目/登录/退出 */
-import React, { useState } from 'react';
-import { post, type RepoInfo } from './api.js';
+import React, { useCallback, useEffect, useState } from 'react';
+import { get, post, type RepoInfo } from './api.js';
 import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont } from './icons.js';
 import { type Modal } from './modals.js';
 import { type View } from './sidebar.js';
@@ -15,6 +15,77 @@ export const THEMES = [
   { key: 'mint', name: '薄荷', color: '#dcefe4' },
   { key: 'rose', name: '玫瑰', color: '#f6e2e6' },
 ];
+
+/**
+ * 远程网络状态灯：30s 检测一次（get /api/net-check，只握手不取数据）。
+ * 最近 3 次滑动窗口 → 全成功=绿、混合=黄（时通时断）、连续失败=红、未出结果=灰。
+ * 认证失败=网络通的（绿，tooltip 说明）。点击圆点可立即手动检测。
+ */
+export function NetLight({ hostCheckKey }: { hostCheckKey?: string }) {
+  const [lastResult, setLastResult] = useState<{ ok: boolean; reason: string; at: number } | null>(null);
+  const [history, setHistory] = useState<boolean[]>([]);
+  const [checking, setChecking] = useState(false);
+
+  const check = useCallback(async () => {
+    setChecking(true);
+    try {
+      const r = await get.netCheck();
+      setLastResult({ ok: r.ok, reason: r.reason, at: Date.now() });
+      setHistory((h) => [...h.slice(-2), r.ok]); // 滚动保留最近 3 次
+    } catch {
+      setLastResult({ ok: false, reason: '检测请求失败', at: Date.now() });
+      setHistory((h) => [...h.slice(-2), false]);
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  // 30s 周期 + 仓库变化时立即检测；页签隐藏暂停、切回补检
+  useEffect(() => {
+    void check();
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void check();
+    }, 30_000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void check();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [check, hostCheckKey]);
+
+  const h = history;
+  const n = h.length;
+  let color = 'var(--dim)'; // 灰:未出结果
+  let label = '检测中…';
+  if (n > 0) {
+    const allOk = h.every(Boolean);
+    if (allOk && n >= 2) { color = 'var(--ok)'; label = '远程网络正常'; }
+    else if (!allOk && !h.some(Boolean)) { color = 'var(--err)'; label = '远程网络断开'; }
+    else { color = 'var(--warn)'; label = '远程网络不稳定（近期检测有成功有失败）'; }
+    if (h[0] === true && n === 1) { color = 'var(--ok)'; label = '远程网络正常'; } // 首检成功即绿
+  }
+  const tip = lastResult
+    ? `${label} · 最近检测 ${Math.max(0, Math.round((Date.now() - lastResult.at) / 1000))} 秒前${lastResult.reason !== '网络正常' ? `（${lastResult.reason}）` : ''}${checking ? ' · 检测中…' : ''} · 点击立即检测`
+    : '网络状态检测中…';
+  return (
+    <span
+      className="dim small nowrap"
+      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+      title={tip}
+      onClick={() => void check()}
+    >
+      <span
+        style={{
+          width: 8, height: 8, borderRadius: '50%', background: color,
+          boxShadow: color === 'var(--dim)' ? 'none' : `0 0 0 3px ${color}33`, display: 'inline-block',
+        }}
+      />
+    </span>
+  );
+}
 
 /** 顶部工具按钮（图标 + 文字，统一样式） */
 function ToolBtn(props: {
@@ -69,6 +140,7 @@ export function AppHeader(props: {
       <span className="path">{repo?.root ?? '未选择仓库'}</span>
       {repo?.url ? <span className="dim small nowrap">{repo.url}</span> : null}
       {repo?.revOrBranch ? <span className="dim small nowrap">[{repo.revOrBranch}]</span> : null}
+      {repo?.url ? <NetLight hostCheckKey={repo.url + repo.revOrBranch} /> : null}
       <span className="spacer" />
       {/* ① 冲突处理（有冲突时置顶，无分隔前缀） */}
       {props.conflictCount > 0 && (
