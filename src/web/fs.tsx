@@ -15,6 +15,8 @@ import { ConfirmModal } from './modals.js';
 
 interface Props {
   tick: number;
+  /** 当前视图是否激活（视图常驻挂载、display 切换；键盘监听只在激活时生效，防止隐藏时按键穿透误改状态） */
+  active: boolean;
   repoType: 'svn' | 'git';
   /** 仓库根（切换仓库时重置浏览位置，避免残留上次目录） */
   repoRoot?: string | null;
@@ -724,6 +726,7 @@ export function FsView(props: Props) {
   searchActiveRef.current = searchActive;
 
   useEffect(() => {
+    if (!props.active) return; // 视图隐藏时键盘不响应（防止穿透到其他视图）
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 输入框内不拦截
@@ -828,7 +831,7 @@ export function FsView(props: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ctx, preview, mode, toggleExpand, openFile]);
+  }, [ctx, preview, mode, toggleExpand, openFile, props.active]);
 
   // 焦点越界修正
   useEffect(() => {

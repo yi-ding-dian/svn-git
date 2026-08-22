@@ -98,6 +98,15 @@ function isAuthError(err: Error): boolean {
   return /认证失败|E170001|Authentication failed/i.test(err.message);
 }
 
+/** 请求来源校验（CSRF 防护）:跨站页面请求一律拒绝。
+ * 同源页面（Electron 窗口 / --browser 模式）/ 本地脚本（curl 等）不带 Origin 或 Origin 为 127.0.0.1;
+ * 浏览器任意网页发起的跨站请求必带站点 Origin。 */
+function isSafeOrigin(req: http.IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  return /^https?:\/\/127\.0\.0\.1(?::\d+)?$/.test(origin);
+}
+
 function sendJson(res: http.ServerResponse, code: number, data: unknown) {
   const body = JSON.stringify(data);
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -280,6 +289,11 @@ export function startServer(): Promise<ServerHandle> {
 
     try {
       // ---------- API ----------
+      // CSRF 防护:全 API 层拦截带非本机 Origin 的请求(任意网页无法触达含副作用端点,如 shutdown/open/env-install)
+      if (p.startsWith('/api/') && !isSafeOrigin(req)) {
+        sendJson(res, 403, { error: '拒绝跨站请求' });
+        return;
+      }
       if (p === '/api/info') {
         let version = '';
         try {
@@ -492,9 +506,10 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
-      if (p === '/api/open') {
-        // 打开指定仓库（前端浏览到仓库后点击进入）
-        const dir = String(url.searchParams.get('path') ?? '');
+      if (p === '/api/open' && req.method === 'POST') {
+        // 打开指定仓库（前端浏览到仓库后点击进入）；POST-only：切换仓库属有副作用操作，不接受 GET
+        const body = await readBody(req);
+        const dir = String(body.path ?? '');
         if (!dir) {
           sendJson(res, 400, { error: '缺少路径' });
           return;
@@ -1122,7 +1137,7 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
-      if (p === '/api/shutdown') {
+      if (p === '/api/shutdown' && req.method === 'POST') {
         sendJson(res, 200, { ok: true });
         setTimeout(() => process.exit(0), 200);
         return;
@@ -1134,12 +1149,23 @@ export function startServer(): Promise<ServerHandle> {
         const body = await readBody(req);
         const paths = (body.paths as string[]) ?? [];
         const msg = String(body.message ?? '');
+        // 路径越界校验：paths 为相对仓库根路径，path.resolve 归一化后 inRepoRoot 检查（防 ../ 穿越与绝对路径指向仓库外）
+        const bad = paths.find((p) => !inRepoRoot(repo.root, path.resolve(repo.root, p)));
+        if (bad) {
+          sendJson(res, 400, { error: `路径超出工作副本范围: ${bad}` });
+          return;
+        }
         let result: { ok: boolean; message: string };
         const v = vcs as any;
         if (p === '/api/add') result = await v.add(paths);
         else if (p === '/api/commit') result = await v.commit(paths, msg);
         else if (p === '/api/update') {
           const dir = String(body.path ?? '');
+          // update 的 dir 同样校验（空串 = 仓库根，通过）
+          if (!inRepoRoot(repo.root, path.resolve(repo.root, dir))) {
+            sendJson(res, 400, { error: '路径超出工作副本范围' });
+            return;
+          }
           // 前端取消更新（请求断开）→ 终止 svn/git 子进程。
           // 注意：req 'aborted' 事件在 Node 18.17+ 已弃用不再触发，改用 res 'close' +
           // writableEnded 判断客户端是否异常断开（正常响应完成时 writableEnded=true 不误杀）

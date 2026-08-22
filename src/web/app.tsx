@@ -693,6 +693,7 @@ export function App() {
                 <DiffView
                   target={diffTarget}
                   tick={tick}
+                  active={view === 'diff'}
                   onBack={() => {
                     setView(diffFrom);
                     // 从「提交修改的文件」弹窗双击进入差异：返回时恢复该弹窗
@@ -706,6 +707,7 @@ export function App() {
               <div style={{ display: view === 'browse' ? undefined : 'none', height: '100%' }}>
                 <FsView
                   tick={tick}
+                  active={view === 'browse'}
                   repoType={repo.type}
                   repoRoot={repo.root}
                   startRel={repo.startRel}

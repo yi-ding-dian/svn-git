@@ -105,7 +105,7 @@ export function CommitModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={autoWidth}>
+      <ResizableModal width={autoWidth} onEsc={props.onClose}>
         <h3>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>📝 提交</span>
@@ -196,7 +196,7 @@ export function UpdateResultModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={720}>
+      <ResizableModal width={720} onEsc={props.onClose}>
         <h3 style={{ color: props.ok ? 'var(--ok)' : 'var(--err)' }}>
           {props.ok ? '✅ 更新完成' : '❌ 更新失败'}
         </h3>
@@ -345,7 +345,7 @@ export function EnvInstallModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={560}>
+      <ResizableModal width={560} onEsc={props.onClose}>
         <h3>环境检测</h3>
         <div className="body">
           <HelpNote>
@@ -588,7 +588,7 @@ export function LoginModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={440} minWidth={420}>
+      <ResizableModal width={440} minWidth={420} onEsc={props.onClose}>
         <h3>SVN 账号设置</h3>
         <div className="body">
           {!editing && props.username ? (
@@ -636,7 +636,7 @@ export function LoginModal(props: {
 export function InfoModal(props: { title: string; message: React.ReactNode; onClose: () => void }) {
   return (
     <div className="modal-mask">
-      <ResizableModal width={440} minWidth={420}>
+      <ResizableModal width={440} minWidth={420} onEsc={props.onClose}>
         <h3>{props.title}</h3>
         <div className="body">{props.message}</div>
         <div className="foot">
@@ -661,7 +661,7 @@ export function ConfirmModal(props: {
 }) {
   return (
     <div className="modal-mask">
-      <ResizableModal width={props.width ?? 440} minWidth={420}>
+      <ResizableModal width={props.width ?? 440} minWidth={420} onEsc={props.onCancel}>
         <h3>{props.title}</h3>
         <div className="body">{props.message}</div>
         <div className="foot">

@@ -11,8 +11,8 @@ export function ModalShell(props: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="modal-mask">
-      <ResizableModal width={props.width ?? 560} minWidth={props.minWidth}>
+    <div className="modal-mask" onClick={props.onClose}>
+      <ResizableModal width={props.width ?? 560} minWidth={props.minWidth} onEsc={props.onClose}>
         <h3>
           {props.icon && <span style={{ marginRight: 8 }}>{props.icon}</span>}
           {props.title}
@@ -104,6 +104,8 @@ export function ResizableModal(props: {
   maxedHeight?: number | string;
   /** 透传给 .modal 的额外样式(仅作为未拖拽时的初始值,拖拽后以拖拽结果为准) */
   style?: React.CSSProperties;
+  /** 按 Esc 时回调(关闭弹窗);不传则 Esc 无操作(事件仍被拦截,不会穿透到底层视图) */
+  onEsc?: () => void;
   children: React.ReactNode;
 }) {
   // 用户拖拽后的固定尺寸;null = 未拖拽,按默认尺寸自适应
@@ -120,6 +122,57 @@ export function ResizableModal(props: {
   useEffect(() => {
     setPos(null);
   }, [props.maxed]);
+
+  // Esc 关闭 + 焦点圈禁 + 键盘防穿透：
+  // 在 document 捕获阶段处理，弹窗打开时按键不会漏到弹窗外（底层视图的 window keydown 不再响应）。
+  // 注意：不能对弹窗内所有按键无脑 stopPropagation —— React 事件委托挂在 root 容器，
+  // 会被拦截导致输入框 onKeyDown（如提交注释 Ctrl+Enter）失效，故输入元素按键放行。
+  useEffect(() => {
+    const el = elRef.current;
+    if (!el) return;
+    const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as Node | null;
+      const inside = !!t && el.contains(t);
+      const tag = (e.target as HTMLElement)?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable;
+      if (e.key === 'Escape') {
+        // 弹窗打开时 Esc 一律不穿透（即使不关闭，也防止底层视图收到）
+        e.stopPropagation();
+        props.onEsc?.();
+        return;
+      }
+      if (e.key === 'Tab') {
+        const f = el.querySelectorAll<HTMLElement>(FOCUSABLE);
+        if (f.length === 0) return;
+        const first = f[0]!;
+        const last = f[f.length - 1]!;
+        if (!inside) {
+          // 焦点在弹窗外：拉回弹窗内并拦截
+          e.preventDefault();
+          e.stopPropagation();
+          (e.shiftKey ? last : first).focus();
+          return;
+        }
+        // 弹窗内：焦点圈禁（最后一个上 Tab → 回第一个；第一个上 Shift+Tab → 到最后一个）
+        const active = document.activeElement;
+        if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          e.stopPropagation();
+          first.focus();
+        } else if (e.shiftKey && (active === first || !el.contains(active))) {
+          e.preventDefault();
+          e.stopPropagation();
+          last.focus();
+        }
+        return;
+      }
+      // 其他按键：焦点在弹窗外，或弹窗内非输入元素上 → 不穿透到底层视图
+      if (!inside || !typing) e.stopPropagation();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [props.onEsc]);
 
   // 拖拽中:window 级监听 mousemove/mouseup
   useEffect(() => {

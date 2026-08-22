@@ -216,7 +216,7 @@ export interface StashItem {
 }
 
 export const post = {
-  open: (dir: string) => api(`/api/open?path=${encodeURIComponent(dir)}`),
+  open: (dir: string) => api<{ ok: boolean }>('/api/open', json({ path: dir })),
   history: (path: string, type: 'svn' | 'git') => api<{ ok: boolean }>('/api/history', json({ path, type })),
   add: (paths: string[]) => api<VcsResult>('/api/add', json({ paths })),
   commit: (paths: string[], message: string) => api<VcsResult>('/api/commit', json({ paths, message })),

@@ -14,6 +14,8 @@ interface Props {
   target: DiffTarget | null;
   tick: number;
   onBack: () => void;
+  /** 当前视图是否激活（视图常驻挂载、display 切换；键盘监听只在激活时生效，防止隐藏时 ←/Esc 误触发返回） */
+  active: boolean;
 }
 
 /** unified diff 解析出的行 */
@@ -205,6 +207,7 @@ export function DiffView(props: Props) {
 
   // ← / Esc 返回；↑↓ 差异块导航（并排模式且有差异时）
   useEffect(() => {
+    if (!props.active) return; // 视图隐藏时键盘不响应（防止穿透到其他视图）
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -225,7 +228,7 @@ export function DiffView(props: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [props.onBack, sideMode]);
+  }, [props.onBack, sideMode, props.active]);
 
   // 差异块列表
   const blocks = useMemo(() => {
