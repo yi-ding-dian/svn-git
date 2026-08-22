@@ -192,10 +192,10 @@ body {
   color: #0d1117; flex-shrink: 0;
 }
 /* M/A/D/? 为纯彩色文字（背景色即文字色，无背景块、无描边），与 ✓ 风格统一 */
-.code.M { background: transparent; color: var(--warn); }
-.code.A { background: transparent; color: var(--ok); }
-.code.D { background: transparent; color: var(--err); }
-.code.\? { background: transparent; color: var(--dim); }
+.code.M { background: var(--warn); color: #fff; }
+.code.A { background: var(--ok); color: #fff; }
+.code.D { background: var(--err); color: #fff; }
+.code.\? { background: var(--dim); color: #fff; }
 .grid-badge .code.M, .grid-badge .code.A, .grid-badge .code.D, .grid-badge .code.\? { box-shadow: none; } /* 角标不描边 */
 .grid-badge .code.X { background: var(--dim); box-shadow: 0 0 0 2px var(--panel); } /* 网格角标小，保留灰块保证可见 */
 .code.\! { background: var(--purple); }

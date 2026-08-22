@@ -8,7 +8,7 @@ import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { IgnoreModal } from './ignore-modal.js';
 import { FavDirsModal } from './fav-dirs.js';
 import { renderMarkdown } from './markdown.js';
-import { fmtSize } from './utils.js';
+import { fmtSize, statusColor } from './utils.js';
 import { ModalShell } from './modal-shell.js';
 import { FormRow } from './ui.js';
 import { ConfirmModal } from './modals.js';
@@ -510,7 +510,7 @@ export function FsView(props: Props) {
       {row.isDir ? <DirBadge codes={row.codes} /> : <CodeBadge code={row.code} />}
       <span className="arrow">{row.isDir ? (row.open ? '▾' : '▸') : ''}</span>
       {row.locked && <IconLock size={13} />}
-      <span className={`name ${row.isDir ? 'dir' : 'file'}`} style={{ flex: 1 }}>
+      <span className={`name ${row.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(row.isDir ? row.codes?.[0] : row.code) }}>
         {row.name}
         {row.count ? <span className="count"> （{row.count} 项）</span> : null}
       </span>
@@ -1174,7 +1174,7 @@ export function FsView(props: Props) {
         {e.isDir ? <DirBadge codes={e.codes} /> : <CodeBadge code={e.code} />}
         <span className="arrow">{e.isDir ? '▸' : ''}</span>
         {locked && <IconLock size={13} />}
-        <span className={`name ${e.isDir ? 'dir' : 'file'}`} style={{ flex: 1 }}>
+        <span className={`name ${e.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}>
           {e.name}
           {e.count ? <span className="count"> （{e.count} 项）</span> : null}
         </span>

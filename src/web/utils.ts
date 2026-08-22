@@ -32,6 +32,19 @@ export function isBinaryFile(path: string): boolean {
   return BINARY_EXTS.has(ext);
 }
 
+/** 文件名状态染色：按状态码返回文字色（M 橙黄/A 绿/D 红/C 红/? 灰），无状态返回 undefined（默认色）。
+ * 与徽标实底色联动——文件名带色 = 该文件有对应状态,扫视一眼可辨。 */
+export function statusColor(code?: string): string | undefined {
+  switch (code) {
+    case 'M': return 'var(--warn)';
+    case 'A': return 'var(--ok)';
+    case 'D': return 'var(--err)';
+    case 'C': return 'var(--err)';
+    case '?': return 'var(--dim)';
+    default: return undefined;
+  }
+}
+
 /** 常见 svn/git 错误码 → 中文提示（含下一步动作建议）。映射不到时原样返回原文。 */
 const VCS_ERR_INFO: { re: RegExp; cn: string }[] = [
   // svn: 服务器有新版本
