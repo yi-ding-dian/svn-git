@@ -309,7 +309,12 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
       foot={
         <>
           <button onClick={props.onClose}>关闭</button>
-          <button className="danger" disabled={busy || !files || files.length === 0} onClick={doClean}>
+          <button
+            className="danger"
+            disabled={busy || !files || files.length === 0}
+            onClick={doClean}
+            title={`命令行: git clean -fd（删除 ${files?.length ?? 0} 个未跟踪文件，${files?.slice(0, 3).join(' ') ?? ''}${(files?.length ?? 0) > 3 ? ' …' : ''}）`}
+          >
             {busy ? '清理中…' : '确认清理'}
           </button>
         </>
@@ -828,7 +833,20 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
       foot={
         <>
           <button onClick={props.onClose}>关闭</button>
-          <button className="primary" disabled={busy} onClick={submit}>
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={submit}
+            title={
+              `命令行: ${
+                type === 'clone'
+                  ? (cmdOfRepo('git', 'clone', { url: url.trim() || '…', dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
+                  : type === 'git'
+                    ? (cmdOfRepo('git', 'init', { dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
+                    : (cmdOfRepo('svn', 'create', { dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
+              }`
+            }
+          >
             {busy ? '创建中…' : '创建'}
           </button>
         </>
