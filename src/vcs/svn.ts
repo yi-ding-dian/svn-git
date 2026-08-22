@@ -348,6 +348,13 @@ export class SvnVcs {
     return { ok: true, message: `已还原 ${relPaths.length} 项` };
   }
 
+  /** svn delete --keep-local：仅标记从版本库删除,磁盘文件保留（提交后生效,提交前可还原） */
+  async removeKeep(relPaths: string[]): Promise<VcsResult> {
+    const res = await this.exec(['delete', '--keep-local', ...relPaths]);
+    if (res.code !== 0) return this.fail(this.authError(res), res.stderr.trim() || '从版本库移除失败');
+    return { ok: true, message: `已标记从版本库删除 ${relPaths.length} 项（本地文件保留）` };
+  }
+
   /** svn delete（目录默认递归） */
   async remove(relPaths: string[]): Promise<VcsResult> {
     const res = await this.exec(['delete', ...relPaths]);

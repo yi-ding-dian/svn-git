@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
-import { sendJson, readBody, vcsOf, inRepoRoot, isAuthError, authErrorOf, realpathSafe } from './util.js';
+import { sendJson, readBody, vcsOf, inRepoRoot, isAuthError, authErrorOf, realpathSafe, invalidateStatusCache } from './util.js';
 import { getSvnIgnoreMap, isIgnoredByRules } from '../vcs/ignore.js';
 import type { VcsResult } from '../vcs/index.js';
 import type { Ctx } from './util.js';
@@ -56,8 +56,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             }
           }
         } else if (p === '/api/revert') result = await vcs.revert(paths);
-        else if (p === '/api/delete') result = await vcs.remove(paths);
+        else if (p === '/api/delete') result = body.keep === true ? await vcs.removeKeep(paths) : await vcs.remove(paths);
         else result = (await vcs.push?.()) ?? { ok: false, message: '当前仓库不支持该操作' };
+        if (result.ok) invalidateStatusCache(repo.root); // 状态改变 → 失效 30s 缓存,否则新文件过滤仍显示旧 ?/M
         sendJson(res, 200, {
           ...(result as object),
           path: p === '/api/update' ? String(body.path ?? '') : undefined,
@@ -182,6 +183,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             fs.writeFileSync(g, content.split('\n').filter((l) => l.trim() !== pattern).join('\n'));
           }
         }
+        invalidateStatusCache(repo.root);
         sendJson(res, 200, { ok: true, message: `已删除规则: ${pattern}` });
         return true;
       }
@@ -240,6 +242,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             sendJson(res, 200, { ok: false, message: `写入 .gitignore 失败: ${(err as Error).message}` });
             return true;
           }
+          invalidateStatusCache(repo.root);
           sendJson(res, 200, { ok: true, message: `已取消忽略: ${neg}（${isDir ? '目录下文件将按剩余规则重新判定' : rel + ' 变为未版本化'}）` });
           return true;
         }
@@ -273,6 +276,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 200, { ok: false, message: setRes.stderr.trim() || '取消忽略失败' });
           return true;
         }
+        invalidateStatusCache(repo.root);
         sendJson(res, 200, { ok: true, message: `已取消忽略: 删除 ${found.dir === '.' ? '根目录' : found.dir} 的规则「${found.rule}」，同目录匹配该规则的文件将变为未版本化` });
         return true;
       }

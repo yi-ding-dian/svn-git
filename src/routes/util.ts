@@ -96,6 +96,13 @@ export const  STATUS_TTL = 30_000;
 // 当前操作范围：大仓库中打开的子项目(相对仓库根路径)。状态扫描限定在该范围内,避免全仓库扫描卡顿
 export const  currentScopes = new Map<string, string>();
 
+/** 写操作成功后失效该仓库的状态缓存（add/commit/update/revert/delete 等会改变状态码,30s 缓存会显示旧状态） */
+export function invalidateStatusCache(root: string): void {
+  for (const key of statusCache.keys()) {
+    if (key.startsWith(root + '::')) statusCache.delete(key);
+  }
+}
+
 export async function getStatusCached(repo: RepoInfo, force = false): Promise<unknown[]> {
   const scope = currentScopes.get(repo.root) ?? '';
   const key = `${repo.root}::${scope}`;

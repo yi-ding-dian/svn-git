@@ -260,7 +260,7 @@ export function App() {
   };
   // 执行操作
   const runOp = useCallback(
-    async (op: Op, paths: string[]): Promise<VcsResult> => {
+    async (op: Op, paths: string[], keep = false): Promise<VcsResult> => {
       let r: VcsResult;
       // update/push 有独立进度窗,不重复显示短条
       setOpBusy(op === 'add' || op === 'revert' || op === 'delete' ? OP_BUSY_TEXT[op] : null);
@@ -269,7 +269,7 @@ export function App() {
         else if (op === 'commit') r = await post.commit(paths, '');
         else if (op === 'update') r = await post.update();
         else if (op === 'revert') r = await post.revert(paths);
-        else if (op === 'delete') r = await post.delete(paths);
+        else if (op === 'delete') r = keep ? await post.delete(paths, true) : await post.delete(paths);
         else r = await post.push();
       } catch (e) {
         // 网络失败等异常:给用户可见反馈,避免 unhandled rejection 后"点了没反应"
@@ -487,13 +487,19 @@ export function App() {
           danger: true,
           message: (
             <>
-              将删除 <b>{paths.length}</b> 项的<b>本地文件</b>；已版本化的文件会同时标记为从版本库删除
-              （需<b>提交</b>后生效,提交前可用「还原」撤销;
-              未版本化文件将<b className="err">直接删除,不可恢复</b>）。
-              确认删除？
+              <div>
+                将删除 <b>{paths.length}</b> 项的<b>本地文件</b>，同时标记从版本库删除（<b>提交</b>后生效）。
+              </div>
+              <div className="dim small" style={{ marginTop: 6, lineHeight: 1.8 }}>
+                · 提交前可右键「还原」完整恢复，版本库历史亦保留
+                <br />· 若只想<b>停止跟踪、保留磁盘文件</b>（改用忽略规则等），选下方「仅从版本库移除」
+              </div>
+              <div style={{ marginTop: 8 }}>确认删除？</div>
             </>
           ),
           action: () => void runOp('delete', paths),
+          secondaryLabel: '仅从版本库移除（本地保留）',
+          secondaryAction: () => void runOp('delete', paths, true),
         });
       } else {
         void runOp(op, paths);

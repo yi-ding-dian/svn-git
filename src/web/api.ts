@@ -225,7 +225,7 @@ export const post = {
   update: (path?: string, signal?: AbortSignal) =>
     api<VcsResult & { path?: string; files?: { path: string; status: string; code?: string }[] }>('/api/update', json({ path }, signal)),
   revert: (paths: string[]) => api<VcsResult>('/api/revert', json({ paths })),
-  delete: (paths: string[]) => api<VcsResult>('/api/delete', json({ paths })),
+  delete: (paths: string[], keep = false) => api<VcsResult>('/api/delete', json({ paths, keep })),
   push: (signal?: AbortSignal) => api<VcsResult>('/api/push', json({}, signal)),
   branch: (action: 'create' | 'switch' | 'delete' | 'merge', name: string, force = false) =>
     api<VcsResult>('/api/branch', json({ action, name, force })),

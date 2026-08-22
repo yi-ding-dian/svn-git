@@ -542,6 +542,13 @@ export class GitVcs {
     return { ok: true, message: `已删除 ${relPaths.length} 项` };
   }
 
+  /** 仅从版本库移除（git rm --cached）：磁盘文件保留,变为未版本化 ?（与"删除"硬删磁盘不同） */
+  async removeKeep(relPaths: string[]): Promise<VcsResult> {
+    const res = await this.exec(['rm', '--cached', '-r', '--quiet', ...relPaths]);
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '从版本库移除失败' };
+    return { ok: true, message: `已从版本库移除 ${relPaths.length} 项（本地文件保留，状态变为 ? 未版本化）` };
+  }
+
   /** git push：认证失败时用保存的凭据(GIT_ASKPASS)自动重试；仍失败返回 authType 供前端引导认证 */
   async push(signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }> {
     const cred = loadConfig().git;

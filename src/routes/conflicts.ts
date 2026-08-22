@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
-import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, isAuthError, authErrorOf } from './util.js';
+import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, isAuthError, authErrorOf, invalidateStatusCache } from './util.js';
 import { diffChangedLines } from '../vcs/diff-lines.js';
 import type { VcsResult } from '../vcs/index.js';
 import type { Ctx } from './util.js';
@@ -185,6 +185,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           const accept = mode === 'ours' ? 'mine-full' : mode === 'theirs' ? 'theirs-full' : 'working';
           result = (await vcs.resolve?.(rel, accept)) ?? { ok: false, message: '当前仓库不支持该操作' };
         }
+        if (result.ok) invalidateStatusCache(repo.root);
         sendJson(res, 200, { ...result, authError: false });
         return true;
       }

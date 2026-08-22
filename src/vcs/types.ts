@@ -96,6 +96,8 @@ export interface Vcs {
   restoreMissing(): Promise<string[]>;
   revert(relPaths: string[]): Promise<VcsResult>;
   remove(relPaths: string[]): Promise<VcsResult>;
+  /** 仅从版本库移除（磁盘保留：git rm --cached / svn delete --keep-local） */
+  removeKeep(relPaths: string[]): Promise<VcsResult>;
   preflight(): Promise<PreflightResult>;
   branchList(): Promise<BranchListResult>;
   switchCheck(branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>;
