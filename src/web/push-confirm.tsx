@@ -1,6 +1,7 @@
 /** 推送确认弹窗：未推送提交列表（含变更文件）+ 推送条件（远程落后/冲突风险）；未推送提交可右键修改注释/撤销 */
 import React, { useEffect, useState } from 'react';
 import { get, post, type LogEntry } from './api.js';
+import { cmdOf } from './cmd-preview.js';
 import { ResizableModal } from './modal-shell.js';
 import { ContextMenu } from './context-menu.js';
 import { ConfirmModal, InfoModal } from './modals.js';
@@ -207,7 +208,7 @@ export function PushConfirmModal(props: {
         </div>
         <div className="foot">
           <button onClick={props.onCancel}>取消</button>
-          <button className="primary" disabled={unpushed.length === 0} onClick={props.onConfirm}>
+          <button className="primary" disabled={unpushed.length === 0} onClick={props.onConfirm} title={`命令行: ${cmdOf('git push')}`}>
             确认推送（{unpushed.length}）
           </button>
         </div>

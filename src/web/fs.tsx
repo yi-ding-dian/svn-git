@@ -77,12 +77,13 @@ function ActionBtn(props: {
   title?: string;
   danger?: boolean;
   primary?: boolean;
+  cmd?: string;
   onClick: () => void;
 }) {
   return (
     <button
       className={`act-btn ${props.danger ? 'danger' : ''} ${props.primary ? 'primary' : ''}`}
-      title={props.title ?? props.label}
+      title={props.cmd ? `${props.title ?? props.label}\n\n命令行: ${props.cmd}` : props.title ?? props.label}
       onClick={props.onClick}
     >
       {props.icon}
@@ -1200,21 +1201,21 @@ export function FsView(props: Props) {
     <span className="actions" onClick={(ev) => ev.stopPropagation()}>
       {/* diff 仅限版本化文件（文件夹无 diff；未版本化/干净文件无差异可看） */}
       {e.code !== '' && e.code !== '?' && !e.isDir && (
-        <ActionBtn icon={<IconDiff />} label="diff" title="查看差异" onClick={() => props.onDiff(e.rel)} />
+        <ActionBtn icon={<IconDiff />} label="diff" title="查看差异" cmd={cmdOfRepo(props.repoType, 'diff', { path: e.rel })} onClick={() => props.onDiff(e.rel)} />
       )}
       {e.code === '?' && (
         <>
-          <ActionBtn icon={<IconPlus />} label="添加" onClick={() => onAction('add', e.rel)} />
-          <ActionBtn icon={<IconEyeOff />} label="忽略" title="加入忽略" onClick={() => ignoreFile(e)} />
+          <ActionBtn icon={<IconPlus />} label="添加" cmd={cmdOfRepo(props.repoType, 'add', { paths: e.rel })} onClick={() => onAction('add', e.rel)} />
+          <ActionBtn icon={<IconEyeOff />} label="忽略" title="加入忽略" cmd={cmdOfRepo(props.repoType, 'ignore_add', { path: e.rel, pattern: '…' })} onClick={() => ignoreFile(e)} />
         </>
       )}
       {e.isDir && e.code && e.code !== '?' && (
-        <ActionBtn icon={<IconCommit />} label="提交" title="提交此目录修改" onClick={() => props.onAction('commit', [e.rel])} />
+        <ActionBtn icon={<IconCommit />} label="提交" title="提交此目录修改" cmd={cmdOfRepo(props.repoType, 'commit', { msg: '…' })} onClick={() => props.onAction('commit', [e.rel])} />
       )}
       {(e.code === 'M' || e.code === 'A' || e.code === 'D' || e.code === 'R') && (
         <>
-          <ActionBtn icon={<IconRevert />} label="还原" onClick={() => onAction('revert', e.rel)} />
-          <ActionBtn icon={<IconClean />} label="删除" danger onClick={() => onAction('delete', e.rel)} />
+          <ActionBtn icon={<IconRevert />} label="还原" cmd={cmdOfRepo(props.repoType, 'revert', { paths: e.rel })} onClick={() => onAction('revert', e.rel)} />
+          <ActionBtn icon={<IconClean />} label="删除" danger cmd={cmdOfRepo(props.repoType, 'delete', { paths: e.rel })} onClick={() => onAction('delete', e.rel)} />
         </>
       )}
       {!e.isDir && e.code !== '?' && props.repoType === 'svn' && (

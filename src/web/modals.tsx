@@ -4,6 +4,7 @@ import { post } from './api.js';
 import { ResizableModal } from './modal-shell.js';
 import { HelpNote, FormRow } from './ui.js';
 import { pathAutoWidth, useCheckedSet } from './utils.js';
+import { cmdOfRepo } from './cmd-preview.js';
 
 /** 全局弹窗状态（App 根组件 / 顶部工具栏共用） */
 export type Modal =
@@ -32,6 +33,9 @@ export type Modal =
       secondaryLabel?: string;
       action: () => void;
       secondaryAction?: () => void;
+      /** 命令预览：悬浮确认/副确认按钮时显示将执行的命令 */
+      confirmCmd?: string;
+      secondaryCmd?: string;
       /** 弹窗宽度（默认 440；文件列表类确认框按内容自适应传入） */
       width?: number;
     }
@@ -150,7 +154,12 @@ export function CommitModal(props: {
         </div>
         <div className="foot">
           <button onClick={props.onClose} disabled={busy}>取消</button>
-          <button className="primary" onClick={() => void submit()} disabled={busy || !msg.trim() || checked.size === 0}>
+          <button
+            className="primary"
+            onClick={() => void submit()}
+            disabled={busy || !msg.trim() || checked.size === 0}
+            title={`命令行: ${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: msg.trim() || '…' }) ?? ''}`}
+          >
             {busy ? '⏳ 提交中…' : '✅ 确认提交'}
           </button>
         </div>
@@ -537,7 +546,12 @@ export function CommitSelectModal(props: {
         </div>
         <div className="foot">
           <button onClick={props.onClose}>取消</button>
-          <button className="primary" onClick={submit} disabled={props.items.length === 0}>
+          <button
+            className="primary"
+            onClick={submit}
+            disabled={props.items.length === 0}
+            title={`命令行: ${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: '…' }) ?? ''}`}
+          >
             ✅ 提交勾选的 {checked.size} 个文件
           </button>
         </div>
@@ -656,6 +670,9 @@ export function ConfirmModal(props: {
   danger?: boolean;
   confirmLabel?: string;
   secondaryLabel?: string;
+  /** 命令预览：鼠标悬浮按钮时显示将执行的命令 */
+  confirmCmd?: string;
+  secondaryCmd?: string;
   /** 弹窗宽度（默认 440） */
   width?: number;
   onConfirm: () => void;
@@ -670,11 +687,19 @@ export function ConfirmModal(props: {
         <div className="foot">
           <button onClick={props.onCancel}>取消</button>
           {props.secondaryLabel && props.onSecondary && (
-            <button className="primary" onClick={props.onSecondary}>
+            <button
+              className="primary"
+              onClick={props.onSecondary}
+              title={props.secondaryCmd ? `命令行: ${props.secondaryCmd}` : undefined}
+            >
               {props.secondaryLabel}
             </button>
           )}
-          <button className={props.danger ? 'danger' : 'primary'} onClick={props.onConfirm}>
+          <button
+            className={props.danger ? 'danger' : 'primary'}
+            onClick={props.onConfirm}
+            title={props.confirmCmd ? `命令行: ${props.confirmCmd}` : undefined}
+          >
             {props.confirmLabel ?? '确认'}
           </button>
         </div>

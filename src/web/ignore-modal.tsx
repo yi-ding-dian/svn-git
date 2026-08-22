@@ -1,5 +1,6 @@
 /** 忽略设置弹窗：查看/删除/添加忽略规则（svn:ignore / .gitignore） */
 import React, { useCallback, useEffect, useState } from 'react';
+import { cmdOfRepo } from './cmd-preview.js';
 import { get, post } from './api.js';
 import { ModalShell } from './modal-shell.js';
 
@@ -8,6 +9,13 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
   const [pattern, setPattern] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const [repoType, setRepoType] = useState<'git' | 'svn' | null>(null);
+  useEffect(() => {
+    void get
+      .info()
+      .then((r) => r.type && setRepoType(r.type))
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     get
@@ -74,7 +82,14 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
               }}
               style={{ flex: 1 }}
             />
-            <button className="mini primary" disabled={busy || !pattern.trim()} onClick={add}>添加</button>
+            <button
+              className="mini primary"
+              disabled={busy || !pattern.trim()}
+              onClick={add}
+              title={`命令行: ${cmdOfRepo(repoType ?? 'git', 'ignore_add', { path: props.dir ?? '.', pattern: pattern.trim() || '…' }) ?? ''}`}
+            >
+              添加
+            </button>
           </div>
           {msg && <div className="small" style={{ marginTop: 8, color: 'var(--dim)' }}>{msg}</div>}
     </ModalShell>

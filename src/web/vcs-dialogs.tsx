@@ -528,7 +528,12 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
           }}
           style={{ flex: 1 }}
         />
-        <button className="primary" disabled={busy} onClick={() => act('push', 0, message)}>
+        <button
+          className="primary"
+          disabled={busy}
+          onClick={() => act('push', 0, message)}
+          title={`命令行: ${cmdOfRepo('git', 'stash_push', { msg: message.trim() || '…' }) ?? ''}`}
+        >
           📦 保存当前改动
         </button>
       </div>
@@ -550,6 +555,7 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
                   action: () => act('pop', it.index),
                 })
               }
+              title={`命令行: ${cmdOfRepo('git', 'stash_pop', { index: String(it.index) }) ?? ''}`}
             >
               恢复
             </button>
@@ -668,7 +674,7 @@ export function GitInfoModal(props: { onClose: () => void; onToast: (m: string) 
               <FormRow label="远程地址（origin）">
                 <div className="row" style={{ gap: 8 }}>
                   <input type="text" placeholder="git@host:user/repo.git 或 https://..." value={url} onChange={(e) => setUrl(e.target.value)} style={{ flex: 1 }} />
-                  <button className="mini primary" disabled={busy} onClick={save}>{busy ? '保存中…' : '保存'}</button>
+                  <button className="mini primary" disabled={busy} onClick={save} title={`命令行: ${cmdOfRepo('git', 'set_remote', { url: url.trim() || '…' }) ?? ''}`}>{busy ? '保存中…' : '保存'}</button>
                 </div>
                 <div className="dim small" style={{ marginTop: 6 }}>修改后推送/拉取将使用新地址（已有 origin 则更新，没有则添加）</div>
               </FormRow>

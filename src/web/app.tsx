@@ -14,6 +14,7 @@ import { AppHeader, THEMES } from './header.js';
 import { Sidebar, type View } from './sidebar.js';
 import { FontModal, FONT_MIN, FONT_MAX } from './font-modal.js';
 import { pathAutoWidth, isBinaryFile, translateVcsError } from './utils.js';
+import { cmdOfRepo } from './cmd-preview.js';
 
 type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'push';
 
@@ -479,6 +480,7 @@ export function App() {
             </>
           ),
           action: () => void runOp('revert', paths),
+          confirmCmd: cmdOfRepo(repo?.type ?? null, 'revert', { paths: paths.join(' ') }),
         });
       } else if (op === 'delete') {
         setModal({
@@ -498,8 +500,10 @@ export function App() {
             </>
           ),
           action: () => void runOp('delete', paths),
+          confirmCmd: cmdOfRepo(repo?.type ?? null, 'delete', { paths: paths.join(' ') }),
           secondaryLabel: '仅从版本库移除（本地保留）',
           secondaryAction: () => void runOp('delete', paths, true),
+          secondaryCmd: cmdOfRepo(repo?.type ?? null, 'remove_keep', { paths: paths.join(' ') }),
         });
       } else {
         void runOp(op, paths);

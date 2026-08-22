@@ -7,6 +7,7 @@ import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { ConfirmModal, InfoModal } from './modals.js';
 import { ResizableModal } from './modal-shell.js';
 import { ClickTip } from './ui.js';
+import { cmdOfRepo } from './cmd-preview.js';
 
 interface Props {
   path?: string;
@@ -300,6 +301,7 @@ export function HistoryView(props: Props) {
             {
               icon: '✏️',
               label: '修改注释',
+              cmd: menu.index === headIdx ? cmdOfRepo('git', 'amend', { msg: '…' }) : cmdOfRepo('git', 'reword'),
               action: () => {
                 // 所有未推送提交都可改注释：HEAD 走 amend，其余走 reword（重写注释、代码不变）
                 setAmendOf(logs[menu.index]!);
@@ -311,6 +313,7 @@ export function HistoryView(props: Props) {
               icon: '↩',
               label: '撤销提交',
               danger: true,
+              cmd: cmdOfRepo('git', 'reset_soft'),
               action: () => {
                 if (menu.index === headIdx) setResetCfm(true);
                 else setInfoTip(`仅支持撤销最近一次提交。此项之前还有 ${headIdx - menu.index} 个更新提交，需先逐一撤销前面的提交后，此项才可操作`);
@@ -344,6 +347,7 @@ export function HistoryView(props: Props) {
                 className="primary"
                 disabled={busy || !amendMsg.trim()}
                 onClick={(e) => void doAmend(e.clientX, e.clientY)}
+                title={`命令行: ${cmdOfRepo('git', 'amend', { msg: amendMsg.trim() || '…' }) ?? ''}`}
               >
                 确认修改
               </button>

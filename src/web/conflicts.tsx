@@ -1,6 +1,7 @@
 /** 三方冲突解决器：冲突文件列表 + 基础/本地/对方 内容 + 手动编辑 + 采用按钮 */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, post } from './api.js';
+import { cmdOfRepo } from './cmd-preview.js';
 import { highlightLine, langOf } from './highlight.js';
 import { parseUnifiedDiff, markTypesOf, type DiffLine } from './diff.js';
 import { IconFolder } from './icons.js';
@@ -27,6 +28,13 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [repoType, setRepoType] = useState<'git' | 'svn'>('git');
+  useEffect(() => {
+    void get
+      .info()
+      .then((r) => r.type && setRepoType(r.type))
+      .catch(() => {});
+  }, []);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
@@ -372,9 +380,9 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                 </>
               )}
               <div className="row" style={{ marginTop: 10, gap: 6 }}>
-                <button className="primary" disabled={busy} onClick={() => void resolve('ours')}>✅ 采用本地</button>
-                <button disabled={busy} onClick={() => void resolve('theirs')}>采用对方</button>
-                {!cur.binary && <button disabled={busy} onClick={() => void resolve('manual')}>💾 保存手动编辑</button>}
+                <button className="primary" disabled={busy} onClick={() => void resolve('ours')} title={`命令行: ${cmdOfRepo(repoType, 'resolve_ours', { path: cur.path }) ?? ''}`}>✅ 采用本地</button>
+                <button disabled={busy} onClick={() => void resolve('theirs')} title={`命令行: ${cmdOfRepo(repoType, 'resolve_theirs', { path: cur.path }) ?? ''}`}>采用对方</button>
+                {!cur.binary && <button disabled={busy} onClick={() => void resolve('manual')} title={`命令行: ${cmdOfRepo(repoType, 'resolve_manual', { path: cur.path }) ?? ''}`}>💾 保存手动编辑</button>}
                 <button
                   className="mini tool-btn"
                   title="打开冲突文件所在文件夹"
