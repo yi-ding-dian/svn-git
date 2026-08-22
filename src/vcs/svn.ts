@@ -69,6 +69,11 @@ export class SvnVcs {
     return null;
   }
 
+  /** 统一失败返回：认证失败时携带结构化 code（服务层透传,不再正则匹配文案） */
+  private fail(auth: string | null, msg: string): VcsResult {
+    return { ok: false, message: auth ?? msg, code: auth ? 'AUTH' : undefined };
+  }
+
   /** svn info：URL、revision */
   async info(): Promise<{ url?: string; revision?: string; relUrl?: string }> {
     const res = await this.exec(['info', '--xml']);
@@ -200,7 +205,7 @@ export class SvnVcs {
       if (res.stderr.includes('W150002')) {
         return { ok: true, message: '添加完成（已版本化的文件已自动跳过）' };
       }
-      return { ok: false, message: auth ?? (res.stderr.trim() || 'svn add 失败') };
+      return this.fail(auth, res.stderr.trim() || 'svn add 失败');
     }
     return { ok: true, message: res.stderr.trim() || `已添加 ${relPaths.length} 项` };
   }
@@ -211,7 +216,7 @@ export class SvnVcs {
     const res = await this.exec(args, { timeoutMs: 300_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return { ok: false, message: auth ?? (res.stderr.trim() || 'svn commit 失败') };
+      return this.fail(auth, res.stderr.trim() || 'svn commit 失败');
     }
     // 中英文兼容提取版本号（英文 "Committed revision 13." / 中文 "提交后的版本为 13。"）
     const m = res.stdout.match(/Committed revision\s+(\d+)|版本\s*为?\s*r?(\d+)/);
@@ -300,11 +305,11 @@ export class SvnVcs {
         // 重试（跳过外部引用）仍失败：提示原始错误并说明已尝试跳过
         const auth = this.authError(res);
         const errMsg = errText.match(/svn: E\d{6}[^\n]*/)?.[0];
-        return { ok: false, message: `${auth ?? errMsg ?? (res.stderr.trim() || 'svn update 失败')}（已尝试跳过外部引用仍失败）` };
+        return this.fail(auth, `${errMsg ?? (res.stderr.trim() || 'svn update 失败')}（已尝试跳过外部引用仍失败）`);
       }
       const auth = this.authError(res);
       const errMsg = errText.match(/svn: E\d{6}[^\n]*/)?.[0];
-      return { ok: false, message: auth ?? errMsg ?? (res.stderr.trim() || 'svn update 失败') };
+      return this.fail(auth, errMsg ?? (res.stderr.trim() || 'svn update 失败'));
     }
     const files = this.parseUpdateFiles(res.stdout);
     // 更新成功但 svn 输出含警告（如 W205011）时原样带回，界面"有什么提示什么"
@@ -458,7 +463,8 @@ export class SvnVcs {
   }
 
   /** 仓库布局探测：标准布局 trunk/branches/tags 目录是否存在（非标准布局时前端提示） */
-  private async layout(): Promise<SvnLayout> {
+  /** 仓库布局探测（server 层 /api/tags 等使用,经 Vcs 接口暴露） */
+  async layout(): Promise<SvnLayout> {
     const root = await this.repoRootUrl();
     const exists = async (url: string): Promise<boolean> => {
       try {
@@ -536,7 +542,7 @@ export class SvnVcs {
     const res = await this.exec(['copy', from, `${root}/branches/${name}`, '-m', `创建分支 ${name}`], { timeoutMs: 120_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return { ok: false, message: auth ?? (res.stderr.trim() || '创建分支失败') };
+      return this.fail(auth, res.stderr.trim() || '创建分支失败');
     }
     return { ok: true, message: `已创建分支 ${name}` };
   }
@@ -547,7 +553,7 @@ export class SvnVcs {
     const res = await this.exec(['delete', `${root}/branches/${name}`, '-m', `删除分支 ${name}`], { timeoutMs: 120_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return { ok: false, message: auth ?? (res.stderr.trim() || '删除分支失败') };
+      return this.fail(auth, res.stderr.trim() || '删除分支失败');
     }
     return { ok: true, message: `已删除分支 ${name}` };
   }
@@ -581,7 +587,7 @@ export class SvnVcs {
     const res = await this.exec(['switch', target], { timeoutMs: 300_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return { ok: false, message: auth ?? (res.stderr.trim() || '切换分支失败') };
+      return this.fail(auth, res.stderr.trim() || '切换分支失败');
     }
     const base = `已切换到${name === 'trunk' || name === 'root' ? '主干' : `分支 ${name}`}`;
     // svn switch 遇文本冲突时退出码仍为 0，需从输出识别冲突并提示用户处理
@@ -596,7 +602,7 @@ export class SvnVcs {
     const res = await this.exec(['merge', `${root}/branches/${branchName}`], { timeoutMs: 300_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return { ok: false, message: auth ?? (res.stderr.trim() || '合并失败（可能有冲突）') };
+      return this.fail(auth, res.stderr.trim() || '合并失败（可能有冲突）');
     }
     const base = `已合并分支 ${branchName} 的改动`;
     // svn merge 遇文本冲突退出码仍为 0，需从输出识别冲突并提示用户处理
@@ -641,7 +647,7 @@ export class SvnVcs {
     const res = await this.exec(['copy', from, `${root}/tags/${name}`, '-m', `创建标签 ${name}`], { timeoutMs: 120_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return { ok: false, message: auth ?? (res.stderr.trim() || '创建标签失败') };
+      return this.fail(auth, res.stderr.trim() || '创建标签失败');
     }
     return { ok: true, message: `已创建标签 ${name}` };
   }
@@ -652,7 +658,7 @@ export class SvnVcs {
     const res = await this.exec(['delete', `${root}/tags/${name}`, '-m', `删除标签 ${name}`], { timeoutMs: 120_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return { ok: false, message: auth ?? (res.stderr.trim() || '删除标签失败') };
+      return this.fail(auth, res.stderr.trim() || '删除标签失败');
     }
     return { ok: true, message: `已删除标签 ${name}` };
   }

@@ -467,6 +467,9 @@ export function CommitSelectModal(props: {
           <button className="mini danger" title="关闭" onClick={props.onClose}>✕</button>
         </h3>
         <div className="body" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          <div className="dim small" style={{ marginBottom: 8, flexShrink: 0 }}>
+            ℹ️ 未版本化文件（?）不在列表中——需先在文件夹视图右键「添加到版本库」，再提交
+          </div>
           {/* 目录信息条：清晰展示提交范围与勾选进度 */}
           <div className="help-note" style={{ alignItems: 'center', marginBottom: 10, padding: '8px 12px', flexShrink: 0 }}>
             <span style={{ flexShrink: 0 }}>📁</span>

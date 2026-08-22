@@ -30,6 +30,7 @@ export function HistoryView(props: Props) {
   const [reloadKey, setReloadKey] = useState(0);
   /** 操作成功提示 */
   const [notice, setNotice] = useState('');
+  const [noticeErr, setNoticeErr] = useState(false);
   /** 右键菜单位置（仅 HEAD 未推送行可弹出） */
   const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);
   /** 非 HEAD 未推送提交右键操作的说明弹窗 */
@@ -86,6 +87,7 @@ export function HistoryView(props: Props) {
     setLogs(null);
     setError('');
     setNotice('');
+    setNoticeErr(false);
     setSel(null);
     setDiffOf(null);
     setUnpushed([]);
@@ -121,13 +123,17 @@ export function HistoryView(props: Props) {
       const r = isHead ? await post.gitAmend(msg) : await post.gitReword(amendOf.rev, msg);
       if (r.ok) {
         setClickTip({ x, y, msg: r.message }); // 成功提示显示在鼠标点击处
+        setNotice(''); // 清除上一次失败的红色 notice,避免成功与错误信息并存
+        setNoticeErr(false);
         setAmendOf(null);
         setReloadKey((k) => k + 1);
         props.onChanged?.();
       } else {
+        setNoticeErr(true);
         setNotice(r.message); // 失败信息显示在标题栏下方
       }
     } catch (e) {
+      setNoticeErr(true);
       setNotice((e as Error).message);
     } finally {
       setBusy(false);
@@ -139,13 +145,18 @@ export function HistoryView(props: Props) {
     setBusy(true);
     try {
       const r = await post.gitReset();
-      setNotice(r.message);
       if (r.ok) {
+        setNoticeErr(false);
+        setNotice(r.message);
         setResetCfm(false);
         setReloadKey((k) => k + 1);
         props.onChanged?.();
+      } else {
+        setNoticeErr(true);
+        setNotice(r.message);
       }
     } catch (e) {
+      setNoticeErr(true);
       setNotice((e as Error).message);
     } finally {
       setBusy(false);
@@ -188,7 +199,7 @@ export function HistoryView(props: Props) {
         </div>
         {error && <div className="error">{error}</div>}
         {notice && (
-          <div className="small" style={{ color: 'var(--ok)', margin: '4px 0', wordBreak: 'break-all' }}>{notice}</div>
+          <div className="small" style={{ color: noticeErr ? 'var(--err)' : 'var(--ok)', margin: '4px 0', wordBreak: 'break-all' }}>{notice}</div>
         )}
         {!logs && !error && <div className="loading">⏳ 读取提交记录…</div>}
         {logs && logs.length === 0 && !error && <div className="empty">暂无提交记录</div>}

@@ -32,6 +32,35 @@ export function isBinaryFile(path: string): boolean {
   return BINARY_EXTS.has(ext);
 }
 
+/** 常见 svn/git 错误码 → 中文提示（含下一步动作建议）。映射不到时原样返回原文。 */
+const VCS_ERR_INFO: { re: RegExp; cn: string }[] = [
+  // svn: 服务器有新版本
+  { re: /E155011|E160028|E160029|File or directory is out of date/i, cn: '⚠ 服务器已有新版本，请先「更新」获取最新内容后再提交' },
+  // svn: 工作副本被锁定
+  { re: /E155004|working copy locked/i, cn: '⚠ 工作副本被锁定，请执行「清理」后再操作' },
+  // svn: 文件存在冲突
+  { re: /E155015|remains in conflict|merge conflict|CONFLICT \(content/i, cn: '⚠ 文件存在冲突，请先解决冲突再提交' },
+  // svn: 无法连接服务器
+  { re: /E170013|E175002|cannot connect|Could not connect|Unable to connect/i, cn: '⚠ 连接服务器失败，请检查网络/账号密码后重试' },
+  // svn: 认证失败
+  { re: /E170001|Authentication failed|authorization failed/i, cn: '⚠ 认证失败，请检查账号密码（设置后重新操作）' },
+  // git: 工作区有未提交修改
+  { re: /Please commit your changes or stash them|your local changes would be overwritten/i, cn: '⚠ 本地有未提交的修改，请先提交或撤销后重试' },
+  // git: 非快进（需先拉取）
+  { re: /Non-fast-forward|rejected.*fetch first/i, cn: '⚠ 远程仓库有新提交，请先「拉取/更新」后再推送' },
+  // git: 无法访问远程仓库
+  { re: /fatal: unable to access|Could not resolve host|Failed to connect/i, cn: '⚠ 无法访问远程仓库，请检查网络连接与远程地址' },
+];
+
+/** 展示层统一错误翻译：原始英文/svn 错误码 → 中文解释 + 下一步动作，未命中原样返回 */
+export function translateVcsError(msg: string): string {
+  if (!msg) return msg;
+  for (const { re, cn } of VCS_ERR_INFO) {
+    if (re.test(msg)) return cn;
+  }
+  return msg;
+}
+
 /** 勾选集合（checkbox 列表）：初始集合 + 单项切换 */
 export function useCheckedSet(initial: string[]) {
   const [checked, setChecked] = useState<Set<string>>(() => new Set(initial));

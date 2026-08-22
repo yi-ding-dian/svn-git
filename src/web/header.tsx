@@ -23,9 +23,17 @@ function ToolBtn(props: {
   title?: string;
   onClick: () => void;
   disabled?: boolean;
+  /** 危险操作：红色强调（防误触,如退出应用） */
+  danger?: boolean;
 }) {
   return (
-    <button className="tool-btn" title={props.title} onClick={props.onClick} disabled={props.disabled}>
+    <button
+      className="tool-btn"
+      title={props.title}
+      onClick={props.onClick}
+      disabled={props.disabled}
+      style={props.danger ? { color: 'var(--err)' } : undefined}
+    >
       {props.icon} {props.label}
     </button>
   );
@@ -205,12 +213,13 @@ export function AppHeader(props: {
           ]}
         />
       )}
-      {/* ⑥ 退出 */}
+      {/* ⑥ 退出：危险样式红色强调,避免与高频「刷新」混同误触 */}
       <Sep />
       <ToolBtn
         icon={<IconExit />}
         label="退出应用"
-        title="关闭服务并退出应用"
+        title="关闭服务并退出应用（危险）"
+        danger
         onClick={() =>
           props.setModal({
             type: 'confirm',

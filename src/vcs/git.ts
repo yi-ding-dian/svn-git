@@ -390,10 +390,20 @@ export class GitVcs {
   async cat(pathRel: string): Promise<{ ok: boolean; output: string; error?: string }> {
     const res = await this.exec(['show', `HEAD:${pathRel}`], { timeoutMs: 120_000 });
     if (res.code === 0) return { ok: true, output: res.stdout };
-    // 未跟踪/新增文件不在 HEAD：直接读磁盘（存在才读）
-    const abs = path.join(this.repo.root, pathRel);
+    // 未跟踪/新增文件不在 HEAD：直接读磁盘（存在才读）。
+    // 双保险：readpath 解析后必须仍在仓库根内（path.join 会归一化 ..，../ 可出界读取任意文件）
+    const abs = path.resolve(this.repo.root, pathRel);
+    const rel2 = path.relative(this.repo.root, fs.realpathSync(this.repo.root));
     if (fs.existsSync(abs)) {
-      return { ok: true, output: fs.readFileSync(abs, 'utf8') };
+      let ok = false;
+      try {
+        const real = fs.realpathSync(abs);
+        const r = path.relative(fs.realpathSync(this.repo.root), real);
+        ok = r === '' || (!r.startsWith('..') && !path.isAbsolute(r));
+      } catch {
+        ok = false;
+      }
+      if (ok) return { ok: true, output: fs.readFileSync(abs, 'utf8') };
     }
     return { ok: false, output: '', error: res.stderr.trim() };
   }
@@ -547,12 +557,13 @@ export class GitVcs {
       ask.cleanup();
       if (retry.aborted) return { ok: false, message: '推送已取消' };
       if (retry.code === 0) return { ok: true, message: '推送成功' };
-      return { ok: false, message: retry.stderr.trim() || 'git push 失败', authType: authTypeOf(await this.remote()) };
+      return { ok: false, message: retry.stderr.trim() || 'git push 失败', authType: authTypeOf(await this.remote()), code: 'AUTH' };
     }
     return {
       ok: false,
       message: res.stderr.trim() || 'git push 失败',
       authType: isAuthError ? authTypeOf(await this.remote()) : undefined,
+      code: isAuthError ? 'AUTH' : undefined,
     };
   }
 

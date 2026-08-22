@@ -49,29 +49,102 @@ export interface VcsResult {
   ok: boolean;
   message: string;
   stderr?: string;
+  /** 结构化错误分类：AUTH=认证失败（服务层据 code 透传 authError,不再靠正则匹配中文文案） */
+  code?: 'AUTH' | 'ABORTED' | 'NO_CHANGES';
   /** 命令输出的警告行（如 svn W205011 外部定义失败），原样保留，便于界面展示 */
   warnings?: string[];
 }
 
-/** 状态码 -> 中文说明 */
-export const CODE_DESC: Record<string, string> = {
-  M: '已修改',
-  A: '已添加',
-  D: '已删除',
-  '?': '未版本化',
-  '!': '缺失',
-  C: '冲突',
-  R: '已替换/重命名',
-  X: '外部引用',
-  I: '已忽略',
-  U: '已更新',
-  '~': '类型变更',
-  ' ': '无变化',
-};
+// 状态码中文说明定义收敛于 src/shared/types.ts（前后端单一来源）
+export { CODE_DESC } from '../shared/types.js';
 
 /** SVN 仓库布局探测：标准布局 trunk/branches/tags 目录是否存在 */
 export interface SvnLayout {
   trunk: boolean;
   branches: boolean;
   tags: boolean;
+}
+
+/** preflight 返回：git/svn 字段略有差异（ahead/lockedByOthers），统一可选化 */
+export interface PreflightResult {
+  remoteHasUpdate: boolean;
+  behind: number;
+  ahead?: number;
+  /** 行级冲突风险文件（与 BASE 的行冲突） */
+  conflictRisk: string[];
+  /** svn: 被他人锁定的文件 */
+  lockedByOthers?: string[];
+  updatedFiles: string[];
+  remoteLogs: LogEntry[];
+}
+
+/** branchList 返回：svn 多 layout 字段 */
+export interface BranchListResult {
+  current: string;
+  branches: { name: string; remote: boolean }[];
+  layout?: SvnLayout;
+}
+
+/** 统一 VCS 操作接口：公共方法两实现均实现（必选），平台独有能力可选——server 层按 repo.type 分支或 ?. 调用。 */
+export interface Vcs {
+  status(pathRel?: string): Promise<FileStatus[]>;
+  log(limit?: number, pathRel?: string): Promise<LogEntry[]>;
+  diff(a?: string, b?: string, pathRel?: string): Promise<DiffResult>;
+  ls(dir: string): Promise<{ name: string; isDir: boolean }[]>;
+  add(relPaths: string[]): Promise<VcsResult>;
+  commit(relPaths: string[], msg: string): Promise<VcsResult>;
+  restoreMissing(): Promise<string[]>;
+  revert(relPaths: string[]): Promise<VcsResult>;
+  remove(relPaths: string[]): Promise<VcsResult>;
+  preflight(): Promise<PreflightResult>;
+  branchList(): Promise<BranchListResult>;
+  switchCheck(branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>;
+  branchCreate(name: string): Promise<VcsResult>;
+  branchSwitch(name: string): Promise<VcsResult>;
+  branchDelete(name: string, force?: boolean): Promise<VcsResult>;
+  merge(name: string): Promise<VcsResult>;
+  tagList(): Promise<string[]>;
+  tagCreate(name: string, message?: string, rev?: string): Promise<VcsResult>;
+  tagDelete(name: string): Promise<VcsResult>;
+  blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]>;
+
+  // ---- git 独有（server 层仅在 repo.type === 'git' 时调用）----
+  branch?(): Promise<string>;
+  remote?(): Promise<string>;
+  gitInfo?(): Promise<{ branch: string; remote: string; upstream: string; lastCommit: { hash: string; author: string; date: string; msg: string } | null }>;
+  setRemote?(url: string): Promise<VcsResult>;
+  unpushed?(): Promise<string[]>;
+  unpushedCount?(): Promise<number>;
+  unpushedLog?(): Promise<LogEntry[]>;
+  amend?(message: string): Promise<VcsResult>;
+  reword?(hash: string, message: string): Promise<VcsResult>;
+  resetSoft?(): Promise<VcsResult>;
+  diffStaged?(pathRel?: string): Promise<DiffResult>;
+  show?(rev: string, pathRel?: string): Promise<DiffResult>;
+  cat?(pathRel: string): Promise<DiffResult>;
+  pull?(signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }>;
+  push?(signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }>;
+  stashList?(): Promise<{ index: number; label: string }[]>;
+  stashPush?(message?: string): Promise<VcsResult>;
+  stashPop?(index: number): Promise<VcsResult>;
+  stashDrop?(index: number): Promise<VcsResult>;
+  cleanList?(): Promise<string[]>;
+  clean?(): Promise<VcsResult>;
+  ignoreAdd?(pattern: string): Promise<VcsResult>;
+  remoteList?(): Promise<{ name: string; url: string }[]>;
+  remoteAdd?(name: string, url: string): Promise<VcsResult>;
+  remoteRemove?(name: string): Promise<VcsResult>;
+
+  // ---- svn 独有 ----
+  info?(): Promise<{ url?: string; revision?: string; relUrl?: string }>;
+  layout?(): Promise<SvnLayout>;
+  diffUrl?(a: string, b: string, url: string): Promise<DiffResult>;
+  catRev?(rev: string, pathRel: string): Promise<DiffResult>;
+  update?(pathRel?: string, signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }>;
+  selfLockedFiles?(): Promise<string[]>;
+  cleanup?(): Promise<VcsResult>;
+  resolve?(pathRel: string, accept: string): Promise<VcsResult>;
+  propSetIgnore?(pathRel: string, pattern: string): Promise<VcsResult>;
+  lock?(pathRel: string, force?: boolean): Promise<VcsResult>;
+  unlock?(pathRel: string, force?: boolean): Promise<VcsResult>;
 }

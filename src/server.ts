@@ -7,9 +7,20 @@ import { spawn } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
 import { detectCwd, detectRepo } from './vcs/detect.js';
 import { createVcs, type RepoInfo, type VcsResult } from './vcs/index.js';
+import {
+  isBinaryFile, inRepoRoot, isSafeOrigin, sendJson, readBody, isAuthError,
+  getStatusCached, realpathSafe, readTextFile, vcsOf, repoInfo,
+  currentScopes, STATUS_TTL, statusCache, authErrorOf,
+  type Ctx,
+} from './routes/util.js';
+import { isIgnoredByRules, getSvnIgnoreMap } from './vcs/ignore.js';
+import { diffChangedLines } from './vcs/diff-lines.js';
 import { run } from './vcs/exec.js';
 import { loadConfig, saveConfig } from './config.js';
 import type { SvnCred } from './vcs/svn.js';
+import { handle as handleConflicts } from './routes/conflicts.js';
+import { handle as handleBranch } from './routes/branch.js';
+import { handle as handleOps } from './routes/ops.js';
 
 /** 前端静态目录：开发 = 项目根/dist/web；打包 = asar 内 dist/web */
 const WEB_DIR = path.resolve(import.meta.dirname ?? '.', 'web');
@@ -28,18 +39,6 @@ export function setPickDirHandler(fn: () => Promise<string | null>): void {
   pickDirHandler = fn;
 }
 
-/** 二进制文件扩展名（与前端 utils.isBinaryFile 一致；Word/PDF/图片/压缩包等不支持文本对比） */
-const BINARY_EXTS = new Set([
-  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'pdf',
-  'zip', 'rar', '7z', 'jar', 'gz', 'bz2', 'xz',
-  'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'psd', 'mp3', 'mp4',
-  'exe', 'dll', 'so', 'dylib', 'bin', 'dat', 'db', 'sqlite', 'class', 'o', 'a',
-]);
-function isBinaryFile(p: string): boolean {
-  const name = p.split('/').pop() ?? '';
-  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
-  return BINARY_EXTS.has(ext);
-}
 
 /** 最近打开的项目历史（服务端持久化：浏览器端口随机，localStorage 不可靠） */
 const HISTORY_PATH = path.join(os.homedir(), '.config', 'svnkit', 'history.json');
@@ -76,171 +75,13 @@ function addHistory(entry: { path: string; type: 'svn' | 'git' }): void {
   } catch {
     /* 忽略写失败 */
   }
+
 }
 
-function repoInfo(): RepoInfo | null {
-  const dir = process.env.SVNKIT_REPO_DIR ?? START_DIR;
-  return detectRepo(dir);
-}
 
-function vcsOf(): { vcs: ReturnType<typeof createVcs>; repo: RepoInfo } {
-  const repo = repoInfo();
-  if (!repo) throw new Error('NO_REPO');
-  const cfg = loadConfig();
-  const cred: SvnCred | null = cfg.svn.username
-    ? { username: cfg.svn.username, password: cfg.svn.password, trustServerCert: cfg.svn.trustServerCert }
-    : null;
-  return { vcs: createVcs(repo, cred), repo };
-}
 
-/** 认证失败错误码 */
-function isAuthError(err: Error): boolean {
-  return /认证失败|E170001|Authentication failed/i.test(err.message);
-}
 
-/** 请求来源校验（CSRF 防护）:跨站页面请求一律拒绝。
- * 同源页面（Electron 窗口 / --browser 模式）/ 本地脚本（curl 等）不带 Origin 或 Origin 为 127.0.0.1;
- * 浏览器任意网页发起的跨站请求必带站点 Origin。 */
-function isSafeOrigin(req: http.IncomingMessage): boolean {
-  const origin = req.headers.origin;
-  if (!origin) return true;
-  return /^https?:\/\/127\.0\.0\.1(?::\d+)?$/.test(origin);
-}
 
-function sendJson(res: http.ServerResponse, code: number, data: unknown) {
-  const body = JSON.stringify(data);
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end(body);
-}
-
-function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    let data = '';
-    req.on('data', (c: Buffer) => {
-      data += c.toString();
-      if (data.length > 10 * 1024 * 1024) {
-        reject(new Error('body too large'));
-      }
-    });
-    req.on('end', () => {
-      try {
-        resolve(data ? JSON.parse(data) : {});
-      } catch {
-        resolve({});
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
-/** 工作副本状态缓存（5 秒） */
-const statusCache = new Map<string, { time: number; items: unknown[] }>();
-
-// ---------- svn:ignore 全量规则缓存 ----------
-// 逐目录 propget 太慢(每目录一次 svn 进程 ~30ms)。改为一次 `svn propget svn:ignore -R .`
-// 递归拉取全仓库规则(输出格式:<路径> - <规则> 块,空行分隔),缓存 60s,之后所有目录查内存 Map(0 命令)
-const SVN_IGNORE_MAP_TTL = 60_000;
-const svnIgnoreMapCache = new Map<string, { time: number; map: Map<string, string[]> }>();
-const svnIgnoreMapInflight = new Map<string, Promise<Map<string, string[]>>>();
-/** 拉取（带缓存）仓库全部 svn:ignore 规则：dir -> rules[] */
-function getSvnIgnoreMap(root: string): Promise<Map<string, string[]>> {
-  const hit = svnIgnoreMapCache.get(root);
-  if (hit && Date.now() - hit.time < SVN_IGNORE_MAP_TTL) return Promise.resolve(hit.map);
-  const inflight = svnIgnoreMapInflight.get(root);
-  if (inflight) return inflight;
-  const p = run('svn', ['propget', 'svn:ignore', '-R', '.'], { cwd: root, timeoutMs: 60_000 }).then((r) => {
-    const map = new Map<string, string[]>();
-    if (r.code === 0) {
-      // 输出:每条目 "<相对路径> - <规则1>\n<规则2>...",块之间空行分隔
-      let curPath: string | null = null;
-      const rules: string[] = [];
-      for (const line of r.stdout.split('\n')) {
-        if (!line.trim()) {
-          if (curPath) map.set(curPath, rules.slice());
-          curPath = null;
-          rules.length = 0;
-          continue;
-        }
-        const m = line.match(/^(\S.*?) - (.*)$/);
-        if (m && curPath === null) {
-          curPath = m[1]!;
-          if (m[2]!.trim()) rules.push(m[2]!.trim());
-        } else if (curPath !== null) {
-          rules.push(line.trim());
-        }
-      }
-      if (curPath) map.set(curPath, rules.slice());
-    }
-    svnIgnoreMapCache.set(root, { time: Date.now(), map });
-    return map;
-  });
-  svnIgnoreMapInflight.set(root, p);
-  void p.finally(() => svnIgnoreMapInflight.delete(root));
-  return p;
-}
-
-/** 单条忽略规则是否匹配条目名（git .gitignore / svn:ignore 通用；规则尾部 / 视为目录规则） */
-function isIgnoredByRules(rules: string[], name: string): boolean {
-  for (const rule of rules) {
-    const r = rule.trim().replace(/\/+$/, '');
-    if (!r) continue;
-    if (r.includes('*')) {
-      const re = new RegExp('^' + r.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
-      if (re.test(name)) return true;
-    } else if (r === name) {
-      return true;
-    }
-  }
-  return false;
-}
-
-const STATUS_TTL = 30_000;
-
-// 当前操作范围：大仓库中打开的子项目(相对仓库根路径)。状态扫描限定在该范围内,避免全仓库扫描卡顿
-const currentScopes = new Map<string, string>();
-
-async function getStatusCached(repo: RepoInfo, force = false): Promise<unknown[]> {
-  const scope = currentScopes.get(repo.root) ?? '';
-  const key = `${repo.root}::${scope}`;
-  const hit = statusCache.get(key);
-  if (!force && hit && Date.now() - hit.time < STATUS_TTL) return hit.items;
-  const { vcs } = vcsOf();
-  const items = await vcs.status(scope || undefined);
-  statusCache.set(key, { time: Date.now(), items });
-  return items;
-}
-
-/** 校验绝对路径是否位于仓库根内（防止 ../git-repo-2 这类前缀匹配绕过） */
-function inRepoRoot(root: string, abs: string): boolean {
-  const rel = path.relative(root, abs);
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-}
-
-/** 解析 unified diff 中 BASE 侧的变更位置：del=被删除/修改的行号，ins=插入位置（+ 行对应的 BASE 行号） */
-function diffChangedLines(diffText: string): { del: Set<number>; ins: Set<number> } {
-  const del = new Set<number>();
-  const ins = new Set<number>();
-  let cur = 0;
-  for (const raw of diffText.split('\n')) {
-    const h = raw.match(/^@@ -(\d+)(?:,\d+)?/);
-    if (h && h[1]) {
-      cur = Number(h[1]);
-      continue;
-    }
-    // 跳过文件头行（svn 的 "--- xxx (版本 34)" / git 的 "--- a/xxx" 与 "+++ b/xxx"）
-    // +++ 行以 + 开头，若不跳过会被误判为插入行（且此时行号 cur=0 → 恒误报"文件开头冲突"）
-    if (raw.startsWith('---') || raw.startsWith('+++')) continue;
-    if (raw.startsWith('-')) {
-      del.add(cur);
-      cur += 1;
-    } else if (raw.startsWith('+')) {
-      ins.add(cur); // 在该 BASE 行位置之后插入
-    } else if (raw.startsWith(' ')) {
-      cur += 1;
-    }
-  }
-  return { del, ins };
-}
 
 /** 目录浏览（打开仓库页用）：列目录 + 仓库识别 */
 function browseDirs(dir: string): { entries: { name: string; isDir: boolean }[]; repo: RepoInfo | null } {
@@ -294,6 +135,13 @@ export function startServer(): Promise<ServerHandle> {
         sendJson(res, 403, { error: '拒绝跨站请求' });
         return;
       }
+      // 端点域模块（冲突防护 / 分支标签 / 操作类），按序尝试分发
+      {
+        const ctx: Ctx = { req, res, url, p };
+        if (await handleConflicts(ctx)) return;
+        if (await handleBranch(ctx)) return;
+        if (await handleOps(ctx)) return;
+      }
       if (p === '/api/info') {
         let version = '';
         try {
@@ -311,11 +159,11 @@ export function startServer(): Promise<ServerHandle> {
         let rev = repo.revOrBranch ?? '';
         try {
           if (repo.type === 'svn') {
-            const info = await (vcs as any).info();
-            url2 = info.url ?? url2;
-            rev = info.revision ? `r${info.revision}` : rev;
+            const info = await vcs.info?.();
+            url2 = info?.url ?? url2;
+            rev = info?.revision ? `r${info.revision}` : rev;
           } else {
-            const [b, r] = await Promise.all([(vcs as any).branch(), (vcs as any).remote()]);
+            const [b, r] = await Promise.all([vcs.branch?.(), vcs.remote?.()]);
             rev = b || rev;
             url2 = r || url2;
           }
@@ -406,7 +254,7 @@ export function startServer(): Promise<ServerHandle> {
           sendJson(res, 400, { error: '非 Git 仓库' });
           return;
         }
-        sendJson(res, 200, await (vcs as any).gitInfo());
+        sendJson(res, 200, await vcs.gitInfo?.());
         return;
       }
       if (p === '/api/git-config' && req.method === 'POST') {
@@ -422,7 +270,7 @@ export function startServer(): Promise<ServerHandle> {
           sendJson(res, 400, { error: '非 Git 仓库' });
           return;
         }
-        sendJson(res, 200, await (vcs as any).setRemote(url));
+        sendJson(res, 200, await vcs.setRemote?.(url));
         return;
       }
       if (p === '/api/mkdir' && req.method === 'POST') {
@@ -831,7 +679,7 @@ export function startServer(): Promise<ServerHandle> {
         let selfLocked: string[] = [];
         if (repo.type === 'svn') {
           try {
-            selfLocked = await (vcs as any).selfLockedFiles();
+            selfLocked = (await vcs.selfLockedFiles?.()) ?? [];
           } catch {
             /* ignore */
           }
@@ -843,15 +691,18 @@ export function startServer(): Promise<ServerHandle> {
       if (p === '/api/log') {
         const { vcs, repo } = vcsOf();
         const pathRel = url.searchParams.get('path') || undefined;
+        // 路径越界校验：svn log 会把 ../ 解析到仓库外的其他工作副本
+        if (pathRel && !inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
+          sendJson(res, 400, { error: '路径越界' });
+          return;
+        }
         const limit = Number(url.searchParams.get('limit') ?? 200);
         const logs = await vcs.log(limit, pathRel);
-        // 注意:总数统计(svn 全量 log)很慢,不能在此串行等待(大仓库会一直转圈),
-        // 已拆分为独立接口 /api/log-count 由前端异步拉取
         // git:附带未推送提交 hash 列表(历史视图绿灯标记);svn 无此概念
         let unpushed: string[] = [];
         if (repo.type === 'git') {
           try {
-            unpushed = await (vcs as any).unpushed();
+            unpushed = (await vcs.unpushed?.()) ?? [];
           } catch {
             /* 计算失败不阻断历史列表 */
           }
@@ -860,19 +711,6 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
-      if (p === '/api/log-count') {
-        // 历史总数(独立接口,svn 全量统计较慢,由前端异步拉取,不阻塞列表加载)
-        const { vcs } = vcsOf();
-        const pathRel = url.searchParams.get('path') || undefined;
-        let total = 0;
-        try {
-          total = await (vcs as any).logCount(pathRel);
-        } catch {
-          /* 统计失败返回 0 */
-        }
-        sendJson(res, 200, { total });
-        return;
-      }
 
       if (p === '/api/file-mtime') {
         // 工作区文件指纹（检测外部更新）
@@ -913,23 +751,24 @@ export function startServer(): Promise<ServerHandle> {
         let leftLabel = '';
         let rightLabel = '';
         const gitShow = async (rev: string, r: string): Promise<string> => {
-          const out = await (vcs as any).show(`${rev}:${r}`);
-          return out.ok ? out.output : '';
+          const out = await vcs.show?.(`${rev}:${r}`);
+          return out && out.ok ? out.output : '';
         };
         const svnCat = async (rev: string, r: string): Promise<string> => {
-          const out = await (vcs as any).catRev(rev, r);
-          return out.ok ? out.output : '';
+          const out = await vcs.catRev?.(rev, r);
+          return out && out.ok ? out.output : '';
         };
         if (repo.type === 'git') {
           leftLabel = a ? a : 'HEAD（原版）';
           rightLabel = b ? b : '工作区（当前）';
           left = await gitShow(a ?? 'HEAD', rel);
-          right = b ? await gitShow(b, rel) : fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : '';
+          // 工作区裸读：readTextFile 含大小预检（>5MB 不整读入内存）
+          right = b ? await gitShow(b, rel) : readTextFile(abs);
         } else {
           leftLabel = a ? `r${a}` : 'BASE（原版）';
           rightLabel = b ? `r${b}` : '工作区（当前）';
           left = await svnCat(a ?? 'BASE', rel);
-          right = b ? await svnCat(b, rel) : fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : '';
+          right = b ? await svnCat(b, rel) : readTextFile(abs);
         }
         // 截断超大文件
         const MAX = 200_000;
@@ -942,6 +781,11 @@ export function startServer(): Promise<ServerHandle> {
       if (p === '/api/diff') {
         const { vcs, repo } = vcsOf();
         const pathRel = url.searchParams.get('path') || undefined;
+        // 路径越界校验：svn diff 会把 ../ 解析到仓库外的其他工作副本
+        if (pathRel && !inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
+          sendJson(res, 400, { error: '路径越界' });
+          return;
+        }
         if (pathRel && isBinaryFile(pathRel)) {
           sendJson(res, 200, { ok: false, output: '', error: `二进制文件（${pathRel}），不支持文本对比` });
           return;
@@ -952,7 +796,7 @@ export function startServer(): Promise<ServerHandle> {
         let output = d.output;
         // git 工作区模式：合并暂存区改动（否则已 git add 的修改行不会标记）
         if (repo.type === 'git' && !a && !b) {
-          const staged = await (vcs as any).diffStaged(pathRel);
+          const staged = await vcs.diffStaged?.(pathRel);
           if (staged?.ok && staged.output.trim()) output = output + (output ? '\n' : '') + staged.output;
         }
         sendJson(res, 200, { ...d, output });
@@ -968,7 +812,7 @@ export function startServer(): Promise<ServerHandle> {
           return;
         }
         if (repo.type === 'git') {
-          const s = await (vcs as any).show(rev, pathRel);
+          const s = await vcs.show?.(rev, pathRel);
           sendJson(res, 200, s);
         } else {
           const n = Number(rev);
@@ -997,8 +841,8 @@ export function startServer(): Promise<ServerHandle> {
           if (pathRel && y === '') {
             try {
               if (pathRel.startsWith('/')) {
-                const du = await (vcs as any).diffUrl(String(n - 1), rev, '^' + pathRel);
-                if (du.ok || du.output) {
+                const du = await vcs.diffUrl?.(String(n - 1), rev, '^' + pathRel);
+                if (du && (du.ok || du.output)) {
                   sendJson(res, 200, du);
                   return;
                 }
@@ -1016,14 +860,14 @@ export function startServer(): Promise<ServerHandle> {
           if ((!d.ok || !d.output.trim()) && pathRel && pathRel.startsWith('/')) {
             try {
               const url = '^' + pathRel;
-              const du = await (vcs as any).diffUrl(String(n - 1), rev, url);
-              if (du.ok || du.output) {
+              const du = await vcs.diffUrl?.(String(n - 1), rev, url);
+              if (du && (du.ok || du.output)) {
                 sendJson(res, 200, du);
                 return;
               }
               // cat 兜底：URL 带 @rev peg（路径在 HEAD 已删除时无 peg 会解析失败）
-              const cat = await (vcs as any).catRev(rev, `${url}@${rev}`);
-              if (cat.ok && cat.output) {
+              const cat = await vcs.catRev?.(rev, `${url}@${rev}`);
+              if (cat && cat.ok && cat.output) {
                 const lines = cat.output.split('\n');
                 if (lines.length && lines[lines.length - 1] === '') lines.pop();
                 const range = lines.length === 0 ? '0,0' : `1,${lines.length}`;
@@ -1047,6 +891,11 @@ export function startServer(): Promise<ServerHandle> {
       if (p === '/api/ls') {
         const { vcs, repo } = vcsOf();
         const dir = url.searchParams.get('dir') || '';
+        // svn list 以 URL 语义解析参数，防 ../ 指向仓库根之外（^/ 相对 URL 除外）
+        if (dir && !dir.startsWith('^/') && !inRepoRoot(repo.root, path.resolve(repo.root, dir))) {
+          sendJson(res, 400, { error: '路径越界' });
+          return;
+        }
         const list = await vcs.ls(dir);
         sendJson(res, 200, { items: list, repoType: repo.type });
         return;
@@ -1057,15 +906,26 @@ export function startServer(): Promise<ServerHandle> {
         const rel = url.searchParams.get('path') || '';
         let out: { ok: boolean; output: string; error?: string };
         if (repo.type === 'git') {
-          out = await (vcs as any).cat(rel);
+          // git.cat 内部有磁盘回退（未跟踪文件读盘），同样先做越界校验防 ../ 出界
+          const abs = path.resolve(repo.root, rel);
+          if (!inRepoRoot(repo.root, abs)) {
+            sendJson(res, 400, { ok: false, output: '', error: '路径越界' });
+            return;
+          }
+          out = (await vcs.cat?.(rel)) ?? { ok: false, output: '', error: '读取失败' };
         } else {
           // svn 工作副本直接读本地文件
-          const abs = path.join(repo.root, rel);
+          const abs = path.resolve(repo.root, rel);
+          // 路径越界校验：svn 分支是裸磁盘读取,与 /api/file-versions 一致,防 ../ 穿越与符号链接出界
+          if (!inRepoRoot(repo.root, abs)) {
+            sendJson(res, 400, { ok: false, output: '', error: '路径越界' });
+            return;
+          }
           if (!fs.existsSync(abs)) {
             sendJson(res, 404, { ok: false, output: '', error: '文件不存在' });
             return;
           }
-          out = { ok: true, output: fs.readFileSync(abs, 'utf8') };
+          out = { ok: true, output: readTextFile(abs) };
         }
         sendJson(res, 200, out);
         return;
@@ -1081,12 +941,19 @@ export function startServer(): Promise<ServerHandle> {
         }
         const root = path.resolve(repo.root);
         const abs = path.resolve(root, fileRel);
-        if (abs !== root && !abs.startsWith(root + path.sep)) {
+        // 统一 inRepoRoot（含 realpath）：与其余端点一致,防 symlink 出界
+        if (!inRepoRoot(repo.root, abs)) {
           sendJson(res, 400, { error: '路径越界' });
           return;
         }
         if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
           sendJson(res, 404, { error: '文件不存在' });
+          return;
+        }
+        // 超大图片（如几百 MB 的 PNG）：整读入内存会 OOM,读前拦截
+        const imgSize = fs.statSync(abs).size;
+        if (imgSize > 50 * 1024 * 1024) {
+          sendJson(res, 400, { error: '图片过大（超过 50MB），无法预览' });
           return;
         }
         const ext = abs.split('.').pop()!.toLowerCase();
@@ -1143,231 +1010,7 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
-      // 操作类 POST
-      if (req.method === 'POST' && ['/api/add', '/api/commit', '/api/update', '/api/revert', '/api/delete', '/api/push'].includes(p)) {
-        const { vcs, repo } = vcsOf();
-        const body = await readBody(req);
-        const paths = (body.paths as string[]) ?? [];
-        const msg = String(body.message ?? '');
-        // 路径越界校验：paths 为相对仓库根路径，path.resolve 归一化后 inRepoRoot 检查（防 ../ 穿越与绝对路径指向仓库外）
-        const bad = paths.find((p) => !inRepoRoot(repo.root, path.resolve(repo.root, p)));
-        if (bad) {
-          sendJson(res, 400, { error: `路径超出工作副本范围: ${bad}` });
-          return;
-        }
-        let result: { ok: boolean; message: string };
-        const v = vcs as any;
-        if (p === '/api/add') result = await v.add(paths);
-        else if (p === '/api/commit') result = await v.commit(paths, msg);
-        else if (p === '/api/update') {
-          const dir = String(body.path ?? '');
-          // update 的 dir 同样校验（空串 = 仓库根，通过）
-          if (!inRepoRoot(repo.root, path.resolve(repo.root, dir))) {
-            sendJson(res, 400, { error: '路径超出工作副本范围' });
-            return;
-          }
-          // 前端取消更新（请求断开）→ 终止 svn/git 子进程。
-          // 注意：req 'aborted' 事件在 Node 18.17+ 已弃用不再触发，改用 res 'close' +
-          // writableEnded 判断客户端是否异常断开（正常响应完成时 writableEnded=true 不误杀）
-          const ac = new AbortController();
-          res.on('close', () => {
-            if (!res.writableEnded) ac.abort();
-          });
-          result = repo.type === 'git' ? await v.pull(ac.signal) : await v.update(dir || undefined, ac.signal);
-          // 更新成功后自动恢复缺失文件（磁盘删除但版本库还在 → 拉回，消除 ! 标识）
-          if (result.ok) {
-            try {
-              const missing = await (v as any).restoreMissing();
-              if (missing.length > 0) {
-                result = { ...result, message: `${result.message}；已恢复 ${missing.length} 个缺失文件` };
-              }
-            } catch {
-              /* 恢复失败不阻断更新结果 */
-            }
-          }
-        } else if (p === '/api/revert') result = await v.revert(paths);
-        else if (p === '/api/delete') result = await v.remove(paths);
-        else result = await v.push();
-        sendJson(res, 200, {
-          ...(result as object),
-          path: p === '/api/update' ? String(body.path ?? '') : undefined,
-          authError: isAuthError(new Error(result.message)),
-        });
-        return;
-      }
-
       // ---------- 版本管理扩展 API ----------
-      if (p === '/api/branches') {
-        const { vcs } = vcsOf();
-        const r = await (vcs as any).branchList();
-        sendJson(res, 200, r);
-        return;
-      }
-
-      if (p === '/api/switch-check') {
-        // 切换分支前检查：工作区改动统计 + 与目标分支冲突文件（前端据此决定直接切/提示确认）
-        const branch = String(url.searchParams.get('branch') ?? '');
-        if (!branch) {
-          sendJson(res, 400, { error: '缺少分支名' });
-          return;
-        }
-        const { vcs } = vcsOf();
-        if (typeof (vcs as any).switchCheck !== 'function') {
-          sendJson(res, 400, { error: '当前仓库不支持切换检查' });
-          return;
-        }
-        try {
-          sendJson(res, 200, await (vcs as any).switchCheck(branch));
-        } catch (e) {
-          sendJson(res, 500, { error: (e as Error).message });
-        }
-        return;
-      }
-
-      if (p === '/api/branch' && req.method === 'POST') {
-        const { vcs } = vcsOf();
-        const body = await readBody(req);
-        const action = String(body.action ?? '');
-        const name = String(body.name ?? '');
-        let result: VcsResult;
-        const v = vcs as any;
-        if (action === 'create') result = await v.branchCreate(name);
-        else if (action === 'switch') result = await v.branchSwitch(name);
-        else if (action === 'delete') result = await v.branchDelete(name, Boolean(body.force));
-        else if (action === 'merge') result = await v.merge(name);
-        else {
-          sendJson(res, 400, { error: '未知操作' });
-          return;
-        }
-        sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
-        return;
-      }
-
-      if (p === '/api/git-amend' && req.method === 'POST') {
-        // 修改最近一次提交注释（仅 git）
-        const { vcs, repo } = vcsOf();
-        if (repo.type !== 'git') {
-          sendJson(res, 400, { error: '仅 git 仓库支持' });
-          return;
-        }
-        const body = await readBody(req);
-        const message = String(body.message ?? '').trim();
-        if (!message) {
-          sendJson(res, 400, { error: '注释不能为空' });
-          return;
-        }
-        const result = await (vcs as any).amend(message);
-        sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
-        return;
-      }
-
-      if (p === '/api/git-reword' && req.method === 'POST') {
-        // 修改任意未推送提交的注释（rebase -i reword，仅 git）
-        const { vcs, repo } = vcsOf();
-        if (repo.type !== 'git') {
-          sendJson(res, 400, { error: '仅 git 仓库支持' });
-          return;
-        }
-        const body = await readBody(req);
-        const hash = String(body.hash ?? '').trim();
-        const message = String(body.message ?? '').trim();
-        if (!hash || !message) {
-          sendJson(res, 400, { error: '参数不完整' });
-          return;
-        }
-        const result = await (vcs as any).reword(hash, message);
-        sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
-        return;
-      }
-
-      if (p === '/api/git-unpushed-count') {
-        // 未推送提交数量（推送按钮角标，仅 git）
-        const { vcs, repo } = vcsOf();
-        if (repo.type !== 'git') {
-          sendJson(res, 200, { count: 0 });
-          return;
-        }
-        const count = await (vcs as any).unpushedCount();
-        sendJson(res, 200, { count });
-        return;
-      }
-
-      if (p === '/api/git-unpushed') {
-        // 未推送提交完整列表（含变更文件，推送确认弹窗，仅 git）
-        const { vcs, repo } = vcsOf();
-        if (repo.type !== 'git') {
-          sendJson(res, 200, { count: 0, unpushed: [] });
-          return;
-        }
-        const unpushed = await (vcs as any).unpushedLog();
-        sendJson(res, 200, { count: unpushed.length, unpushed });
-        return;
-      }
-
-      if (p === '/api/git-reset' && req.method === 'POST') {
-        // 撤销最近一次提交（--soft 保留修改，仅 git）
-        const { vcs, repo } = vcsOf();
-        if (repo.type !== 'git') {
-          sendJson(res, 400, { error: '仅 git 仓库支持' });
-          return;
-        }
-        const result = await (vcs as any).resetSoft();
-        sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
-        return;
-      }
-
-      if (p === '/api/tags') {
-        const { vcs } = vcsOf();
-        const tags = await (vcs as any).tagList();
-        // svn 附带仓库布局探测（git 无 layout 方法，跳过）
-        const layout = await (vcs as any).layout?.().catch(() => undefined);
-        sendJson(res, 200, layout ? { tags, layout } : { tags });
-        return;
-      }
-
-      if (p === '/api/tag' && req.method === 'POST') {
-        const { vcs } = vcsOf();
-        const body = await readBody(req);
-        const action = String(body.action ?? '');
-        const name = String(body.name ?? '');
-        let result: VcsResult;
-        const v = vcs as any;
-        if (action === 'create') result = await v.tagCreate(name);
-        else if (action === 'delete') result = await v.tagDelete(name);
-        else {
-          sendJson(res, 400, { error: '未知操作' });
-          return;
-        }
-        sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
-        return;
-      }
-
-      if (p === '/api/stash') {
-        const { vcs, repo } = vcsOf();
-        if (repo.type !== 'git') {
-          sendJson(res, 200, { ok: false, message: 'SVN 不支持 Stash 功能' });
-          return;
-        }
-        if (req.method === 'GET') {
-          const list = await (vcs as any).stashList();
-          sendJson(res, 200, { items: list });
-          return;
-        }
-        const body = await readBody(req);
-        const action = String(body.action ?? '');
-        const v = vcs as any;
-        let result: VcsResult;
-        if (action === 'push') result = await v.stashPush(String(body.message ?? ''));
-        else if (action === 'pop') result = await v.stashPop(Number(body.index ?? 0));
-        else if (action === 'drop') result = await v.stashDrop(Number(body.index ?? 0));
-        else {
-          sendJson(res, 400, { error: '未知操作' });
-          return;
-        }
-        sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
-        return;
-      }
-
       if (p === '/api/repo-create' && req.method === 'POST') {
         // 创建/克隆仓库（不依赖当前打开的仓库）
         const body = await readBody(req);
@@ -1429,417 +1072,13 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
-      if (p === '/api/svn-extra' && req.method === 'POST') {
-        const { vcs } = vcsOf();
-        const body = await readBody(req);
-        const action = String(body.action ?? '');
-        const v = vcs as any;
-        let result: VcsResult;
-        if (action === 'cleanup') result = await v.cleanup();
-        else if (action === 'resolve') result = await v.resolve(String(body.path ?? ''), String(body.accept ?? 'working'));
-        else if (action === 'propset-ignore') result = await v.propSetIgnore(String(body.path ?? ''), String(body.pattern ?? ''));
-        else {
-          sendJson(res, 400, { error: '未知操作' });
-          return;
-        }
-        sendJson(res, 200, { ...result, authError: isAuthError(new Error(result.message)) });
-        return;
-      }
-
-      if (p === '/api/conflicts') {
-        // 冲突文件 + 三方内容（git: :1/:2/:3；svn: .mine/.r 文件）
-        const { vcs, repo } = vcsOf();
-        const items = (await vcs.status()) as { code: string; path: string }[];
-        const conflictPaths = items.filter((i) => i.code === 'C').map((i) => i.path);
-        const read = (p: string) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '');
-        const out: { path: string; ours: string; theirs: string; base: string; work: string; binary: boolean }[] = [];
-        for (const rel of conflictPaths) {
-          const abs = path.join(repo.root, rel);
-          // 二进制文件（Word/PDF/图片等）：不读内容（utf8 读取是乱码，对比无意义），界面显示提示块
-          const binary = isBinaryFile(rel);
-          let ours = '';
-          let theirs = '';
-          let base = '';
-          let work = binary ? '' : read(abs);
-          if (!binary) {
-            if (repo.type === 'git') {
-              const show = async (stage: string): Promise<string> => {
-                const r = await run('git', ['show', `:${stage}:${rel}`], { cwd: repo.root, timeoutMs: 30_000 });
-                return r.code === 0 ? r.stdout : '';
-              };
-              base = await show('1');
-              ours = await show('2');
-              theirs = await show('3');
-            } else {
-              // svn 冲突文件：xxx.mine（本地）、xxx.r<新>（对方）、xxx.r<旧>（基础）
-              const dir = path.dirname(abs);
-              const basename = path.basename(abs);
-              let rnums: number[] = [];
-              try {
-                rnums = fs
-                  .readdirSync(dir)
-                  .filter((n) => n.startsWith(basename + '.r'))
-                  .map((n) => Number(n.slice(basename.length + 2)))
-                  .filter((n) => !Number.isNaN(n))
-                  .sort((a, b) => a - b);
-              } catch {
-                /* ignore */
-              }
-              ours = read(abs + '.mine');
-              theirs = rnums.length > 0 ? read(abs + '.r' + rnums[rnums.length - 1]!) : '';
-              base = rnums.length > 1 ? read(abs + '.r' + rnums[0]!) : '';
-            }
-          }
-          out.push({ path: rel, ours, theirs, base, work, binary });
-        }
-        sendJson(res, 200, { conflicts: out });
-        return;
-      }
-
-      if (p === '/api/conflict-detail') {
-        // 冲突风险文件详情：对方的改动 diff + 我的改动 diff
-        const { vcs, repo } = vcsOf();
-        const rel = url.searchParams.get('path') ?? '';
-        if (!rel) {
-          sendJson(res, 400, { error: '缺少路径' });
-          return;
-        }
-        let theirsDiff = '';
-        let myDiff = '';
-        if (repo.type === 'git') {
-          const branch = await (vcs as any).branch();
-          const t = await (vcs as any).diff('HEAD', `origin/${branch}`, rel);
-          theirsDiff = t.ok ? t.output : '';
-          const m = await (vcs as any).diff(undefined, undefined, rel);
-          myDiff = m.ok ? m.output : '';
-        } else {
-          const t = await (vcs as any).diff('BASE', 'HEAD', rel);
-          theirsDiff = t.ok ? t.output : '';
-          const m = await (vcs as any).diff(undefined, undefined, rel);
-          myDiff = m.ok ? m.output : '';
-        }
-        sendJson(res, 200, { path: rel, theirsDiff, myDiff });
-        return;
-      }
-
-      if (p === '/api/reveal' && req.method === 'POST') {
-        // 打开文件所在文件夹（Linux: xdg-open 目录；Windows: explorer 定位文件）
-        const { repo } = vcsOf();
-        const body = await readBody(req);
-        const rel = String(body.path ?? '');
-        const abs = path.join(repo.root, rel);
-        if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 403, { error: '超出工作副本范围' });
-          return;
-        }
-        if (!fs.existsSync(abs)) {
-          sendJson(res, 404, { error: '文件不存在' });
-          return;
-        }
-        if (process.platform === 'win32') {
-          await run('explorer', ['/select,', abs], { timeoutMs: 10_000 });
-        } else {
-          // 目录直接打开本身；文件才打开所在文件夹（否则右键目录会定位到上一级）
-          const target = fs.statSync(abs).isDirectory() ? abs : path.dirname(abs);
-          await run('xdg-open', [target], { timeoutMs: 10_000 });
-        }
-        sendJson(res, 200, { ok: true });
-        return;
-      }
-
-      if (p === '/api/text-diff' && req.method === 'POST') {
-        // 任意两段文本的 unified diff（git diff --no-index，跨平台；冲突解决器用）
-        const body = await readBody(req);
-        const left = String(body.left ?? '');
-        const right = String(body.right ?? '');
-        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'svnkit-diff-'));
-        const f1 = path.join(tmpDir, 'ours.txt');
-        const f2 = path.join(tmpDir, 'theirs.txt');
-        try {
-          fs.writeFileSync(f1, left);
-          fs.writeFileSync(f2, right);
-          const r = await run('git', ['diff', '--no-index', '--', f1, f2], { timeoutMs: 30_000 });
-          // 退出码：0=无差异，1=有差异（正常），>1=错误
-          sendJson(res, 200, { diff: r.code <= 1 ? r.stdout : '' });
-        } finally {
-          fs.rmSync(tmpDir, { recursive: true, force: true });
-        }
-        return;
-      }
-
-      if (p === '/api/resolve-conflict' && req.method === 'POST') {
-        const { vcs, repo } = vcsOf();
-        const body = await readBody(req);
-        const rel = String(body.path ?? '');
-        const mode = String(body.mode ?? 'ours');
-        const content = String(body.content ?? '');
-        const abs = path.join(repo.root, rel);
-        // 防误操作：非冲突状态执行 ours/theirs 会静默覆盖本地修改
-        if (repo.type === 'git' && mode !== 'manual') {
-          const u = await run('git', ['ls-files', '-u', rel], { cwd: repo.root, timeoutMs: 15_000 });
-          if (u.code !== 0 || !u.stdout.trim()) {
-            sendJson(res, 200, { ok: false, message: `${rel} 当前不是冲突状态，无法采用本地/对方` });
-            return;
-          }
-        }
-        let result: VcsResult;
-        if (repo.type === 'git') {
-          if (mode === 'manual') {
-            fs.writeFileSync(abs, content);
-          } else {
-            const side = mode === 'ours' ? '--ours' : '--theirs';
-            const co = await run('git', ['checkout', side, rel], { cwd: repo.root, timeoutMs: 30_000 });
-            if (co.code !== 0) {
-              sendJson(res, 200, { ok: false, message: co.stderr.trim() || '取用失败' });
-              return;
-            }
-          }
-          result = await (vcs as any).add([rel]);
-          if (result.ok) result = { ok: true, message: `已解决: ${rel}（${mode === 'ours' ? '采用本地' : mode === 'theirs' ? '采用对方' : '手动编辑'}）` };
-        } else {
-          if (mode === 'manual') fs.writeFileSync(abs, content);
-          const accept = mode === 'ours' ? 'mine-full' : mode === 'theirs' ? 'theirs-full' : 'working';
-          result = await (vcs as any).resolve(rel, accept);
-        }
-        sendJson(res, 200, { ...result, authError: false });
-        return;
-      }
-
-      if (p === '/api/preflight') {
-        // 提交/推送前检查：服务器版本对比 + 行级冲突检测 + 锁定
-        const { vcs, repo } = vcsOf();
-        const r = await (vcs as any).preflight();
-        // 行级冲突：对每个风险文件对比 对方改动行 ∩ 我的改动行
-        const clash: { path: string; lines: number[] }[] = [];
-        const branch = repo.type === 'git' ? await (vcs as any).branch() : '';
-        for (const path of (r.conflictRisk ?? []) as string[]) {
-          const theirs = repo.type === 'git'
-            ? await (vcs as any).diff('HEAD', `origin/${branch}`, path)
-            : await (vcs as any).diff('BASE', 'HEAD', path);
-          const mine = await (vcs as any).diff(undefined, undefined, path);
-          const tL = diffChangedLines(theirs.ok ? theirs.output : '');
-          const mL = diffChangedLines(mine.ok ? mine.output : '');
-          // 行冲突 = 删除行交集 ∪ 插入位置交集
-          const clashSet = new Set<number>();
-          for (const l of tL.del) if (mL.del.has(l)) clashSet.add(l);
-          for (const l of tL.ins) if (mL.ins.has(l)) clashSet.add(l);
-          const lines = [...clashSet].sort((a, b) => a - b);
-          if (lines.length > 0) clash.push({ path, lines });
-        }
-        sendJson(res, 200, { ...r, conflictRisk: clash });
-        return;
-      }
-
-      // ---------- Blame / 清理 / 锁定 / 忽略 / 远程 ----------
-      if (p === '/api/blame') {
-        const { vcs } = vcsOf();
-        const pathRel = url.searchParams.get('path') ?? '';
-        try {
-          const lines = await (vcs as any).blame(pathRel);
-          sendJson(res, 200, { lines });
-        } catch (e) {
-          sendJson(res, 500, { error: (e as Error).message });
-        }
-        return;
-      }
-
-      if (p === '/api/git-clean') {
-        const { repo, vcs } = vcsOf();
-        if (repo.type !== 'git') {
-          sendJson(res, 400, { error: '仅 Git 仓库支持' });
-          return;
-        }
-        if (req.method === 'GET') {
-          const files = await (vcs as any).cleanList();
-          sendJson(res, 200, { files });
-          return;
-        }
-        const r = await (vcs as any).clean();
-        sendJson(res, 200, { ...r, authError: false });
-        return;
-      }
-
-      if (p === '/api/svn-lock' && req.method === 'POST') {
-        const { repo, vcs } = vcsOf();
-        if (repo.type !== 'svn') {
-          sendJson(res, 400, { error: '仅 SVN 仓库支持' });
-          return;
-        }
-        const body = await readBody(req);
-        const action = String(body.action ?? '');
-        const pathRel = String(body.path ?? '');
-        const force = Boolean(body.force);
-        const r = action === 'lock' ? await (vcs as any).lock(pathRel, force) : await (vcs as any).unlock(pathRel, force);
-        sendJson(res, 200, { ...r, authError: isAuthError(new Error(r.message)) });
-        return;
-      }
-
-      if (p === '/api/ignore' && req.method === 'GET') {
-        // 读取忽略规则（svn: svn:ignore 属性 / git: .gitignore）
-        const { repo } = vcsOf();
-        const pathRel = url.searchParams.get('path') ?? '';
-        let rules: string[] = [];
-        if (repo.type === 'svn') {
-          const r = await run('svn', ['propget', 'svn:ignore', pathRel || '.'], { cwd: repo.root, timeoutMs: 30_000 });
-          if (r.code === 0 && r.stdout.trim()) rules = r.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
-        } else {
-          const g = path.join(repo.root, '.gitignore');
-          if (fs.existsSync(g)) {
-            rules = fs
-              .readFileSync(g, 'utf8')
-              .split('\n')
-              .map((s) => s.trim())
-              .filter((s) => s && !s.startsWith('#'));
-          }
-        }
-        sendJson(res, 200, { rules });
-        return;
-      }
-
-      if (p === '/api/ignore-remove' && req.method === 'POST') {
-        // 删除单条忽略规则
-        const { repo } = vcsOf();
-        const body = await readBody(req);
-        const pathRel = String(body.path ?? '');
-        const pattern = String(body.pattern ?? '');
-        if (repo.type === 'svn') {
-          // propget → 过滤 → propset 回写
-          const getRes = await run('svn', ['propget', 'svn:ignore', pathRel || '.'], { cwd: repo.root, timeoutMs: 30_000 });
-          const remaining = getRes.stdout
-            .split('\n')
-            .map((s) => s.trim())
-            .filter((s) => s && s !== pattern);
-          const setRes = await run('svn', ['propset', 'svn:ignore', remaining.join('\n'), pathRel || '.'], { cwd: repo.root, timeoutMs: 30_000 });
-          if (setRes.code !== 0) {
-            sendJson(res, 200, { ok: false, message: setRes.stderr.trim() || '删除失败' });
-            return;
-          }
-        } else {
-          const g = path.join(repo.root, '.gitignore');
-          if (fs.existsSync(g)) {
-            const content = fs.readFileSync(g, 'utf8');
-            fs.writeFileSync(g, content.split('\n').filter((l) => l.trim() !== pattern).join('\n'));
-          }
-        }
-        sendJson(res, 200, { ok: true, message: `已删除规则: ${pattern}` });
-        return;
-      }
-
-      if (p === '/api/unignore' && req.method === 'POST') {
-        // 取消忽略：git 追加否定规则 !<路径>（覆盖前面的排除）；svn 删除承载该路径的匹配规则
-        const { repo } = vcsOf();
-        const body = await readBody(req);
-        const rel = String(body.path ?? '').replace(/^\/+/, '');
-        if (!rel) {
-          sendJson(res, 400, { error: '缺少路径' });
-          return;
-        }
-        const parts = rel.split('/').filter(Boolean);
-        if (repo.type === 'git') {
-          // git：规则全部在根 .gitignore，从根逐级找第一级被匹配的段 → 追加 !<段>（目录带 /）
-          const g = path.join(repo.root, '.gitignore');
-          let rules: string[] = [];
-          if (fs.existsSync(g)) {
-            rules = fs
-              .readFileSync(g, 'utf8')
-              .split('\n')
-              .map((s) => s.trim())
-              .filter((s) => s && !s.startsWith('#'));
-          }
-          let matched = ''; // 被匹配段（可能为祖先目录）
-          let acc = '';
-          for (const part of parts) {
-            acc = acc ? `${acc}/${part}` : part;
-            if (isIgnoredByRules(rules, part)) {
-              matched = acc;
-              break;
-            }
-          }
-          if (!matched) {
-            sendJson(res, 200, { ok: false, message: `未找到忽略 ${rel} 的规则（可能来自 .git/info/exclude 或全局配置，请手动处理）` });
-            return;
-          }
-          // 匹配段是祖先（非最后一段）→ 必为目录；是路径自身 → 按磁盘类型判断
-          const isLast = matched === rel;
-          let isDir = !isLast;
-          if (isLast) {
-            try {
-              isDir = fs.statSync(path.join(repo.root, matched)).isDirectory();
-            } catch {
-              isDir = false;
-            }
-          }
-          const neg = isDir ? `!${matched}/` : `!${matched}`;
-          try {
-            let content = '';
-            if (fs.existsSync(g)) content = fs.readFileSync(g, 'utf8');
-            if (!content.endsWith('\n') && content) content += '\n';
-            fs.writeFileSync(g, content + neg + '\n');
-          } catch (err) {
-            sendJson(res, 200, { ok: false, message: `写入 .gitignore 失败: ${(err as Error).message}` });
-            return;
-          }
-          sendJson(res, 200, { ok: true, message: `已取消忽略: ${neg}（${isDir ? '目录下文件将按剩余规则重新判定' : rel + ' 变为未版本化'}）` });
-          return;
-        }
-        // svn：逐级（根→自身）找承载匹配规则的目录，删除该条规则（svn:ignore 不支持否定语法）
-        let found: { dir: string; rule: string } | null = null;
-        let acc2 = '';
-        for (const part of parts) {
-          acc2 = acc2 ? `${acc2}/${part}` : part;
-          const parentOf = path.dirname(acc2);
-          const dir = parentOf === '.' ? '.' : parentOf;
-          const rules = (await getSvnIgnoreMap(repo.root)).get(dir) ?? [];
-          if (rules.length) {
-            const rule = rules.find((r) => isIgnoredByRules([r], part));
-            if (rule) {
-              found = { dir, rule };
-              break;
-            }
-          }
-        }
-        if (!found) {
-          sendJson(res, 200, { ok: false, message: `未找到忽略 ${rel} 的规则（可能来自全局 ignore，请手动处理）` });
-          return;
-        }
-        const getRes = await run('svn', ['propget', 'svn:ignore', found.dir], { cwd: repo.root, timeoutMs: 30_000 });
-        const remaining = getRes.stdout
-          .split('\n')
-          .map((s) => s.trim())
-          .filter((s) => s && s !== found!.rule);
-        const setRes = await run('svn', ['propset', 'svn:ignore', remaining.join('\n'), found.dir], { cwd: repo.root, timeoutMs: 30_000 });
-        if (setRes.code !== 0) {
-          sendJson(res, 200, { ok: false, message: setRes.stderr.trim() || '取消忽略失败' });
-          return;
-        }
-        sendJson(res, 200, { ok: true, message: `已取消忽略: 删除 ${found.dir === '.' ? '根目录' : found.dir} 的规则「${found.rule}」，同目录匹配该规则的文件将变为未版本化` });
-        return;
-      }
-
-      if (p === '/api/ignore' && req.method === 'POST') {
-        const { repo, vcs } = vcsOf();
-        const body = await readBody(req);
-        const pathRel = String(body.path ?? '');
-        const pattern = String(body.pattern ?? '').trim();
-        if (!pattern) {
-          sendJson(res, 400, { error: '请填写忽略规则' });
-          return;
-        }
-        const r =
-          repo.type === 'git'
-            ? await (vcs as any).ignoreAdd(pattern)
-            : await (vcs as any).propSetIgnore(pathRel, pattern);
-        sendJson(res, 200, { ...r, authError: isAuthError(new Error(r.message)) });
-        return;
-      }
-
       if (p === '/api/remotes') {
         const { repo, vcs } = vcsOf();
         if (repo.type !== 'git') {
           sendJson(res, 200, { remotes: [] });
           return;
         }
-        const remotes = await (vcs as any).remoteList();
+        const remotes = (await vcs.remoteList?.()) ?? [];
         sendJson(res, 200, { remotes });
         return;
       }
@@ -1966,4 +1205,5 @@ export function startServer(): Promise<ServerHandle> {
     };
     server.listen(DEFAULT_PORT, '127.0.0.1', onListen);
   });
+
 }

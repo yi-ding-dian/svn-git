@@ -13,7 +13,7 @@ import { RemoteConflictModal } from './remote-conflicts.js';
 import { AppHeader, THEMES } from './header.js';
 import { Sidebar, type View } from './sidebar.js';
 import { FontModal, FONT_MIN, FONT_MAX } from './font-modal.js';
-import { pathAutoWidth, isBinaryFile } from './utils.js';
+import { pathAutoWidth, isBinaryFile, translateVcsError } from './utils.js';
 
 type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'push';
 
@@ -24,6 +24,7 @@ export function App() {
   const [history, setHistory] = useState<{ path: string; type: 'svn' | 'git'; lastOpened: number }[]>([]);
   const [tick, setTick] = useState(0);
   const [toast, setToast] = useState('');
+  const [toastErr, setToastErr] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
   const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
   // 从「提交修改的文件」弹窗进入差异视图时记录，返回时恢复该弹窗
@@ -41,9 +42,10 @@ export function App() {
   }, []);
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(''), 1500);
+    // 成功 1.5s 淡出；失败停留 5 秒（错误可读性,避免一闪而过"没反应"）
+    const t = setTimeout(() => setToast(''), toastErr ? 5000 : 1500);
     return () => clearTimeout(t);
-  }, [toast]);
+  }, [toast, toastErr]);
   const [updateResult, setUpdateResult] = useState<{
     dir: string;
     ok: boolean;
@@ -174,7 +176,7 @@ export function App() {
     void post
       .historyRemove(path)
       .then((r) => setHistory(r.items))
-      .catch(() => setToast('删除失败'));
+      .catch(() => { setToastErr(true); setToast('删除失败'); });
   }, []);
 
   // 设置/取消常用项目（侧边栏右键菜单）：星号标记，下次启动优先打开
@@ -182,7 +184,7 @@ export function App() {
     void post
       .historyFav(path, fav)
       .then((r) => setHistory(r.items))
-      .catch(() => setToast(fav ? '设置常用失败' : '取消常用失败'));
+      .catch(() => { setToastErr(true); setToast(fav ? '设置常用失败' : '取消常用失败'); });
   }, []);
 
   // 环境缺失:只提示「当前仓库类型需要」的引擎;未打开仓库时任一缺失都提示
@@ -235,31 +237,57 @@ export function App() {
           refresh();
           loadHistory();
         } else {
+          setToastErr(true);
           setToast('打开失败：未识别为仓库');
         }
       } catch (e) {
+        setToastErr(true);
         setToast((e as Error).message);
       }
     },
     [refresh, loadHistory]
   );
 
+  // 短操作进行中指示（revert/delete/add 无独立进度窗,防"点了没反应"）
+  const [opBusy, setOpBusy] = useState<string | null>(null);
+  const OP_BUSY_TEXT: Record<Op, string> = {
+    add: '正在添加到版本库…',
+    commit: '正在提交…',
+    update: '正在更新…',
+    revert: '正在还原…',
+    delete: '正在删除…',
+    push: '正在推送…',
+  };
   // 执行操作
   const runOp = useCallback(
     async (op: Op, paths: string[]): Promise<VcsResult> => {
       let r: VcsResult;
-      if (op === 'add') r = await post.add(paths);
-      else if (op === 'commit') r = await post.commit(paths, '');
-      else if (op === 'update') r = await post.update();
-      else if (op === 'revert') r = await post.revert(paths);
-      else if (op === 'delete') r = await post.delete(paths);
-      else r = await post.push();
+      // update/push 有独立进度窗,不重复显示短条
+      setOpBusy(op === 'add' || op === 'revert' || op === 'delete' ? OP_BUSY_TEXT[op] : null);
+      try {
+        if (op === 'add') r = await post.add(paths);
+        else if (op === 'commit') r = await post.commit(paths, '');
+        else if (op === 'update') r = await post.update();
+        else if (op === 'revert') r = await post.revert(paths);
+        else if (op === 'delete') r = await post.delete(paths);
+        else r = await post.push();
+      } catch (e) {
+        // 网络失败等异常:给用户可见反馈,避免 unhandled rejection 后"点了没反应"
+        const msg = (e as Error).message || '操作失败';
+        setToastErr(true);
+        setToast(msg);
+        setOpBusy(null);
+        return { ok: false, message: msg };
+      }
+      setOpBusy(null);
+      setToastErr(!r.ok);
+      setToastErr(!r.ok);
       setToast(r.message);
       if (r.ok) refresh();
       if (r.authError) setModal({ type: 'login' });
       return r;
     },
-    [refresh]
+    [refresh] // setOpBusy/OP_BUSY_TEXT 为稳定 setter/常量,无需入依赖
   );
 
   // 推送：进度窗口(转圈可取消) + 认证引导（GitHub token / 服务器密码）；定义在 handleAction 之前供其依赖
@@ -274,6 +302,7 @@ export function App() {
     try {
       const r = await post.push(ac.signal);
       if (r.ok) {
+        setToastErr(false);
         setToast(r.message);
         refresh();
       } else if (r.authType) {
@@ -294,6 +323,7 @@ export function App() {
         });
       }
     } catch (e) {
+      setToastErr((e as Error).message !== '已取消');
       setToast((e as Error).message === '已取消' ? '已取消推送' : `推送失败: ${(e as Error).message}`);
     } finally {
       setPushing(false);
@@ -414,8 +444,26 @@ export function App() {
             } else {
               setModal({ type: 'commit', paths });
             }
-          } catch {
-            setModal({ type: 'commit', paths });
+          } catch (e) {
+            // 冲突检查未完成（网络抖动/服务器超时等）：不静默放行——
+            // 明示本次提交不经过行级冲突拦截，由用户知情决策
+            const msg = (e as Error).message || '未知错误';
+            setModal({
+              type: 'confirm',
+              title: '⚠ 冲突检查未完成',
+              message: (
+                <>
+                  提交前的冲突检查<b>未能完成</b>（{msg}）。本次提交将<b>不经过行级冲突拦截</b>：
+                  <div className="error mt8" style={{ lineHeight: 1.8 }}>
+                    若服务器上有他人修改与你的修改冲突，提交可能失败或覆盖对方修改。请先更新后再提交。
+                  </div>
+                </>
+              ),
+              confirmLabel: '仍然提交',
+              secondaryLabel: '取消',
+              action: () => setModal({ type: 'commit', paths }),
+              secondaryAction: () => setModal(null),
+            });
           }
         })();
       } else if (op === 'push') {
@@ -439,7 +487,10 @@ export function App() {
           danger: true,
           message: (
             <>
-              将从版本库中删除 <b>{paths[0] ?? '所选'}</b>。确认删除？
+              将删除 <b>{paths.length}</b> 项的<b>本地文件</b>；已版本化的文件会同时标记为从版本库删除
+              （需<b>提交</b>后生效,提交前可用「还原」撤销;
+              未版本化文件将<b className="err">直接删除,不可恢复</b>）。
+              确认删除？
             </>
           ),
           action: () => void runOp('delete', paths),
@@ -454,6 +505,8 @@ export function App() {
   const doCommit = useCallback(
     async (paths: string[], message: string) => {
       const r = await post.commit(paths, message);
+      setToastErr(!r.ok);
+      setToastErr(!r.ok);
       setToast(r.message);
       if (r.ok) refresh();
       if (r.authError) setModal({ type: 'login' });
@@ -475,11 +528,18 @@ export function App() {
           .filter((i) => (prefix ? i.path.startsWith(prefix) : true))
           .map((i) => ({ path: i.path, code: i.code, isDir: i.isDir }));
         if (items.length === 0) {
-          setToast('当前目录下没有变更文件');
+          const unversioned = st.items.filter(
+            (i) => i.code === '?' && (prefix ? i.path.startsWith(prefix) : true)
+          ).length;
+          setToastErr(false);
+          setToast(unversioned > 0
+            ? `当前目录下没有已版本化的变更；有 ${unversioned} 个未版本化文件（?），需先右键「添加到版本库」才能提交`
+            : '当前目录下没有变更文件');
           return;
         }
         setModal({ type: 'commit-select', dir, dirLabel, items });
       } catch (e) {
+        setToastErr(true);
         setToast(`读取变更失败: ${(e as Error).message}`);
       }
     },
@@ -501,6 +561,7 @@ export function App() {
         if (r.ok) refresh();
         if (r.authError) setModal({ type: 'login' });
       } catch (e) {
+        setToastErr(true);
         setToast(`提交失败: ${(e as Error).message}`);
       }
     },
@@ -524,6 +585,7 @@ export function App() {
         }
         if (r.authError) setModal({ type: 'login' });
       } catch (e) {
+        setToastErr((e as Error).message !== '已取消');
         setToast((e as Error).message === '已取消' ? '已取消更新' : `更新失败: ${(e as Error).message}`);
       } finally {
         setUpdating(false);
@@ -728,17 +790,29 @@ export function App() {
         )}
       </div>
 
+      {/* 短操作进行中指示条（revert/delete/add 等无独立进度窗的操作） */}
+      {opBusy && (
+        <div style={{ position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 500,
+          background: 'var(--panel2)', border: '1px solid var(--border)', borderRadius: 6,
+          padding: '6px 14px', fontSize: 13, boxShadow: '0 6px 20px rgba(0,0,0,.18)' }}>
+          <span className="loading">⏳</span> {opBusy}
+        </div>
+      )}
       {/* 操作结果提示：鼠标位置悬浮，淡出 */}
       {toast && (
         <div
           className="toast-tip"
           style={{
-            left: Math.min(mouseRef.current.x, window.innerWidth - 180),
+            left: Math.min(mouseRef.current.x, window.innerWidth - 360),
             top: Math.max(8, mouseRef.current.y - 26),
+            color: toastErr ? 'var(--err)' : 'var(--text)',
+            maxWidth: 'min(620px, 80vw)',
+            whiteSpace: toastErr ? 'normal' : 'nowrap',
+            border: toastErr ? '1px solid var(--err)' : '1px solid var(--border)',
           }}
           title={toast}
         >
-          {toast}
+          {translateVcsError(toast)}
         </div>
       )}
 
@@ -884,7 +958,7 @@ export function App() {
       {pushAuth && (
         <GitPushAuthModal
           type={pushAuth.type}
-          error={pushAuth.error}
+          error={translateVcsError(pushAuth.error ?? '')}
           onClose={() => setPushAuth(null)}
           onToast={setToast}
           onSaved={() => {
