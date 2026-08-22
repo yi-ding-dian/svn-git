@@ -237,51 +237,61 @@ export class GitVcs {
   }
 
   /**
+   * 未推送范围解析（含缓存远程引用）：
+   * - 有上游（@{u}）：返回 '${u}'
+   * - 无上游但存在远引用 origin/<当前分支> 缓存：返回它（只算真未推送）
+   * - 都没有（纯本地仓库/无远程缓存）：返回 null——表示"无远程概念"，不再把全部提交当未推送
+   */
+  private async unpushedRange(): Promise<string | null> {
+    const up = await this.exec(['rev-parse', '--symbolic-full-name', '@{upstream}']);
+    if (up.code === 0) return '@{u}';
+    const br = (await this.exec(['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
+    if (br && br !== 'HEAD') {
+      const ref = `refs/remotes/origin/${br}`;
+      const check = await this.exec(['rev-parse', '--verify', ref]);
+      if (check.code === 0) return `origin/${br}`;
+    }
+    return null;
+  }
+
+  /**
    * 未推送提交（本地领先远程）的 hash 列表。
-   * 有上游：@{u}..HEAD；无上游（无远程分支）：全部提交视为未推送；空仓库返回空。
+   * 有上游：@{u}..HEAD；无上游但有 origin/<分支> 缓存：用其计算；均无（纯本地仓库）：视为无未推送。
    */
   async unpushed(): Promise<string[]> {
-    // 有上游：rev-list 纯 hash 输出（无 pretty 头行）
-    const up = await this.exec(['rev-list', '@{u}..HEAD']);
+    const range = await this.unpushedRange();
+    if (!range) return [];
+    const up = await this.exec(['rev-list', `${range}..HEAD`]);
     if (up.code === 0) {
       return up.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
     }
-    // 无上游 / 上游不存在：全部提交均未推送（与 log 同量级）
-    const all = await this.exec(['log', '-n', '200', '--format=%H']);
-    return all.code === 0 ? all.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
+    return [];
   }
 
-  /** 未推送提交数量（轻量，推送按钮角标用；逻辑与 unpushed 一致） */
+  /** 未推送提交数量（轻量，推送按钮角标用；逻辑与 unpushed 一致；
+   * 无远程概念时返回 0——不再把全部提交误列为未推送） */
   async unpushedCount(): Promise<number> {
-    const up = await this.exec(['rev-list', '--count', '@{u}..HEAD']);
-    if (up.code === 0) return Number(up.stdout.trim()) || 0;
-    const all = await this.exec(['rev-list', '--count', 'HEAD']);
-    return all.code === 0 ? Number(all.stdout.trim()) || 0 : 0;
+    const range = await this.unpushedRange();
+    if (!range) return 0;
+    const up = await this.exec(['rev-list', '--count', `${range}..HEAD`]);
+    return up.code === 0 ? Number(up.stdout.trim()) || 0 : 0;
   }
 
   /** 未推送提交完整列表（含变更文件，推送确认弹窗用；无未推送时返回空数组） */
   async unpushedLog(): Promise<LogEntry[]> {
-    // 有上游：@{u}..HEAD（只显示未推送，避免 log 多 hash 时展开已推送的祖先）；无上游：全部
-    const up = await this.exec(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']);
-    if (up.code === 0) {
-      const res = await this.exec([
-        '-c', 'core.quotepath=false',
-        'log', '-n', '200',
-        '--format=%H%x1f%an%x1f%aI%x1f%s%x1e',
-        '--name-status',
-        '@{u}..HEAD',
-      ]);
-      if (res.code !== 0) throw new Error(`git log 失败: ${res.stderr.trim()}`);
-      return parseGitLog(res.stdout);
-    }
-    const all = await this.exec([
+    // 有上游：@{u}..HEAD（只显示未推送，避免 log 多 hash 时展开已推送的祖先）；
+    // 无上游但有 origin/<分支> 缓存：用其计算；均无（纯本地仓库）：视为无未推送
+    const range = await this.unpushedRange();
+    if (!range) return [];
+    const res = await this.exec([
       '-c', 'core.quotepath=false',
       'log', '-n', '200',
       '--format=%H%x1f%an%x1f%aI%x1f%s%x1e',
       '--name-status',
+      `${range}..HEAD`,
     ]);
-    if (all.code !== 0) throw new Error(`git log 失败: ${all.stderr.trim()}`);
-    return parseGitLog(all.stdout);
+    if (res.code !== 0) throw new Error(`git log 失败: ${res.stderr.trim()}`);
+    return parseGitLog(res.stdout);
   }
 
   /** 修改最近一次提交注释（--amend，-m 避免打开编辑器） */
