@@ -199,16 +199,23 @@ export function FsView(props: Props) {
   // 预加载进度（done/total 渐进；running=false 表示已完成）
   const [preload, setPreload] = useState<{ done: number; total: number; cur: string; running: boolean } | null>(null);
   // 预加载引擎：全局队列 + 并发 6 + 代际停止（仓库切换时旧 worker 立即停，不污染新仓库缓存）
-  const preloadQueueRef = useRef<string[]>([]);
+  const preloadQueueRef = useRef<{ rel: string; depth: number }[]>([]);
   const preloadSeenRef = useRef<Set<string>>(new Set());
   const preloadGenRef = useRef(0);
   const preloadRunningRef = useRef(false);
-  /** 递归预加载目录（BFS + 并发 6，结果写入 nodeData 缓存，之后进入秒开） */
+  // 预加载跳过已知产物/大目录（build/bin/CMakeFiles 等,省时也无"秒开"价值;树模式点击仍懒加载）
+  const PRELOAD_SKIP = new Set(['build', 'bin', 'CMakeFiles', 'out', 'dist', 'node_modules', 'vendor', '.svn', '.git', 'third_party', 'thirdparty']);
+  /** 预加载上限与深度：fav 目录只预拉自身 + 一层子目录（防止大仓库整树递归拉取,如 SCA_HB 5639 目录×0.65s） */
+  const PRELOAD_MAX_QUEUE = 300;
+  const PRELOAD_MAX_DEPTH = 1;
+  /** 预加载目录（BFS + 并发 6,结果写入 nodeData 缓存,之后进入秒开）
+   * 深度 ≤ PRELOAD_MAX_DEPTH（fav 目录=0,只递归一层）;深层由树模式展开时懒加载 */
   const preloadDir = useCallback((rootRel: string) => {
     const queue = preloadQueueRef.current;
+    const rootDepth = 0;
     if (!preloadSeenRef.current.has(rootRel)) {
       preloadSeenRef.current.add(rootRel);
-      queue.push(rootRel);
+      queue.push({ rel: rootRel, depth: rootDepth });
     }
     if (preloadRunningRef.current) return; // 已在预加载中，新目录并入队列
     preloadRunningRef.current = true;
@@ -218,16 +225,20 @@ export function FsView(props: Props) {
     const worker = async () => {
       while (queue.length) {
         if (preloadGenRef.current !== gen) return; // 仓库已切换，停止
-        const d = queue.shift()!;
+        const cur = queue.shift()!;
+        const d = cur.rel;
         try {
           const r = await get.fs(d, false);
           setNodeData((m) => new Map(m).set(d, r));
-          for (const e of r.entries ?? []) {
-            if (e.isDir) {
-              const sub = d ? `${d}/${e.name}` : e.name;
-              if (!preloadSeenRef.current.has(sub)) {
-                preloadSeenRef.current.add(sub);
-                queue.push(sub);
+          // 只继续一层：产物目录跳过 + 深度限制 + 队列上限
+          if (cur.depth < PRELOAD_MAX_DEPTH) {
+            for (const e of r.entries ?? []) {
+              if (e.isDir && !PRELOAD_SKIP.has(e.name)) {
+                const sub = d ? `${d}/${e.name}` : e.name;
+                if (!preloadSeenRef.current.has(sub) && queue.length < PRELOAD_MAX_QUEUE) {
+                  preloadSeenRef.current.add(sub);
+                  queue.push({ rel: sub, depth: cur.depth + 1 });
+                }
               }
             }
           }

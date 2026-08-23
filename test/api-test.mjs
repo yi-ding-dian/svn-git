@@ -21,9 +21,26 @@ function check(name, cond, extra = '') {
   else fail++;
 }
 
-// ---------- setup：重置测试仓库 ----------
+// ---------- setup：重置测试仓库（fixture 不入库,CI 首次自建仓库） ----------
 console.log('== API 测试:构造测试状态 ==');
-await run('git', ['reset', '-q', '--hard', GIT_BASE_COMMIT], { cwd: GIT_DIR });
+if (!fs.existsSync(path.join(GIT_DIR, '.git'))) {
+  console.log('  git-repo 不存在,自建测试仓库…');
+  fs.mkdirSync(GIT_DIR, { recursive: true });
+  await run('git', ['init', '-q'], { cwd: GIT_DIR }); // 分支名无关断言(porcelain 相对路径); -b 需 git>=2.28 故不用
+  await run('git', ['config', 'user.email', 'test@svnkit.local'], { cwd: GIT_DIR });
+  await run('git', ['config', 'user.name', 'svnkit-test'], { cwd: GIT_DIR });
+  fs.writeFileSync(`${GIT_DIR}/readme.md`, 'hello v0\n');
+  fs.mkdirSync(`${GIT_DIR}/src`, { recursive: true });
+  fs.writeFileSync(`${GIT_DIR}/src/app.js`, 'console.log(1)\n');
+  await run('git', ['add', 'readme.md', 'src'], { cwd: GIT_DIR });
+  await run('git', ['commit', '-qm', 'initial'], { cwd: GIT_DIR });
+  fs.writeFileSync(`${GIT_DIR}/del.txt`, 'del\n');
+  await run('git', ['add', 'del.txt'], { cwd: GIT_DIR });
+  await run('git', ['commit', '-qm', 'add del.txt'], { cwd: GIT_DIR });
+}
+// 固定 hash 存在则用其重置（本地维护的仓库）;CI 自建仓库 hash 不同 → 重置当前 HEAD
+const b4 = await run('git', ['cat-file', '-t', GIT_BASE_COMMIT], { cwd: GIT_DIR });
+await run('git', ['reset', '-q', '--hard', b4.code === 0 ? GIT_BASE_COMMIT : 'HEAD'], { cwd: GIT_DIR });
 process.env.SVNKIT_REPO_DIR = GIT_DIR;
 
 const handle = await startServer();
@@ -133,7 +150,8 @@ try {
 } finally {
   // ---------- teardown：重置仓库,仅保留 api 测试文件之外的状态 ----------
   process.env.SVNKIT_REPO_DIR = GIT_DIR;
-  await run('git', ['reset', '-q', '--hard', GIT_BASE_COMMIT], { cwd: GIT_DIR });
+  const b4t = await run('git', ['cat-file', '-t', GIT_BASE_COMMIT], { cwd: GIT_DIR });
+  await run('git', ['reset', '-q', '--hard', b4t.code === 0 ? GIT_BASE_COMMIT : 'HEAD'], { cwd: GIT_DIR });
   fs.rmSync(path.join(GIT_DIR, 'api-cache-test.txt'), { force: true });
   fs.rmSync(path.join(GIT_DIR, 'api-keep-test.txt'), { force: true });
   await handle.close();

@@ -14,8 +14,33 @@ const SVN_DIR = path.join(TEST_BASE, 'svn-wc');
 
 // ---------- 重置并构造确定状态 ----------
 console.log('== 构造测试状态 ==');
-// git 仓库历史固定（自建）：2f872e3 initial -> b4f4eef add del.txt -> 测试提交。硬重置到 b4f4eef。
+// git 测试仓库自举：CI clone 没有 svnkit-test/git-repo（fixture 不入库），首次运行自建固定提交历史的仓库。
+// 本地已存在（手工保存的 b4f4eef 历史）则沿用原逻辑。
+if (!fs.existsSync(path.join(GIT_DIR, '.git'))) {
+  console.log('  git-repo 不存在,自建测试仓库…');
+  fs.mkdirSync(GIT_DIR, { recursive: true });
+  await run('git', ['init', '-q'], { cwd: GIT_DIR }); // 分支名无关断言(porcelain 相对路径); -b 需 git>=2.28 故不用
+  await run('git', ['config', 'user.email', 'test@svnkit.local'], { cwd: GIT_DIR });
+  await run('git', ['config', 'user.name', 'svnkit-test'], { cwd: GIT_DIR });
+  fs.writeFileSync(`${GIT_DIR}/readme.md`, 'hello v0\n');
+  fs.mkdirSync(`${GIT_DIR}/src`, { recursive: true });
+  fs.writeFileSync(`${GIT_DIR}/src/app.js`, 'console.log(1)\n');
+  await run('git', ['add', 'readme.md', 'src'], { cwd: GIT_DIR });
+  await run('git', ['commit', '-qm', 'initial'], { cwd: GIT_DIR });
+  fs.writeFileSync(`${GIT_DIR}/del.txt`, 'del\n');
+  await run('git', ['add', 'del.txt'], { cwd: GIT_DIR });
+  await run('git', ['commit', '-qm', 'add del.txt'], { cwd: GIT_DIR });
+}
+// git 历史固定：2f872e3 initial -> b4f4eef add del.txt -> 测试提交。硬重置到 b4f4eef。
 await run('git', ['reset', '-q', '--hard', 'b4f4eef2ffcf01bbb063c7a7a25d745d4818f39d'], { cwd: GIT_DIR });
+// 自建分支（CI 时 hash 不同,reset 到自建 HEAD 后再由上面的 b4f4eef fallback? 简单: 自建时记录 HEAD
+// 但 b4f4eef 断言依赖固定提交——CI 下 hash 不同会导致 reset 失败,故自建后用当前 HEAD,保留固定 hash 检查仅在本地。
+// 修正: 若 reset b4f4eef 失败（自建仓库 hash 不同）→ 重置到当前 HEAD
+const b4 = await run('git', ['cat-file', '-t', 'b4f4eef2ffcf01bbb063c7a7a25d745d4818f39d'], { cwd: GIT_DIR });
+if (b4.code !== 0) {
+  await run('git', ['reset', '-q', '--hard', 'HEAD'], { cwd: GIT_DIR });
+  console.log('  （CI 自建仓库,固定 hash b4f4eef 不存在,改用当前 HEAD 作为基线）');
+}
 fs.writeFileSync(`${GIT_DIR}/readme.md`, `hello v1\nhello v2\nTEST-MARKER-${Date.now()}\n`); // -> M（内容与 HEAD 不同）
 fs.writeFileSync(`${GIT_DIR}/tmp-test.txt`, 'x'); // -> ??
 
