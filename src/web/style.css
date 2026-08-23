@@ -363,7 +363,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .search-item:hover .dim, .search-item.active .dim { color: #ffffff; }
 .search-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.pv-line { white-space: pre-wrap; word-break: break-all; line-height: 1.55; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
+.pv-line { display: flex; align-items: baseline; line-height: 1.55; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
+.pv-line .pv-src { white-space: pre-wrap; word-break: break-all; flex: 1; min-width: 0; }
 .blame-meta {
   display: inline-block; min-width: 130px; margin-right: 10px;
   color: var(--dim); font-size: 0.85em; user-select: none; font-family: Consolas, monospace;

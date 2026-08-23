@@ -313,7 +313,7 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
             className="danger"
             disabled={busy || !files || files.length === 0}
             onClick={doClean}
-            title={`命令行: git clean -fd（删除 ${files?.length ?? 0} 个未跟踪文件，${files?.slice(0, 3).join(' ') ?? ''}${(files?.length ?? 0) > 3 ? ' …' : ''}）`}
+            title={`git clean -fd（删除 ${files?.length ?? 0} 个未跟踪文件，${files?.slice(0, 3).join(' ') ?? ''}${(files?.length ?? 0) > 3 ? ' …' : ''}）`}
           >
             {busy ? '清理中…' : '确认清理'}
           </button>
@@ -537,7 +537,7 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
           className="primary"
           disabled={busy}
           onClick={() => act('push', 0, message)}
-          title={`命令行: ${cmdOfRepo('git', 'stash_push', { msg: message.trim() || '…' }) ?? ''}`}
+          title={`${cmdOfRepo('git', 'stash_push', { msg: message.trim() || '…' }) ?? ''}`}
         >
           📦 保存当前改动
         </button>
@@ -560,7 +560,7 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
                   action: () => act('pop', it.index),
                 })
               }
-              title={`命令行: ${cmdOfRepo('git', 'stash_pop', { index: String(it.index) }) ?? ''}`}
+              title={`${cmdOfRepo('git', 'stash_pop', { index: String(it.index) }) ?? ''}`}
             >
               恢复
             </button>
@@ -679,7 +679,7 @@ export function GitInfoModal(props: { onClose: () => void; onToast: (m: string) 
               <FormRow label="远程地址（origin）">
                 <div className="row" style={{ gap: 8 }}>
                   <input type="text" placeholder="git@host:user/repo.git 或 https://..." value={url} onChange={(e) => setUrl(e.target.value)} style={{ flex: 1 }} />
-                  <button className="mini primary" disabled={busy} onClick={save} title={`命令行: ${cmdOfRepo('git', 'set_remote', { url: url.trim() || '…' }) ?? ''}`}>{busy ? '保存中…' : '保存'}</button>
+                  <button className="mini primary" disabled={busy} onClick={save} title={`${cmdOfRepo('git', 'set_remote', { url: url.trim() || '…' }) ?? ''}`}>{busy ? '保存中…' : '保存'}</button>
                 </div>
                 <div className="dim small" style={{ marginTop: 6 }}>修改后推送/拉取将使用新地址（已有 origin 则更新，没有则添加）</div>
               </FormRow>
@@ -838,7 +838,7 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
             disabled={busy}
             onClick={submit}
             title={
-              `命令行: ${
+              `${
                 type === 'clone'
                   ? (cmdOfRepo('git', 'clone', { url: url.trim() || '…', dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
                   : type === 'git'

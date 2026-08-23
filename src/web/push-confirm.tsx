@@ -208,7 +208,7 @@ export function PushConfirmModal(props: {
         </div>
         <div className="foot">
           <button onClick={props.onCancel}>取消</button>
-          <button className="primary" disabled={unpushed.length === 0} onClick={props.onConfirm} title={`命令行: ${cmdOf('git push')}`}>
+          <button className="primary" disabled={unpushed.length === 0} onClick={props.onConfirm} title={`${cmdOf('git push')}`}>
             确认推送（{unpushed.length}）
           </button>
         </div>

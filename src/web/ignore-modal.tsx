@@ -86,7 +86,7 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
               className="mini primary"
               disabled={busy || !pattern.trim()}
               onClick={add}
-              title={`命令行: ${cmdOfRepo(repoType ?? 'git', 'ignore_add', { path: props.dir ?? '.', pattern: pattern.trim() || '…' }) ?? ''}`}
+              title={`${cmdOfRepo(repoType ?? 'git', 'ignore_add', { path: props.dir ?? '.', pattern: pattern.trim() || '…' }) ?? ''}`}
             >
               添加
             </button>

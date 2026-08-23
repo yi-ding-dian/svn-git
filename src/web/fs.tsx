@@ -83,7 +83,7 @@ function ActionBtn(props: {
   return (
     <button
       className={`act-btn ${props.danger ? 'danger' : ''} ${props.primary ? 'primary' : ''}`}
-      title={props.cmd ? `${props.title ?? props.label}\n\n命令行: ${props.cmd}` : props.title ?? props.label}
+      title={props.cmd ? `${props.title ?? props.label}\n${props.cmd}` : props.title ?? props.label}
       onClick={props.onClick}
     >
       {props.icon}
@@ -1719,8 +1719,10 @@ export function FsView(props: Props) {
                         if (el) previewRefs.current.set(i, el);
                       }}
                       className={`pv-line ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''}`}
-                      dangerouslySetInnerHTML={{ __html: highlightLine(line, langOf(preview.name)) }}
-                    />
+                    >
+                      <span className="sb-no">{i + 1}</span>
+                      <span className="pv-src" dangerouslySetInnerHTML={{ __html: highlightLine(line, langOf(preview.name)) }} />
+                    </div>
                   );
                 })
               )}

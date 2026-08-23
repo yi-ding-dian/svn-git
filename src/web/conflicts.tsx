@@ -380,9 +380,9 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                 </>
               )}
               <div className="row" style={{ marginTop: 10, gap: 6 }}>
-                <button className="primary" disabled={busy} onClick={() => void resolve('ours')} title={`命令行: ${cmdOfRepo(repoType, 'resolve_ours', { path: cur.path }) ?? ''}`}>✅ 采用本地</button>
-                <button disabled={busy} onClick={() => void resolve('theirs')} title={`命令行: ${cmdOfRepo(repoType, 'resolve_theirs', { path: cur.path }) ?? ''}`}>采用对方</button>
-                {!cur.binary && <button disabled={busy} onClick={() => void resolve('manual')} title={`命令行: ${cmdOfRepo(repoType, 'resolve_manual', { path: cur.path }) ?? ''}`}>💾 保存手动编辑</button>}
+                <button className="primary" disabled={busy} onClick={() => void resolve('ours')} title={`${cmdOfRepo(repoType, 'resolve_ours', { path: cur.path }) ?? ''}`}>✅ 采用本地</button>
+                <button disabled={busy} onClick={() => void resolve('theirs')} title={`${cmdOfRepo(repoType, 'resolve_theirs', { path: cur.path }) ?? ''}`}>采用对方</button>
+                {!cur.binary && <button disabled={busy} onClick={() => void resolve('manual')} title={`${cmdOfRepo(repoType, 'resolve_manual', { path: cur.path }) ?? ''}`}>💾 保存手动编辑</button>}
                 <button
                   className="mini tool-btn"
                   title="打开冲突文件所在文件夹"

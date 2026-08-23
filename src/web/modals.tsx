@@ -158,7 +158,7 @@ export function CommitModal(props: {
             className="primary"
             onClick={() => void submit()}
             disabled={busy || !msg.trim() || checked.size === 0}
-            title={`命令行: ${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: msg.trim() || '…' }) ?? ''}`}
+            title={`${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: msg.trim() || '…' }) ?? ''}`}
           >
             {busy ? '⏳ 提交中…' : '✅ 确认提交'}
           </button>
@@ -550,7 +550,7 @@ export function CommitSelectModal(props: {
             className="primary"
             onClick={submit}
             disabled={props.items.length === 0}
-            title={`命令行: ${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: '…' }) ?? ''}`}
+            title={`${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: '…' }) ?? ''}`}
           >
             ✅ 提交勾选的 {checked.size} 个文件
           </button>
@@ -690,7 +690,7 @@ export function ConfirmModal(props: {
             <button
               className="primary"
               onClick={props.onSecondary}
-              title={props.secondaryCmd ? `命令行: ${props.secondaryCmd}` : undefined}
+              title={props.secondaryCmd ? `${props.secondaryCmd}` : undefined}
             >
               {props.secondaryLabel}
             </button>
@@ -698,7 +698,7 @@ export function ConfirmModal(props: {
           <button
             className={props.danger ? 'danger' : 'primary'}
             onClick={props.onConfirm}
-            title={props.confirmCmd ? `命令行: ${props.confirmCmd}` : undefined}
+            title={props.confirmCmd ? `${props.confirmCmd}` : undefined}
           >
             {props.confirmLabel ?? '确认'}
           </button>

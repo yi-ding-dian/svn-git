@@ -114,6 +114,34 @@ function browseDirs(dir: string): { entries: { name: string; isDir: boolean }[];
   return { entries: out, repo: detectRepo(cur) };
 }
 
+/** Linux 发行版包管理器探测（/etc/os-release）：返回安装命令与手动命令;未知回退 apt(Debian 系默认)。 */
+function detectDistro(): { name: string; manager: string; install: string[]; manual: string } {
+  let id = '';
+  try {
+    const osr = fs.readFileSync('/etc/os-release', 'utf8');
+    const m = osr.match(/^ID=([\w.-]+)/m);
+    if (m) id = m[1]!.toLowerCase();
+  } catch {
+    /* 读失败按未知处理 */
+  }
+  const arg = ['git', 'subversion'].join(' ');
+  switch (id) {
+    case 'fedora':
+      return { name: 'Fedora', manager: 'dnf', install: ['sudo', '-n', 'dnf', 'install', '-y', 'git', 'subversion'], manual: `sudo dnf install -y ${arg}` };
+    case 'rhel':
+    case 'centos':
+      return { name: 'CentOS/RHEL', manager: 'yum', install: ['sudo', '-n', 'yum', 'install', '-y', 'git', 'subversion'], manual: `sudo yum install -y ${arg}` };
+    case 'opensuse':
+    case 'opensuse-leap':
+    case 'opensuse-tumbleweed':
+      return { name: 'openSUSE', manager: 'zypper', install: ['sudo', '-n', 'zypper', '--non-interactive', 'install', 'git', 'subversion'], manual: `sudo zypper --non-interactive install -y ${arg}` };
+    case 'arch':
+      return { name: 'Arch', manager: 'pacman', install: ['sudo', '-n', 'pacman', '-S', '--noconfirm', 'git', 'subversion'], manual: `sudo pacman -S --noconfirm ${arg}` };
+    default:
+      return { name: id || '未知发行版', manager: 'apt', install: ['sudo', '-n', 'apt-get', 'install', '-y', 'git', 'subversion'], manual: `sudo apt-get install -y ${arg}` };
+  }
+}
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -466,6 +494,20 @@ export function startServer(): Promise<ServerHandle> {
             arr.push(n);
           }
         };
+        // 忽略规则（与 /api/fs 一致）：未版本化目录展开时,被 .gitignore 匹配的条目不显示为 '?'
+        let gitignoreRules: string[] | null = null;
+        const loadGitignore = (): string[] => {
+          if (gitignoreRules) return gitignoreRules;
+          const g = path.join(repo.root, '.gitignore');
+          gitignoreRules = fs.existsSync(g)
+            ? fs
+                .readFileSync(g, 'utf8')
+                .split('\n')
+                .map((s) => s.trim())
+                .filter((s) => s && !s.startsWith('#'))
+            : [];
+          return gitignoreRules;
+        };
         // '?' 目录：递归展开内部全部文件（未版本化目录内的所有内容都是新文件）
         const walkUnversionedDir = (relDir: string) => {
           let names: string[];
@@ -476,6 +518,8 @@ export function startServer(): Promise<ServerHandle> {
           }
           for (const n of names) {
             if (n === '.svn' || n === '.git') continue;
+            // 被忽略规则匹配（如 dist/、node_modules/）→ 不视为新文件,跳过
+            if (isIgnoredByRules(loadGitignore(), n)) continue;
             const base = relDir.replace(/\/+$/, '');
             const rel = base ? `${base}/${n}` : n;
             const abs = path.join(repo.root, rel);
@@ -958,7 +1002,35 @@ export function startServer(): Promise<ServerHandle> {
           return;
         }
         const ext = abs.split('.').pop()!.toLowerCase();
-        const MIME: Record<string, string> = {
+        /** Linux 发行版包管理器探测（/etc/os-release）：返回安装命令与手动命令;未知回退 apt(Debian 系默认)。 */
+function detectDistro(): { name: string; manager: string; install: string[]; manual: string } {
+  let id = '';
+  try {
+    const osr = fs.readFileSync('/etc/os-release', 'utf8');
+    const m = osr.match(/^ID=([\w.-]+)/m);
+    if (m) id = m[1]!.toLowerCase();
+  } catch {
+    /* 读失败按未知处理 */
+  }
+  const arg = ['git', 'subversion'].join(' ');
+  switch (id) {
+    case 'fedora':
+      return { name: 'Fedora', manager: 'dnf', install: ['sudo', '-n', 'dnf', 'install', '-y', 'git', 'subversion'], manual: `sudo dnf install -y ${arg}` };
+    case 'rhel':
+    case 'centos':
+      return { name: 'CentOS/RHEL', manager: 'yum', install: ['sudo', '-n', 'yum', 'install', '-y', 'git', 'subversion'], manual: `sudo yum install -y ${arg}` };
+    case 'opensuse':
+    case 'opensuse-leap':
+    case 'opensuse-tumbleweed':
+      return { name: 'openSUSE', manager: 'zypper', install: ['sudo', '-n', 'zypper', '--non-interactive', 'install', 'git', 'subversion'], manual: `sudo zypper --non-interactive install -y ${arg}` };
+    case 'arch':
+      return { name: 'Arch', manager: 'pacman', install: ['sudo', '-n', 'pacman', '-S', '--noconfirm', 'git', 'subversion'], manual: `sudo pacman -S --noconfirm ${arg}` };
+    default:
+      return { name: id || '未知发行版', manager: 'apt', install: ['sudo', '-n', 'apt-get', 'install', '-y', 'git', 'subversion'], manual: `sudo apt-get install -y ${arg}` };
+  }
+}
+
+const MIME: Record<string, string> = {
           png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
           svg: 'image/svg+xml', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon',
         };
@@ -1176,17 +1248,23 @@ export function startServer(): Promise<ServerHandle> {
           res.end();
           return;
         }
-        // Linux：sudo apt（免密 sudo 自动装，否则给手动命令）
-        const pkgs = tool === 'svn' ? ['subversion'] : tool === 'git' ? ['git'] : ['git', 'subversion'];
+        // Linux：按发行版探测包管理器（apt/dnf/yum/zypper/pacman），免密 sudo 自动装，否则给手动命令
+        const pkgs =
+          tool === 'svn' ? ['subversion'] : tool === 'git' ? ['git'] : ['git', 'subversion'];
+        /** 发行版包管理器探测（/etc/os-release）：不同发行版 svn/git 包名与安装命令不同 */
+        const distro = await detectDistro();
+        const install = distro.install; // ['sudo','-n',<manager>,...]
+        const manual = distro.manual; // 手动命令全文
         const sudoOk = await run('sudo', ['-n', 'true'], { timeoutMs: 10_000 });
         send({ line: `检测 root 权限… ${sudoOk.code === 0 ? '✓ 可用' : '✗ 需要密码（请用下方手动命令）'}` });
+        send({ line: `发行版: ${distro.name}（${distro.manager}）` });
         if (sudoOk.code !== 0) {
-          send({ done: true, code: 1, manual: `sudo apt-get install -y ${pkgs.join(' ')}` });
+          send({ done: true, code: 1, manual });
           res.end();
           return;
         }
         send({ line: `开始安装: ${pkgs.join(' ')}…` });
-        const child = spawn('sudo', ['-n', 'apt-get', 'install', '-y', ...pkgs], { stdio: ['ignore', 'pipe', 'pipe'] });
+        const child = spawn(install[0]!, install.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
         child.stdout.on('data', (d: Buffer) => send({ line: d.toString() }));
         child.stderr.on('data', (d: Buffer) => send({ line: d.toString() }));
         child.on('error', (e) => {

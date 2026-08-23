@@ -1,6 +1,7 @@
 /** 顶部工具栏：仓库信息 + 版本管理操作 + 主题/字号 + 打开项目/登录/退出 */
 import React, { useCallback, useEffect, useState } from 'react';
 import { get, post, type RepoInfo } from './api.js';
+import { cmdOfRepo } from './cmd-preview.js';
 import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont } from './icons.js';
 import { type Modal } from './modals.js';
 import { type View } from './sidebar.js';
@@ -102,9 +103,7 @@ function ToolBtn(props: {
   return (
     <button
       className="tool-btn"
-      title={props.cmd ? `${props.title ?? ''}
-
-命令行: ${props.cmd}` : props.title}
+      title={props.cmd ? `${props.title ?? ''}\n${props.cmd}` : props.title}
       onClick={props.onClick}
       disabled={props.disabled}
       style={props.danger ? { color: 'var(--err)' } : undefined}
@@ -164,7 +163,7 @@ export function AppHeader(props: {
           <ToolBtn
             icon={<IconRefresh />}
             label="拉取"
-            title="拉取远程更新（git pull，可取消）"
+            title="拉取远程更新（可取消）"
             cmd="git pull"
             onClick={props.onUpdate}
           />
@@ -183,7 +182,7 @@ export function AppHeader(props: {
             title={
               props.unpushedCount != null && props.unpushedCount <= 0
                 ? '没有待推送的提交（未推送数为 0）'
-                : `推送 ${props.unpushedCount ?? 0} 个未推送提交（git push，含进度与认证引导）`
+                : `推送 ${props.unpushedCount ?? 0} 个未推送提交（含进度与认证引导）`
             }
             onClick={props.onPush}
             disabled={props.unpushedCount != null && props.unpushedCount <= 0}
@@ -228,7 +227,7 @@ export function AppHeader(props: {
           }
         />
       )}
-      <ToolBtn icon={<IconRefresh />} label="刷新" title="刷新" onClick={props.onRefresh} />
+      <ToolBtn icon={<IconRefresh />} label="刷新" title="重新扫描本地状态（不联网）" cmd={cmdOfRepo(repo?.type ?? null, 'status')} onClick={props.onRefresh} />
       {/* 低频操作收进「⋯」菜单（新建仓库 / Git 信息 / SVN 登录） */}
       <button
         className="mini tool-btn"

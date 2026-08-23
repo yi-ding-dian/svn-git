@@ -347,7 +347,7 @@ export function HistoryView(props: Props) {
                 className="primary"
                 disabled={busy || !amendMsg.trim()}
                 onClick={(e) => void doAmend(e.clientX, e.clientY)}
-                title={`命令行: ${cmdOfRepo('git', 'amend', { msg: amendMsg.trim() || '…' }) ?? ''}`}
+                title={`${cmdOfRepo('git', 'amend', { msg: amendMsg.trim() || '…' }) ?? ''}`}
               >
                 确认修改
               </button>
