@@ -461,7 +461,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .ctx-menu {
   position: fixed; background: var(--panel2); border: 1px solid var(--border);
   border-radius: 10px; box-shadow: 0 10px 36px rgba(0,0,0,.28);
-  padding: 6px; z-index: 300; min-width: 210px; font-size: 0.95em;
+  padding: 6px; z-index: 300; min-width: 160px; font-size: 0.95em;
 }
 .ctx-item {
   display: flex; align-items: center; gap: 10px;

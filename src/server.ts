@@ -13,6 +13,7 @@ import {
   currentScopes, STATUS_TTL, statusCache, authErrorOf,
   type Ctx,
 } from './routes/util.js';
+import { BINARY_EXTS } from './shared/types.js';
 import { isIgnoredByRules, getSvnIgnoreMap } from './vcs/ignore.js';
 import { diffChangedLines } from './vcs/diff-lines.js';
 import { run } from './vcs/exec.js';
@@ -161,14 +162,21 @@ const EXT_MIME: Record<string, string> = {
   zip: 'application/zip', rar: 'application/vnd.rar', '7z': 'application/x-7z-compressed', tar: 'application/x-tar', gz: 'application/gzip',
 };
 
+/** 按系统 locale 挑 .desktop 本地化名:Name[zh_CN] > 系统 locale(zh_CN) > 语言短码(zh) > en > 默认名(GLib 规范) */
+function pickLocaleName(names: Record<string, string>, baseName: string): string {
+  const loc = (process.env.LC_ALL ?? process.env.LANG ?? '').split('.')[0];
+  const lang = loc.split('_')[0];
+  return names.zh_CN || names[loc] || (lang && names[lang]) || names.en || baseName;
+}
+
 /** 扫描系统 .desktop 程序（/usr/share/applications + ~/.local/share/applications）,按 MimeType 匹配返回可选择的打开方式 */
-function scanDesktopApps(): { name: string; exec: string; mimes: Set<string> }[] {
+function scanDesktopApps(): { name: string; exec: string; mimes: Set<string>; icon: string }[] {
   const dirs = [
     '/usr/share/applications',
     '/usr/local/share/applications',
     path.join(os.homedir(), '.local', 'share', 'applications'),
   ];
-  const apps: { name: string; exec: string; mimes: Set<string>; noDisplay: boolean }[] = [];
+  const apps: { name: string; exec: string; mimes: Set<string>; noDisplay: boolean; icon: string }[] = [];
   for (const dir of dirs) {
     let files: string[];
     try {
@@ -180,9 +188,11 @@ function scanDesktopApps(): { name: string; exec: string; mimes: Set<string> }[]
       if (!f.endsWith('.desktop')) continue;
       try {
         const text = fs.readFileSync(path.join(dir, f), 'utf8');
-        let name = '';
-        let nameLocal = '';
+        let baseName = '';
+        let nameCount = 0; // >1 说明 .desktop 被第三方改写（如 deepin 商店包合并出 Name=New Empty Window）,本地化名不可信
+        const names: Record<string, string> = {};
         let exec = '';
+        let icon = '';
         let mimes = new Set<string>();
         let noDisplay = false;
         let type = '';
@@ -191,16 +201,19 @@ function scanDesktopApps(): { name: string; exec: string; mimes: Set<string> }[]
           const line = raw.trim();
           if (line.startsWith('[') || !line.includes('=')) continue;
           const [k, v] = [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)];
-          if (k === 'Name') name = v;
-          else if (k.startsWith('Name[')) nameLocal = v;
+          if (k === 'Name') {
+            nameCount++;
+            if (!baseName) baseName = v; // Name 唯一,取首次出现的正名
+          } else if (k.startsWith('Name[') && k.endsWith(']')) names[k.slice(5, -1)] = v;
+          else if (k === 'Icon') icon = v;
           else if (k === 'Exec') exec = v;
           else if (k === 'MimeType') mimes = new Set(v.split(';').filter(Boolean));
           else if (k === 'NoDisplay') noDisplay = v === 'true';
           else if (k === 'Type') type = v;
           else if (k === 'Hidden') hidden = v === 'true';
         }
-        if (!name || !exec || noDisplay || hidden || (type && type !== 'Application')) continue;
-        apps.push({ name: nameLocal || name, exec, mimes, noDisplay });
+        if (!baseName || !exec || noDisplay || hidden || (type && type !== 'Application')) continue;
+        apps.push({ name: nameCount > 1 ? baseName : pickLocaleName(names, baseName), exec, mimes, noDisplay, icon });
       } catch {
         /* 单个文件损坏跳过 */
       }
@@ -208,12 +221,12 @@ function scanDesktopApps(): { name: string; exec: string; mimes: Set<string> }[]
   }
   // 去重（优先本地程序）：Exec+Name 同视为重复;本地目录优先级已由遍历顺序保证
   const seen = new Set<string>();
-  const out: { name: string; exec: string; mimes: Set<string> }[] = [];
+  const out: { name: string; exec: string; mimes: Set<string>; icon: string }[] = [];
   for (const a of apps) {
     const key = `${a.exec}|${a.name}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ name: a.name, exec: a.exec, mimes: a.mimes });
+    out.push({ name: a.name, exec: a.exec, mimes: a.mimes, icon: a.icon });
   }
   return out;
 }
@@ -1270,8 +1283,57 @@ const MIME: Record<string, string> = {
         // 系统可用打开方式（办公/图片/文本/压缩文档）：按 MimeType 匹配 .desktop 程序
         const ext = (url.searchParams.get('ext') ?? '').toLowerCase();
         const mime = EXT_MIME[ext];
-        const apps = mime ? scanDesktopApps().filter((a) => a.mimes.has(mime)) : [];
-        sendJson(res, 200, { apps: apps.map((a) => ({ name: a.name, exec: a.exec })) });
+        // 文本族父类回退：md/log/rst 等子类型（text/markdown 等）几乎无程序声明,
+        // 回退用 text/plain 匹配——任意文本编辑器皆可打开
+        const mimes = new Set<string>();
+        if (mime) {
+          mimes.add(mime);
+          if (mime.startsWith('text/') && mime !== 'text/plain') mimes.add('text/plain');
+        } else if (!BINARY_EXTS.has(ext)) {
+          // 代码/配置等未映射扩展（json/sh/yaml/html…）:文本编辑器兜底
+          mimes.add('text/plain');
+        }
+        const apps = mimes.size ? scanDesktopApps().filter((a) => [...mimes].some((m) => a.mimes.has(m))) : [];
+        sendJson(res, 200, { apps: apps.map((a) => ({ name: a.name, exec: a.exec, icon: a.icon })) });
+        return;
+      }
+
+      if (p === '/api/icon') {
+        // 按 .desktop Icon= 名在系统图标目录找图片（theme 未解析,按 hicolor 常规尺寸/可缩放目录查找）
+        const key = (url.searchParams.get('k') ?? '').trim();
+        const ERR: [number, string] = [404, ''];
+        if (!key || key.includes('..')) {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+        const dirs = [48, 64, 128, 256, 512].map((s) => `/usr/share/icons/hicolor/${s}x${s}/apps`).concat([
+          '/usr/share/icons/hicolor/scalable/apps', '/usr/share/icons/hicolor/96x96/apps',
+          '/usr/share/pixmaps', '/usr/share/icons/HighContrast/48x48/apps',
+        ]);
+        const cands: string[] = [];
+        if (key.startsWith('/')) {
+          // 绝对路径 .desktop Icon（如 /opt/apps/xxx/.../icon.svg）:限系统安装区
+          const roots = ['/usr/share/', '/usr/local/share/', '/opt/apps/', path.join(os.homedir(), '.local', 'share/')];
+          if (roots.some((r) => key.startsWith(r))) cands.push(key.trim());
+        } else {
+          for (const d of dirs) for (const ext2 of ['.svg', '.png', '.xpm', '.gif']) cands.push(`${d}/${key}${ext2}`);
+        }
+        for (const c of cands) {
+          let st: fs.Stats | null = null;
+          try {
+            st = fs.statSync(c);
+          } catch {
+            continue;
+          }
+          if (!st?.isFile() || st.size > 2 * 1024 * 1024) continue;
+          const type = c.endsWith('.svg') ? 'image/svg+xml' : c.endsWith('.png') ? 'image/png' : c.endsWith('.gif') ? 'image/gif' : 'image/x-xpixmap';
+          res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=3600' });
+          res.end(fs.readFileSync(c));
+          return;
+        }
+        res.writeHead(404);
+        res.end();
         return;
       }
 

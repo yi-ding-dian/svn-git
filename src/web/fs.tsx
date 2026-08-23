@@ -8,13 +8,29 @@ import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { IgnoreModal } from './ignore-modal.js';
 import { FavDirsModal } from './fav-dirs.js';
 import { renderMarkdown } from './markdown.js';
-import { fmtSize, statusColor, translateVcsError } from './utils.js';
+import { fmtSize, statusColor, translateVcsError, isBinaryFile } from './utils.js';
 import { cmdOfRepo } from './cmd-preview.js';
 /** 命令预览: 多路径缩写（前 3 个 + …） */
 const joinPaths = (arr: string[]) => arr.slice(0, 3).join(' ') + (arr.length > 3 ? ' …' : '');
 import { ModalShell } from './modal-shell.js';
 import { FormRow } from './ui.js';
 import { ConfirmModal } from './modals.js';
+
+/** 「打开方式」程序图标：/api/icon 按 .desktop Icon 名查系统图标,缺失/失败回退通用文件图标 */
+function AppIcon({ icon }: { icon: string }) {
+  const [err, setErr] = useState(false);
+  if (!icon || err) return <IconFile />;
+  return (
+    <img
+      src={`/api/icon?k=${encodeURIComponent(icon)}`}
+      alt=""
+      width={16}
+      height={16}
+      style={{ objectFit: 'contain' }}
+      onError={() => setErr(true)}
+    />
+  );
+}
 
 interface Props {
   tick: number;
@@ -502,7 +518,10 @@ export function FsView(props: Props) {
           size: row.size, mtime: row.mtime, code: row.code, codes: row.codes, count: row.count,
         });
       }}
-      onMouseLeave={closeCtxSoon}
+      onMouseLeave={() => {
+        closeCtxSoon();
+        setTip(null);
+      }}
       onClick={(ev) => {
         onRowClick(row.rel, i, ev, { name: row.name, isDir: row.isDir, code: row.code, size: row.size, mtime: row.mtime, relPath: row.rel } as FsEntry);
         if (row.isDir && !ev.ctrlKey && !ev.shiftKey) {
@@ -520,6 +539,7 @@ export function FsView(props: Props) {
         }
       }}
       onDoubleClick={() => {
+        setTip(null); // 双击即关闭悬浮卡片
         if (filtered) {
           if (!row.isDir) jumpToFile(row.rel);
         } else if (!row.isDir) void openFile(row.name, row.code, row.rel);
@@ -558,12 +578,18 @@ export function FsView(props: Props) {
   /** 打开文件：有变更 → diff；无变更 → 原文 */
   const openFile = useCallback(
     async (name: string, code: string, rel: string) => {
+      setTip(null); // 双击打开时关闭悬浮卡片（视图切换后不会再触发 mouseleave,需主动清）
       // 图片文件：双击直接看图（不读文本/diff,避免二进制乱码与"不支持文本对比"提示）
       if (/.(png|jpe?g|gif|svg|webp|bmp|ico)$/i.test(rel)) {
         setPreview({ name, text: '', rel, img: true });
         setMdPreview(false);
         setBlameMode(false);
         setBlameData([]);
+        return;
+      }
+      // 办公文档/压缩包等二进制：双击不打开（diff 无意义、原文会乱码、大文件拖死界面），提示走「打开方式…」
+      if (isBinaryFile(rel)) {
+        props.onToast('二进制文档：右键「打开方式…」用系统程序打开');
         return;
       }
       if (code && code !== '?' && code !== 'I') {
@@ -1105,38 +1131,6 @@ export function FsView(props: Props) {
         }
         items.push({ sep: true });
         items.push({ icon: <IconFile />, label: '查看内容', action: () => void openFile(t.name, t.code, t.rel) });
-        // 打开方式（办公/图片/文本/压缩文档）: 悬浮展开系统程序列表（异步拉取后刷新菜单）
-        if (/.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|png|jpe?g|gif|svg|webp|bmp|ico|txt|md|log|rst|csv|zip|rar|7z|tar|gz)$/i.test(t.name)) {
-          const ext = t.name.split('.').pop()!.toLowerCase();
-          items.push({
-            icon: <IconExternal />,
-            label: '打开方式…',
-            submenu: [{ label: '正在检测系统程序…', action: () => {} }],
-          });
-          const owIdx = items.length - 1;
-          void get
-            .appsFor(ext)
-            .then((r) => {
-              const subs = (r.apps ?? []).map((a) => ({
-                label: a.name,
-                action: () => {
-                  void post
-                    .openWith(t.rel, a.exec)
-                    .then((x) => props.onToast(x.message ?? '已打开'))
-                    .catch((er: Error) => props.onToast(`打开失败: ${er.message}`));
-                },
-              }));
-              setCtx((cur) =>
-                cur && cur.items[owIdx]?.label === '打开方式…'
-                  ? {
-                      ...cur,
-                      items: cur.items.map((it, i) => (i === owIdx ? { ...it, submenu: subs.length ? subs : [{ label: '未检测到可用程序', action: () => {} }] } : it)),
-                    }
-                  : cur
-              );
-            })
-            .catch(() => {});
-        }
         // 未版本化文件无历史记录 → 不显示"查看历史"
         if (t.code !== '?') items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(props.repoType, 'view_history', { path: t.rel }), action: () => viewHistory(t.rel, e) });
         if (props.repoType === 'svn' && t.code !== '?') {
@@ -1147,6 +1141,40 @@ export function FsView(props: Props) {
       }
     }
     items.push({ sep: true });
+    // 打开方式: 非二进制文件都提供（文本/代码/配置/办公文档……）—— 二进制扩展名用扩展映射表,其余文本兜底 text/plain
+    if (!isBinaryFile(t.name)) {
+      const ext = t.name.split('.').pop()!.toLowerCase();
+      items.push({
+        icon: <IconExternal />,
+        label: '打开方式…',
+        submenu: [{ label: '正在检测系统程序…', action: () => {} }],
+      });
+      const owIdx = items.length - 1;
+      void get
+        .appsFor(ext)
+        .then((r) => {
+          // 最多列 5 个（避免长列表遮挡文件）；图标丢失时回退通用文件图标
+          const subs = (r.apps ?? []).slice(0, 5).map((a) => ({
+            label: a.name,
+            icon: <AppIcon icon={a.icon} />,
+            action: () => {
+              void post
+                .openWith(t.rel, a.exec)
+                .then((x) => props.onToast(x.message ?? '已打开'))
+                .catch((er: Error) => props.onToast(`打开失败: ${er.message}`));
+            },
+          }));
+          setCtx((cur) =>
+            cur && cur.items[owIdx]?.label === '打开方式…'
+              ? {
+                  ...cur,
+                  items: cur.items.map((it, i) => (i === owIdx ? { ...it, submenu: subs.length ? subs : [{ label: '未检测到可用程序', action: () => {} }] } : it)),
+                }
+              : cur
+          );
+        })
+        .catch(() => {});
+    }
     items.push({
       icon: <IconCopy />,
       label: '复制完整路径',
@@ -1223,12 +1251,16 @@ export function FsView(props: Props) {
           if (!ctxLocked) setFocusIndex(-1);
           else if (ctxRelRef.current === rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
         }}
-        onMouseLeave={closeCtxSoon}
+        onMouseLeave={() => {
+          closeCtxSoon();
+          setTip(null);
+        }}
         onClick={(ev) => {
           onRowClick(rel, i, ev, e);
           if (e.isDir && !ev.ctrlKey && !ev.shiftKey) setDir(rel); // Ctrl/Shift 时仅选择不进入
         }}
         onDoubleClick={() => {
+          setTip(null); // 双击即关闭悬浮卡片
           if (!e.isDir) void openFile(e.name, e.code, rel);
         }}
         onContextMenu={(ev) => onRowContext(ev, { isDir: e.isDir, code: e.code, rel, name: e.name }, i)}
@@ -1655,6 +1687,7 @@ export function FsView(props: Props) {
                   }}
                   onClick={(ev) => onRowClick(rel, i, ev, e)}
                   onDoubleClick={() => {
+                    setTip(null); // 双击即关闭悬浮卡片
                     if (e.isDir) setDir(rel);
                     else void openFile(e.name, e.code, rel);
                   }}

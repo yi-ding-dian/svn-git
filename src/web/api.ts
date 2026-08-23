@@ -156,7 +156,7 @@ export const get = {
   /** 远程连通性检测（网络灯）：ok=网络通;reason=认证失败/连接错误说明 */
   netCheck: () => api<{ ok: boolean; reason: string }>('/api/net-check'),
   /** 系统可用打开方式（按扩展名匹配 .desktop 程序） */
-  appsFor: (ext: string) => api<{ apps: { name: string; exec: string }[] }>(`/api/apps-for?ext=${encodeURIComponent(ext)}`),
+  appsFor: (ext: string) => api<{ apps: { name: string; exec: string; icon: string }[] }>(`/api/apps-for?ext=${encodeURIComponent(ext)}`),
   preflight: (signal?: AbortSignal) =>
     api<{
       remoteHasUpdate: boolean;
