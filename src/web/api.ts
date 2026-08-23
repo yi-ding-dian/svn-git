@@ -155,6 +155,8 @@ export const get = {
   envCheck: () => api<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } }>('/api/env-check'),
   /** 远程连通性检测（网络灯）：ok=网络通;reason=认证失败/连接错误说明 */
   netCheck: () => api<{ ok: boolean; reason: string }>('/api/net-check'),
+  /** 系统可用打开方式（按扩展名匹配 .desktop 程序） */
+  appsFor: (ext: string) => api<{ apps: { name: string; exec: string }[] }>(`/api/apps-for?ext=${encodeURIComponent(ext)}`),
   preflight: (signal?: AbortSignal) =>
     api<{
       remoteHasUpdate: boolean;
@@ -195,6 +197,10 @@ export interface FilterTreeNode {
   path: string;
   isDir: boolean;
   code: string;
+  /** 文件大小（字节,目录为 0）——过滤树悬浮卡片与列表一致性 */
+  size?: number;
+  /** 文件修改时间（目录为空） */
+  mtime?: string;
   children: FilterTreeNode[];
 }
 
@@ -256,6 +262,8 @@ export const post = {
   gitReword: (hash: string, message: string) => api<VcsResult>('/api/git-reword', json({ hash, message })),
   gitReset: () => api<VcsResult>('/api/git-reset', json({})),
   shutdown: () => api<{ ok: boolean }>('/api/shutdown', json({})),
+  /** 用指定系统程序打开仓库内文件 */
+  openWith: (path: string, exec: string) => api<{ ok: boolean; message: string }>('/api/open-with', json({ path, exec })),
 };
 
 function json(body: unknown, signal?: AbortSignal): RequestInit {

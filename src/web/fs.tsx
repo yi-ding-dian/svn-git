@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterTreeNode } from './api.js';
 import { langOf, highlightLine } from './highlight.js';
-import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, GridIcon } from './icons.js';
+import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, GridIcon } from './icons.js';
 import { CodeBadge, DirBadge } from './badges.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { IgnoreModal } from './ignore-modal.js';
@@ -455,8 +455,8 @@ export function FsView(props: Props) {
           name: n.name,
           code: n.isDir ? '' : n.code,
           isDir: n.isDir,
-          size: 0,
-          mtime: '',
+          size: n.size ?? 0,
+          mtime: n.mtime ?? '',
           count: n.isDir ? countFiles(n) : undefined,
           depth,
           open,
@@ -1094,6 +1094,38 @@ export function FsView(props: Props) {
         }
         items.push({ sep: true });
         items.push({ icon: <IconFile />, label: '查看内容', action: () => void openFile(t.name, t.code, t.rel) });
+        // 打开方式（办公/图片/文本/压缩文档）: 悬浮展开系统程序列表（异步拉取后刷新菜单）
+        if (/.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|png|jpe?g|gif|svg|webp|bmp|ico|txt|md|log|rst|csv|zip|rar|7z|tar|gz)$/i.test(t.name)) {
+          const ext = t.name.split('.').pop()!.toLowerCase();
+          items.push({
+            icon: <IconExternal />,
+            label: '打开方式…',
+            submenu: [{ label: '正在检测系统程序…', action: () => {} }],
+          });
+          const owIdx = items.length - 1;
+          void get
+            .appsFor(ext)
+            .then((r) => {
+              const subs = (r.apps ?? []).map((a) => ({
+                label: a.name,
+                action: () => {
+                  void post
+                    .openWith(t.rel, a.exec)
+                    .then((x) => props.onToast(x.message ?? '已打开'))
+                    .catch((er: Error) => props.onToast(`打开失败: ${er.message}`));
+                },
+              }));
+              setCtx((cur) =>
+                cur && cur.items[owIdx]?.label === '打开方式…'
+                  ? {
+                      ...cur,
+                      items: cur.items.map((it, i) => (i === owIdx ? { ...it, submenu: subs.length ? subs : [{ label: '未检测到可用程序', action: () => {} }] } : it)),
+                    }
+                  : cur
+              );
+            })
+            .catch(() => {});
+        }
         // 未版本化文件无历史记录 → 不显示"查看历史"
         if (t.code !== '?') items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(props.repoType, 'view_history', { path: t.rel }), action: () => viewHistory(t.rel, e) });
         if (props.repoType === 'svn' && t.code !== '?') {

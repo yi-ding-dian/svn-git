@@ -114,6 +114,13 @@ function browseDirs(dir: string): { entries: { name: string; isDir: boolean }[];
   return { entries: out, repo: detectRepo(cur) };
 }
 
+/** 修改时间格式化: "2026/8/23 11:17"（不同于 toLocaleString.slice 会留下尾冒号） */
+function fmtMtime(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** Linux 发行版包管理器探测（/etc/os-release）：返回安装命令与手动命令;未知回退 apt(Debian 系默认)。 */
 function detectDistro(): { name: string; manager: string; install: string[]; manual: string } {
   let id = '';
@@ -140,6 +147,75 @@ function detectDistro(): { name: string; manager: string; install: string[]; man
     default:
       return { name: id || '未知发行版', manager: 'apt', install: ['sudo', '-n', 'apt-get', 'install', '-y', 'git', 'subversion'], manual: `sudo apt-get install -y ${arg}` };
   }
+}
+
+/** 扩展名 → MIME（办公文档/图片/文本/压缩包,用于匹配系统 .desktop 程序） */
+const EXT_MIME: Record<string, string> = {
+  pdf: 'application/pdf', doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet', odp: 'application/vnd.oasis.opendocument.presentation',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', svg: 'image/svg+xml', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon',
+  txt: 'text/plain', md: 'text/markdown', log: 'text/plain', rst: 'text/plain', csv: 'text/csv',
+  zip: 'application/zip', rar: 'application/vnd.rar', '7z': 'application/x-7z-compressed', tar: 'application/x-tar', gz: 'application/gzip',
+};
+
+/** 扫描系统 .desktop 程序（/usr/share/applications + ~/.local/share/applications）,按 MimeType 匹配返回可选择的打开方式 */
+function scanDesktopApps(): { name: string; exec: string; mimes: Set<string> }[] {
+  const dirs = [
+    '/usr/share/applications',
+    '/usr/local/share/applications',
+    path.join(os.homedir(), '.local', 'share', 'applications'),
+  ];
+  const apps: { name: string; exec: string; mimes: Set<string>; noDisplay: boolean }[] = [];
+  for (const dir of dirs) {
+    let files: string[];
+    try {
+      files = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const f of files) {
+      if (!f.endsWith('.desktop')) continue;
+      try {
+        const text = fs.readFileSync(path.join(dir, f), 'utf8');
+        let name = '';
+        let nameLocal = '';
+        let exec = '';
+        let mimes = new Set<string>();
+        let noDisplay = false;
+        let type = '';
+        let hidden = false;
+        for (const raw of text.split('\n')) {
+          const line = raw.trim();
+          if (line.startsWith('[') || !line.includes('=')) continue;
+          const [k, v] = [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)];
+          if (k === 'Name') name = v;
+          else if (k.startsWith('Name[')) nameLocal = v;
+          else if (k === 'Exec') exec = v;
+          else if (k === 'MimeType') mimes = new Set(v.split(';').filter(Boolean));
+          else if (k === 'NoDisplay') noDisplay = v === 'true';
+          else if (k === 'Type') type = v;
+          else if (k === 'Hidden') hidden = v === 'true';
+        }
+        if (!name || !exec || noDisplay || hidden || (type && type !== 'Application')) continue;
+        apps.push({ name: nameLocal || name, exec, mimes, noDisplay });
+      } catch {
+        /* 单个文件损坏跳过 */
+      }
+    }
+  }
+  // 去重（优先本地程序）：Exec+Name 同视为重复;本地目录优先级已由遍历顺序保证
+  const seen = new Set<string>();
+  const out: { name: string; exec: string; mimes: Set<string> }[] = [];
+  for (const a of apps) {
+    const key = `${a.exec}|${a.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name: a.name, exec: a.exec, mimes: a.mimes });
+  }
+  return out;
 }
 
 const MIME: Record<string, string> = {
@@ -469,6 +545,9 @@ export function startServer(): Promise<ServerHandle> {
           path: string;
           isDir: boolean;
           code: string;
+          /** 文件大小（目录 0）与修改时间（目录空）——供悬浮卡片展示 */
+          size?: number;
+          mtime?: string;
           children: TNode[];
         }
         const root: TNode[] = [];
@@ -489,7 +568,15 @@ export function startServer(): Promise<ServerHandle> {
           const parent = i < 0 ? null : ensureDir(rel.slice(0, i));
           const arr = parent ? parent.children : root;
           if (!map.has(rel)) {
-            const n = { name: rel.split('/').pop() || rel, path: rel, isDir: false, code, children: [] };
+            const n: TNode = { name: rel.split('/').pop() || rel, path: rel, isDir: false, code, children: [] };
+            // 大小/修改时间: 供过滤视图的悬浮卡片展示（与 /api/fs 一致）
+            try {
+              const st = fs.statSync(path.join(repo.root, rel));
+              n.size = st.size;
+              n.mtime = fmtMtime(st.mtimeMs);
+            } catch {
+              /* ignore */
+            }
             map.set(rel, n);
             arr.push(n);
           }
@@ -707,7 +794,7 @@ export function startServer(): Promise<ServerHandle> {
             name: f,
             isDir: false,
             size: st.size,
-            mtime: new Date(st.mtime).toLocaleString('zh-CN', { hour12: false }).slice(0, 16),
+            mtime: fmtMtime(st.mtimeMs),
             code,
           });
         }
@@ -1002,7 +1089,14 @@ export function startServer(): Promise<ServerHandle> {
           return;
         }
         const ext = abs.split('.').pop()!.toLowerCase();
-        /** Linux 发行版包管理器探测（/etc/os-release）：返回安装命令与手动命令;未知回退 apt(Debian 系默认)。 */
+        /** 修改时间格式化: "2026/8/23 11:17"（不同于 toLocaleString.slice 会留下尾冒号） */
+function fmtMtime(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Linux 发行版包管理器探测（/etc/os-release）：返回安装命令与手动命令;未知回退 apt(Debian 系默认)。 */
 function detectDistro(): { name: string; manager: string; install: string[]; manual: string } {
   let id = '';
   try {
@@ -1169,6 +1263,49 @@ const MIME: Record<string, string> = {
         };
         const [svn, git] = await Promise.all([check('svn'), check('git')]);
         sendJson(res, 200, { svn, git });
+        return;
+      }
+
+      if (p === '/api/apps-for') {
+        // 系统可用打开方式（办公/图片/文本/压缩文档）：按 MimeType 匹配 .desktop 程序
+        const ext = (url.searchParams.get('ext') ?? '').toLowerCase();
+        const mime = EXT_MIME[ext];
+        const apps = mime ? scanDesktopApps().filter((a) => a.mimes.has(mime)) : [];
+        sendJson(res, 200, { apps: apps.map((a) => ({ name: a.name, exec: a.exec })) });
+        return;
+      }
+
+      if (p === '/api/open-with' && req.method === 'POST') {
+        // 用指定系统程序打开仓库内文件（.desktop Exec 模板解析,argv 数组 spawn,无 shell 注入面）
+        const { repo } = vcsOf();
+        const body = await readBody(req);
+        const rel = String(body.path ?? '');
+        const exec = String(body.exec ?? '');
+        const abs = path.resolve(repo.root, rel);
+        if (!inRepoRoot(repo.root, abs)) {
+          sendJson(res, 400, { error: '路径越界' });
+          return;
+        }
+        if (!fs.existsSync(abs)) {
+          sendJson(res, 404, { error: '文件不存在' });
+          return;
+        }
+        try {
+          // Exec 模板还原: 引号支持 + %f/%u 单文件占位(替换为绝对路径) + %F/%U 多文件(此处单文件=路径)
+          // %c/%i/%k/%d/%D/%n/%N 等装饰类占位移除以保持 argv 正确
+          let ex = exec
+            .replace(/%[fFuU]/g, () => abs)
+            .replace(/%(?:[cikdDnNvm]|[fFuU]+)/g, '');
+          const argv = ex.match(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+/g) ?? [];
+          const cmd = argv.map((s) => s.replace(/^["']|["']$/g, ''));
+          if (!cmd.length) throw new Error('Exec 为空');
+          const child = spawn(cmd[0]!, cmd.slice(1), { detached: true, stdio: 'ignore' });
+          child.on('error', (e) => sendJson(res, 500, { ok: false, error: `启动失败: ${e.message}` }));
+          child.unref();
+          sendJson(res, 200, { ok: true, message: `已用 ${cmd[0]} 打开: ${rel}` });
+        } catch (e) {
+          sendJson(res, 500, { ok: false, error: (e as Error).message });
+        }
         return;
       }
 
