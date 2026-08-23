@@ -9,12 +9,53 @@ import { parseAppCommand, launchDetached } from './util.js';
 import type { InstallTool, OpenWithApp, Platform } from './types.js';
 
 /** reg query 键下所有命名值(解析 REG_ 类型行,值可能含空格保留余下全部) */
+/** reg.exe 输出用系统码页（中文系统=GBK/936），直接按 UTF-8 解会把中文程序名/路径变成乱码。
+ *  用 chcp 探测系统码页，再用对应 TextDecoder 正确解码（按码页缓存）。 */
+let winRegDecoder: TextDecoder | null = null;
+function winRegText(): TextDecoder {
+  if (winRegDecoder) return winRegDecoder;
+  let label = 'utf-8';
+  try {
+    const r = spawnSync('chcp', [], { encoding: 'utf8', windowsHide: true });
+    const num = r.stdout?.match(/(\d{3,5})/)?.[1];
+    if (num && num !== '65001') {
+      const map: Record<string, string> = {
+        '936': 'gb18030', '932': 'shift_jis', '949': 'euc-kr', '950': 'big5',
+        '1250': 'windows-1250', '1251': 'windows-1251', '1252': 'windows-1252',
+        '1253': 'windows-1253', '1254': 'windows-1254', '1255': 'windows-1255',
+        '1256': 'windows-1256', '1257': 'windows-1257', '1258': 'windows-1258',
+      };
+      label = map[num] ?? num; // 未知码页直接交给 TextDecoder 尝试，不行再回退 utf-8
+    }
+  } catch {
+    /* chcp 失败保持 utf-8 */
+  }
+  try {
+    winRegDecoder = new TextDecoder(label);
+  } catch {
+    winRegDecoder = new TextDecoder('utf-8');
+  }
+  return winRegDecoder;
+}
+
+/** 将 reg 输出还原为正确字符串：先拿原始字节，再按系统码页解码 */
+function regToString(buf: Buffer): string {
+  return winRegText().decode(buf);
+}
+
+/** reg 对「空值」输出的占位文案（随系统语言本地化）：英文 (value not set)、中文 (数值未设置) 等。
+ *  这些不是真实命令，必须过滤掉，否则会被当成程序名显示成第一项。 */
+const REG_NOT_SET = /^\s*\(\s*(?:value\s+not\s+set|not\s+set|数值未设置|值未设置|未设置|未定义|未設定|設定されていません|설정되지 않음|valeur non définie|nicht festgelegt|non definito|no establecido|не задано)\s*\)\s*$/i;
+function isRegPlaceholder(v: string): boolean {
+  return v.trim() === '' || REG_NOT_SET.test(v);
+}
+
 function regQuery(key: string): Record<string, string> {
   try {
-    const r = spawnSync('reg', ['query', key], { encoding: 'utf8', windowsHide: true });
+    const r = spawnSync('reg', ['query', key], { encoding: 'buffer', windowsHide: true });
     if (r.status !== 0) return {};
     const out: Record<string, string> = {};
-    for (const line of r.stdout?.split(/\r?\n/) ?? []) {
+    for (const line of regToString(r.stdout ?? Buffer.alloc(0)).split(/\r?\n/)) {
       const t = line.trim();
       const m = t.match(/^(\S+)\s+REG_[A-Z_]+\s+(.*)$/);
       if (m?.[1] && m[1] !== '') out[m[1]!] = m[2] ?? '';
@@ -28,9 +69,9 @@ function regQuery(key: string): Record<string, string> {
 /** reg query 键的默认值(如 shell\open\command 注册的启动命令) */
 function regDefault(key: string): string {
   try {
-    const r = spawnSync('reg', ['query', key, '/ve'], { encoding: 'utf8', windowsHide: true });
+    const r = spawnSync('reg', ['query', key, '/ve'], { encoding: 'buffer', windowsHide: true });
     if (r.status !== 0) return '';
-    const line = (r.stdout?.split(/\r?\n/) ?? []).find((l) => /REG_[A-Z_]+\b/.test(l));
+    const line = regToString(r.stdout ?? Buffer.alloc(0)).split(/\r?\n/).find((l) => /REG_[A-Z_]+\b/.test(l));
     return line?.trim().match(/^\S+\s+REG_[A-Z_]+\s+(.*)$/)?.[1] ?? '';
   } catch {
     return '';
@@ -44,6 +85,7 @@ function scanWindowsApps(ext: string): OpenWithApp[] {
   const add = (command: string) => {
     // 展开 %SystemRoot%/%windir% 等核心环境变量(记事本等注册命令常用),其余环境变量命令无法 spawn,跳过
     command = command.replace(/%SystemRoot%|%windir%/gi, (m) => (m.toLowerCase() === '%windir%' ? process.env.windir ?? '' : process.env.SystemRoot ?? ''));
+    if (isRegPlaceholder(command)) return; // 空值占位(如 (数值未设置))不是真实命令
     if (!command || /%(?!1)/.test(command)) return;
     if (seen.has(command)) return;
     seen.add(command);

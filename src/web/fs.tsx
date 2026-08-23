@@ -1153,18 +1153,8 @@ export function FsView(props: Props) {
       void get
         .appsFor(ext)
         .then((r) => {
-          // 第一项「系统默认程序」：任何平台都能用（win=Start-Process / linux=xdg-open）,无需 .desktop 清单
+          // 已按用户要求去掉「系统默认程序」：直接列出系统检测到的可用程序
           const subs = [
-            {
-              label: '系统默认程序',
-              icon: <IconExternal />,
-              action: () => {
-                void post
-                  .openWith(t.rel, '')
-                  .then((x) => props.onToast(x.message ?? '已打开'))
-                  .catch((er: Error) => props.onToast(`打开失败: ${er.message}`));
-              },
-            },
             ...(r.apps ?? []).slice(0, 5).map((a) => ({
               label: a.name,
               icon: <AppIcon icon={a.icon} />,
@@ -1195,7 +1185,7 @@ export function FsView(props: Props) {
             cur && cur.items[owIdx]?.label === '打开方式…'
               ? {
                   ...cur,
-                  items: cur.items.map((it, i) => (i === owIdx ? { ...it, submenu: subs.length ? subs : [{ label: '未检测到可用程序', action: () => {} }] } : it)),
+                  items: cur.items.map((it, i) => (i === owIdx ? { ...it, submenu: subs.length ? subs : [{ label: '无', action: () => {} }] } : it)),
                 }
               : cur
           );
