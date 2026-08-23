@@ -217,9 +217,13 @@ export function App() {
       .catch(() => {});
   }, []);
   useEffect(() => {
-    checkRemote();
+    // 首次延迟 6s 再检查远程（网络不通时 fetch 慢,立即并发会占住浏览器连接槽,阻塞目录加载）
+    const first = setTimeout(checkRemote, 6_000);
     const t = setInterval(checkRemote, 120_000);
-    return () => clearInterval(t);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
   }, [info?.root, checkRemote]);
 
   // 远程新提交涉及的文件总数（remoteLogs 去重；无 logs 时用 updatedFiles 数）

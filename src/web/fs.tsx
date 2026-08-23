@@ -97,7 +97,7 @@ export function FsView(props: Props) {
   const [data, setData] = useState<FsData | null>(null); // 列表模式数据
   const [error, setError] = useState('');
   const [sel, setSel] = useState<FsEntry | null>(null);
-  const [preview, setPreview] = useState<{ name: string; text: string; note?: string; rel: string } | null>(null);
+  const [preview, setPreview] = useState<{ name: string; text: string; note?: string; rel: string; img?: boolean } | null>(null);
   // md 文件渲染预览模式（预览按钮切换；false=原文高亮，true=Markdown 渲染）
   const [mdPreview, setMdPreview] = useState(false);
   const [blameMode, setBlameMode] = useState(false);
@@ -144,7 +144,7 @@ export function FsView(props: Props) {
   };
   const [focusIndex, setFocusIndex] = useState(0);
   // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
-  const [tip, setTip] = useState<{ x: number; y: number; name: string; count?: number; codes?: string[] } | null>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[] } | null>(null);
 
   // 原文预览搜索
   const [searchQ, setSearchQ] = useState('');
@@ -482,9 +482,14 @@ export function FsView(props: Props) {
         background: i === focusIndex || selected.has(row.rel) ? 'var(--panel2)' : undefined,
         outline: i === focusIndex ? '1px solid var(--accent)' : selected.has(row.rel) ? '1px solid var(--accent)' : undefined,
       }}
-      onMouseEnter={() => {
+      onMouseEnter={(ev) => {
         if (!ctxLocked) setFocusIndex(-1);
         else if (ctxRelRef.current === row.rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
+        // 悬浮卡片: 显示名称/大小/修改时间/状态(与浏览网格一致)
+        setTip({
+          x: ev.clientX, y: ev.clientY, name: row.name, isDir: row.isDir,
+          size: row.size, mtime: row.mtime, code: row.code, codes: row.codes, count: row.count,
+        });
       }}
       onMouseLeave={closeCtxSoon}
       onClick={(ev) => {
@@ -509,7 +514,7 @@ export function FsView(props: Props) {
         } else if (!row.isDir) void openFile(row.name, row.code, row.rel);
       }}
       onContextMenu={(ev) => onRowContext(ev, { isDir: row.isDir, code: row.code, rel: row.rel, name: row.name }, i)}
-      title={row.isDir ? '单击展开/收起 · 右键操作菜单' : filtered ? '双击跳转定位' : '单击选中 · 双击查看 · 右键操作菜单'}
+      // 悬浮信息卡片替代原生 title（见 onMouseEnter setTip）
     >
       {row.isDir ? <DirBadge codes={row.codes} /> : <CodeBadge code={row.code} />}
       <span className="arrow">{row.isDir ? (row.open ? '▾' : '▸') : ''}</span>
@@ -542,6 +547,14 @@ export function FsView(props: Props) {
   /** 打开文件：有变更 → diff；无变更 → 原文 */
   const openFile = useCallback(
     async (name: string, code: string, rel: string) => {
+      // 图片文件：双击直接看图（不读文本/diff,避免二进制乱码与"不支持文本对比"提示）
+      if (/.(png|jpe?g|gif|svg|webp|bmp|ico)$/i.test(rel)) {
+        setPreview({ name, text: '', rel, img: true });
+        setMdPreview(false);
+        setBlameMode(false);
+        setBlameData([]);
+        return;
+      }
       if (code && code !== '?' && code !== 'I') {
         props.onDiff(rel);
         return;
@@ -911,6 +924,7 @@ export function FsView(props: Props) {
 
   const onBlankContext = (e: React.MouseEvent) => {
     e.preventDefault();
+    setTip(null); // 空白右键同样关闭悬浮卡片
     cancelCtxClose();
     ctxRelRef.current = null; // 空白右键：任何条目都不算"原条目"，鼠标离开即关
     setCtxLocked(false); // 空白右键不锁定任何条目（防止前一次右键的锁定残留）
@@ -957,6 +971,7 @@ export function FsView(props: Props) {
   const onRowContext = (e: React.MouseEvent, t: { isDir: boolean; code: string; rel: string; name: string }, index: number) => {
     e.preventDefault();
     e.stopPropagation();
+    setTip(null); // 右键即关闭悬浮卡片,避免与右键菜单重叠
     cancelCtxClose(); // 清掉上次的延迟关闭计时
     ctxRelRef.current = t.rel; // 记录右键条目：鼠标回到它（或移入菜单）时菜单保持
     setFocusIndex(index);
@@ -1585,12 +1600,11 @@ export function FsView(props: Props) {
                   onMouseEnter={(ev) => {
                     if (!ctxLocked) setFocusIndex(-1);
                     else if (ctxRelRef.current === rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
-                    // 目录且有状态字母：显示自定义悬浮提示（彩色徽标 + 紧凑描述）；其余保留原生 title
-                    if (e.isDir && e.codes && e.codes.length > 0) {
-                      setTip({ x: ev.clientX, y: ev.clientY, name: e.name, count: e.count, codes: e.codes });
-                    } else {
-                      setTip(null);
-                    }
+                    // 悬浮提示: 目录带状态字母显示彩色徽标;文件始终显示信息卡片（含大小/时间/状态）
+                    setTip({
+                      x: ev.clientX, y: ev.clientY, name: e.name, isDir: e.isDir,
+                      size: e.size, mtime: e.mtime, code: e.code, codes: e.codes, count: e.count,
+                    });
                   }}
                   onMouseLeave={() => {
                     closeCtxSoon();
@@ -1602,7 +1616,6 @@ export function FsView(props: Props) {
                     else void openFile(e.name, e.code, rel);
                   }}
                   onContextMenu={(ev) => onRowContext(ev, { isDir: e.isDir, code: e.code, rel, name: e.name }, i)}
-                  title={e.isDir && e.codes && e.codes.length > 0 ? undefined : `${e.name}${e.count ? `（${e.count} 项）` : ''}\n双击${e.isDir ? '进入' : '查看'}`}
                 >
                   {/* 图标 + 状态角标（叠在图标右下角，文件管理器风格） */}
                   <span className="grid-icon-wrap">
@@ -1680,8 +1693,21 @@ export function FsView(props: Props) {
               <button className="mini" onClick={() => setPreview(null)}>← 返回列表</button>
             </div>
             <div className="diff" style={{ flex: 1, overflow: 'auto' }}>
-              {/* Markdown 渲染预览（md 文件开启预览时）；图片相对路径按 md 文件所在目录解析 */}
-              {mdPreview && preview.name.toLowerCase().endsWith('.md') ? (
+              {/* 图片预览：直接显示图片（点击放大复用 md-render 的放大机制） */}
+              {preview.img ? (
+                <div
+                  className="md-render"
+                  onClick={onMdRenderClick}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100%', padding: 16 }}
+                >
+                  <img
+                    src={`/api/file?path=${encodeURIComponent(preview.rel)}`}
+                    alt={preview.name}
+                    style={{ maxWidth: '100%', maxHeight: 'calc(100% - 40px)', objectFit: 'contain', borderRadius: 6, cursor: 'zoom-in' }}
+                    onError={(e) => setError(`图片读取失败: ${(e.target as HTMLImageElement).alt}`)}
+                  />
+                </div>
+              ) : mdPreview && preview.name.toLowerCase().endsWith('.md') ? (
                 <div
                   className="md-render"
                   onClick={onMdRenderClick}
@@ -1904,12 +1930,12 @@ export function FsView(props: Props) {
             pointerEvents: 'none',
           }}
         >
-          <div style={{ fontWeight: 600, marginBottom: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {tip.name}
             {tip.count ? <span className="dim">（{tip.count} 项有变更）</span> : null}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-            {[...tip.codes!]
+            {tip.codes && tip.codes.length > 0 && [...tip.codes]
               .sort((a, b) => codeRank(b) - codeRank(a))
               .map((c) => (
                 <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -1917,8 +1943,25 @@ export function FsView(props: Props) {
                   <span>{CODE_DESC[c] ?? c}</span>
                 </span>
               ))}
+            {(!tip.codes || tip.codes.length === 0) && tip.code !== undefined && tip.code !== '' && tip.code !== ' ' && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                <CodeBadge code={tip.code} />
+                <span>{CODE_DESC[tip.code] ?? tip.code}</span>
+              </span>
+            )}
+            {(!tip.codes || tip.codes.length === 0) && (!tip.code || tip.code === '' || tip.code === ' ') && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                <CodeBadge code={''} />
+                <span>干净</span>
+              </span>
+            )}
           </div>
-          <div className="dim" style={{ fontSize: 11 }}>双击进入 · 右键操作</div>
+          {!tip.isDir && (tip.size !== undefined || tip.mtime) && (
+            <div className="dim" style={{ fontSize: 11, marginBottom: 4 }}>
+              {tip.size !== undefined ? fmtSize(tip.size) : ''}{tip.size !== undefined && tip.mtime ? ' · ' : ''}{tip.mtime ?? ''}
+            </div>
+          )}
+          <div className="dim" style={{ fontSize: 11 }}>{tip.isDir ? '双击进入' : '双击查看'}</div>
         </div>
       )}
     </div>

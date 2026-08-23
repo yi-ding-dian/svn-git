@@ -568,9 +568,15 @@ export class GitVcs {
     const errText = res.stderr + res.stdout;
     const isAuthError = /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(errText);
     if (isAuthError && cred?.username && cred?.password) {
-      // 已有保存的凭据 → 用 GIT_ASKPASS 重试一次
+      // 已有保存的凭据 → 用 GIT_ASKPASS 重试一次。
+      // 注意重试必须同样带 -u origin <分支>：无上游分支时无 -u 的 push 会再次报"没有上游分支",
+      // 其文案被误当认证错误弹给用户（修复:重试与 -u 自动重试同构）
       const ask = createAskPass(cred);
-      const retry = await this.exec(['push'], { timeoutMs: 600_000, signal, env: { GIT_ASKPASS: ask.path } });
+      const branch2 = await this.branch();
+      const retry = await this.exec(
+        branch2 && branch2 !== 'HEAD' ? ['push', '-u', 'origin', branch2] : ['push'],
+        { timeoutMs: 600_000, signal, env: { GIT_ASKPASS: ask.path } }
+      );
       ask.cleanup();
       if (retry.aborted) return { ok: false, message: '推送已取消' };
       if (retry.code === 0) return { ok: true, message: '推送成功' };
@@ -833,7 +839,8 @@ export class GitVcs {
     remoteLogs: LogEntry[];
   }> {
     // 拉取远程元数据（静默，失败不阻塞）
-    await this.exec(['fetch', '--quiet', 'origin'], { timeoutMs: 60_000 }).catch(() => {});
+    // 15s 快速失败（网络不通时 60s 挂起会占住浏览器连接槽,阻塞目录加载）
+    await this.exec(['fetch', '--quiet', 'origin'], { timeoutMs: 15_000 }).catch(() => {});
     const branch = await this.branch();
     const upstream = `origin/${branch}`;
     // ahead/behind 计数：git rev-list --left-right --count HEAD...origin/xxx

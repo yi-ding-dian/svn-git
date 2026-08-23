@@ -398,7 +398,7 @@ export class SvnVcs {
     updatedFiles: string[];
     remoteLogs: LogEntry[];
   }> {
-    const res = await this.exec(['status', '-u'], { timeoutMs: 120_000 });
+    const res = await this.exec(['status', '-u'], { timeoutMs: 20_000 }); // 快速失败:网络不通时防卡连接槽 60s+
     if (res.code !== 0) {
       return { remoteHasUpdate: false, behind: 0, conflictRisk: [], lockedByOthers: [], updatedFiles: [], remoteLogs: [] };
     }

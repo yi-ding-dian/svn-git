@@ -24,11 +24,18 @@ export function GridIcon(props: { isDir: boolean; name: string; size?: number })
   // 文件类型配色
   const ext = props.name.split('.').pop()?.toLowerCase() ?? '';
   let color = '#8b949e';
-  if (/^(c|cpp|h|hpp|cc|js|ts|tsx|jsx|py|java|go|rs|cs)$/.test(ext)) color = '#58a6ff';
-  else if (/^(txt|md|log|rst|doc)$/.test(ext)) color = '#3fb950';
+  if (/^(c|cpp|h|hpp|cc|js|mjs|cjs|ts|tsx|jsx|py|java|go|rs|cs|vue|svelte)$/.test(ext)) color = '#58a6ff';
+  else if (/^(txt|md|log|rst)$/.test(ext)) color = '#3fb950';
   else if (/^(json|xml|yml|yaml|ini|conf|cfg)$/.test(ext)) color = '#e0b25c';
   else if (/^(png|jpg|jpeg|gif|svg|bmp|ico)$/.test(ext)) color = '#a371f7';
   else if (/^(sh|bat|cmd)$/.test(ext)) color = '#f85149';
+  // 办公文档品牌色（SVG 内不依赖系统字体,跨平台一致）: 蓝=Word 绿=Excel 橙=PPT 红=PDF
+  else if (/^(doc|docx|odt)$/.test(ext)) color = '#2b579a';
+  else if (/^(xls|xlsx|csv|ods)$/.test(ext)) color = '#217346';
+  else if (/^(ppt|pptx|odp)$/.test(ext)) color = '#d24726';
+  else if (/^pdf$/.test(ext)) color = '#e5484d';
+  // 办公文档角标字母: PDF 用三字母,其余单字母,加强辨识度
+  const BADGE = /^pdf$/.test(ext) ? 'PDF' : /^(doc|docx|odt)$/.test(ext) ? 'W' : /^(xls|xlsx|csv|ods)$/.test(ext) ? 'X' : /^(ppt|pptx|odp)$/.test(ext) ? 'P' : null;
   const id = `gi-${ext || 'file'}`;
   return (
     <svg width={s} height={s} viewBox="0 0 48 48">
@@ -41,6 +48,12 @@ export function GridIcon(props: { isDir: boolean; name: string; size?: number })
       <path d="M10 4h20l8 8v30a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill={`url(#${id})`} />
       <path d="M30 4l8 8h-8z" fill="#ffffff" fillOpacity="0.55" />
       <path d="M14 22h20M14 28h20M14 34h12" stroke="#ffffff" strokeWidth="2.4" strokeLinecap="round" fill="none" />
+      {BADGE && (
+        <text x="24" y="41" textAnchor="middle" dominantBaseline="middle"
+          fontFamily="Arial, Helvetica, sans-serif" fontWeight="700" fontSize="7" fill="#ffffff">
+          {BADGE}
+        </text>
+      )}
     </svg>
   );
 }
