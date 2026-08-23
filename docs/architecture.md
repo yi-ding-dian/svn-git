@@ -67,7 +67,7 @@
 - 30+ REST API：info/status/fs/log/diff/file-versions/blame/branches/tags/stash/search/conflicts/preflight/repo-create/env-check/…
 - **preflight 提交预检**：服务器版本对比（`remoteHasUpdate`/`updatedFiles`/`behind`）+ 行级冲突计算 + 锁检查；前端据 `updatedFiles ∩ 待提交文件` 决定是否提示"服务器有新版本"
 - **SSE 流**（`/api/env-install/stream`）：sudo apt 安装 svn/git 时实时推送安装日志到前端
-- **路径安全**：所有带路径参数接口校验 `abs.startsWith(repo.root)`（防路径穿越）
+- **路径安全**：所有带路径参数接口做 `inRepoRoot` 校验——**两侧 realpath 解析**（`realpathSafe` 对不存在路径逐级上溯最长存在前缀），防 `../` 穿越与仓库内 symlink 指向仓库外的绕过（`src/routes/util.ts`）；写好端点的校验前置，不受 TOCTOU 影响
 - **认证错误统一处理**：E170001 等错误码识别 → 前端自动弹登录框
 - 静态文件带 `Last-Modified`（开发模式热刷新依赖）
 
@@ -174,10 +174,10 @@ src/
     ├── icons.tsx       # SVG 图标库
     └── …               # 其余组件
 scripts/                # 构建/开发/截图脚本
-test/                   # 自动化测试（61 项断言）
+test/                   # 自动化测试（87 项断言：VCS 32 + 扩展 29 + diff 算法 6 + API 集成 20）
 docs/                   # 文档与截图
 ```
-*（源码合计约 8,900 行 TypeScript/TSX/CSS/HTML）
+*（源码合计约 13,400 行 TypeScript/TSX/CSS/HTML）
 ```
 
 ## 7. 测试策略

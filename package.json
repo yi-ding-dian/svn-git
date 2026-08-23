@@ -10,7 +10,8 @@
     "dev": "npm run build && node scripts/dev.mjs",
     "clean": "rm -rf dist",
     "dist:linux": "npm run build && electron-builder --linux AppImage",
-    "dist:win": "npm run build && electron-builder --win nsis"
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "test": "npm run build && node test/vcs-test.mjs && node test/vcs-extra-test.mjs && node test/diff-lines-test.mjs && node test/api-test.mjs"
   },
   "dependencies": {
     "fast-xml-parser": "^5.11.0",

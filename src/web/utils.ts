@@ -47,6 +47,8 @@ export function statusColor(code?: string): string | undefined {
 
 /** 常见 svn/git 错误码 → 中文提示（含下一步动作建议）。映射不到时原样返回原文。 */
 const VCS_ERR_INFO: { re: RegExp; cn: string }[] = [
+  // 环境缺失：svn/git 命令不可用（ENOENT）
+  { re: /ENOENT|spawn[^\n]*ENOENT|command not found/i, cn: '⚠ 未检测到 svn/git 命令，请按顶部横幅指引安装后重试' },
   // svn: 服务器有新版本
   { re: /E155011|E160028|E160029|File or directory is out of date/i, cn: '⚠ 服务器已有新版本，请先「更新」获取最新内容后再提交' },
   // svn: 工作副本被锁定

@@ -129,6 +129,8 @@ export function AppHeader(props: {
   onToast: (m: string) => void;
   /** 推送（含进度窗口与认证引导） */
   onPush: () => void;
+  /** 更新/拉取（git=pull, svn=update, 含进度窗口可取消） */
+  onUpdate: () => void;
   /** 未推送提交数（git；null=未知/svn 不显示角标） */
   unpushedCount?: number | null;
 }) {
@@ -155,10 +157,17 @@ export function AppHeader(props: {
           onClick={() => props.setModal({ type: 'conflicts' })}
         />
       )}
-      {/* ② 传输 + 暂存（git） */}
+      {/* ② 传输（git: 拉取+推送+Stash；svn: 更新） */}
       {repo?.type === 'git' && (
         <>
           <Sep />
+          <ToolBtn
+            icon={<IconRefresh />}
+            label="拉取"
+            title="拉取远程更新（git pull，可取消）"
+            cmd="git pull"
+            onClick={props.onUpdate}
+          />
           <ToolBtn
             icon={<IconCommit />}
             label={
@@ -190,6 +199,12 @@ export function AppHeader(props: {
       <Sep />
       {repo?.type === 'git' && (
         <ToolBtn icon={<IconClean />} label="清理" title="清理未跟踪文件" onClick={() => props.setModal({ type: 'clean' })} />
+      )}
+      {repo?.type === 'svn' && (
+        <>
+          <ToolBtn icon={<IconRefresh />} label="更新" title="更新工作副本（svn update，可取消）" cmd="svn update" onClick={props.onUpdate} />
+          <Sep />
+        </>
       )}
       {repo?.type === 'svn' && (
         <ToolBtn

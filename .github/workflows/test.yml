@@ -1,0 +1,20 @@
+name: test
+
+on:
+  push:
+    branches: [main, ui-redesign]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: 安装依赖（含 svn 用于完整测试）
+        run: npm ci && sudo apt-get update && sudo apt-get install -y subversion
+      - name: 构建 + 全量测试（VCS 32+29 / diff 算法 6）
+        run: npm test

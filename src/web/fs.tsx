@@ -8,7 +8,7 @@ import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { IgnoreModal } from './ignore-modal.js';
 import { FavDirsModal } from './fav-dirs.js';
 import { renderMarkdown } from './markdown.js';
-import { fmtSize, statusColor } from './utils.js';
+import { fmtSize, statusColor, translateVcsError } from './utils.js';
 import { cmdOfRepo } from './cmd-preview.js';
 /** 命令预览: 多路径缩写（前 3 个 + …） */
 const joinPaths = (arr: string[]) => arr.slice(0, 3).join(' ') + (arr.length > 3 ? ' …' : '');

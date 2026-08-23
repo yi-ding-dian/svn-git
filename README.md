@@ -52,7 +52,7 @@ npm run dist:linux     # 打包 AppImage
 
 ### Windows
 
-Windows 安装包(`.exe`)由 GitHub Actions 在 tag 发布时自动构建(见 `.github/workflows/release.yml`),也可在本地 Windows 执行 `npm run dist:win`。Windows 前置:安装 [TortoiseSVN](https://tortoisesvn.net/)(提供 svn 命令)和 [Git for Windows](https://git-scm.com/)。
+Windows 安装包(`.exe`)由 GitHub Actions 在 tag 发布时自动构建(见 `.github/workflows/release.yml`),也可在本地 Windows 执行 `npm run dist:win`。Windows 前置:安装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**(默认不勾选,勾选后才有 svn.exe 并加入 PATH)和 [Git for Windows](https://git-scm.com/)。
 
 ---
 

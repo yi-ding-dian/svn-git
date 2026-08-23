@@ -71,20 +71,31 @@ export function  sendJson(res: http.ServerResponse, code: number, data: unknown)
 export function  readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let data = '';
+    let done = false; // 超限后终止接收,防止内存继续累积与 end 事件二次 settle
     req.on('data', (c: Buffer) => {
+      if (done) return;
       data += c.toString();
       if (data.length > 10 * 1024 * 1024) {
+        done = true;
+        req.destroy(); // 客户端若持续发送,立即断开连接而非继续拼接
         reject(new Error('body too large'));
       }
     });
     req.on('end', () => {
+      if (done) return;
+      done = true;
       try {
         resolve(data ? JSON.parse(data) : {});
       } catch {
         resolve({});
       }
     });
-    req.on('error', reject);
+    req.on('error', (e) => {
+      if (!done) {
+        done = true;
+        reject(e);
+      }
+    });
   });
 }
 

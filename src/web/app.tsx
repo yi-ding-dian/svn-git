@@ -632,6 +632,7 @@ export function App() {
         setModal={setModal}
         onToast={setToast}
         onPush={doPush}
+        onUpdate={() => void doUpdateDir('')}
         unpushedCount={unpushedCount}
       />
 

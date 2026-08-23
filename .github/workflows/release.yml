@@ -24,8 +24,17 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
-      - name: 构建前端与后端
-        run: npm run build
+      - name: 构建与测试（测试失败不打包）
+        # Ubuntu：npm test（build + 87 项断言，含 VCS/API 集成，依赖系统 svn）；
+        # Windows：仅构建（TortoiseSVN 需手动勾选 command line client tools,裸机无 svn 命令）
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            sudo apt-get update && sudo apt-get install -y subversion
+            npm test
+          else
+            npm run build
+          fi
 
       - name: 打包 Linux AppImage
         if: runner.os == 'Linux'

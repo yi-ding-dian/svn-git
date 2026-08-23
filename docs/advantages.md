@@ -53,8 +53,8 @@
 
 ## 6. 工程质量
 
-- **约 8,900 行 TypeScript/TSX/CSS**（strict 模式 + noUncheckedIndexedAccess），模块化三层架构
-- **61 项自动化断言**（VCS 层 32 + 扩展 29）+ 两轮 Agent 全功能回归（含真实冲突场景）
+- **约 13,400 行 TypeScript/TSX/CSS**（strict 模式 + noUncheckedIndexedAccess），模块化三层架构（VCS 接口化后无 as any）
+- **87 项自动化断言**（VCS 层 32 + 扩展 29 + diff 行级算法 6 + HTTP API 集成 20）+ 两轮 Agent 全功能回归（含真实冲突场景）；`npm test` 一键执行
 - 中英文输出兼容（系统 zh_CN.UTF-8 环境实测）
 - 完整开发模式热更新（改代码即生效，免打包迭代）
 

@@ -274,7 +274,8 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
       if (p === '/api/mkdir' && req.method === 'POST') {
-        // 目录选择器：新建文件夹
+        // 目录选择器：新建文件夹——系统级目录操作（打开项目的路径选择处使用,路径可不在任何仓库内,
+        // 无仓库路径语义,故不做 inRepoRoot 校验,仅受 CSRF 同源限制（本地凭证场景））
         const body = await readBody(req);
         const dir = String(body.path ?? '');
         if (!dir) {
@@ -290,7 +291,7 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
       if (p === '/api/rename' && req.method === 'POST') {
-        // 目录选择器：重命名文件夹
+        // 目录选择器：重命名文件夹——同 mkdir,系统级操作不校验仓库路径。
         const body = await readBody(req);
         const from = String(body.from ?? '');
         const to = String(body.to ?? '');
@@ -1102,7 +1103,7 @@ export function startServer(): Promise<ServerHandle> {
       if (p === '/api/net-check') {
         // 远程连通性检测（网络灯）：只握手不取数据(git ls-remote / svn ls),8s 超时。
         // 区分"网络断"与"认证失败"：认证失败=网络通的（前端显示绿,tooltip 说明认证问题）
-        const { repo } = vcsOf();
+        const { repo, vcs } = vcsOf();
         let ok = false;
         let reason = '未知错误';
         try {
@@ -1123,8 +1124,10 @@ export function startServer(): Promise<ServerHandle> {
               }
             }
           } else {
-            // svn: 访问仓库 URL（工作副本 svn info 无网络请求,必须直接打 URL）
-            const url = repo.url;
+            // svn: 访问仓库 URL（工作副本 svn info 无网络请求,必须直接打 URL）。
+            // repo.url 恒空（detectRepo 不含 url），改用 vcs.info() 与 /api/info 同源获取
+            const info = await vcs.info?.();
+            const url = info?.url ?? repo.url;
             if (!url) {
               ok = true; reason = '未配置仓库 URL';
             } else {
