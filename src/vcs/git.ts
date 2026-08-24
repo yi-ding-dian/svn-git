@@ -642,6 +642,30 @@ export class GitVcs {
     return { ok: true, message: `已创建分支 ${name}` };
   }
 
+  /** 推送指定分支到远程（分支管理"推送到远程"）：无上游自动 git push -u origin <名字>；认证失败按保存凭据(GIT_ASKPASS)重试 */
+  async branchPush(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }> {
+    const cred = loadConfig().git;
+    let res = await this.exec(['push', '-u', 'origin', name], { timeoutMs: 600_000, signal });
+    if (res.aborted) return { ok: false, message: '推送已取消' };
+    if (res.code === 0) return { ok: true, message: `已推送分支 ${name} 到远程` };
+    const errText = res.stderr + res.stdout;
+    const isAuthError = /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(errText);
+    if (isAuthError && cred?.username && cred?.password) {
+      const ask = createAskPass(cred);
+      const retry = await this.exec(['push', '-u', 'origin', name], { timeoutMs: 600_000, signal, env: { GIT_ASKPASS: ask.path } });
+      ask.cleanup();
+      if (retry.aborted) return { ok: false, message: '推送已取消' };
+      if (retry.code === 0) return { ok: true, message: `已推送分支 ${name} 到远程` };
+      return { ok: false, message: retry.stderr.trim() || 'git push 失败', authType: authTypeOf(await this.remote()), code: 'AUTH' };
+    }
+    return {
+      ok: false,
+      message: res.stderr.trim() || 'git push 失败',
+      authType: isAuthError ? authTypeOf(await this.remote()) : undefined,
+      code: isAuthError ? 'AUTH' : undefined,
+    };
+  }
+
   /** 切换分支前的改动检查：工作区改动统计 + 与目标分支冲突的文件（目标分支也改过的已跟踪文件 = 切换会被拒绝）
    *
    * 依据：checkout 时工作区已跟踪文件的修改能否带过去，取决于目标分支是否也改过该文件——

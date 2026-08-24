@@ -234,7 +234,7 @@ export const post = {
   revert: (paths: string[]) => api<VcsResult>('/api/revert', json({ paths })),
   delete: (paths: string[], keep = false) => api<VcsResult>('/api/delete', json({ paths, keep })),
   push: (signal?: AbortSignal) => api<VcsResult>('/api/push', json({}, signal)),
-  branch: (action: 'create' | 'switch' | 'delete' | 'merge', name: string, force = false) =>
+  branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'push', name: string, force = false) =>
     api<VcsResult>('/api/branch', json({ action, name, force })),
   tag: (action: 'create' | 'delete', name: string) => api<VcsResult>('/api/tag', json({ action, name })),
   stash: (action: 'push' | 'pop' | 'drop', message = '', index = 0) =>

@@ -40,6 +40,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         else if (action === 'switch') result = await vcs.branchSwitch(name);
         else if (action === 'delete') result = await vcs.branchDelete(name, Boolean(body.force));
         else if (action === 'merge') result = await vcs.merge(name);
+        else if (action === 'push') result = (await vcs.branchPush?.(name)) ?? { ok: false, message: '当前仓库类型不支持分支推送' };
         else {
           sendJson(res, 400, { error: '未知操作' });
           return true;
