@@ -655,7 +655,7 @@ export function InfoModal(props: { title: string; message: React.ReactNode; onCl
     <div className="modal-mask">
       <ResizableModal width={440} minWidth={420} onEsc={props.onClose}>
         <h3>{props.title}</h3>
-        <div className="body">{props.message}</div>
+        <div className="body" style={{ whiteSpace: 'pre-wrap' }}>{props.message}</div>
         <div className="foot">
           <button className="primary" onClick={props.onClose}>知道了</button>
         </div>
@@ -670,6 +670,8 @@ export function ConfirmModal(props: {
   danger?: boolean;
   confirmLabel?: string;
   secondaryLabel?: string;
+  /** 隐藏「取消」按钮：仅"知道了"一种回应（信息型通知） */
+  hideCancel?: boolean;
   /** 命令预览：鼠标悬浮按钮时显示将执行的命令 */
   confirmCmd?: string;
   secondaryCmd?: string;
@@ -683,9 +685,9 @@ export function ConfirmModal(props: {
     <div className="modal-mask">
       <ResizableModal width={props.width ?? 440} minWidth={420} onEsc={props.onCancel}>
         <h3>{props.title}</h3>
-        <div className="body">{props.message}</div>
+        <div className="body" style={{ whiteSpace: 'pre-wrap' }}>{props.message}</div>
         <div className="foot">
-          <button onClick={props.onCancel}>取消</button>
+          {!props.hideCancel && <button onClick={props.onCancel}>取消</button>}
           {props.secondaryLabel && props.onSecondary && (
             <button
               className="primary"

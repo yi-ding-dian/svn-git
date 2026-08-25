@@ -243,16 +243,6 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
       >
         <div className="row" style={{ alignItems: 'center' }}>
           <h3 style={{ flex: 1, margin: 0 }}>⚠ 解决冲突（{conflicts.length}）</h3>
-          {repoType === 'git' && (
-            <button
-              className="mini"
-              disabled={busy || loading}
-              onClick={() => setConfirmAbort(true)}
-              title="放弃本次合并（git merge --abort）：丢弃合并以来所有改动，工作区回到合并前。分支本身不受影响，可稍后再合并。"
-            >
-              ↩ 中止合并
-            </button>
-          )}
         </div>
         <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: expanded ? 'calc(96vh - 90px)' : 460 }}>
           {/* 上：冲突文件列表（横排铺满窗口宽；最多显示 3 个，超出滚动，少于自动收缩高度） */}
@@ -416,6 +406,16 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                 <button className="primary" disabled={busy} onClick={() => void resolve('ours')} title={`${cmdOfRepo(repoType, 'resolve_ours', { path: cur.path }) ?? ''}`}>✅ 采用本地</button>
                 <button disabled={busy} onClick={() => void resolve('theirs')} title={`${cmdOfRepo(repoType, 'resolve_theirs', { path: cur.path }) ?? ''}`}>采用对方</button>
                 {!cur.binary && <button disabled={busy} onClick={() => void resolve('manual')} title={`${cmdOfRepo(repoType, 'resolve_manual', { path: cur.path }) ?? ''}`}>💾 保存手动编辑</button>}
+                {repoType === 'git' && (
+                  <button
+                    className="mini"
+                    disabled={busy}
+                    onClick={() => setConfirmAbort(true)}
+                    title="放弃本次合并（git merge --abort）：丢弃合并以来所有改动，工作区回到合并前。分支本身不受影响，可稍后再合并。"
+                  >
+                    ↩ 中止合并
+                  </button>
+                )}
                 <button
                   className="mini tool-btn"
                   title="打开冲突文件所在文件夹"

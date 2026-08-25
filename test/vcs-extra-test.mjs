@@ -113,6 +113,44 @@ console.log('== Git Blame / 忽略 / 清理 ==');
   check('clean 执行', cc.ok && !fs.existsSync(`${GIT_DIR}/clean-me.txt`));
 }
 
+console.log('== Git 合并预检 mergeCheck（L1 文件级 + L2 提交级试算） ==');
+{
+  const vcs = new GitVcs(detectRepo(GIT_DIR));
+  await run('git', ['checkout', '-q', 'master'], { cwd: GIT_DIR });
+  const orig = (await run('git', ['rev-parse', 'HEAD'], { cwd: GIT_DIR })).stdout.trim();
+  // setup：20 行文件（行距足够时 hunk 分离可自动合；同一行必冲突）
+  const lines = Array.from({ length: 20 }, (_, i) => `line-${i + 1}`).join('\n') + '\n';
+  fs.writeFileSync(`${GIT_DIR}/f-mc.txt`, lines);
+  await run('git', ['add', 'f-mc.txt'], { cwd: GIT_DIR });
+  await run('git', ['commit', '-qm', 'mergecheck: add f-mc.txt'], { cwd: GIT_DIR });
+  const base1 = (await run('git', ['rev-parse', 'HEAD'], { cwd: GIT_DIR })).stdout.trim();
+  // 分支 mc-far：改第 15 行（与 master 第 5 行改动不同区域 → 可自动合并）
+  await run('git', ['checkout', '-qb', 'mc-far', base1], { cwd: GIT_DIR });
+  fs.writeFileSync(`${GIT_DIR}/f-mc.txt`, lines.replace('line-15', 'far-15'));
+  await run('git', ['commit', '-aqm', 'mergecheck: far change'], { cwd: GIT_DIR });
+  // 分支 mc-near：改第 5 行（与 master 同区域 → 提交级必冲突）
+  await run('git', ['checkout', '-qb', 'mc-near', base1], { cwd: GIT_DIR });
+  fs.writeFileSync(`${GIT_DIR}/f-mc.txt`, lines.replace('line-5', 'near-5'));
+  await run('git', ['commit', '-aqm', 'mergecheck: near change'], { cwd: GIT_DIR });
+  // master：改第 5 行并提交（形成两边同区域已提交改动）
+  await run('git', ['checkout', '-q', 'master'], { cwd: GIT_DIR });
+  fs.writeFileSync(`${GIT_DIR}/f-mc.txt`, lines.replace('line-5', 'master-5'));
+  await run('git', ['commit', '-aqm', 'mergecheck: master line5'], { cwd: GIT_DIR });
+  // L2：不同区域 → 无提交级冲突
+  const far = await vcs.mergeCheck('mc-far');
+  check('提交级不同区域可自动合并', far.lineConflicts.length === 0 && far.conflicts.length === 0);
+  // L2：同区域 → 提交级冲突预告（回答"提交后再合还是冲突"）
+  const near = await vcs.mergeCheck('mc-near');
+  check('提交级同区域冲突预告', near.lineConflicts.includes('f-mc.txt'));
+  // L1：工作区脏改 f-mc.txt（与 mc-near 重叠 → 文件级必拒拦截）
+  fs.writeFileSync(`${GIT_DIR}/f-mc.txt`, lines.replace('line-5', 'master-5').replace('line-6', 'dirty-6'));
+  const dirty = await vcs.mergeCheck('mc-near');
+  check('工作区重叠 → L1 文件级拦截', dirty.conflicts.includes('f-mc.txt') && dirty.changed > 0);
+  // 清理：回到 setup 前状态 + 删除测试分支
+  await run('git', ['reset', '-q', '--hard', orig], { cwd: GIT_DIR });
+  await run('git', ['branch', '-D', 'mc-far', 'mc-near'], { cwd: GIT_DIR });
+}
+
 console.log('== SVN 分支/标签/切换 ==');
 {
   const vcs = new SvnVcs(detectRepo(SVN_DIR), null);
@@ -163,6 +201,31 @@ console.log('== SVN Blame / 锁定 / 忽略 / 清理 ==');
 
   const cl = await vcs.cleanup();
   check('cleanup', cl.ok);
+}
+
+console.log('== SVN 合并预检 mergeCheck ==');
+{
+  const vcs = new SvnVcs(detectRepo(SVN_DIR), null);
+  // 回到仓库根并保证干净（repos-root-url 兜底提取）
+  const rootUrl = (await run('svn', ['info', '--show-item', 'repos-root-url'], { cwd: SVN_DIR })).stdout.trim();
+  await run('svn', ['switch', '-q', rootUrl], { cwd: SVN_DIR });
+  // 本地改动：未跟踪文件
+  fs.writeFileSync(`${SVN_DIR}/merge-check-tmp.txt`, 'x');
+  let mc = await vcs.mergeCheck('any');
+  check('本地未跟踪改动计入 changed/untracked', mc.changed >= 1 && mc.untracked >= 1);
+  fs.rmSync(`${SVN_DIR}/merge-check-tmp.txt`, { force: true });
+  mc = await vcs.mergeCheck('any');
+  check('工作区干净且同步 changed=0 无 outdated', mc.changed === 0 && !mc.outdated);
+  // 落后：服务器侧直接 mkdir 提交推进 HEAD（WC 不动 → wcRev < headRev）
+  await run('svn', ['delete', `${rootUrl}/merge-check-marker`, '-m', 'merge-check cleanup'], { cwd: SVN_DIR });
+  await run('svn', ['mkdir', `${rootUrl}/merge-check-marker`, '-m', 'merge-check test'], { cwd: SVN_DIR });
+  mc = await vcs.mergeCheck('any');
+  check('WC 落后检出 outdated', mc.outdated && Number(mc.outdated.wcRev) < Number(mc.outdated.headRev));
+  // 清理服务器 marker + update 到最新后不再落后
+  await run('svn', ['delete', `${rootUrl}/merge-check-marker`, '-m', 'merge-check cleanup'], { cwd: SVN_DIR });
+  await run('svn', ['update', '-q'], { cwd: SVN_DIR });
+  mc = await vcs.mergeCheck('any');
+  check('更新后 outdated=null', !mc.outdated);
 }
 
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);

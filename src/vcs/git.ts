@@ -127,6 +127,18 @@ function unquote(s: string): string {
   return s;
 }
 
+/** 解析 git 2.20 merge-tree 输出中的冲突文件。
+ *  注意：'changed in both' 是"两侧都改过"的段头（不同区域可自动合并也会出现），真冲突以段内 +<<<<<<< .our 标记为准 */
+function parseMergeTreeConflicts(out: string): string[] {
+  const files: string[] = [];
+  for (const seg of out.split('changed in both')) {
+    if (!/^\+<<<<<<< \.our/m.test(seg)) continue; // 无冲突标记 = 该文件可自动合并
+    const m = seg.match(/^  our\s+\d+\s+[0-9a-f]+\s+(.+)$/m);
+    if (m) files.push(unquote(m[1]!.trim()));
+  }
+  return [...new Set(files)];
+}
+
 export class GitVcs {
   constructor(private repo: RepoInfo) {}
 
@@ -439,6 +451,17 @@ export class GitVcs {
 
   /** git add -A + commit */
   async commit(relPaths: string[], msg: string): Promise<VcsResult> {
+    // 合并进行中（MERGE_HEAD 存在）：git 禁止部分提交（cannot do a partial commit during a merge）。
+    // 冲突解决器 resolve 时已 add 好文件，这里忽略勾选、提交整个合并即可（部分提交在合并态无意义）
+    const merging = await this.exec(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']);
+    if (merging.code === 0) {
+      const addAll = await this.exec(['add', '-A']);
+      if (addAll.code !== 0) return { ok: false, message: `暂存失败: ${addAll.stderr.trim()}` };
+      const res = await this.exec(['commit', '-m', msg], { timeoutMs: 120_000 });
+      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git commit 失败' };
+      const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
+      return { ok: true, message: m ? `提交成功 ${m[1]} ${m[2]?.slice(0, 7)}` : '提交成功' };
+    }
     if (relPaths.length) {
       // 磁盘存在的文件(修改/新增/未跟踪):add 暂存；已删除(D)文件磁盘不存在无法 add，由 commit -- 直接提交其 index 状态
       const exist = relPaths.filter((p) => fs.existsSync(path.join(this.repo.root, p)));
@@ -464,6 +487,9 @@ export class GitVcs {
 
   /** git pull */
   async pull(signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }> {
+    // 无远程（孤仓库）：git pull 只会报原始 fatal，换成友好提示（不执行命令）
+    const remotes = await this.remoteList();
+    if (remotes.length === 0) return { ok: false, message: '此仓库未配置远程（origin），无法拉取更新。' };
     // -c core.quotepath=false：更新输出的中文文件名不做八进制转义
     let res = await this.exec(['-c', 'core.quotepath=false', 'pull'], { timeoutMs: 600_000, signal });
     if (res.aborted) return { ok: false, message: '更新已取消' };
@@ -552,6 +578,9 @@ export class GitVcs {
 
   /** git push：认证失败时用保存的凭据(GIT_ASKPASS)自动重试；仍失败返回 authType 供前端引导认证 */
   async push(signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }> {
+    // 无远程（孤仓库）：git push 只会报原始 fatal，换成友好提示（不执行命令）
+    const remotes = await this.remoteList();
+    if (remotes.length === 0) return { ok: false, message: '此仓库未配置远程（origin），无法推送。' };
     const cred = loadConfig().git;
     let res = await this.exec(['push'], { timeoutMs: 600_000, signal });
     if (res.aborted) return { ok: false, message: '推送已取消' };
@@ -730,6 +759,26 @@ export class GitVcs {
     // 中英文兼容：真实合并（Merge made by / 策略合并）vs 快进
     const m = res.stdout.match(/Merge made by|merge made by|策略合并|合并提交/i);
     return { ok: true, message: m ? '合并成功' : '合并完成（快进）' };
+  }
+
+  /** 合并预检（git）：
+   *  L1 工作区级 = switchCheck（未提交改动 ∩ 分支改动文件 = merge 必拒，git 对未提交改动按文件级拒绝）；
+   *  L2 提交级 = merge-tree 三方试算（HEAD vs 分支：两边已提交的改动重叠 → 提交后再合并仍冲突，提前预告）。
+   *  L2 用 git stash create 的孤儿提交（不动工作区/不占 stash）+ merge-tree（git 2.20 冲突输出 'changed in both' 标记）。 */
+  async mergeCheck(name: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[]; lineConflicts: string[] }> {
+    const wc = await this.switchCheck(name);
+    const lineConflicts: string[] = [];
+    try {
+      const base = await this.exec(['merge-base', 'HEAD', name]);
+      const b = base.stdout.trim().split('\n')[0];
+      if (base.code === 0 && b) {
+        const mt = await this.exec(['-c', 'core.quotepath=false', 'merge-tree', b, 'HEAD', name], { timeoutMs: 60_000 });
+        lineConflicts.push(...parseMergeTreeConflicts(mt.stdout));
+      }
+    } catch {
+      /* 试算失败（分支不存在/无公共祖先等）→ 只保留 L1 拦截，不做 L2 预告 */
+    }
+    return { ...wc, lineConflicts };
   }
 
   /** 中止进行中的合并：丢弃合并以来所有改动，工作区回到合并前状态（仅 git；svn 无对应物，用 revert 放弃单个文件） */

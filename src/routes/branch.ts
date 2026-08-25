@@ -55,7 +55,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         if (action === 'create') result = await vcs.branchCreate(name);
         else if (action === 'switch') result = await vcs.branchSwitch(name);
         else if (action === 'delete') result = await vcs.branchDelete(name, Boolean(body.force));
-        else if (action === 'merge') result = await vcs.merge(name);
+        else if (action === 'merge') {
+          result = await vcs.merge(name);
+          // 合并成功/冲突都会让工作区状态骤变（C/MERGE_HEAD/干净），一律失效 30s 缓存
+          //（冲突时虽然 ok=false，但界面需要立刻显示 C 状态，否则「解决冲突」入口不出现）
+          invalidateStatusCache(vcsOf().repo.root);
+        }
         else if (action === 'merge-abort') {
           result = (await vcs.mergeAbort?.()) ?? { ok: false, message: '当前仓库不支持中止合并' };
           // 中止后工作区/冲突状态全变，失效 30s 缓存（否则界面还显示旧的 C 状态）

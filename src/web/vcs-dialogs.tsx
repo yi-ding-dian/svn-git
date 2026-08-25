@@ -13,16 +13,20 @@ function ResultLine(props: { msg: string; err?: boolean }) {
   return <div className={props.err ? 'error mt8' : 'mt8 small'} style={props.err ? undefined : { color: 'var(--ok)' }}>{props.msg}</div>;
 }
 
-/** 执行并刷新列表的通用逻辑 */
+/** 执行并刷新列表的通用逻辑
+ *  onFailOk=true 时失败（ok=false）也执行 afterOk：merge 冲突这类"返回失败但工作区已变"的操作（MERGE_HEAD/C 状态）
+ *  不刷新的话「解决冲突」入口不会出现，用户看到提示却找不到地方 */
 async function runAction(
   fn: () => Promise<VcsResult>,
   onMsg: (msg: string, err?: boolean) => void,
-  afterOk?: () => void
+  afterOk?: () => void,
+  onFailOk = false
 ) {
   try {
     const r = await fn();
     onMsg(r.message, !r.ok);
     if (r.ok) afterOk?.();
+    else if (onFailOk) afterOk?.();
   } catch (e) {
     onMsg((e as Error).message, true);
   }
@@ -66,8 +70,10 @@ export function BranchDialog(props: {
   const [busy, setBusy] = useState(false);
   // 科普折叠块展开状态（新手教学，默认收起不打扰）
   const [showHelp, setShowHelp] = useState(false);
+  // 是否配置了远程：没有 origin 的本地孤仓库不显示「推送到远程」（推了也会失败）
+  const [hasRemote, setHasRemote] = useState(false);
   // 工具风格二次确认
-  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void; confirmLabel?: string } | null>(null);
+  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void; confirmLabel?: string; hideCancel?: boolean } | null>(null);
 
   /** 主干分支：git main/master、svn trunk（团队稳定版本，禁止删除） */
   const isTrunkName = (name: string) => name === 'main' || name === 'master' || name === 'trunk';
@@ -83,6 +89,10 @@ export function BranchDialog(props: {
         setMsg(e.message);
         setMsgErr(true);
       });
+    get
+      .remotes()
+      .then((r) => setHasRemote(r.remotes.length > 0))
+      .catch(() => setHasRemote(false)); // 查询失败按无远程处理（隐藏按钮，保守安全）
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -97,7 +107,8 @@ export function BranchDialog(props: {
       () => {
         load();
         props.onChanged();
-      }
+      },
+      action === 'merge' // 合并冲突（ok=false）时工作区已变化：刷新后「解决冲突」入口才会出现
     ).finally(() => setBusy(false));
   };
 
@@ -124,18 +135,19 @@ export function BranchDialog(props: {
       if (check) msg += `当前有 ${check.changed} 个文件未提交/未暂存（已跟踪 ${check.tracked} 个、未跟踪 ${check.untracked} 个），建议先提交或暂存。`;
     } else if (check) {
       // git 本地分支：能带过去的 vs 会被拒绝的（目标分支也改过这些文件）
-      const carry = check.tracked - check.conflicts.length;
-      msg = `当前有 ${check.changed} 个文件未提交/未暂存：已跟踪 ${check.tracked} 个（其中 ${carry} 个可安全带过去、${check.conflicts.length} 个会被拒绝——目标分支也改过这些文件），未跟踪 ${check.untracked} 个。`;
-      if (check.conflicts.length > 0) msg += `\n可能被覆盖的文件：${check.conflicts.join('、')}`;
-      msg += `\n建议先提交或暂存；仍要切换？`;
+      msg = `当前有 ${check.changed} 个文件未提交/未暂存：已跟踪 ${check.tracked} 个、未跟踪 ${check.untracked} 个。`;
+      if (check.conflicts.length > 0) msg += `\n会被拒绝的文件：${check.conflicts.join('、')}（目标分支也改过这些文件）`;
+      msg += `\n\n建议先提交或暂存；仍要切换？`;
     } else {
       msg = `确认切换到分支 ${name}？工作区有未提交修改且会被覆盖时，切换会失败（请先提交或暂存）。`;
     }
     setCfm({ title: isTrunk ? '切回主干' : '切换分支', msg, action: () => act('switch', name) });
   };
-  /** 合并预检（与切换同一套交集判断，复用 /api/merge-check）：
-   *  干净直接合并零打扰；有改动不重叠 → 提示确认；重叠（目标分支也改过这些文件）→ 拦截——git merge 必然拒绝，
-   *  与其合到一半收到原始报错不如提前拦住；svn outdated → 拦截提示先更新（SVN 规范：merge 前 WC 必须是最新的） */
+  /** 合并预检（/api/merge-check）：
+   *  L1 工作区级：未提交改动 ∩ 分支改动文件 → 拦截（git 对未提交改动按文件级拒绝）；
+   *  L2 提交级：merge-tree 三方试算的 lineConflicts——即使提交后再合并仍冲突的文件（两边已提交改动重叠）。
+   *  L2 干净工作区时作为"合并将冲突"预先提示（可合并，解决冲突视图处理）；L1 拦截时作为"提交也没用"的预告。
+   *  svn：outdated 拦截（WC 必须最新才能合并）+ 本地改动提示。 */
   const confirmMerge = async (name: string) => {
     let check: Awaited<ReturnType<typeof get.mergeCheck>> | null = null;
     try {
@@ -143,33 +155,51 @@ export function BranchDialog(props: {
     } catch {
       /* 检查失败不阻塞，走默认确认流程 */
     }
-    if (check && check.changed === 0 && !check.outdated) {
+    const lineConflicts = check?.lineConflicts ?? [];
+    // 干净且无冲突预告 → 直接合并（零打扰，与切换一致）
+    if (check && check.changed === 0 && !check.outdated && lineConflicts.length === 0) {
       act('merge', name);
       return;
     }
     const lines: string[] = [];
     if (check?.outdated) {
-      lines.push(`⚠ 工作副本落后于仓库（r${check.outdated.wcRev} → r${check.outdated.headRev}）。SVN 要求合并前更新到最新，否则合的是旧 BASE——会产生虚假冲突或同一改动被重复合并。`);
+      lines.push(`⚠ 工作副本落后于仓库（r${check.outdated.wcRev} → r${check.outdated.headRev}）。`);
+      lines.push('SVN 要求合并前更新到最新，否则合的是旧 BASE——会产生虚假冲突或同一改动被重复合并。');
     }
     if (check && check.changed > 0) {
       if (props.repoType === 'svn') {
         lines.push(`当前有 ${check.changed} 个文件的本地改动（未跟踪 ${check.untracked} 个），合并会保留这些改动，但可能产生冲突。建议先提交。`);
       } else {
-        const carry = check.tracked - check.conflicts.length;
-        lines.push(`当前有 ${check.changed} 个文件未提交/未暂存：已跟踪 ${check.tracked} 个（其中 ${carry} 个与本次合并不冲突，${check.conflicts.length} 个会被合并拒绝——目标分支也改过这些文件），未跟踪 ${check.untracked} 个。`);
-        if (check.conflicts.length > 0) lines.push(`会被合并拒绝的文件：${check.conflicts.join('、')}`);
+        lines.push(`当前有 ${check.changed} 个文件未提交/未暂存：已跟踪 ${check.tracked} 个、未跟踪 ${check.untracked} 个。`);
+        if (check.conflicts.length > 0) lines.push(`会被合并拒绝的文件：${check.conflicts.join('、')}（目标分支也改过这些文件）`);
       }
     }
-    // 拦截：重叠（git）或 WC 落后（svn）→ 不执行合并，说明原因
+    // L1 拦截：重叠（git）或 WC 落后（svn）→ 不执行合并，说明原因
     if (check && (check.conflicts.length > 0 || Boolean(check.outdated))) {
-      if (check.conflicts.length > 0) lines.push('\n请先提交或暂存这些文件，再重新合并。');
-      if (check.outdated) lines.push('\n请先「更新」工作副本，再重新合并。');
-      setCfm({ title: '无法合并', confirmLabel: '知道了', msg: lines.join('\n'), action: () => setCfm(null) });
+      lines.push('');
+      if (check.conflicts.length > 0) lines.push('请先提交或暂存这些文件，再重新合并。');
+      if (check.outdated) lines.push('请先「更新」工作副本，再重新合并。');
+      if (lineConflicts.length > 0) {
+        lines.push('');
+        lines.push(`⚠ 即使提交后再合并，以下文件仍会冲突（两边已改动相同区域）：`);
+        lines.push(lineConflicts.join('、'));
+        lines.push('建议先手动整合两边的改动成一个提交，再合并就顺利了。');
+      }
+      setCfm({ title: '无法合并', confirmLabel: '知道了', hideCancel: true, msg: lines.join('\n'), action: () => setCfm(null) });
+      return;
+    }
+    // L2 预告：工作区干净，但两分支已提交改动重叠 → 合并仍会冲突（不拦，由解决冲突视图收尾）
+    if (check && check.changed === 0 && !check.outdated && lineConflicts.length > 0) {
+      setCfm({
+        title: '合并分支（可能冲突）',
+        msg: `确认将分支 ${name} 合并到当前分支？\n\n⚠ 合并将对 ${lineConflicts.length} 个文件产生冲突（两边已改动相同区域）：\n${lineConflicts.join('、')}\n\n仍要合并？合并后可在「解决冲突」中处理。`,
+        action: () => act('merge', name),
+      });
       return;
     }
     setCfm({
       title: '合并分支',
-      msg: `确认将分支 ${name} 合并到当前分支？${lines.join('\n')}`,
+      msg: `确认将分支 ${name} 合并到当前分支？${lines.length ? '\n\n' + lines.join('\n') : ''}`,
       action: () => act('merge', name),
     });
   };
@@ -187,8 +217,8 @@ export function BranchDialog(props: {
       /* 检测失败不阻塞，按 0 处理 */
     }
     const warn = changed > 0
-      ? `\n⚠ 当前工作区有 ${changed} 个未提交修改（含未跟踪 ${untracked} 个）。\n推送只包含已提交的版本，这些修改不会被推上去。`
-      : `\n当前工作区无未提交修改。`;
+      ? `\n\n⚠ 当前工作区有 ${changed} 个未提交修改（含未跟踪 ${untracked} 个）。\n推送只包含已提交的版本，这些修改不会被推上去。`
+      : `\n\n当前工作区无未提交修改。`;
     setCfm({
       title: '推送到远程',
       msg: `确认将本地分支 ${name} 推送到远程服务器（origin）？\n首次推送会自动建立上游跟踪。${warn}`,
@@ -280,13 +310,13 @@ export function BranchDialog(props: {
                 {b.name === data.current ? '当前' : b.remote ? '远程' : '本地'}
               </span>
               <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
-              {/* 非当前分支的常规操作；当前分支若未推送也显示「推送到远程」 */}
-              {(b.name !== data.current || (props.repoType === 'git' && !b.remote && !isPushed)) && (
+              {/* 非当前分支的常规操作；当前分支若未推送也显示「推送到远程」（仅仓库配了远程时） */}
+              {(b.name !== data.current || (props.repoType === 'git' && hasRemote && !b.remote && !isPushed)) && (
                 <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
                   {b.name !== data.current && (
                     <button className="mini primary" disabled={busy} onClick={() => confirmSwitch(b.name)} title={cmdOfRepo(props.repoType, 'branch_switch', { name: b.name })}>切换</button>
                   )}
-                  {props.repoType === 'git' && !b.remote && !isPushed && (
+                  {props.repoType === 'git' && hasRemote && !b.remote && !isPushed && (
                     <button className="mini btn-accent" disabled={busy} onClick={() => confirmPush(b.name)} title={`该分支尚未推送到远程\n点此将 ${b.name} 推送到远程服务器（origin）`}>⬆ 推送到远程</button>
                   )}
                   {!b.remote && b.name !== data.current && (
@@ -323,6 +353,7 @@ export function BranchDialog(props: {
           title={cfm.title}
           message={cfm.msg}
           confirmLabel={cfm.confirmLabel ?? '确认'}
+          hideCancel={cfm.hideCancel}
           onConfirm={() => {
             const a = cfm.action;
             setCfm(null);

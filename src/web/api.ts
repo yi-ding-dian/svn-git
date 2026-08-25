@@ -179,9 +179,9 @@ export const get = {
     api<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>(
       `/api/switch-check?branch=${encodeURIComponent(branch)}`,
     ),
-  /** 合并预检：同 switchCheck + svn 可选 outdated（WC 落后标记） */
+  /** 合并预检：git 同 switchCheck + lineConflicts（提交级冲突试算）；svn 额外 outdated 标记 */
   mergeCheck: (branch: string) =>
-    api<{ changed: number; tracked: number; untracked: number; conflicts: string[]; outdated?: { wcRev: string; headRev: string } | null }>(
+    api<{ changed: number; tracked: number; untracked: number; conflicts: string[]; lineConflicts?: string[]; outdated?: { wcRev: string; headRev: string } | null }>(
       `/api/merge-check?branch=${encodeURIComponent(branch)}`,
     ),
   tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),

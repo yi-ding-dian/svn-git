@@ -101,8 +101,18 @@ export interface Vcs {
   preflight(): Promise<PreflightResult>;
   branchList(): Promise<BranchListResult>;
   switchCheck(branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>;
-  /** 合并预检（svn 有：额外带 outdated 检测；git 无此方法，server 层回退 switchCheck——两者交集定义相同） */
-  mergeCheck?(branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] } & { outdated?: { wcRev: string; headRev: string } | null }>;
+  /** 合并预检：
+   *  git：switchCheck 文件级交集（工作区脏必拒）+ lineConflicts（merge-tree 三方试算：两边已提交改动重叠、提交后再合并仍冲突的文件）
+   *  svn：改动统计 + outdated 检测（WC 落后标记，null=无法检测）
+   *  svn 无 lineConflicts（返回不带该字段） */
+  mergeCheck?(branch: string): Promise<{
+    changed: number;
+    tracked: number;
+    untracked: number;
+    conflicts: string[];
+    lineConflicts?: string[];
+    outdated?: { wcRev: string; headRev: string } | null;
+  }>;
   branchCreate(name: string): Promise<VcsResult>;
   branchSwitch(name: string): Promise<VcsResult>;
   branchDelete(name: string, force?: boolean): Promise<VcsResult>;

@@ -75,7 +75,7 @@ try {
     // merge-check：git 无 mergeCheck 方法，回退 switchCheck（交集判断与合并阻塞定义相同）
     const cur = br.body.current;
     const mc = await get(`/api/merge-check?branch=${encodeURIComponent(cur)}`);
-    check('GET /api/merge-check 结构完整', mc.code === 200 && typeof mc.body.changed === 'number' && Array.isArray(mc.body.conflicts));
+    check('GET /api/merge-check 结构完整', mc.code === 200 && typeof mc.body.changed === 'number' && Array.isArray(mc.body.conflicts) && Array.isArray(mc.body.lineConflicts));
     fs.writeFileSync(`${GIT_DIR}/merge-check-tmp.txt`, 'x');
     const mc2 = await get(`/api/merge-check?branch=${encodeURIComponent(cur)}`);
     check('merge-check 检出未跟踪改动', mc2.body.untracked >= 1 && mc2.body.changed >= 1);
