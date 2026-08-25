@@ -155,8 +155,9 @@ export const get = {
   envCheck: () => api<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } }>('/api/env-check'),
   /** 远程连通性检测（网络灯）：ok=网络通;reason=认证失败/连接错误说明 */
   netCheck: () => api<{ ok: boolean; reason: string }>('/api/net-check'),
-  /** 系统可用打开方式（按扩展名匹配 .desktop 程序） */
-  appsFor: (ext: string) => api<{ apps: { name: string; exec: string; icon: string }[] }>(`/api/apps-for?ext=${encodeURIComponent(ext)}`),
+  /** 系统可用打开方式（按扩展名匹配 .desktop 程序）；chooseOpen(仅 win32) 为「选择其他应用…」哨兵命令 */
+  appsFor: (ext: string) =>
+    api<{ apps: { name: string; exec: string; icon: string }[]; chooseOpen?: string | null }>(`/api/apps-for?ext=${encodeURIComponent(ext)}`),
   preflight: (signal?: AbortSignal) =>
     api<{
       remoteHasUpdate: boolean;
@@ -233,7 +234,7 @@ export const post = {
   revert: (paths: string[]) => api<VcsResult>('/api/revert', json({ paths })),
   delete: (paths: string[], keep = false) => api<VcsResult>('/api/delete', json({ paths, keep })),
   push: (signal?: AbortSignal) => api<VcsResult>('/api/push', json({}, signal)),
-  branch: (action: 'create' | 'switch' | 'delete' | 'merge', name: string, force = false) =>
+  branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'push', name: string, force = false) =>
     api<VcsResult>('/api/branch', json({ action, name, force })),
   tag: (action: 'create' | 'delete', name: string) => api<VcsResult>('/api/tag', json({ action, name })),
   stash: (action: 'push' | 'pop' | 'drop', message = '', index = 0) =>

@@ -1141,8 +1141,8 @@ export function FsView(props: Props) {
       }
     }
     items.push({ sep: true });
-    // 打开方式: 非二进制文件都提供（文本/代码/配置/办公文档……）—— 二进制扩展名用扩展映射表,其余文本兜底 text/plain
-    if (!isBinaryFile(t.name)) {
+    // 打开方式：所有文件都提供（办公文档/图片/文本/代码……二进制按扩展映射表匹配,文本类型回退 text/plain）
+    {
       const ext = t.name.split('.').pop()!.toLowerCase();
       items.push({
         icon: <IconExternal />,
@@ -1153,22 +1153,39 @@ export function FsView(props: Props) {
       void get
         .appsFor(ext)
         .then((r) => {
-          // 最多列 5 个（避免长列表遮挡文件）；图标丢失时回退通用文件图标
-          const subs = (r.apps ?? []).slice(0, 5).map((a) => ({
-            label: a.name,
-            icon: <AppIcon icon={a.icon} />,
-            action: () => {
-              void post
-                .openWith(t.rel, a.exec)
-                .then((x) => props.onToast(x.message ?? '已打开'))
-                .catch((er: Error) => props.onToast(`打开失败: ${er.message}`));
-            },
-          }));
+          // 已按用户要求去掉「系统默认程序」：直接列出系统检测到的可用程序
+          const subs = [
+            ...(r.apps ?? []).slice(0, 5).map((a) => ({
+              label: a.name,
+              icon: <AppIcon icon={a.icon} />,
+              action: () => {
+                void post
+                  .openWith(t.rel, a.exec)
+                  .then((x) => props.onToast(x.message ?? '已打开'))
+                  .catch((er: Error) => props.onToast(`打开失败: ${er.message}`));
+              },
+            })),
+            // Windows 额外提供「选择其他应用…」（调系统打开方式选择器兜底，处理无默认程序/二进制文档）
+            ...(r.chooseOpen
+              ? [
+                  {
+                    label: '选择其他应用…',
+                    icon: <IconExternal />,
+                    action: () => {
+                      void post
+                        .openWith(t.rel, r.chooseOpen!)
+                        .then((x) => props.onToast(x.message ?? '已打开'))
+                        .catch((er: Error) => props.onToast(`打开失败: ${er.message}`));
+                    },
+                  },
+                ]
+              : []),
+          ];
           setCtx((cur) =>
             cur && cur.items[owIdx]?.label === '打开方式…'
               ? {
                   ...cur,
-                  items: cur.items.map((it, i) => (i === owIdx ? { ...it, submenu: subs.length ? subs : [{ label: '未检测到可用程序', action: () => {} }] } : it)),
+                  items: cur.items.map((it, i) => (i === owIdx ? { ...it, submenu: subs.length ? subs : [{ label: '无', action: () => {} }] } : it)),
                 }
               : cur
           );

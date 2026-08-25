@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
+import { platform } from '../platform/index.js';
 import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, isAuthError, authErrorOf, invalidateStatusCache } from './util.js';
 import { diffChangedLines } from '../vcs/diff-lines.js';
 import type { VcsResult } from '../vcs/index.js';
@@ -204,13 +205,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 404, { error: '文件不存在' });
           return true;
         }
-        if (process.platform === 'win32') {
-          await run('explorer', ['/select,', abs], { timeoutMs: 10_000 });
-        } else {
-          // 目录直接打开本身；文件才打开所在文件夹（否则右键目录会定位到上一级）
-          const target = fs.statSync(abs).isDirectory() ? abs : path.dirname(abs);
-          await run('xdg-open', [target], { timeoutMs: 10_000 });
-        }
+        await platform.revealPath(abs);
         sendJson(res, 200, { ok: true });
         return true;
       }

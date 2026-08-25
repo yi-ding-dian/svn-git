@@ -5,6 +5,7 @@ import os from 'node:os';
 import { createRequire } from 'node:module';
 import { startServer, setPickDirHandler } from './server.js';
 import { detectRepo } from './vcs/detect.js';
+import { platform } from './platform/index.js';
 
 const require = createRequire(import.meta.url);
 
@@ -46,19 +47,8 @@ async function openUI(url: string) {
     await win.loadURL(url);
     return;
   }
-  // 纯 node：打开系统默认浏览器（跨平台）
-  const { spawn } = await import('node:child_process');
-  const openBrowser = (cmd: string, args: string[]) => {
-    const p = spawn(cmd, args, { stdio: 'ignore', detached: true });
-    // 命令缺失(如无 xdg-open)时仅记录,不崩溃(服务继续运行,可手动访问地址)
-    p.on('error', (e) => console.error(`[svnkit] 打开浏览器失败(${cmd}): ${e.message}`));
-    p.unref();
-  };
-  if (process.platform === 'win32') {
-    openBrowser('cmd', ['/c', 'start', '', url]);
-  } else {
-    openBrowser('xdg-open', [url]);
-  }
+  // 纯 node：打开系统默认浏览器（跨平台，平台逻辑下沉到 src/platform）
+  platform.openUrl(url);
 }
 
 // 忽略 SIGHUP：关闭启动它的终端后服务保持运行（浏览器页面继续可用）
@@ -129,7 +119,7 @@ if (process.versions.electron) {
   // 仅 Windows：部分 Windows 环境（虚拟机/远程桌面/驱动缺失）下 GPU 进程崩溃
   // 会导致渲染进程崩溃、窗口立即关闭退出；软件渲染更稳定（仅影响 2D 渲染性能）
   // Linux 上硬件加速正常，不做此降级
-  if (process.platform === 'win32') app.disableHardwareAcceleration();
+  if (platform.isWindows) app.disableHardwareAcceleration();
   void app.whenReady().then(boot);
 } else {
   void boot();

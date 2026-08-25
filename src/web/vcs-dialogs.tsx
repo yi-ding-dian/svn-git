@@ -86,7 +86,7 @@ export function BranchDialog(props: {
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const act = (action: 'create' | 'switch' | 'delete' | 'merge', name: string, force = false) => {
+  const act = (action: 'create' | 'switch' | 'delete' | 'merge' | 'push', name: string, force = false) => {
     setBusy(true);
     void runAction(
       () => post.branch(action, name, force),
@@ -139,6 +139,28 @@ export function BranchDialog(props: {
       msg: `确认将分支 ${name} 合并到当前分支？可能产生冲突，请提前确认工作区状态。`,
       action: () => act('merge', name),
     });
+  /** 推送到远程：本地分支未推送（无 origin/<名字>）时可推，首次自动建立上游跟踪。
+   *  推送前检测工作区未提交修改（与切换/合并一致），提醒推送只包含已提交版本。 */
+  const confirmPush = async (name: string) => {
+    let changed = 0;
+    let untracked = 0;
+    try {
+      const st = await get.status();
+      const items = st.items ?? [];
+      changed = items.filter((i) => i.code && i.code !== ' ' && i.code !== 'I' && i.code !== 'X').length;
+      untracked = items.filter((i) => i.code === '?').length;
+    } catch {
+      /* 检测失败不阻塞，按 0 处理 */
+    }
+    const warn = changed > 0
+      ? `\n⚠ 当前工作区有 ${changed} 个未提交修改（含未跟踪 ${untracked} 个）。\n推送只包含已提交的版本，这些修改不会被推上去。`
+      : `\n当前工作区无未提交修改。`;
+    setCfm({
+      title: '推送到远程',
+      msg: `确认将本地分支 ${name} 推送到远程服务器（origin）？\n首次推送会自动建立上游跟踪。${warn}`,
+      action: () => act('push', name),
+    });
+  };
 
   return (
     <ModalShell icon="🪵" title={`分支管理 (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={640}>
@@ -209,47 +231,56 @@ export function BranchDialog(props: {
       <div className="vcs-list" style={{ maxHeight: 280 }}>
         {!data && <div className="dim" style={{ padding: '10px 6px' }}>加载中…</div>}
         {data && data.branches.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>暂无分支{props.repoType === 'svn' ? '（仓库根下没有 branches/ 目录）' : ''}</div>}
-        {data?.branches.map((b) => (
-          <div
-            key={b.name}
-            className={`vcs-row ${sel === b.name ? 'selected' : ''}`}
-            onClick={() => setSel(b.name)}
-            title={b.name === data.current ? '当前分支' : undefined}
-          >
-            <span className="vcs-current" style={{ visibility: b.name === data.current ? 'visible' : 'hidden' }}>●</span>
-            <span className="badge" style={{ background: b.remote ? 'var(--dim)' : 'var(--ok)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>
-              {b.name === data.current ? '当前' : b.remote ? '远程' : '本地'}
-            </span>
-            <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
-            {b.name !== data.current && (
-              <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                {/* 切换对所有非当前分支开放（远程分支由后端自动创建本地跟踪分支） */}
-                <button className="mini primary" disabled={busy} onClick={() => confirmSwitch(b.name)} title={cmdOfRepo(props.repoType, 'branch_switch', { name: b.name })}>切换</button>
-                {!b.remote && (
-                  <>
-                    <button className="mini btn-accent" disabled={busy} onClick={() => confirmMerge(b.name)} title={`${cmdOfRepo(props.repoType, 'branch_merge', { name: b.name })}\n\n把该分支的改动合并到当前分支（先确保已切到目标分支）`}>🔀 合并</button>
-                    <button
-                      className="mini danger"
-                      disabled={busy || isTrunkName(b.name)}
-                      title={isTrunkName(b.name)
-                        ? '主干分支不能删除（团队稳定版本，防止误删）'
-                        : `${cmdOfRepo(props.repoType, 'branch_delete', { name: b.name })}\n\n删除分支（已合并的分支才能删）`}
-                      onClick={() =>
-                        setCfm({
-                          title: '删除分支',
-                          msg: `确认删除分支 ${b.name}？未合并的改动会丢失（可强制删除）。`,
-                          action: () => act('delete', b.name, false),
-                        })
-                      }
-                    >
-                      删除
-                    </button>
-                  </>
-                )}
+        {data?.branches.map((b) => {
+          // 是否已推送：本地分支能否找到对应的 origin/<名字> 远程项
+          const isPushed = data.branches.some((r) => r.remote && r.name === 'origin/' + b.name);
+          return (
+            <div
+              key={b.name}
+              className={`vcs-row ${sel === b.name ? 'selected' : ''}`}
+              onClick={() => setSel(b.name)}
+              title={b.name === data.current ? '当前分支' : undefined}
+            >
+              <span className="vcs-current" style={{ visibility: b.name === data.current ? 'visible' : 'hidden' }}>●</span>
+              <span className="badge" style={{ background: b.remote ? 'var(--dim)' : 'var(--ok)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>
+                {b.name === data.current ? '当前' : b.remote ? '远程' : '本地'}
               </span>
-            )}
-          </div>
-        ))}
+              <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
+              {/* 非当前分支的常规操作；当前分支若未推送也显示「推送到远程」 */}
+              {(b.name !== data.current || (props.repoType === 'git' && !b.remote && !isPushed)) && (
+                <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                  {b.name !== data.current && (
+                    <button className="mini primary" disabled={busy} onClick={() => confirmSwitch(b.name)} title={cmdOfRepo(props.repoType, 'branch_switch', { name: b.name })}>切换</button>
+                  )}
+                  {props.repoType === 'git' && !b.remote && !isPushed && (
+                    <button className="mini btn-accent" disabled={busy} onClick={() => confirmPush(b.name)} title={`该分支尚未推送到远程\n点此将 ${b.name} 推送到远程服务器（origin）`}>⬆ 推送到远程</button>
+                  )}
+                  {!b.remote && b.name !== data.current && (
+                    <>
+                      <button className="mini btn-accent" disabled={busy} onClick={() => confirmMerge(b.name)} title={`${cmdOfRepo(props.repoType, 'branch_merge', { name: b.name })}\n\n把该分支的改动合并到当前分支（先确保已切到目标分支）`}>🔀 合并</button>
+                      <button
+                        className="mini danger"
+                        disabled={busy || isTrunkName(b.name)}
+                        title={isTrunkName(b.name)
+                          ? '主干分支不能删除（团队稳定版本，防止误删）'
+                          : `${cmdOfRepo(props.repoType, 'branch_delete', { name: b.name })}\n\n删除分支（已合并的分支才能删）`}
+                        onClick={() =>
+                          setCfm({
+                            title: '删除分支',
+                            msg: `确认删除分支 ${b.name}？未合并的改动会丢失（可强制删除）。`,
+                            action: () => act('delete', b.name, false),
+                          })
+                        }
+                      >
+                        删除
+                      </button>
+                    </>
+                  )}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
       <ResultLine msg={msg} err={msgErr} />
           {/* 二次确认（工具风格） */}
