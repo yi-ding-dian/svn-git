@@ -132,6 +132,10 @@ export function AppHeader(props: {
   onUpdate: () => void;
   /** 未推送提交数（git；null=未知/svn 不显示角标） */
   unpushedCount?: number | null;
+  /** stash 条数（角标；git 仓库有效，未加载/异常为 null 不显示） */
+  stashCount?: number | null;
+  /** 工作区是否有可 stash 的改动（无改动时 Stash 按钮置灰） */
+  canStash?: boolean;
 }) {
   const repo = props.repo;
   // 「⋯」更多菜单（低频操作：新建仓库 / Git 信息 / SVN 登录）定位
@@ -188,7 +192,28 @@ export function AppHeader(props: {
             disabled={props.unpushedCount != null && props.unpushedCount <= 0}
             cmd="git push"
           />
-          <ToolBtn icon={<IconStash />} label="Stash" title="Stash 暂存区" onClick={() => props.setModal({ type: 'stash' })} />
+          <ToolBtn
+            icon={<IconStash />}
+            label={
+              props.stashCount != null && props.stashCount > 0 ? (
+                <>
+                  Stash
+                  <span className={`push-count ${props.stashCount > 0 ? 'on' : ''}`}>{props.stashCount}</span>
+                </>
+              ) : (
+                'Stash'
+              )
+            }
+            title={
+              props.canStash === false
+                ? '工作区没有改动可暂存（先修改文件，暂存才有东西可收）'
+                : props.stashCount != null && props.stashCount > 0
+                  ? `Stash 暂存区（${props.stashCount} 条）`
+                  : 'Stash 暂存区'
+            }
+            disabled={props.canStash === false}
+            onClick={() => props.setModal({ type: 'stash' })}
+          />
         </>
       )}
       {/* ③ 版本管理（分支高频保留；标签低频在 ⋯ 菜单） */}

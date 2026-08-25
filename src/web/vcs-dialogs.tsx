@@ -584,6 +584,9 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 当前工作区改动（可暂存列表）：含未跟踪(?)；冲突(C)不可暂存（先解决），I/X 同理排除
+  const [files, setFiles] = useState<{ path: string; code: string }[]>([]);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   // 工具风格二次确认
   const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void } | null>(null);
 
@@ -595,13 +598,21 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
         setMsg(e.message);
         setMsgErr(true);
       });
+    get
+      .status()
+      .then((r) => {
+        const list = (r.items ?? []).filter((i) => i.code && i.code !== 'I' && i.code !== 'X' && i.code !== 'C');
+        setFiles(list.map((i) => ({ path: i.path, code: i.code })));
+        setChecked(new Set(list.map((i) => i.path))); // 默认全选
+      })
+      .catch(() => {});
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const act = (action: 'push' | 'pop' | 'drop', index = 0, msg2 = '') => {
+  const act = (action: 'push' | 'pop' | 'drop', index = 0, msg2 = '', paths?: string[]) => {
     setBusy(true);
     void runAction(
-      () => post.stash(action, msg2, index),
+      () => post.stash(action, msg2, index, paths),
       (m, err) => {
         setMsg(m);
         setMsgErr(Boolean(err));
@@ -613,11 +624,40 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
     ).finally(() => setBusy(false));
   };
 
+  /** 保存当前改动：全选 = 全量 stash（-u 收全部，与原行为一致）；取消部分勾选 = 部分 stash（-- paths 只收选中的） */
+  const doPush = () => {
+    const sel = files.filter((f) => checked.has(f.path)).map((f) => f.path);
+    act('push', 0, message, sel.length > 0 && sel.length < files.length ? sel : undefined);
+  };
+
   return (
     <ModalShell icon="📦" title={`Stash 暂存区 (GIT)`} onClose={props.onClose} width={580}>
       <HelpNote>
         Stash 把当前未提交的改动临时收起来（含未跟踪文件），让工作区变干净——适合"先切分支/先做别的，稍后再回来继续"。用法：点「保存当前改动」收起（可写说明）；列表中「恢复」= 把改动取回工作区，「丢弃」= 放弃这份改动。
       </HelpNote>
+      {/* 当前工作区改动：可勾选部分暂存（默认全选=全量收走，含未跟踪） */}
+      <div className="small dim" style={{ margin: '12px 0 4px' }}>
+        当前工作区改动（{files.length} 项，默认全选；取消勾选 = 只暂存选中的文件）
+      </div>
+      <div className="vcs-list" style={{ maxHeight: 132 }}>
+        {files.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>工作区没有改动可暂存（先修改文件，再回来保存）</div>}
+        {files.map((f) => (
+          <div key={f.path} className="vcs-row" style={{ cursor: 'default' }}>
+            <input
+              type="checkbox"
+              checked={checked.has(f.path)}
+              onChange={(e) => {
+                const nx = new Set(checked);
+                if (e.target.checked) nx.add(f.path);
+                else nx.delete(f.path);
+                setChecked(nx);
+              }}
+            />
+            <span className={`code ${f.code}`}>{f.code}</span>
+            <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.path}</span>
+          </div>
+        ))}
+      </div>
       <div className="row" style={{ margin: '12px 0' }}>
         <input
           type="text"
@@ -625,14 +665,14 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') act('push', 0, message);
+            if (e.key === 'Enter') doPush();
           }}
           style={{ flex: 1 }}
         />
         <button
           className="primary"
-          disabled={busy}
-          onClick={() => act('push', 0, message)}
+          disabled={busy || files.length === 0 || checked.size === 0}
+          onClick={doPush}
           title={`${cmdOfRepo('git', 'stash_push', { msg: message.trim() || '…' }) ?? ''}`}
         >
           📦 保存当前改动

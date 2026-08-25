@@ -242,8 +242,8 @@ export const post = {
   branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push', name: string, force = false) =>
     api<VcsResult>('/api/branch', json({ action, name, force })),
   tag: (action: 'create' | 'delete', name: string) => api<VcsResult>('/api/tag', json({ action, name })),
-  stash: (action: 'push' | 'pop' | 'drop', message = '', index = 0) =>
-    api<VcsResult>('/api/stash', json({ action, message, index })),
+  stash: (action: 'push' | 'pop' | 'drop', message = '', index = 0, paths?: string[]) =>
+    api<VcsResult>('/api/stash', json({ action, message, index, paths })),
   repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true) =>
     api<VcsResult & { repoDir?: string }>('/api/repo-create', json({ type, dir, name, url, standard })),
   svnExtra: (action: 'cleanup' | 'resolve' | 'propset-ignore', path = '', accept = 'working', pattern = '') =>

@@ -143,7 +143,7 @@ export interface Vcs {
   pull?(signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }>;
   push?(signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }>;
   stashList?(): Promise<{ index: number; label: string }[]>;
-  stashPush?(message?: string): Promise<VcsResult>;
+  stashPush?(message?: string, paths?: string[]): Promise<VcsResult>;
   stashPop?(index: number): Promise<VcsResult>;
   stashDrop?(index: number): Promise<VcsResult>;
   cleanList?(): Promise<string[]>;

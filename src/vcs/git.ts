@@ -832,9 +832,10 @@ export class GitVcs {
   }
 
   /** 保存 stash */
-  async stashPush(message = ''): Promise<VcsResult> {
-    const args = ['stash', 'push', '-u']; // 包含未跟踪文件
+  async stashPush(message = '', paths?: string[]): Promise<VcsResult> {
+    const args = ['stash', 'push', '-u']; // 包含未跟踪文件（部分暂存时按 pathspec 限定只收选中路径）
     if (message) args.push('-m', message);
+    if (paths && paths.length) args.push('--', ...paths); // 部分暂存：只收勾选路径，其余改动保留
     const res = await this.exec(args, { timeoutMs: 60_000 });
     // git 2.20 无改动时 exit code 为 0（仅 stderr 提示 "没有要保存的本地修改"/"No local changes to save"），
     // 因此成功分支也需检查提示，避免误报"已保存"但实际未保存

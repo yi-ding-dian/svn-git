@@ -132,21 +132,40 @@ export function App() {
     void refreshUnpushed();
   }, [repo?.type]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // stash 条数（Stash 按钮角标；git 仓库有效，svn 返回无 items → null 不显示）
+  const [stashCount, setStashCount] = useState<number | null>(null);
+  const refreshStash = useCallback(() => {
+    get
+      .stash()
+      .then((r) => setStashCount(r.items?.length ?? null))
+      .catch(() => setStashCount(null));
+  }, []);
+  useEffect(() => {
+    void refreshStash();
+  }, [repo?.type]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const refresh = useCallback(() => {
     setTick((t) => t + 1);
     void refreshUnpushed();
-  }, [refreshUnpushed]);
+    void refreshStash();
+  }, [refreshUnpushed, refreshStash]);
 
   // 冲突计数：有 C 状态文件时显示"解决冲突"入口
   const [conflictCount, setConflictCount] = useState(0);
+  // 工作区是否有可 stash 的改动（Stash 按钮禁用条件；未跟踪也算，与 stash -u 语义一致）
+  const [canStash, setCanStash] = useState<boolean | null>(null);
   useEffect(() => {
     if (!repo?.type) {
       setConflictCount(0);
+      setCanStash(null);
       return;
     }
     get
       .status()
-      .then((r) => setConflictCount(r.items.filter((i) => i.code === 'C').length))
+      .then((r) => {
+        setConflictCount(r.items.filter((i) => i.code === 'C').length);
+        setCanStash(r.items.some((i) => i.code && i.code !== 'I' && i.code !== 'X' && i.code !== 'C'));
+      })
       .catch(() => {});
   }, [repo?.type, tick]);
 
@@ -638,6 +657,8 @@ export function App() {
         onPush={doPush}
         onUpdate={() => void doUpdateDir('')}
         unpushedCount={unpushedCount}
+        stashCount={stashCount}
+        canStash={canStash ?? true}
       />
 
       {remoteHint && !modal && (
