@@ -157,6 +157,15 @@ console.log('== Git 操作 ==');
   check('git revert', revertRes.ok);
   const st2 = await vcs.status();
   check('revert 后 readme 不再 M', !st2.some((s) => s.path === 'readme.md'));
+  // 回归:已暂存(staged)的修改也能还原——旧实现 checkout -- 只覆盖工作区,add 过的内容 revert 后残留
+  fs.writeFileSync(path.join(GIT_DIR, 'readme.md'), 'staged revert check\n');
+  await vcs.add(['readme.md']);
+  const stS = await vcs.status();
+  check('staged 后 readme 为 M', stS.some((s) => s.path === 'readme.md'));
+  const revertStaged = await vcs.revert(['readme.md']);
+  check('staged revert 成功', revertStaged.ok);
+  const stS2 = await vcs.status();
+  check('staged revert 后 readme 不再 M', !stS2.some((s) => s.path === 'readme.md'));
   const rmRes = await vcs.remove(['tmp-test.txt']);
   check('git rm', rmRes.ok);
   await vcs.commit([], 'cleanup');

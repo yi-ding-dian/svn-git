@@ -513,9 +513,10 @@ export class GitVcs {
     return missing;
   }
 
-  /** git checkout -- path（还原工作区修改；git 2.20 无 restore） */
+  /** git checkout HEAD -- path（暂存区+工作区一起还原到本地提交版本；git 2.20 无 restore）
+   *  注意与 restoreMissing 的 checkout -- 区分：那是恢复缺失文件，不能动 */
   async revert(relPaths: string[]): Promise<VcsResult> {
-    const res = await this.exec(['checkout', '--', ...relPaths]);
+    const res = await this.exec(['checkout', 'HEAD', '--', ...relPaths]);
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git 还原失败' };
     return { ok: true, message: `已还原 ${relPaths.length} 项` };
   }
