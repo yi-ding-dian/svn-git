@@ -182,6 +182,7 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
 
   // 二次确认：避免误覆盖丢失内容（工具风格弹窗）
   const [confirmMode, setConfirmMode] = useState<'ours' | 'theirs' | 'manual' | null>(null);
+  const [confirmAbort, setConfirmAbort] = useState(false);
   const resolve = async (mode: 'ours' | 'theirs' | 'manual') => {
     if (!cur) return;
     setConfirmMode(mode);
@@ -211,6 +212,26 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
     }
   };
 
+  /** 中止合并（仅 git）：放弃本次合并，工作区回到合并前；成功则交给 onResolved 关闭弹窗+全局刷新 */
+  const doAbort = async () => {
+    setBusy(true);
+    setConfirmAbort(false);
+    try {
+      const r = await post.branch('merge-abort', '');
+      if (!r.ok) {
+        setMsg(r.message || '中止合并失败');
+        setMsgErr(true);
+        return;
+      }
+      props.onResolved();
+    } catch (e) {
+      setMsg((e as Error).message);
+      setMsgErr(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="modal-mask">
       <ResizableModal
@@ -220,7 +241,19 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
         maxedHeight="96vh"
         onToggleMax={() => setExpanded(false)}
       >
-        <h3>⚠ 解决冲突（{conflicts.length}）</h3>
+        <div className="row" style={{ alignItems: 'center' }}>
+          <h3 style={{ flex: 1, margin: 0 }}>⚠ 解决冲突（{conflicts.length}）</h3>
+          {repoType === 'git' && (
+            <button
+              className="mini"
+              disabled={busy || loading}
+              onClick={() => setConfirmAbort(true)}
+              title="放弃本次合并（git merge --abort）：丢弃合并以来所有改动，工作区回到合并前。分支本身不受影响，可稍后再合并。"
+            >
+              ↩ 中止合并
+            </button>
+          )}
+        </div>
         <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: expanded ? 'calc(96vh - 90px)' : 460 }}>
           {/* 上：冲突文件列表（横排铺满窗口宽；最多显示 3 个，超出滚动，少于自动收缩高度） */}
           <div className="vcs-list" style={{ width: '100%', flexShrink: 0, maxHeight: 106 }}>
@@ -419,6 +452,16 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
           confirmLabel="确认"
           onConfirm={() => void doResolve(confirmMode)}
           onCancel={() => setConfirmMode(null)}
+        />
+      )}
+      {/* 中止合并二次确认（仅 git）：与「采用本地」互斥——此为全局退出，放弃的是整个合并 */}
+      {confirmAbort && (
+        <ConfirmModal
+          title="⚠ 确认中止合并"
+          message="将丢弃本次合并以来的所有改动（含已自动合并的文件），工作区回到合并前状态；分支本身不受影响，可稍后再合并。确认中止？"
+          confirmLabel="中止合并"
+          onConfirm={() => void doAbort()}
+          onCancel={() => setConfirmAbort(false)}
         />
       )}
     </div>

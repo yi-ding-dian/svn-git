@@ -105,6 +105,8 @@ export interface Vcs {
   branchSwitch(name: string): Promise<VcsResult>;
   branchDelete(name: string, force?: boolean): Promise<VcsResult>;
   merge(name: string): Promise<VcsResult>;
+  /** 中止进行中的合并（git 独有：merge --abort；svn 无对应物） */
+  mergeAbort?(): Promise<VcsResult>;
   /** 推送指定本地分支到远程（git 独有；首次推送自动 git push -u origin <名字> 建立上游） */
   branchPush?(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }>;
   tagList(): Promise<string[]>;

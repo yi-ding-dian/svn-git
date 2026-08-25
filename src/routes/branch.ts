@@ -1,5 +1,5 @@
 /** 版本管理扩展域端点：branches / branch / tags / tag / stash / git 子操作 */
-import { sendJson, readBody, vcsOf, isAuthError, authErrorOf } from './util.js';
+import { sendJson, readBody, vcsOf, isAuthError, authErrorOf, invalidateStatusCache } from './util.js';
 import type { VcsResult } from '../vcs/index.js';
 import type { Ctx } from './util.js';
 
@@ -40,6 +40,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         else if (action === 'switch') result = await vcs.branchSwitch(name);
         else if (action === 'delete') result = await vcs.branchDelete(name, Boolean(body.force));
         else if (action === 'merge') result = await vcs.merge(name);
+        else if (action === 'merge-abort') {
+          result = (await vcs.mergeAbort?.()) ?? { ok: false, message: '当前仓库不支持中止合并' };
+          // 中止后工作区/冲突状态全变，失效 30s 缓存（否则界面还显示旧的 C 状态）
+          if (result.ok) invalidateStatusCache(vcsOf().repo.root);
+        }
         else if (action === 'push') result = (await vcs.branchPush?.(name)) ?? { ok: false, message: '当前仓库类型不支持分支推送' };
         else {
           sendJson(res, 400, { error: '未知操作' });

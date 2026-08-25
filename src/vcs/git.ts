@@ -732,6 +732,16 @@ export class GitVcs {
     return { ok: true, message: m ? '合并成功' : '合并完成（快进）' };
   }
 
+  /** 中止进行中的合并：丢弃合并以来所有改动，工作区回到合并前状态（仅 git；svn 无对应物，用 revert 放弃单个文件） */
+  async mergeAbort(): Promise<VcsResult> {
+    // 前置检查 MERGE_HEAD：没有进行中的合并时 git 报 "fatal: There is no merge to abort"，换成友好提示
+    const chk = await this.exec(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']);
+    if (chk.code !== 0) return { ok: false, message: '当前没有进行中的合并' };
+    const res = await this.exec(['merge', '--abort']);
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '中止合并失败' };
+    return { ok: true, message: '已中止合并，工作区已还原到合并前状态' };
+  }
+
   // ============ 标签管理 ============
 
   /** 标签列表 */

@@ -59,11 +59,48 @@ console.log('== Git 分支/标签/Stash ==');
   fs.rmSync(`${GIT_DIR}/stash-test.txt`, { force: true });
 }
 
+console.log('== Git 合并冲突 + 中止合并 ==');
+{
+  const vcs = new GitVcs(detectRepo(GIT_DIR));
+  await run('git', ['checkout', '-q', 'master'], { cwd: GIT_DIR });
+  const cb = await vcs.branchCreate('conflict-feat');
+  check('创建冲突分支', cb.ok);
+  await vcs.branchSwitch('conflict-feat');
+  fs.writeFileSync(`${GIT_DIR}/readme.md`, 'hello v0\nconflict-by-feat\n');
+  await vcs.add(['readme.md']);
+  await vcs.commit([], 'feat conflict');
+  await vcs.branchSwitch('master');
+  fs.writeFileSync(`${GIT_DIR}/readme.md`, 'hello v0\nconflict-by-master\n');
+  await vcs.add(['readme.md']);
+  await vcs.commit([], 'master conflict');
+  const mg = await vcs.merge('conflict-feat');
+  check('同位置修改合并产生冲突', !mg.ok);
+  const stC = await vcs.status();
+  check('冲突文件为 C', stC.some((s) => s.path === 'readme.md' && s.code === 'C'));
+  const ab = await vcs.mergeAbort();
+  check('中止合并成功', ab.ok, ab.message);
+  const mh = await run('git', ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], { cwd: GIT_DIR });
+  check('MERGE_HEAD 已清除', mh.code !== 0);
+  const st2 = await vcs.status();
+  check('中止后工作区干净', !st2.some((s) => s.path === 'readme.md'));
+  const dl = await vcs.branchDelete('conflict-feat', true);
+  check('删除冲突分支（-D）', dl.ok);
+  // 清理：撤销 master 上的冲突构造提交，恢复测试前基线（后续测试不依赖 master 多余提交）
+  const rs = await run('git', ['reset', '-q', '--hard', 'HEAD~1'], { cwd: GIT_DIR });
+  check('清理构造提交', rs.code === 0);
+  const st3 = await vcs.status();
+  check('最终状态干净', st3.length === 0);
+}
+
 console.log('== Git Blame / 忽略 / 清理 ==');
 {
   const vcs = new GitVcs(detectRepo(GIT_DIR));
+  // 自包含构造：readme 固定写 3 行再 blame——历史版本 readme 可能只有 1 行（依赖 vcs-test 先跑的提交链会导致单独跑 vcs-extra 时失败）。
+  // 未提交行 blame 输出 rev=40 个 0（解析后 '0000000'）、author='Not Committed Yet'，满足字段非空断言。
+  fs.writeFileSync(`${GIT_DIR}/readme.md`, 'hello v1\nhello v2\nblame-test\n');
   const blame = await vcs.blame('readme.md');
   check('blame 解析', blame.length >= 3 && blame[0]?.rev && blame[0]?.author);
+  await vcs.revert(['readme.md']); // 复原工作区到 HEAD 版（checkout HEAD --），避免残留改动影响后续块
 
   const ig = await vcs.ignoreAdd('*.unit-test');
   check('忽略规则写入 .gitignore', ig.ok && fs.existsSync(`${GIT_DIR}/.gitignore`));

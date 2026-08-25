@@ -91,7 +91,7 @@ export function BranchDialog(props: {
     void runAction(
       () => post.branch(action, name, force),
       (m, err) => {
-        setMsg(m);
+        setMsg(action === 'merge' && err ? `${m} 可在「解决冲突」中用「中止合并」放弃本次合并` : m);
         setMsgErr(Boolean(err));
       },
       () => {
