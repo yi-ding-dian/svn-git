@@ -576,6 +576,24 @@ export class SvnVcs {
     return { changed: lines.length, tracked, untracked, conflicts: [] };
   }
 
+  /** 合并预检：本地改动统计 + outdated 检测（svn 规则：merge 前工作副本必须是最新的，否则合到旧 BASE 产生虚假冲突/重复合并。检测失败(null)不拦截） */
+  async mergeCheck(_branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[]; outdated?: { wcRev: string; headRev: string } | null }> {
+    const st = await this.status();
+    const items = st.filter((i) => i.code !== 'I' && i.code !== 'X'); // 排除 ignored/external，与状态视图口径一致
+    const untracked = items.filter((i) => i.code === '?').length;
+    let outdated: { wcRev: string; headRev: string } | null = null;
+    try {
+      const wc = await this.exec(['info', '--show-item', 'revision'], { timeoutMs: 60_000 });
+      const head = await this.exec(['info', '-r', 'HEAD', '--show-item', 'revision'], { timeoutMs: 60_000 });
+      const wcRev = wc.stdout.trim().split('\n')[0] ?? '';
+      const headRev = head.stdout.trim().split('\n')[0] ?? '';
+      if (wcRev && headRev && wcRev !== headRev) outdated = { wcRev, headRev };
+    } catch {
+      /* 网络/权限失败：不拦截，仅缺失提示 */
+    }
+    return { changed: items.length, tracked: items.length - untracked, untracked, conflicts: [], outdated };
+  }
+
   async branchSwitch(name: string): Promise<VcsResult> {
     const root = await this.repoRootUrl();
     let target: string;

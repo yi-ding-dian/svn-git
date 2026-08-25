@@ -72,6 +72,14 @@ try {
     );
     const br = await get('/api/branches');
     check('GET /api/branches 含 current/branches', br.code === 200 && typeof br.body.current === 'string' && Array.isArray(br.body.branches));
+    // merge-check：git 无 mergeCheck 方法，回退 switchCheck（交集判断与合并阻塞定义相同）
+    const cur = br.body.current;
+    const mc = await get(`/api/merge-check?branch=${encodeURIComponent(cur)}`);
+    check('GET /api/merge-check 结构完整', mc.code === 200 && typeof mc.body.changed === 'number' && Array.isArray(mc.body.conflicts));
+    fs.writeFileSync(`${GIT_DIR}/merge-check-tmp.txt`, 'x');
+    const mc2 = await get(`/api/merge-check?branch=${encodeURIComponent(cur)}`);
+    check('merge-check 检出未跟踪改动', mc2.body.untracked >= 1 && mc2.body.changed >= 1);
+    fs.rmSync(`${GIT_DIR}/merge-check-tmp.txt`, { force: true });
   }
 
   // ---------- 2. 路径越界拦截（本轮修复核心） ----------

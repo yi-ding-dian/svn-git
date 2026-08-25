@@ -101,6 +101,8 @@ export interface Vcs {
   preflight(): Promise<PreflightResult>;
   branchList(): Promise<BranchListResult>;
   switchCheck(branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>;
+  /** 合并预检（svn 有：额外带 outdated 检测；git 无此方法，server 层回退 switchCheck——两者交集定义相同） */
+  mergeCheck?(branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] } & { outdated?: { wcRev: string; headRev: string } | null }>;
   branchCreate(name: string): Promise<VcsResult>;
   branchSwitch(name: string): Promise<VcsResult>;
   branchDelete(name: string, force?: boolean): Promise<VcsResult>;

@@ -30,6 +30,22 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/merge-check') {
+        // 合并预检：与切换同一交集判断（git 未实现 mergeCheck → 回退 switchCheck）；svn 额外带 outdated 检测
+        const branch = String(url.searchParams.get('branch') ?? '');
+        if (!branch) {
+          sendJson(res, 400, { error: '缺少分支名' });
+          return true;
+        }
+        const { vcs } = vcsOf();
+        try {
+          sendJson(res, 200, (await vcs.mergeCheck?.(branch)) ?? (await vcs.switchCheck(branch)));
+        } catch (e) {
+          sendJson(res, 500, { error: (e as Error).message });
+        }
+        return true;
+      }
+
       if (p === '/api/branch' && req.method === 'POST') {
         const { vcs } = vcsOf();
         const body = await readBody(req);

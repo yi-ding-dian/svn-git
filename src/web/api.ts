@@ -179,6 +179,11 @@ export const get = {
     api<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>(
       `/api/switch-check?branch=${encodeURIComponent(branch)}`,
     ),
+  /** 合并预检：同 switchCheck + svn 可选 outdated（WC 落后标记） */
+  mergeCheck: (branch: string) =>
+    api<{ changed: number; tracked: number; untracked: number; conflicts: string[]; outdated?: { wcRev: string; headRev: string } | null }>(
+      `/api/merge-check?branch=${encodeURIComponent(branch)}`,
+    ),
   tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),
   blame: (path: string) => api<{ lines: { rev: string; author: string; date: string; line: number; text: string }[] }>(`/api/blame?path=${encodeURIComponent(path)}`),

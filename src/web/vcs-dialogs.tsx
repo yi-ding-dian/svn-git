@@ -67,7 +67,7 @@ export function BranchDialog(props: {
   // 科普折叠块展开状态（新手教学，默认收起不打扰）
   const [showHelp, setShowHelp] = useState(false);
   // 工具风格二次确认
-  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void } | null>(null);
+  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void; confirmLabel?: string } | null>(null);
 
   /** 主干分支：git main/master、svn trunk（团队稳定版本，禁止删除） */
   const isTrunkName = (name: string) => name === 'main' || name === 'master' || name === 'trunk';
@@ -133,12 +133,46 @@ export function BranchDialog(props: {
     }
     setCfm({ title: isTrunk ? '切回主干' : '切换分支', msg, action: () => act('switch', name) });
   };
-  const confirmMerge = (name: string) =>
+  /** 合并预检（与切换同一套交集判断，复用 /api/merge-check）：
+   *  干净直接合并零打扰；有改动不重叠 → 提示确认；重叠（目标分支也改过这些文件）→ 拦截——git merge 必然拒绝，
+   *  与其合到一半收到原始报错不如提前拦住；svn outdated → 拦截提示先更新（SVN 规范：merge 前 WC 必须是最新的） */
+  const confirmMerge = async (name: string) => {
+    let check: Awaited<ReturnType<typeof get.mergeCheck>> | null = null;
+    try {
+      check = await get.mergeCheck(name);
+    } catch {
+      /* 检查失败不阻塞，走默认确认流程 */
+    }
+    if (check && check.changed === 0 && !check.outdated) {
+      act('merge', name);
+      return;
+    }
+    const lines: string[] = [];
+    if (check?.outdated) {
+      lines.push(`⚠ 工作副本落后于仓库（r${check.outdated.wcRev} → r${check.outdated.headRev}）。SVN 要求合并前更新到最新，否则合的是旧 BASE——会产生虚假冲突或同一改动被重复合并。`);
+    }
+    if (check && check.changed > 0) {
+      if (props.repoType === 'svn') {
+        lines.push(`当前有 ${check.changed} 个文件的本地改动（未跟踪 ${check.untracked} 个），合并会保留这些改动，但可能产生冲突。建议先提交。`);
+      } else {
+        const carry = check.tracked - check.conflicts.length;
+        lines.push(`当前有 ${check.changed} 个文件未提交/未暂存：已跟踪 ${check.tracked} 个（其中 ${carry} 个与本次合并不冲突，${check.conflicts.length} 个会被合并拒绝——目标分支也改过这些文件），未跟踪 ${check.untracked} 个。`);
+        if (check.conflicts.length > 0) lines.push(`会被合并拒绝的文件：${check.conflicts.join('、')}`);
+      }
+    }
+    // 拦截：重叠（git）或 WC 落后（svn）→ 不执行合并，说明原因
+    if (check && (check.conflicts.length > 0 || Boolean(check.outdated))) {
+      if (check.conflicts.length > 0) lines.push('\n请先提交或暂存这些文件，再重新合并。');
+      if (check.outdated) lines.push('\n请先「更新」工作副本，再重新合并。');
+      setCfm({ title: '无法合并', confirmLabel: '知道了', msg: lines.join('\n'), action: () => setCfm(null) });
+      return;
+    }
     setCfm({
       title: '合并分支',
-      msg: `确认将分支 ${name} 合并到当前分支？可能产生冲突，请提前确认工作区状态。`,
+      msg: `确认将分支 ${name} 合并到当前分支？${lines.join('\n')}`,
       action: () => act('merge', name),
     });
+  };
   /** 推送到远程：本地分支未推送（无 origin/<名字>）时可推，首次自动建立上游跟踪。
    *  推送前检测工作区未提交修改（与切换/合并一致），提醒推送只包含已提交版本。 */
   const confirmPush = async (name: string) => {
@@ -288,7 +322,7 @@ export function BranchDialog(props: {
         <ConfirmModal
           title={cfm.title}
           message={cfm.msg}
-          confirmLabel="确认"
+          confirmLabel={cfm.confirmLabel ?? '确认'}
           onConfirm={() => {
             const a = cfm.action;
             setCfm(null);
