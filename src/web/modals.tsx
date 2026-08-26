@@ -24,6 +24,7 @@ export type Modal =
   | { type: 'font' }
   | { type: 'conflicts' }
   | { type: 'remote-conflicts'; files: string[] }
+  | { type: 'revert-confirm'; dir: string; dirLabel: string; items: { path: string; code: string }[] }
   | {
       type: 'confirm';
       title: string;
@@ -703,6 +704,70 @@ export function ConfirmModal(props: {
             title={props.confirmCmd ? `${props.confirmCmd}` : undefined}
           >
             {props.confirmLabel ?? '确认'}
+          </button>
+        </div>
+      </ResizableModal>
+    </div>
+  );
+}
+
+/** 还原清单弹窗（目录还原）：列出可还原文件（默认全选、可勾选），确认后只还原选中的——破坏性操作前置清单 */
+export function RevertModal(props: {
+  repoType: 'svn' | 'git';
+  dirLabel: string;
+  items: { path: string; code: string }[];
+  onConfirm: (paths: string[]) => void;
+  onClose: () => void;
+}) {
+  const [checked, setChecked] = useState<Set<string>>(new Set(props.items.map((i) => i.path)));
+  const allOn = checked.size === props.items.length;
+  const toggle = (p: string) => {
+    const nx = new Set(checked);
+    if (nx.has(p)) nx.delete(p);
+    else nx.add(p);
+    setChecked(nx);
+  };
+  const toggleAll = () => setChecked(allOn ? new Set() : new Set(props.items.map((i) => i.path)));
+  // 弹窗宽度自适应最长文件名（与提交面板同公式）
+  const maxPathLen = props.items.reduce((m, i) => Math.max(m, i.path.length), 0);
+  const autoWidth = pathAutoWidth(maxPathLen, 620, 1400);
+  return (
+    <div className="modal-mask">
+      <ResizableModal width={autoWidth}>
+        <h3>↩ 还原确认 ({props.repoType.toUpperCase()})</h3>
+        <div className="body" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          {/* 目录信息条：还原范围 + 勾选进度 */}
+          <div className="help-note" style={{ alignItems: 'center', marginBottom: 10, padding: '8px 12px', flexShrink: 0 }}>
+            <span style={{ flexShrink: 0 }}>📁</span>
+            <span className="small" style={{ flex: 1, wordBreak: 'break-all' }}>{props.dirLabel}</span>
+            <span className="small dim nowrap" style={{ flexShrink: 0 }}>
+              已勾选 <b>{checked.size}</b>/{props.items.length}
+            </span>
+          </div>
+          {/* 可还原文件列表：全选/取消全选 + 勾选 */}
+          <div className="changed" style={{ flex: 1, minHeight: 80, maxHeight: 300, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
+            <label className="row" style={{ cursor: 'pointer', gap: 6, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4, flexShrink: 0 }}>
+              <input type="checkbox" checked={allOn} onChange={toggleAll} />
+              <span className="dim small">{allOn ? '取消全选' : '全选'}</span>
+            </label>
+            {props.items.map((it) => (
+              <label key={it.path} className="changed-row" style={{ cursor: 'pointer' }} title={it.path}>
+                <input type="checkbox" checked={checked.has(it.path)} onChange={() => toggle(it.path)} style={{ flexShrink: 0 }} />
+                <span className={`act ${it.code}`}>{it.code}</span>
+                <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {it.path}
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="small" style={{ color: 'var(--err)', marginBottom: 10, flexShrink: 0 }}>
+            ⚠ 还原会放弃这些文件的本地修改（不可恢复）。未版本化（?）与忽略/外部文件不在列表中。
+          </div>
+        </div>
+        <div className="foot">
+          <button onClick={props.onClose}>取消</button>
+          <button className="danger" disabled={checked.size === 0} onClick={() => props.onConfirm([...checked])}>
+            ↩ 还原勾选的 {checked.size} 项
           </button>
         </div>
       </ResizableModal>

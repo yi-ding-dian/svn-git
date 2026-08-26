@@ -5,7 +5,7 @@ import { HistoryView } from './history.js';
 import { DiffView, type DiffTarget } from './diff.js';
 import { FsView } from './fs.js';
 import { OpenView, OpenModal } from './open.js';
-import { CommitModal, LoginModal, ConfirmModal, CommitSelectModal, UpdateResultModal, EnvInstallModal, type Modal } from './modals.js';
+import { CommitModal, LoginModal, ConfirmModal, CommitSelectModal, UpdateResultModal, EnvInstallModal, RevertModal, type Modal } from './modals.js';
 import { BranchDialog, TagDialog, StashDialog, CreateRepoDialog, CleanDialog, GitInfoModal, GitPushAuthModal } from './vcs-dialogs.js';
 import { PushConfirmModal } from './push-confirm.js';
 import { ConflictResolverModal } from './conflicts.js';
@@ -378,6 +378,41 @@ export function App() {
   );
 
   // 操作请求分派
+  /** 还原：目录还原先弹"可还原文件清单"（默认全选可勾选，确认后只还原选中的）；
+   *  路径下无子改动（纯文件/空目录）或 status 拉取失败 → 回退原简单确认 */
+  const confirmRevert = async (paths: string[]) => {
+    const fallbackMsg = (
+      <>将放弃对 <b>{paths[0] ?? '所选'}</b> 的本地修改，不可恢复。确认还原？</>
+    );
+    const fallback = () =>
+      setModal({
+        type: 'confirm',
+        title: '还原确认',
+        message: fallbackMsg,
+        action: () => void runOp('revert', paths),
+        confirmCmd: cmdOfRepo(repo?.type ?? null, 'revert', { paths: paths.join(' ') }),
+      });
+    try {
+      const st = await get.status();
+      const items = st.items ?? [];
+      const dir = (paths[0] ?? '').replace(/\/$/, '');
+      // 目录还原：仅收集其下（含子目录）的可还原文件，排除 ?(未版本化)/I(忽略)/X(外部)
+      const list: { path: string; code: string }[] = [];
+      for (const it of items) {
+        if (it.path === dir || !it.path.startsWith(dir + '/')) continue;
+        if (it.code === '?' || it.code === 'I' || it.code === 'X') continue;
+        list.push({ path: it.path, code: it.code });
+      }
+      if (list.length > 0) {
+        setModal({ type: 'revert-confirm', dir, dirLabel: dir, items: list });
+        return;
+      }
+      fallback();
+    } catch {
+      fallback();
+    }
+  };
+
   const handleAction = useCallback(
     (op: Op, paths: string[]) => {
       if (op === 'commit') {
@@ -494,17 +529,7 @@ export function App() {
         // 统一走 doPush（确认窗 + 进度窗口 + 认证引导）
         doPush();
       } else if (op === 'revert') {
-        setModal({
-          type: 'confirm',
-          title: '还原确认',
-          message: (
-            <>
-              将放弃对 <b>{paths[0] ?? '所选'}</b> 的本地修改，不可恢复。确认还原？
-            </>
-          ),
-          action: () => void runOp('revert', paths),
-          confirmCmd: cmdOfRepo(repo?.type ?? null, 'revert', { paths: paths.join(' ') }),
-        });
+        void confirmRevert(paths);
       } else if (op === 'delete') {
         setModal({
           type: 'confirm',
@@ -984,6 +1009,18 @@ export function App() {
           onResolved={() => {
             setModal(null);
             refresh();
+          }}
+        />
+      )}
+      {modal?.type === 'revert-confirm' && (
+        <RevertModal
+          repoType={repo?.type ?? 'git'}
+          dirLabel={modal.dirLabel}
+          items={modal.items}
+          onClose={() => setModal(null)}
+          onConfirm={(sel) => {
+            setModal(null);
+            void runOp('revert', sel);
           }}
         />
       )}
