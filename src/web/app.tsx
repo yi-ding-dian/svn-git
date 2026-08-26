@@ -713,9 +713,9 @@ export function App() {
               查看对比
             </button>
           )}
-          {/* 去查看：弹窗列出新提交涉及的文件 */}
+          {/* 去查看：弹窗列出新提交涉及的文件，确认后即更新 */}
           <button
-            className="mini"
+            className="mini primary"
             onClick={() =>
               setModal({
                 type: 'confirm',
@@ -765,14 +765,17 @@ export function App() {
                     )}
                   </>
                 ),
-                confirmLabel: '关闭',
-                action: () => setModal(null),
+                confirmLabel: '更新',
+                confirmCmd: repo?.type === 'svn' ? 'svn update' : 'git pull',
+                action: () => {
+                  setModal(null);
+                  void doUpdateDir('');
+                },
               })
             }
           >
             去查看
           </button>
-          <button className="mini primary" onClick={() => void doUpdateDir('')}>去更新</button>
         </div>
       )}
 

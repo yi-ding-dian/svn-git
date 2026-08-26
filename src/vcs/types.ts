@@ -147,7 +147,7 @@ export interface Vcs {
   stashPop?(index: number): Promise<VcsResult>;
   stashDrop?(index: number): Promise<VcsResult>;
   cleanList?(): Promise<string[]>;
-  clean?(): Promise<VcsResult>;
+  clean?(paths?: string[]): Promise<VcsResult>;
   ignoreAdd?(pattern: string): Promise<VcsResult>;
   remoteList?(): Promise<{ name: string; url: string }[]>;
   remoteAdd?(name: string, url: string): Promise<VcsResult>;

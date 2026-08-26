@@ -1020,11 +1020,13 @@ export class GitVcs {
       .map((l) => l.replace(/^(Would remove |将删除 |即将删除 )/, ''));
   }
 
-  /** git clean -fdx：删除未跟踪文件（危险，前端必须确认） */
-  async clean(): Promise<VcsResult> {
-    const res = await this.exec(['clean', '-fdx'], { timeoutMs: 120_000 });
+  /** git clean -fdx：删除未跟踪文件（危险，前端必须确认）；paths 非空时只清理指定路径，否则全量 */
+  async clean(paths?: string[]): Promise<VcsResult> {
+    const args = ['clean', '-fdx'];
+    if (paths && paths.length) args.push('--', ...paths);
+    const res = await this.exec(args, { timeoutMs: 120_000 });
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '清理失败' };
-    return { ok: true, message: '未跟踪文件已清理' };
+    return { ok: true, message: `已清理 ${paths?.length ?? '全部'} 项未跟踪文件` };
   }
 
   // ============ 忽略文件 ============

@@ -101,7 +101,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 200, { files });
           return true;
         }
-        const r = (await vcs.clean?.()) ?? { ok: false, message: '当前仓库不支持该操作' };
+        const body = await readBody(req);
+        const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean) : undefined;
+        const r = (await vcs.clean?.(paths?.length ? paths : undefined)) ?? { ok: false, message: '当前仓库不支持该操作' };
         sendJson(res, 200, { ...r, authError: false });
         return true;
       }

@@ -234,7 +234,7 @@ export function AppHeader(props: {
         <ToolBtn
           icon={<IconClean />}
           label="清理"
-          title="svn cleanup"
+          title="清理工作副本的锁与中断残留（不删除任何文件）"
           cmd="svn cleanup"
           onClick={() =>
             props.setModal({

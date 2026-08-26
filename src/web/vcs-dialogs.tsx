@@ -371,14 +371,20 @@ export function BranchDialog(props: {
 
 export function CleanDialog(props: { onClose: () => void; onDone: () => void }) {
   const [files, setFiles] = useState<string[] | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 二次确认：防误触（清理不可恢复，与删除分支/丢弃 stash 一致）
+  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void } | null>(null);
 
   const load = () => {
     get
       .gitClean()
-      .then((r) => setFiles(r.files))
+      .then((r) => {
+        setFiles(r.files);
+        setChecked(new Set(r.files)); // 默认全选（全量清理语义与现状一致）
+      })
       .catch((e: Error) => {
         setMsg(e.message);
         setMsgErr(true);
@@ -386,10 +392,13 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** 全选（全部文件）→ 不传 paths 走原全量命令；部分勾选 → 只清理选中的路径 */
   const doClean = () => {
+    const sel = (files ?? []).filter((f) => checked.has(f));
+    const paths = sel.length > 0 && sel.length < (files?.length ?? 0) ? sel : undefined;
     setBusy(true);
     void runAction(
-      () => post.gitClean(),
+      () => post.gitClean(paths),
       (m, err) => {
         setMsg(m);
         setMsgErr(Boolean(err));
@@ -408,9 +417,15 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
           <button onClick={props.onClose}>关闭</button>
           <button
             className="danger"
-            disabled={busy || !files || files.length === 0}
-            onClick={doClean}
-            title={`git clean -fd（删除 ${files?.length ?? 0} 个未跟踪文件，${files?.slice(0, 3).join(' ') ?? ''}${(files?.length ?? 0) > 3 ? ' …' : ''}）`}
+            disabled={busy || !files || files.length === 0 || checked.size === 0}
+            onClick={() =>
+              setCfm({
+                title: '⚠ 确认清理',
+                msg: `将删除已勾选的 ${checked.size} 个未跟踪文件，不可恢复。确认清理？`,
+                action: () => doClean(),
+              })
+            }
+            title={`删除已勾选的 ${checked.size} 个未跟踪文件（${[...checked].slice(0, 3).join(' ') ?? ''}${checked.size > 3 ? ' …' : ''}）`}
           >
             {busy ? '清理中…' : '确认清理'}
           </button>
@@ -428,17 +443,57 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
       </div>
       {files === null && !msgErr && <div className="dim" style={{ padding: '10px 6px' }}>扫描中…</div>}
       {files && (
-        <div className="changed" style={{ maxHeight: 260, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6 }}>
-          {files.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>没有未跟踪文件 🎉</div>}
-          {files.map((f) => (
-            <div key={f} className="changed-row">
-              <span style={{ color: 'var(--err)' }}>✗</span>
-              <span className="mono small">{f}</span>
-            </div>
-          ))}
+        <div className="changed" style={{ maxHeight: 260, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
+          {files.length === 0 ? (
+            <div className="dim" style={{ padding: '10px 6px' }}>没有未跟踪文件 🎉</div>
+          ) : (
+            <>
+              <label className="row" style={{ cursor: 'pointer', gap: 6, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4, flexShrink: 0 }}>
+                <input
+                  type="checkbox"
+                  checked={checked.size === files.length}
+                  onChange={() => setChecked(checked.size === files.length ? new Set() : new Set(files))}
+                />
+                <span className="dim small">{checked.size === files.length ? '取消全选' : '全选'}</span>
+                <span className="dim small" style={{ marginLeft: 'auto' }}>已勾选 {checked.size}/{files.length}</span>
+              </label>
+              {files.map((f) => (
+                <label key={f} className="changed-row" style={{ cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={checked.has(f)}
+                    onChange={() => {
+                      const nx = new Set(checked);
+                      if (nx.has(f)) nx.delete(f);
+                      else nx.add(f);
+                      setChecked(nx);
+                    }}
+                    style={{ flexShrink: 0 }}
+                  />
+                  <span style={{ color: 'var(--err)', flexShrink: 0 }}>✗</span>
+                  <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
+                </label>
+              ))}
+            </>
+          )}
         </div>
       )}
       <ResultLine msg={msg} err={msgErr} />
+      {cfm && (
+        <ConfirmModal
+          title={cfm.title}
+          message={cfm.msg}
+          danger
+          confirmLabel="确认清理"
+          confirmCmd="git clean -fd"
+          onConfirm={() => {
+            const a = cfm.action;
+            setCfm(null);
+            a();
+          }}
+          onCancel={() => setCfm(null)}
+        />
+      )}
     </ModalShell>
   );
 }

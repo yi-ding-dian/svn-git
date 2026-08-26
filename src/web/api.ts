@@ -248,7 +248,7 @@ export const post = {
     api<VcsResult & { repoDir?: string }>('/api/repo-create', json({ type, dir, name, url, standard })),
   svnExtra: (action: 'cleanup' | 'resolve' | 'propset-ignore', path = '', accept = 'working', pattern = '') =>
     api<VcsResult>('/api/svn-extra', json({ action, path, accept, pattern })),
-  gitClean: () => api<VcsResult>('/api/git-clean', json({})),
+  gitClean: (paths?: string[]) => api<VcsResult>('/api/git-clean', json({ paths })),
   resolveConflict: (path: string, mode: 'ours' | 'theirs' | 'manual', content = '') =>
     api<VcsResult>('/api/resolve-conflict', json({ path, mode, content })),
   textDiff: (left: string, right: string) => api<{ diff: string }>('/api/text-diff', json({ left, right })),
