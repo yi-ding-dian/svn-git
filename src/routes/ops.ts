@@ -108,6 +108,29 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/fs-delete' && req.method === 'POST') {
+        // 磁盘删除（未版本化 ? 文件/目录专属入口：不做版本库调度，仅删本地文件）
+        const { repo } = vcsOf();
+        const body = await readBody(req);
+        const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean) : [];
+        if (paths.length === 0) {
+          sendJson(res, 400, { error: '缺少路径' });
+          return true;
+        }
+        const rootAbs = path.resolve(repo.root);
+        if (paths.some((p) => !inRepoRoot(repo.root, path.join(repo.root, p)) || path.resolve(repo.root, p) === rootAbs)) {
+          sendJson(res, 400, { error: '路径越界' });
+          return true;
+        }
+        try {
+          for (const p of paths) fs.rmSync(path.join(repo.root, p), { recursive: true, force: true });
+          sendJson(res, 200, { ok: true, message: `已删除磁盘文件 ${paths.length} 项` });
+        } catch (e) {
+          sendJson(res, 500, { error: `删除失败: ${(e as Error).message}` });
+        }
+        return true;
+      }
+
       if (p === '/api/svn-lock' && req.method === 'POST') {
         const { repo, vcs } = vcsOf();
         if (repo.type !== 'svn') {

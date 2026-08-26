@@ -27,6 +27,8 @@ export function PushConfirmModal(props: {
   onCancel: () => void;
   /** 双击变更文件查看差异（path, 所属提交 rev；返回时恢复本弹窗） */
   onDiff?: (path: string, rev: string) => void;
+  /** 撤销提交/修改注释成功（HEAD 变化）：通知父级刷新全局状态（角标/历史/状态列） */
+  onReset?: () => void;
 }) {
   const [loading, setLoading] = useState(true);
   const [unpushed, setUnpushed] = useState<LogEntry[]>([]);
@@ -67,6 +69,7 @@ export function PushConfirmModal(props: {
         setClickTip({ x, y, msg: r.message }); // 成功提示显示在鼠标点击处
         setAmendOf(null);
         reload();
+        props.onReset?.();
       } else {
         setNotice(r.message);
         setNoticeErr(true);
@@ -89,6 +92,7 @@ export function PushConfirmModal(props: {
       if (r.ok) {
         setResetCfm(false);
         reload();
+        props.onReset?.();
       }
     } catch (e) {
       setNotice((e as Error).message);

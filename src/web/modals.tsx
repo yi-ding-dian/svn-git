@@ -32,6 +32,8 @@ export type Modal =
       danger?: boolean;
       confirmLabel?: string;
       secondaryLabel?: string;
+      /** 副按钮是否红色（危险选项） */
+      secondaryDanger?: boolean;
       action: () => void;
       secondaryAction?: () => void;
       /** 命令预览：悬浮确认/副确认按钮时显示将执行的命令 */
@@ -671,6 +673,8 @@ export function ConfirmModal(props: {
   danger?: boolean;
   confirmLabel?: string;
   secondaryLabel?: string;
+  /** 副按钮是否红色（危险选项，如「磁盘文件也删除」） */
+  secondaryDanger?: boolean;
   /** 隐藏「取消」按钮：仅"知道了"一种回应（信息型通知） */
   hideCancel?: boolean;
   /** 命令预览：鼠标悬浮按钮时显示将执行的命令 */
@@ -691,7 +695,7 @@ export function ConfirmModal(props: {
           {!props.hideCancel && <button onClick={props.onCancel}>取消</button>}
           {props.secondaryLabel && props.onSecondary && (
             <button
-              className="primary"
+              className={props.secondaryDanger ? 'danger' : 'primary'}
               onClick={props.onSecondary}
               title={props.secondaryCmd ? `${props.secondaryCmd}` : undefined}
             >
@@ -720,6 +724,8 @@ export function RevertModal(props: {
   onClose: () => void;
 }) {
   const [checked, setChecked] = useState<Set<string>>(new Set(props.items.map((i) => i.path)));
+  // 最终二次确认：M/C/D 还原不可恢复（丢弃本地修改）
+  const [cfm, setCfm] = useState<{ msg: string } | null>(null);
   const allOn = checked.size === props.items.length;
   const toggle = (p: string) => {
     const nx = new Set(checked);
@@ -731,10 +737,14 @@ export function RevertModal(props: {
   // 弹窗宽度自适应最长文件名（与提交面板同公式）
   const maxPathLen = props.items.reduce((m, i) => Math.max(m, i.path.length), 0);
   const autoWidth = pathAutoWidth(maxPathLen, 620, 1400);
+  // 标题按清单状态语义化：全 A=取消添加 / 全 D=恢复删除 / 混合=还原
+  const allA = props.items.length > 0 && props.items.every((i) => i.code === 'A');
+  const allD = props.items.length > 0 && props.items.every((i) => i.code === 'D');
+  const titleName = allA ? '取消添加确认' : allD ? '恢复删除确认' : '还原确认';
   return (
     <div className="modal-mask">
       <ResizableModal width={autoWidth}>
-        <h3>↩ 还原确认 ({props.repoType.toUpperCase()})</h3>
+        <h3>↩ {titleName} ({props.repoType.toUpperCase()})</h3>
         <div className="body" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           {/* 目录信息条：还原范围 + 勾选进度 */}
           <div className="help-note" style={{ alignItems: 'center', marginBottom: 10, padding: '8px 12px', flexShrink: 0 }}>
@@ -766,11 +776,34 @@ export function RevertModal(props: {
         </div>
         <div className="foot">
           <button onClick={props.onClose}>取消</button>
-          <button className="danger" disabled={checked.size === 0} onClick={() => props.onConfirm([...checked])}>
+          <button
+            className="danger"
+            disabled={checked.size === 0}
+            onClick={() =>
+              setCfm({
+                msg: `将放弃已勾选的 ${checked.size} 个文件的本地修改，不可恢复（A 文件变为未版本化，M/C 改动丢失）。确认还原？`,
+              })
+            }
+          >
             ↩ 还原勾选的 {checked.size} 项
           </button>
         </div>
       </ResizableModal>
+      {/* 最终二次确认：M/C 还原丢弃修改不可恢复 */}
+      {cfm && (
+        <ConfirmModal
+          title={`⚠ ${titleName}`}
+          message={cfm.msg}
+          danger
+          confirmLabel="确认还原"
+          onConfirm={() => {
+            const sel = [...checked];
+            setCfm(null);
+            props.onConfirm(sel);
+          }}
+          onCancel={() => setCfm(null)}
+        />
+      )}
     </div>
   );
 }

@@ -5,6 +5,14 @@ import { langOf, highlightLine } from './highlight.js';
 import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, GridIcon } from './icons.js';
 import { CodeBadge, DirBadge } from './badges.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
+
+/** 还原菜单按状态语义化命名：A=取消添加 / D=恢复删除 / M·C·R=还原（extra 为后缀，如"目录"） */
+function revertName(code: string, extra = ''): { label: string; title: string } {
+  if (code === 'A') return { label: `取消添加${extra}`, title: '取消添加到版本库的调度，文件保留磁盘（变回未版本化 ?）' };
+  if (code === 'D') return { label: `恢复删除${extra}`, title: '撤销删除，文件恢复到版本库内容（本地文件找回）' };
+  if (code === 'M' || code === 'C') return { label: `还原${extra}`, title: '放弃本地修改，回到版本库版本（改动不可恢复）' };
+  return { label: `还原${extra}`, title: '' };
+}
 import { IgnoreModal } from './ignore-modal.js';
 import { FavDirsModal } from './fav-dirs.js';
 import { renderMarkdown } from './markdown.js';
@@ -41,7 +49,7 @@ interface Props {
   repoRoot?: string | null;
   /** 操作范围(相对仓库根):大仓库打开的子项目,浏览从这里开始 */
   startRel?: string | null;
-  onAction: (op: 'add' | 'revert' | 'delete' | 'commit', paths: string[]) => void;
+  onAction: (op: 'add' | 'revert' | 'delete' | 'commit' | 'fs-delete', paths: string[]) => void;
   onDiff: (path: string) => void;
   onLog: (path: string) => void;
   onCommitSelect: (dir: string, dirLabel: string) => void;
@@ -1035,8 +1043,8 @@ export function FsView(props: Props) {
       }
       if (tMod.length) {
         items.push({ icon: <IconUpload />, label: `提交修改（${tMod.length} 项）…`, cmd: cmdOfRepo(props.repoType, 'commit', { msg: '…' }), action: () => props.onAction('commit', tMod.map((x) => x.rel)) });
-        items.push({ icon: <IconRevert />, label: `还原（${tMod.length} 项）`, cmd: cmdOfRepo(props.repoType, 'revert', { paths: joinPaths(tMod.map((x) => x.rel)) }), action: () => props.onAction('revert', tMod.map((x) => x.rel)) });
-        items.push({ icon: <IconClean />, label: `删除（${tMod.length} 项）`, danger: true, cmd: cmdOfRepo(props.repoType, 'delete', { paths: joinPaths(tMod.map((x) => x.rel)) }), action: () => props.onAction('delete', tMod.map((x) => x.rel)) });
+        items.push({ icon: <IconRevert />, label: `还原（${tMod.length} 项）`, title: '对勾选项执行还原（A=取消添加 / D=恢复删除 / M=放弃本地修改）', cmd: cmdOfRepo(props.repoType, 'revert', { paths: joinPaths(tMod.map((x) => x.rel)) }), action: () => props.onAction('revert', tMod.map((x) => x.rel)) });
+        items.push({ icon: <IconClean />, label: `从版本库移除（${tMod.length} 项）`, cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: joinPaths(tMod.map((x) => x.rel)) }), action: () => props.onAction('delete', tMod.map((x) => x.rel)) });
       }
       // 集合内无任何可操作项（全是干净/失效条目）时不加多余分隔线
       if (tNew.length || tMod.length) items.push({ sep: true });
@@ -1060,7 +1068,7 @@ export function FsView(props: Props) {
         items.push({ icon: <IconEyeOff />, label: '取消忽略', action: () => setUnignoreAsk({ rel: t.rel, name: t.name, isDir: true }) });
         if (props.repoType === 'git') {
           items.push({ sep: true });
-          items.push({ icon: <IconClean />, label: '删除目录', danger: true, cmd: cmdOfRepo(props.repoType, 'delete', { paths: t.rel }), action: () => props.onAction('delete', [t.rel]) });
+          items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该目录，不可恢复（不影响版本库）', action: () => props.onAction('fs-delete', [t.rel]) });
         }
       } else if (t.code !== '?') {
         // 版本化目录：更新/提交/还原/历史/忽略设置/删除（无 diff）
@@ -1068,10 +1076,10 @@ export function FsView(props: Props) {
         if (t.code) {
           items.push({ icon: <IconUpload />, label: '提交此目录修改…', cmd: cmdOfRepo(props.repoType, 'commit', { msg: '…' }), action: () => props.onCommitSelect(t.rel, t.rel) });
           items.push({ sep: true });
-          items.push({ icon: <IconRevert />, label: '还原目录', cmd: cmdOfRepo(props.repoType, 'revert', { paths: t.rel }), action: () => props.onAction('revert', [t.rel]) });
+          items.push({ icon: <IconRevert />, label: `${revertName(t.code, '目录').label}`, title: revertName(t.code, '').title || undefined, cmd: cmdOfRepo(props.repoType, 'revert', { paths: t.rel }), action: () => props.onAction('revert', [t.rel]) });
         }
         items.push({ sep: true });
-        items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(props.repoType, 'view_history', { path: t.rel }), action: () => viewHistory(t.rel, e) });
+        {t.code !== 'A' && items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(props.repoType, 'view_history', { path: t.rel }), action: () => viewHistory(t.rel, e) })}
         items.push({ icon: <IconIgnore />, label: '忽略设置…', cmd: cmdOfRepo(props.repoType, 'ignore_add', { path: t.rel, pattern: '…' }), action: () => setIgnoreModal({ dir: t.rel }) });
         // 常用文件夹（仅 svn：git 加载快无需预加载）：自身已加入显示移除；父目录已加入则不再显示；其余显示加入
         if (props.repoType === 'svn') {
@@ -1081,15 +1089,16 @@ export function FsView(props: Props) {
             items.push({ icon: <IconStar />, label: '加入常用文件夹（预加载缓存）', action: () => addFavDir(t.rel) });
           }
         }
-        // 已版本化且磁盘存在（非 '!' 缺失）才可删除
+        // 已版本化且磁盘存在（非 '!' 缺失）才可移除跟踪
         if (t.code !== '!') {
           items.push({ sep: true });
-          items.push({ icon: <IconClean />, label: '删除目录', danger: true, cmd: cmdOfRepo(props.repoType, 'delete', { paths: t.rel }), action: () => props.onAction('delete', [t.rel]) });
+          items.push({ icon: <IconClean />, label: '从版本库移除', cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: t.rel }), action: () => props.onAction('delete', [t.rel]) });
         }
       } else {
-        // 未版本化目录：只能添加/忽略（无历史/无 diff/无忽略设置/不可删除——不在版本管理里）
+        // 未版本化目录：只能添加/忽略/磁盘删除（无历史/无 diff/无忽略设置——不在版本管理里）
         items.push({ icon: <IconPlus />, label: '添加到版本库', cmd: cmdOfRepo(props.repoType, 'add', { paths: t.rel }), action: () => props.onAction('add', [t.rel]) });
         items.push({ icon: <IconIgnore />, label: '加入忽略…', cmd: cmdOfRepo(props.repoType, 'ignore_add', { path: t.rel, pattern: '…' }), action: () => ignoreFile(t) });
+        items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该目录，不可恢复（不影响版本库）', action: () => props.onAction('fs-delete', [t.rel]) });
         // 常用文件夹（仅 svn：git 加载快无需预加载）：自身已加入显示移除；父目录已加入则不再显示；其余显示加入
         if (props.repoType === 'svn') {
           if (favs.some((f) => f.path === t.rel)) {
@@ -1106,34 +1115,35 @@ export function FsView(props: Props) {
         items.push({ icon: <IconEyeOff />, label: '取消忽略', action: () => setUnignoreAsk({ rel: t.rel, name: t.name, isDir: false }) });
         if (props.repoType === 'git') {
           items.push({ sep: true });
-          items.push({ icon: <IconClean />, label: '删除', danger: true, action: () => props.onAction('delete', [t.rel]) });
+          items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该文件，不可恢复（不影响版本库）', action: () => props.onAction('fs-delete', [t.rel]) });
         }
         items.push({ sep: true });
         items.push({ icon: <IconFile />, label: '查看内容', action: () => void openFile(t.name, t.code, t.rel) });
       } else {
         if (t.code && t.code !== '?') items.push({ icon: <IconDiff />, label: '查看差异', cmd: cmdOfRepo(props.repoType, 'diff', { path: t.rel }), action: () => props.onDiff(t.rel) });
         if (t.code === '?') {
-          // 未版本化文件：只能添加/忽略（不可删除——不在版本管理里）
+          // 未版本化文件：添加/忽略/磁盘删除（"从版本库移除后变 ?" 的最终清理入口）
           items.push({ icon: <IconPlus />, label: '添加到版本库', cmd: cmdOfRepo(props.repoType, 'add', { paths: t.rel }), action: () => props.onAction('add', [t.rel]) });
           items.push({ icon: <IconIgnore />, label: '加入忽略…', cmd: cmdOfRepo(props.repoType, 'ignore_add', { path: t.rel, pattern: '…' }), action: () => ignoreFile(t) });
+          items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该文件，不可恢复（不影响版本库）', action: () => props.onAction('fs-delete', [t.rel]) });
         } else {
           const modified = t.code === 'M' || t.code === 'A' || t.code === 'D' || t.code === 'R' || t.code === 'C';
           if (modified) {
             items.push({ sep: true });
             items.push({ icon: <IconUpload />, label: '提交此文件', cmd: cmdOfRepo(props.repoType, 'commit', { msg: '…' }), action: () => props.onAction('commit', [t.rel]) });
-            items.push({ icon: <IconRevert />, label: '还原', cmd: cmdOfRepo(props.repoType, 'revert', { paths: t.rel }), action: () => props.onAction('revert', [t.rel]) });
+            items.push({ icon: <IconRevert />, label: revertName(t.code).label, title: revertName(t.code).title || undefined, cmd: cmdOfRepo(props.repoType, 'revert', { paths: t.rel }), action: () => props.onAction('revert', [t.rel]) });
           }
           // 已版本化且磁盘存在（非 '!' 缺失）才可删除：干净文件也提供删除
           if (t.code !== '!') {
             items.push({ sep: true });
-            items.push({ icon: <IconClean />, label: '删除', danger: true, cmd: cmdOfRepo(props.repoType, 'delete', { paths: t.rel }), action: () => props.onAction('delete', [t.rel]) });
+            items.push({ icon: <IconClean />, label: '从版本库移除', cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: t.rel }), action: () => props.onAction('delete', [t.rel]) });
           }
         }
         items.push({ sep: true });
         items.push({ icon: <IconFile />, label: '查看内容', action: () => void openFile(t.name, t.code, t.rel) });
-        // 未版本化文件无历史记录 → 不显示"查看历史"
-        if (t.code !== '?') items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(props.repoType, 'view_history', { path: t.rel }), action: () => viewHistory(t.rel, e) });
-        if (props.repoType === 'svn' && t.code !== '?') {
+        // 未版本化(?) 与已添加(A,尚未提交过) 的文件没有历史记录 → 不显示"查看历史"
+        if (t.code !== '?' && t.code !== 'A') items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(props.repoType, 'view_history', { path: t.rel }), action: () => viewHistory(t.rel, e) });
+        if (props.repoType === 'svn' && t.code !== '?' && t.code !== 'A') {
           items.push({ sep: true });
           items.push({ icon: <IconLock />, label: '锁定', action: () => svnLock(t.rel, 'lock') });
           items.push({ icon: <IconUnlock />, label: '解锁', action: () => svnLock(t.rel, 'unlock') });
@@ -1322,7 +1332,7 @@ export function FsView(props: Props) {
       {(e.code === 'M' || e.code === 'A' || e.code === 'D' || e.code === 'R') && (
         <>
           <ActionBtn icon={<IconRevert />} label="还原" cmd={cmdOfRepo(props.repoType, 'revert', { paths: e.rel })} onClick={() => onAction('revert', e.rel)} />
-          <ActionBtn icon={<IconClean />} label="删除" danger cmd={cmdOfRepo(props.repoType, 'delete', { paths: e.rel })} onClick={() => onAction('delete', e.rel)} />
+          <ActionBtn icon={<IconClean />} label="从版本库移除" cmd={cmdOfRepo(props.repoType, 'remove_keep', { paths: e.rel })} onClick={() => onAction('delete', e.rel)} />
         </>
       )}
       {!e.isDir && e.code !== '?' && props.repoType === 'svn' && (
@@ -1871,7 +1881,7 @@ export function FsView(props: Props) {
                 {(sel.code === 'M' || sel.code === 'A' || sel.code === 'D') && (
                   <>
                     <button className="mini" onClick={() => onAction('revert', relOf(sel))}>还原</button>
-                    <button className="mini danger" onClick={() => onAction('delete', relOf(sel))}>删除</button>
+                    <button className="mini" onClick={() => onAction('delete', relOf(sel))}>从版本库移除</button>
                   </>
                 )}
                 <button className="mini" onClick={() => props.onLog(relOf(sel))}>历史记录</button>

@@ -249,6 +249,7 @@ export const post = {
   svnExtra: (action: 'cleanup' | 'resolve' | 'propset-ignore', path = '', accept = 'working', pattern = '') =>
     api<VcsResult>('/api/svn-extra', json({ action, path, accept, pattern })),
   gitClean: (paths?: string[]) => api<VcsResult>('/api/git-clean', json({ paths })),
+  fsDelete: (paths: string[]) => api<VcsResult>('/api/fs-delete', json({ paths })),
   resolveConflict: (path: string, mode: 'ours' | 'theirs' | 'manual', content = '') =>
     api<VcsResult>('/api/resolve-conflict', json({ path, mode, content })),
   textDiff: (left: string, right: string) => api<{ diff: string }>('/api/text-diff', json({ left, right })),

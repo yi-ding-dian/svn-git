@@ -18,6 +18,8 @@ export interface CtxMenuItem {
   sep?: boolean;
   /** 命令预览：悬浮该项时在菜单底部显示将执行的命令（教学/透明层） */
   cmd?: string;
+  /** 悬浮提示（原生 tooltip，如危险操作的后果说明） */
+  title?: string;
   action?: () => void;
   /** 二级子菜单（悬浮/点击右侧展开,如「打开方式」） */
   submenu?: CtxMenuItem[];
@@ -75,6 +77,7 @@ export function ContextMenu(props: {
                 itemRefs.current[i] = el;
               }}
               className={`ctx-item ${it.danger ? 'danger' : ''} ${it.submenu && hoverIdx === i ? 'submenu-open' : ''}`}
+              title={it.cmd ? `${it.title ?? ''}\n${it.cmd}` : it.title}
               onClick={() => {
                 if (it.submenu) {
                   setHoverIdx(i);
@@ -86,7 +89,6 @@ export function ContextMenu(props: {
                 it.action?.();
               }}
               onMouseEnter={() => setHoverIdx(it.submenu ? i : null)}
-              title={it.cmd ?? undefined}
             >
               <span className="ctx-icon">{it.icon}</span>
               <span>{it.label}</span>

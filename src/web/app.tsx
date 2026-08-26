@@ -16,7 +16,7 @@ import { FontModal, FONT_MIN, FONT_MAX } from './font-modal.js';
 import { pathAutoWidth, isBinaryFile, translateVcsError } from './utils.js';
 import { cmdOfRepo } from './cmd-preview.js';
 
-type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'push';
+type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'fs-delete' | 'push';
 
 export function App() {
   const [info, setInfo] = useState<RepoInfo | null>(null);
@@ -280,6 +280,7 @@ export function App() {
     update: '正在更新…',
     revert: '正在还原…',
     delete: '正在删除…',
+    'fs-delete': '正在删除磁盘文件…',
     push: '正在推送…',
   };
   // 执行操作
@@ -287,12 +288,13 @@ export function App() {
     async (op: Op, paths: string[], keep = false): Promise<VcsResult> => {
       let r: VcsResult;
       // update/push 有独立进度窗,不重复显示短条
-      setOpBusy(op === 'add' || op === 'revert' || op === 'delete' ? OP_BUSY_TEXT[op] : null);
+      setOpBusy(op === 'add' || op === 'revert' || op === 'delete' || op === 'fs-delete' ? OP_BUSY_TEXT[op] : null);
       try {
         if (op === 'add') r = await post.add(paths);
         else if (op === 'commit') r = await post.commit(paths, '');
         else if (op === 'update') r = await post.update();
         else if (op === 'revert') r = await post.revert(paths);
+        else if (op === 'fs-delete') r = await post.fsDelete(paths);
         else if (op === 'delete') r = keep ? await post.delete(paths, true) : await post.delete(paths);
         else r = await post.push();
       } catch (e) {
@@ -379,23 +381,29 @@ export function App() {
 
   // 操作请求分派
   /** 还原：目录还原先弹"可还原文件清单"（默认全选可勾选，确认后只还原选中的）；
-   *  路径下无子改动（纯文件/空目录）或 status 拉取失败 → 回退原简单确认 */
+   *  路径下无子改动（纯文件/空目录）或 status 拉取失败 → 回退原简单确认（文案按状态语义化） */
   const confirmRevert = async (paths: string[]) => {
-    const fallbackMsg = (
-      <>将放弃对 <b>{paths[0] ?? '所选'}</b> 的本地修改，不可恢复。确认还原？</>
-    );
-    const fallback = () =>
+    const dir = (paths[0] ?? '').replace(/\/$/, '');
+    const fallback = (code?: string) => {
+      const isA = code === 'A';
+      const isD = code === 'D';
       setModal({
         type: 'confirm',
-        title: '还原确认',
-        message: fallbackMsg,
+        title: isA ? '取消添加确认' : isD ? '恢复删除确认' : '还原确认',
+        message: isA ? (
+          <>将<b>取消添加到版本库</b>：<b>{dir}</b> 变回未版本化（?），磁盘文件保留。确认？</>
+        ) : isD ? (
+          <>将<b>恢复删除</b>：<b>{dir}</b> 回到版本库内容。确认？</>
+        ) : (
+          <>将放弃对 <b>{dir}</b> 的本地修改，不可恢复。确认还原？</>
+        ),
         action: () => void runOp('revert', paths),
         confirmCmd: cmdOfRepo(repo?.type ?? null, 'revert', { paths: paths.join(' ') }),
       });
+    };
     try {
       const st = await get.status();
       const items = st.items ?? [];
-      const dir = (paths[0] ?? '').replace(/\/$/, '');
       // 目录还原：仅收集其下（含子目录）的可还原文件，排除 ?(未版本化)/I(忽略)/X(外部)
       const list: { path: string; code: string }[] = [];
       for (const it of items) {
@@ -407,9 +415,9 @@ export function App() {
         setModal({ type: 'revert-confirm', dir, dirLabel: dir, items: list });
         return;
       }
-      fallback();
+      fallback(items.find((i) => i.path === dir)?.code);
     } catch {
-      fallback();
+      fallback(undefined);
     }
   };
 
@@ -530,28 +538,57 @@ export function App() {
         doPush();
       } else if (op === 'revert') {
         void confirmRevert(paths);
+      } else if (op === 'fs-delete') {
+        // 磁盘删除（未版本化 ? 文件/目录）：仅删本地文件、不做版本库操作
+        setModal({
+          type: 'confirm',
+          title: '删除磁盘文件',
+          danger: true,
+          message: (
+            <div>
+              将从<b>磁盘永久删除</b> {paths.length} 项（未版本化文件）。
+              <div style={{ marginTop: 6 }}>不可恢复，确认删除？</div>
+            </div>
+          ),
+          confirmLabel: '删除磁盘文件',
+          action: () => void runOp('fs-delete', paths),
+        });
       } else if (op === 'delete') {
         setModal({
           type: 'confirm',
-          title: '删除确认',
-          danger: true,
+          title: '从版本库移除',
           message: (
             <>
               <div>
-                将删除 <b>{paths.length}</b> 项的<b>本地文件</b>，同时标记从版本库删除（<b>提交</b>后生效）。
+                将<b>从版本库移除</b> {paths.length} 项（<b>磁盘文件保留</b>；提交后该文件标记为未版本化 ?）。
               </div>
               <div className="dim small" style={{ marginTop: 6, lineHeight: 1.8 }}>
-                · 提交前可右键「还原」完整恢复，版本库历史亦保留
-                <br />· 若只想<b>停止跟踪、保留磁盘文件</b>（改用忽略规则等），选下方「仅从版本库移除」
+                · 提交前可右键「还原」取消移除；版本库历史保留
+                <br />· 若确实要把<b>磁盘文件也删除</b>（不复存在），请点下方红色「磁盘文件也删除」
               </div>
-              <div style={{ marginTop: 8 }}>确认删除？</div>
             </>
           ),
-          action: () => void runOp('delete', paths),
-          confirmCmd: cmdOfRepo(repo?.type ?? null, 'delete', { paths: paths.join(' ') }),
-          secondaryLabel: '仅从版本库移除（本地保留）',
-          secondaryAction: () => void runOp('delete', paths, true),
-          secondaryCmd: cmdOfRepo(repo?.type ?? null, 'remove_keep', { paths: paths.join(' ') }),
+          confirmLabel: '从版本库移除',
+          action: () => void runOp('delete', paths, true),
+          confirmCmd: cmdOfRepo(repo?.type ?? null, 'remove_keep', { paths: paths.join(' ') }),
+          secondaryLabel: '磁盘文件也删除',
+          secondaryDanger: true,
+          secondaryAction: () =>
+            setModal({
+              type: 'confirm',
+              title: '⚠ 确认删除磁盘文件',
+              danger: true,
+              message: (
+                <>
+                  <div>将<b>删除磁盘上的 {paths.length} 项文件</b>，并标记从版本库删除。文件不可恢复！</div>
+                  <div className="dim small" style={{ marginTop: 6 }}>确认需要一并删除磁盘文件？</div>
+                </>
+              ),
+              confirmLabel: '删除磁盘文件',
+              action: () => void runOp('delete', paths),
+              confirmCmd: cmdOfRepo(repo?.type ?? null, 'delete', { paths: paths.join(' ') }),
+            }),
+          secondaryCmd: cmdOfRepo(repo?.type ?? null, 'delete', { paths: paths.join(' ') }),
         });
       } else {
         void runOp(op, paths);
@@ -1050,6 +1087,7 @@ export function App() {
             setModal(null);
             void pushNow();
           }}
+          onReset={() => refresh()}
           onDiff={(path, rev) => {
             // 双击变更文件 → 查看该提交中的差异（左=提交前，右=提交）；返回时恢复本弹窗
             setDiffReturnModal({ type: 'push-confirm' });

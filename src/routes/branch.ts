@@ -144,6 +144,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         const result = (await vcs.resetSoft?.()) ?? { ok: false, message: '当前仓库不支持该操作' };
+        // --soft 撤销后改动回到暂存区：失效 30s 状态缓存（否则主界面还显示"已提交"的干净状态）
+        if (result.ok) invalidateStatusCache(vcsOf().repo.root);
         sendJson(res, 200, { ...result, authError: authErrorOf(result) });
         return true;
       }
