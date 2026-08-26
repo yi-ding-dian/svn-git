@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
-import { sendJson, readBody, vcsOf, inRepoRoot, isAuthError, authErrorOf, realpathSafe, invalidateStatusCache } from './util.js';
+import { sendJson, readBody, vcsOf, inRepoRoot, isAuthError, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached } from './util.js';
 import { getSvnIgnoreMap, isIgnoredByRules } from '../vcs/ignore.js';
 import type { VcsResult } from '../vcs/index.js';
 import type { Ctx } from './util.js';
@@ -105,6 +105,34 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean) : undefined;
         const r = (await vcs.clean?.(paths?.length ? paths : undefined)) ?? { ok: false, message: '当前仓库不支持该操作' };
         sendJson(res, 200, { ...r, authError: false });
+        return true;
+      }
+
+      if (p === '/api/locate') {
+        // 定位：目录（含子目录）下 code 匹配的文件，按 mtime 降序（点击文件夹角标跳"最近一个"）
+        const { repo } = vcsOf();
+        const dir = String(url.searchParams.get('dir') ?? '').replace(/\/$/, '');
+        const code = String(url.searchParams.get('code') ?? '');
+        if (!code || !inRepoRoot(repo.root, path.join(repo.root, dir))) {
+          sendJson(res, 400, { error: '参数不合法' });
+          return true;
+        }
+        const items = (await getStatusCached(repo, false)) as { path: string; code: string }[];
+        const prefix = dir ? dir + '/' : '';
+        let list = items.filter((i) => i.path.startsWith(prefix) && i.path !== dir && i.code === code);
+        if (list.length > 1000) list = list.slice(0, 1000); // 超大目录保护：最多统计前 1000
+        const out = list
+          .map((i) => {
+            let mtime = 0;
+            try {
+              mtime = fs.statSync(path.join(repo.root, i.path)).mtimeMs;
+            } catch {
+              /* 已删除磁盘文件：mtime 0 排最后 */
+            }
+            return { path: i.path, mtime };
+          })
+          .sort((a, b) => b.mtime - a.mtime);
+        sendJson(res, 200, { files: out });
         return true;
       }
 

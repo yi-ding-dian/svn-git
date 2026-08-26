@@ -5,6 +5,7 @@ import { langOf, highlightLine } from './highlight.js';
 import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, GridIcon } from './icons.js';
 import { CodeBadge, DirBadge } from './badges.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
+import { flashBreadcrumbs } from './motion.js';
 
 /** 还原菜单按状态语义化命名：A=取消添加 / D=恢复删除 / M·C·R=还原（extra 为后缀，如"目录"） */
 function revertName(code: string, extra = ''): { label: string; title: string } {
@@ -179,11 +180,47 @@ export function FsView(props: Props) {
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [pendingLocate, setPendingLocate] = useState<{ rel: string; at: number } | null>(null);
+  const [pendingLocate, setPendingLocate] = useState<{ rel: string; at: number; code?: string } | null>(null);
+  // 定位目标行/卡片脉冲："就是它"提示（渲染期挂 .file-pulse class，1500ms 后清除；同状态文件全选后全闪）
+  const [pulseRels, setPulseRels] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const previewRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const gridRef = useRef<HTMLDivElement | null>(null);
+  // 角标定位：轮转索引（dir::code → 下一次取第几个）+ 竞态令牌（连点/换目录时中断旧动画）
+  const locateIdxRef = useRef<Map<string, number>>(new Map());
+  const locateTokenRef = useRef(0);
+  const breadcrumbRef = useRef<HTMLDivElement | null>(null);
+
+  /** 角标定位：点击文件夹状态徽标 → 跳转到其中"最近修改"的该状态文件（连续点击轮转；面包屑点亮 + 卡片脉冲动画） */
+  const locateBadge = async (dirRel: string, code: string) => {
+    const token = ++locateTokenRef.current;
+    let files: { path: string; mtime: number }[];
+    try {
+      const r = await get.locate(dirRel, code);
+      files = r.files;
+    } catch {
+      return;
+    }
+    if (token !== locateTokenRef.current || files.length === 0) return;
+    const key = `${dirRel}::${code}`;
+    const idx = (locateIdxRef.current.get(key) ?? 0) % files.length;
+    locateIdxRef.current.set(key, idx + 1);
+    const target = files[idx]!.path;
+    const parent = target.includes('/') ? target.slice(0, target.lastIndexOf('/')) : '';
+    // 面包屑逐级点亮：目标链路（根→目标目录）
+    const chain: string[] = [];
+    {
+      let acc = '';
+      for (const part of parent.split('/').filter(Boolean)) {
+        acc = acc ? `${acc}/${part}` : part;
+        chain.push(acc);
+      }
+    }
+    void flashBreadcrumbs(breadcrumbRef.current, chain);
+    // 统一走 pendingLocate：树=展开父链+高亮；列表/网格=进目录+选中（数据就绪后的滚动/脉冲在 pendingLocate effect 内）
+    setPendingLocate({ rel: target, at: 0, code });
+  };
 
   // 树模式状态：展开集合 + 各目录数据
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -511,7 +548,7 @@ export function FsView(props: Props) {
         if (el) rowRefs.current.set(row.rel, el);
         else rowRefs.current.delete(row.rel); // 行卸载（收起/切换模式）时移除，避免残留导致泄漏
       }}
-      className={`tree-row ${searchResults.includes(row.rel) ? 'search-hit' : ''}`}
+      className={`tree-row ${searchResults.includes(row.rel) ? 'search-hit' : ''}${pulseRels.includes(row.rel) ? ' file-pulse' : ''}`}
       style={{
         paddingLeft: 8 + row.depth * 18,
         background: i === focusIndex || selected.has(row.rel) ? 'var(--panel2)' : undefined,
@@ -750,7 +787,18 @@ export function FsView(props: Props) {
       const idx = visibleRows.findIndex((r) => r.rel === pendingLocate.rel);
       if (idx >= 0) {
         setFocusIndex(idx);
-        rowRefs.current.get(pendingLocate.rel)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        // 同父目录下相同状态的行一并选中+脉冲（角标定位"找的不止一个"）
+        const tParent = pendingLocate.rel.includes('/') ? pendingLocate.rel.slice(0, pendingLocate.rel.lastIndexOf('/')) : '';
+        const pfx = tParent ? `${tParent}/` : '';
+        const same = visibleRows
+          .filter((r) => r.code && r.code === pendingLocate.code && r.rel !== pendingLocate.rel && (pfx ? r.rel.startsWith(pfx) && !r.rel.slice(pfx.length).includes('/') : false))
+          .map((r) => r.rel);
+        const sel = new Set([pendingLocate.rel, ...same]);
+        setSelected(sel);
+        const el = rowRefs.current.get(pendingLocate.rel) ?? null;
+        el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setPulseRels([...sel]);
+        setTimeout(() => setPulseRels([]), 1600);
         setPendingLocate(null);
       }
     } else {
@@ -758,8 +806,15 @@ export function FsView(props: Props) {
       if (data?.dir === parent) {
         const idx = listEntries.findIndex((e) => (parent ? `${parent}/${e.name}` : e.name) === pendingLocate.rel);
         if (idx >= 0) {
+          // 同状态文件全选（同目录层）+ 全部脉冲
+          const same = listEntries.filter((e) => pendingLocate.code && e.code === pendingLocate.code).map((e) => relOf(e));
+          const sel = same.length ? new Set(same) : new Set([pendingLocate.rel]);
+          setSelected(sel);
           setFocusIndex(idx);
-          setSel(listEntries[idx]!);
+          const el = rowRefs.current.get(pendingLocate.rel) ?? null;
+          el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          setPulseRels([...sel]);
+          setTimeout(() => setPulseRels([]), 1600);
           setPendingLocate(null);
         }
       } else if (data?.dir !== parent) {
@@ -1271,7 +1326,7 @@ export function FsView(props: Props) {
     return (
       <div
         key={rel}
-        className={`tree-row ${isMatch ? 'search-hit' : ''}`}
+        className={`tree-row ${isMatch ? 'search-hit' : ''}${pulseRels.includes(rel) ? ' file-pulse' : ''}`}
         style={{
           background: focused || multi ? 'var(--panel2)' : undefined,
           outline: focused ? '1px solid var(--accent)' : multi ? '1px solid var(--accent)' : undefined,
@@ -1498,12 +1553,13 @@ export function FsView(props: Props) {
           <span className="dim small">（{rows.length} 项 · 键盘: ↑↓ 选择 · →/Enter 进入 · ← 返回 · 空白处右键菜单）</span>
         </div>
         {/* 面包屑导航（所有模式，从仓库根开始） */}
-        <div className="breadcrumb" style={{ marginBottom: 8, overflowX: 'auto', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        <div className="breadcrumb" ref={breadcrumbRef} style={{ marginBottom: 8, overflowX: 'auto', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {breadcrumbs.map((b, i) => (
             <React.Fragment key={i}>
               {i > 0 && <span style={{ margin: '0 4px', color: 'var(--dim)' }}>›</span>}
               <a
                 href="#"
+                data-rel={b.rel}
                 onClick={(e) => {
                   e.preventDefault();
                   // 树模式：展开父链并高亮 + 同步当前位置；列表/浏览：直接跳转
@@ -1696,7 +1752,7 @@ export function FsView(props: Props) {
               return (
                 <div
                   key={rel}
-                  className={`grid-item ${focused || multi ? 'selected' : ''} ${currentMatchNames.has(e.name) ? 'search-hit' : ''}`}
+                  className={`grid-item ${focused || multi ? 'selected' : ''} ${currentMatchNames.has(e.name) ? 'search-hit' : ''}${pulseRels.includes(rel) ? ' file-pulse' : ''}`}
                   ref={(el) => {
                     if (el) rowRefs.current.set(rel, el);
                     else rowRefs.current.delete(rel); // 行卸载（切换模式/目录刷新）时移除，避免残留导致泄漏
@@ -1726,7 +1782,7 @@ export function FsView(props: Props) {
                   <span className="grid-icon-wrap">
                     <GridIcon isDir={e.isDir} name={e.name} />
                     <span className="grid-badge">
-                      {e.isDir ? <DirBadge codes={dirCodes} /> : <CodeBadge code={e.code} />}
+                      {e.isDir ? <DirBadge codes={dirCodes} onBadgeClick={(code) => void locateBadge(rel, code)} /> : <CodeBadge code={e.code} />}
                       {/* 目录：修改项数量标识（如 M 旁 15） */}
                       {e.isDir && e.count ? <span className="grid-count" title={`${e.count} 项有变更`}>{e.count}</span> : null}
                       {data?.selfLocked?.includes(rel) && <IconLock size={13} />}

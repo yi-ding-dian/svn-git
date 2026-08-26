@@ -3,7 +3,7 @@ import React from 'react';
 import { CODE_DESC } from './api.js';
 import { IconExternal } from './icons.js';
 
-function CodeBadge({ code, title }: { code: string; title?: string }) {
+function CodeBadge({ code, title, onClick }: { code: string; title?: string; onClick?: (e: React.MouseEvent) => void }) {
   // ✓(无状态)不显示描边、绿色表示干净；悬浮显示状态含义
   const tip = title ?? (code ? CODE_DESC[code] : '');
   if (!code) {
@@ -18,7 +18,13 @@ function CodeBadge({ code, title }: { code: string; title?: string }) {
     );
   }
   return (
-    <span className={`code ${code}`} title={tip || undefined}>{code}</span>
+    <span
+      className={`code ${code}${onClick ? ' clickable' : ''}`}
+      title={onClick ? `${tip || ''}\n（点击定位到最近的该状态文件）` : tip || undefined}
+      onClick={onClick}
+    >
+      {code}
+    </span>
   );
 }
 
@@ -34,12 +40,17 @@ const DIR_CODE_TITLE: Record<string, string> = {
   U: '有更新的文件',
   '~': '有类型变更的文件',
 };
-function DirBadge({ codes }: { codes?: string[] }) {
+function DirBadge({ codes, onBadgeClick }: { codes?: string[]; onBadgeClick?: (code: string, e: React.MouseEvent) => void }) {
   if (codes && codes.length > 0) {
     return (
       <span className="codes-row">
         {codes.map((c) => (
-          <CodeBadge key={c} code={c} title={DIR_CODE_TITLE[c]} />
+          <CodeBadge
+            key={c}
+            code={c}
+            title={DIR_CODE_TITLE[c]}
+            onClick={onBadgeClick ? (e) => { e.stopPropagation(); onBadgeClick(c, e); } : undefined}
+          />
         ))}
       </span>
     );

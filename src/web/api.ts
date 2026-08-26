@@ -121,6 +121,9 @@ export const get = {
   status: () => api<{ items: FileStatus[] }>('/api/status'),
   filteredTree: (dir?: string, codes: string[] = []) =>
     api<{ tree: FilterTreeNode[] }>(`/api/filtered-tree?dir=${encodeURIComponent(dir ?? '')}&codes=${encodeURIComponent(codes.join(','))}`),
+  /** 目录下（含子目录）该状态文件，按 mtime 降序（角标跳转定位） */
+  locate: (dir: string, code: string) =>
+    api<{ files: { path: string; mtime: number }[] }>(`/api/locate?dir=${encodeURIComponent(dir)}&code=${encodeURIComponent(code)}`),
   log: (pathRel?: string) =>
     api<{ logs: LogEntry[]; unpushed: string[] }>(`/api/log${pathRel ? `?path=${encodeURIComponent(pathRel)}` : ''}`),
   diff: (pathRel?: string, a?: string, b?: string) => {

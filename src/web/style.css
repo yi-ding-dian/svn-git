@@ -332,6 +332,24 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .vcs-current { color: var(--ok); font-size: 10px; width: 10px; flex-shrink: 0; }
 
 /* ---------- 环境缺失横幅 ---------- */
+/* ---------- 定位/跳转动画（motion.tsx 编排） ---------- */
+/* 面包屑微亮点亮：定位路径时逐级闪烁 */
+.breadcrumb a.crumb-flash { color: var(--accent) !important; background: var(--panel2); border-radius: 4px; outline: 1px solid var(--accent); }
+/* 可点击的目录状态徽标（角标定位入口） */
+.code.clickable { cursor: pointer; }
+.code.clickable:hover { filter: brightness(1.15); }
+/* 文件/目录卡片脉冲两次：到达定位目标时"就是它"提示 */
+@keyframes file-pulse-kf {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.12); }
+  70% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+.file-pulse { animation: file-pulse-kf 650ms ease-in-out 2; outline: 2px solid var(--accent); border-radius: 8px; position: relative; z-index: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .breadcrumb a.crumb-flash, .file-pulse { animation: none; outline: none; }
+}
+
 .env-banner {
   display: flex; align-items: center; gap: 10px;
   background: rgba(212, 167, 50, .18); border-bottom: 1px solid var(--warn);
