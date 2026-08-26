@@ -1,7 +1,8 @@
 /** 通用弹窗壳：遮罩 + 可调整大小容器 + 标题行 + 底部操作区（默认仅「关闭」） */
 export function ModalShell(props: {
   title: string;
-  icon?: string;
+  /** 标题图标：SVG 组件（优先）或 emoji；emoji 依赖系统字体，部分新字符(如 🪵)可能缺字形 */
+  icon?: React.ReactNode;
   width?: number;
   /** 最小宽度（默认 480） */
   minWidth?: number;

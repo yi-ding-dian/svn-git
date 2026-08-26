@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { get, post, type BranchInfo, type StashItem, type SvnLayout, type VcsResult } from './api.js';
 import { ModalShell, ResizableModal } from './modal-shell.js';
+import { IconBranch, IconTag, IconStash, IconPlus } from './icons.js';
 import { DirPicker } from './dir-picker.js';
 import { HelpNote, FormRow } from './ui.js';
 import { ConfirmModal } from './modals.js';
@@ -227,7 +228,7 @@ export function BranchDialog(props: {
   };
 
   return (
-    <ModalShell icon="🪵" title={`分支管理 (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={640}>
+    <ModalShell icon={<IconBranch size={16} />} title={`分支管理 (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={640}>
       {/* 科普折叠块：新手教学，默认收起不打扰老用户 */}
       <div
         className="row small dim nowrap"
@@ -243,20 +244,20 @@ export function BranchDialog(props: {
           {props.repoType === 'git' ? (
             <>
               分支 = 同一份代码的<strong>平行工作空间</strong>，互不干扰。在分支上改代码不会影响主干。
-              <br />· <strong>新建</strong>：输入名称回车 = 从当前代码状态开一条新线
-              <br />· <strong>切换</strong>：换到另一个分支工作。未提交的修改能否带过去，取决于目标分支有没有动过那些文件——目标分支没动 → 改动跟着你走；目标分支也改过 → 切换会被拒绝，需先提交或暂存（未跟踪的新文件永远能带过去）
-              <br />· <strong>合并</strong>：把别的分支的改动搬进当前分支。<strong>先切到目的地分支，再点来源分支的「合并」</strong>（站在哪，哪就是目的地）
-              <br />· <strong>删除</strong>：已合并的分支可删除（内容已进目标分支，不丢失）。主干（main/master）是团队稳定版本，不能删除
+              <br />· <strong className="help-k ok">➕ 新建</strong>：输入名称回车 = 从当前代码状态开一条新线
+              <br />· <strong className="help-k primary">⇄ 切换</strong>：换到另一个分支工作。未提交的修改能否带过去，取决于目标分支有没有动过那些文件——目标分支没动 → 改动跟着你走；目标分支也改过 → 切换会被拒绝，需先提交或暂存（未跟踪的新文件永远能带过去）
+              <br />· <strong className="help-k accent">🔀 合并</strong>：把别的分支的改动搬进当前分支。<strong>先切到目的地分支，再点来源分支的「合并」</strong>（站在哪，哪就是目的地）
+              <br />· <strong className="help-k err">✕ 删除</strong>：已合并的分支可删除（内容已进目标分支，不丢失）。主干（main/master）是团队稳定版本，不能删除
               <br />
               绿色 ● = 当前所在分支
             </>
           ) : (
             <>
               SVN 分支是版本库里的目录复制（branches/）。默认在 trunk 上开发，需要独立改动时复制一份到 branches/ 再继续。
-              <br />· <strong>新建</strong>：输入名称回车 = 复制 trunk（或当前目录）创建分支
-              <br />· <strong>切换</strong>：工作副本指向该分支（本地改动会尽量保留，可能冲突）
-              <br />· <strong>合并</strong>：把该分支的改动并入当前工作副本（合并前请先更新）
-              <br />· <strong>删除</strong>：已合并分支可删除。主干（trunk）是团队稳定版本，不能删除
+              <br />· <strong className="help-k ok">➕ 新建</strong>：输入名称回车 = 复制 trunk（或当前目录）创建分支
+              <br />· <strong className="help-k primary">⇄ 切换</strong>：工作副本指向该分支（本地改动会尽量保留，可能冲突）
+              <br />· <strong className="help-k accent">🔀 合并</strong>：把该分支的改动并入当前工作副本（合并前请先更新）
+              <br />· <strong className="help-k err">✕ 删除</strong>：已合并分支可删除。主干（trunk）是团队稳定版本，不能删除
               <br />
               绿色 ● = 当前分支
             </>
@@ -480,7 +481,7 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
   };
 
   return (
-    <ModalShell icon="🏷" title={`标签管理 (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={560}>
+    <ModalShell icon={<IconTag size={16} />} title={`标签管理 (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={560}>
       <HelpNote>
         {props.repoType === 'git'
           ? '标签是给当前提交打的固定名字，常用于标记发布版本（v1.0、v2.0 等）。用法：输入名称回车 = 给当前代码打标签；列表中的标签可「删除」。'
@@ -631,7 +632,7 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
   };
 
   return (
-    <ModalShell icon="📦" title={`Stash 暂存区 (GIT)`} onClose={props.onClose} width={580}>
+    <ModalShell icon={<IconStash size={16} />} title={`Stash 暂存区 (GIT)`} onClose={props.onClose} width={580}>
       <HelpNote>
         Stash 把当前未提交的改动临时收起来（含未跟踪文件），让工作区变干净——适合"先切分支/先做别的，稍后再回来继续"。用法：点「保存当前改动」收起（可写说明）；列表中「恢复」= 把改动取回工作区，「丢弃」= 放弃这份改动。
       </HelpNote>
@@ -962,7 +963,7 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
 
   return (
     <ModalShell
-      icon="➕"
+      icon={<IconPlus size={16} />}
       title="创建 / 克隆仓库"
       onClose={props.onClose}
       width={540}

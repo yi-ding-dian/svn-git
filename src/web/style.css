@@ -314,6 +314,11 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   background: var(--panel2); border: 1px solid var(--border);
   border-radius: 8px; padding: 10px 12px; color: var(--dim); line-height: 1.6;
 }
+/* 说明块词条色：与按钮色系一一对应（新建=ok 绿 / 切换=primary 紫 / 合并=accent 蓝 / 删除=err 红） */
+.help-note .help-k.ok { color: var(--ok); }
+.help-note .help-k.primary { color: var(--primary); }
+.help-note .help-k.accent { color: var(--accent); }
+.help-note .help-k.err { color: var(--err); }
 .vcs-list {
   overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px;
   background: var(--panel);
