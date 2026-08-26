@@ -1140,7 +1140,9 @@ export function FsView(props: Props) {
           }
         }
         items.push({ sep: true });
-        items.push({ icon: <IconFile />, label: '查看内容', action: () => void openFile(t.name, t.code, t.rel) });
+        // M/C（已修改/冲突）文件的「查看内容」与「查看差异」同路（openFile 对有状态文件直接进 diff），不重复显示；
+        // 干净/?/I 文件「查看内容」才是真读内容
+        {t.code !== 'M' && t.code !== 'C' && items.push({ icon: <IconFile />, label: '查看内容', action: () => void openFile(t.name, t.code, t.rel) })}
         // 未版本化(?) 与已添加(A,尚未提交过) 的文件没有历史记录 → 不显示"查看历史"
         if (t.code !== '?' && t.code !== 'A') items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(props.repoType, 'view_history', { path: t.rel }), action: () => viewHistory(t.rel, e) });
         if (props.repoType === 'svn' && t.code !== '?' && t.code !== 'A') {
