@@ -1,5 +1,5 @@
 /** 版本管理对话框：分支 / 标签 / Stash / 创建仓库（git + svn 通用） */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { get, post, type BranchInfo, type StashItem, type SvnLayout, type VcsResult } from './api.js';
 import { ModalShell, ResizableModal } from './modal-shell.js';
 import { IconBranch, IconTag, IconStash, IconPlus } from './icons.js';
@@ -96,6 +96,43 @@ export function BranchDialog(props: {
       .catch(() => setHasRemote(false)); // 查询失败按无远程处理（隐藏按钮，保守安全）
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 分推送进度窗（网络卡时可见可取消，与主推送一致）
+  const [pushProg, setPushProg] = useState<{ name: string } | null>(null);
+  const pushAbortRef = useRef<AbortController | null>(null);
+  const [pushElapsed, setPushElapsed] = useState(0);
+  useEffect(() => {
+    if (!pushProg) return;
+    setPushElapsed(0);
+    const t = setInterval(() => setPushElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [pushProg]);
+  /** 推送到远程：进度窗 + 可取消（与主推送同款交互；认证失败走结果消息） */
+  const doBranchPush = async (name: string) => {
+    setBusy(true);
+    setPushProg({ name });
+    const ac = new AbortController();
+    pushAbortRef.current = ac;
+    try {
+      const r = await post.branch('push', name, false, ac.signal);
+      setMsg(r.message);
+      setMsgErr(!r.ok);
+      if (r.ok) {
+        setPushProg(null);
+        load();
+        props.onChanged();
+      } else {
+        setPushProg(null); // 失败/取消：关闭进度窗，结果消息留在对话框提示行
+      }
+    } catch (e) {
+      setMsg((e as Error).message);
+      setMsgErr(true);
+      setPushProg(null);
+    } finally {
+      setBusy(false);
+      pushAbortRef.current = null;
+    }
+  };
 
   const act = (action: 'create' | 'switch' | 'delete' | 'merge' | 'push', name: string, force = false) => {
     setBusy(true);
@@ -223,7 +260,7 @@ export function BranchDialog(props: {
     setCfm({
       title: '推送到远程',
       msg: `确认将本地分支 ${name} 推送到远程服务器（origin）？\n首次推送会自动建立上游跟踪。${warn}`,
-      action: () => act('push', name),
+      action: () => void doBranchPush(name),
     });
   };
 
@@ -293,7 +330,7 @@ export function BranchDialog(props: {
         )}
       </div>
       {/* 分支列表 */}
-      <div className="vcs-list" style={{ maxHeight: 280 }}>
+      <div className="vcs-list" style={{ flex: 1, minHeight: 60 }}>
         {!data && <div className="dim" style={{ padding: '10px 6px' }}>加载中…</div>}
         {data && data.branches.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>暂无分支{props.repoType === 'svn' ? '（仓库根下没有 branches/ 目录）' : ''}</div>}
         {data?.branches.map((b) => {
@@ -362,6 +399,22 @@ export function BranchDialog(props: {
           }}
           onCancel={() => setCfm(null)}
         />
+      )}
+      {/* 分支推送中：转圈提示，可取消（与主推送同款） */}
+      {pushProg && (
+        <div className="modal-mask">
+          <div className="modal" style={{ width: 380 }}>
+            <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
+              <div className="spinner" />
+              <div style={{ marginTop: 14, fontWeight: 600 }}>正在推送分支 {pushProg.name}…</div>
+              <div className="dim small" style={{ marginTop: 6 }}>视网络情况可能需要一些时间，可随时取消</div>
+              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>已耗时 {pushElapsed}s</div>
+              <button className="mini danger" style={{ marginTop: 18 }} onClick={() => pushAbortRef.current?.abort()}>
+                取消推送
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 </ModalShell>
   );

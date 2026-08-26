@@ -66,7 +66,14 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           // 中止后工作区/冲突状态全变，失效 30s 缓存（否则界面还显示旧的 C 状态）
           if (result.ok) invalidateStatusCache(vcsOf().repo.root);
         }
-        else if (action === 'push') result = (await vcs.branchPush?.(name)) ?? { ok: false, message: '当前仓库类型不支持分支推送' };
+        else if (action === 'push') {
+          // 分支推送可取消：客户端断开（fetch abort → res close 且未写完）时终止 git push 子进程
+          const ac = new AbortController();
+          res.on('close', () => {
+            if (!res.writableEnded) ac.abort();
+          });
+          result = (await vcs.branchPush?.(name, ac.signal)) ?? { ok: false, message: '当前仓库类型不支持分支推送' };
+        }
         else {
           sendJson(res, 400, { error: '未知操作' });
           return true;
