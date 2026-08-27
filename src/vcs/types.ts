@@ -123,6 +123,8 @@ export interface Vcs {
   mergeAbort?(): Promise<VcsResult>;
   /** 推送指定本地分支到远程（git 独有；首次推送自动 git push -u origin <名字> 建立上游） */
   branchPush?(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }>;
+  /** 删除远程分支（git push --delete，name 为 origin/xxx 形式；最终仅在 reflog/push 后可恢复）。svn 无本地/远程之分，不实现 */
+  branchRemoteDelete?(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }>;
   tagList(): Promise<string[]>;
   tagCreate(name: string, message?: string, rev?: string): Promise<VcsResult>;
   tagDelete(name: string): Promise<VcsResult>;

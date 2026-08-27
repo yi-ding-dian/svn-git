@@ -66,6 +66,23 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           // 中止后工作区/冲突状态全变，失效 30s 缓存（否则界面还显示旧的 C 状态）
           if (result.ok) invalidateStatusCache(vcsOf().repo.root);
         }
+        else if (action === 'remote-delete') {
+          // 删除远程分支：仅 git（svn 无本地/远程之分，删除分支即仓库删除）；网络操作可取消，同 push
+          const { repo } = vcsOf();
+          if (repo.type !== 'git') {
+            sendJson(res, 400, { error: '仅 Git 仓库支持' });
+            return true;
+          }
+          if (!name.includes('/')) {
+            sendJson(res, 400, { error: '需远程分支名（origin/名字）' });
+            return true;
+          }
+          const ac = new AbortController();
+          res.on('close', () => {
+            if (!res.writableEnded) ac.abort();
+          });
+          result = (await vcs.branchRemoteDelete?.(name, ac.signal)) ?? { ok: false, message: '当前仓库不支持该操作' };
+        }
         else if (action === 'push') {
           // 分支推送可取消：客户端断开（fetch abort → res close 且未写完）时终止 git push 子进程
           const ac = new AbortController();

@@ -74,7 +74,7 @@ export function BranchDialog(props: {
   // 是否配置了远程：没有 origin 的本地孤仓库不显示「推送到远程」（推了也会失败）
   const [hasRemote, setHasRemote] = useState(false);
   // 工具风格二次确认
-  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void; confirmLabel?: string; hideCancel?: boolean } | null>(null);
+  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void; confirmLabel?: string; hideCancel?: boolean; confirmCmd?: string } | null>(null);
 
   /** 主干分支：git main/master、svn trunk（团队稳定版本，禁止删除） */
   const isTrunkName = (name: string) => name === 'main' || name === 'master' || name === 'trunk';
@@ -98,7 +98,7 @@ export function BranchDialog(props: {
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 分推送进度窗（网络卡时可见可取消，与主推送一致）
-  const [pushProg, setPushProg] = useState<{ name: string } | null>(null);
+  const [pushProg, setPushProg] = useState<{ action: 'push' | 'remote-delete'; name: string } | null>(null);
   const pushAbortRef = useRef<AbortController | null>(null);
   const [pushElapsed, setPushElapsed] = useState(0);
   useEffect(() => {
@@ -107,14 +107,14 @@ export function BranchDialog(props: {
     const t = setInterval(() => setPushElapsed((s) => s + 1), 1000);
     return () => clearInterval(t);
   }, [pushProg]);
-  /** 推送到远程：进度窗 + 可取消（与主推送同款交互；认证失败走结果消息） */
-  const doBranchPush = async (name: string) => {
+  /** 推送到远程/删除远程分支：进度窗 + 可取消（与主推送同款交互；认证失败走结果消息） */
+  const doBranchNet = async (action: 'push' | 'remote-delete', name: string) => {
     setBusy(true);
-    setPushProg({ name });
+    setPushProg({ action, name });
     const ac = new AbortController();
     pushAbortRef.current = ac;
     try {
-      const r = await post.branch('push', name, false, ac.signal);
+      const r = await post.branch(action, name, false, ac.signal);
       setMsg(r.message);
       setMsgErr(!r.ok);
       if (r.ok) {
@@ -260,7 +260,17 @@ export function BranchDialog(props: {
     setCfm({
       title: '推送到远程',
       msg: `确认将本地分支 ${name} 推送到远程服务器（origin）？\n首次推送会自动建立上游跟踪。${warn}`,
-      action: () => void doBranchPush(name),
+      action: () => void doBranchNet('push', name),
+    });
+  };
+
+  /** 删除远程分支：远程将不再存在（本地分支不受影响）；网络操作带进度窗可取消 */
+  const confirmRemoteDelete = async (name: string) => {
+    setCfm({
+      title: '删除远程分支',
+      msg: `确认删除远程分支 ${name}？\n远程服务器上该分支将不再存在（本地分支不受影响），此操作不可恢复。`,
+      confirmCmd: cmdOfRepo(props.repoType, 'branch_remote_delete', { name: name.split('/').slice(1).join('/') }),
+      action: () => void doBranchNet('remote-delete', name),
     });
   };
 
@@ -357,6 +367,16 @@ export function BranchDialog(props: {
                   {props.repoType === 'git' && hasRemote && !b.remote && !isPushed && (
                     <button className="mini btn-accent" disabled={busy} onClick={() => confirmPush(b.name)} title={`该分支尚未推送到远程\n点此将 ${b.name} 推送到远程服务器（origin）`}>⬆ 推送到远程</button>
                   )}
+                  {b.remote && (
+                    <button
+                      className="mini danger"
+                      disabled={busy}
+                      onClick={() => confirmRemoteDelete(b.name)}
+                      title={`${cmdOfRepo(props.repoType, 'branch_remote_delete', { name: b.name.split('/').slice(1).join('/') }) ?? ''}\n\n删除远程分支：远程将不再存在（本地分支不受影响）`}
+                    >
+                      删除远程
+                    </button>
+                  )}
                   {!b.remote && b.name !== data.current && (
                     <>
                       <button className="mini btn-accent" disabled={busy} onClick={() => confirmMerge(b.name)} title={`${cmdOfRepo(props.repoType, 'branch_merge', { name: b.name })}\n\n把该分支的改动合并到当前分支（先确保已切到目标分支）`}>🔀 合并</button>
@@ -392,6 +412,7 @@ export function BranchDialog(props: {
           message={cfm.msg}
           confirmLabel={cfm.confirmLabel ?? '确认'}
           hideCancel={cfm.hideCancel}
+          confirmCmd={cfm.confirmCmd}
           onConfirm={() => {
             const a = cfm.action;
             setCfm(null);
@@ -406,11 +427,13 @@ export function BranchDialog(props: {
           <div className="modal" style={{ width: 380 }}>
             <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
               <div className="spinner" />
-              <div style={{ marginTop: 14, fontWeight: 600 }}>正在推送分支 {pushProg.name}…</div>
+              <div style={{ marginTop: 14, fontWeight: 600 }}>
+                {pushProg.action === 'remote-delete' ? `正在删除远程分支 ${pushProg.name}…` : `正在推送分支 ${pushProg.name}…`}
+              </div>
               <div className="dim small" style={{ marginTop: 6 }}>视网络情况可能需要一些时间，可随时取消</div>
               <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>已耗时 {pushElapsed}s</div>
               <button className="mini danger" style={{ marginTop: 18 }} onClick={() => pushAbortRef.current?.abort()}>
-                取消推送
+                {pushProg.action === 'remote-delete' ? '取消删除' : '取消推送'}
               </button>
             </div>
           </div>

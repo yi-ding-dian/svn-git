@@ -28,6 +28,7 @@ export const CMDS: Record<string, string> = {
   g_branch_switch: 'git checkout %name%',
   g_branch_merge: 'git merge %name%',
   g_branch_delete: 'git branch -d %name%',
+  g_branch_remote_delete: 'git push origin --delete %name%',
   g_tag_create: 'git tag -a %name% -m "%msg%"',
   g_tag_delete: 'git tag -d %name%',
   g_stash_push: 'git stash push -u -m "%msg%"',

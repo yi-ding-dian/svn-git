@@ -242,7 +242,7 @@ export const post = {
   revert: (paths: string[]) => api<VcsResult>('/api/revert', json({ paths })),
   delete: (paths: string[], keep = false) => api<VcsResult>('/api/delete', json({ paths, keep })),
   push: (signal?: AbortSignal) => api<VcsResult>('/api/push', json({}, signal)),
-  branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push', name: string, force = false, signal?: AbortSignal) =>
+  branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete', name: string, force = false, signal?: AbortSignal) =>
     api<VcsResult>('/api/branch', json({ action, name, force }, signal)),
   tag: (action: 'create' | 'delete', name: string) => api<VcsResult>('/api/tag', json({ action, name })),
   stash: (action: 'push' | 'pop' | 'drop', message = '', index = 0, paths?: string[]) =>
