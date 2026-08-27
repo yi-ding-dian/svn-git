@@ -543,14 +543,14 @@ export function App() {
       } else if (op === 'revert') {
         void confirmRevert(paths);
       } else if (op === 'fs-delete') {
-        // 磁盘删除（未版本化 ? 文件/目录）：仅删本地文件、不做版本库操作
+        // 磁盘删除（未版本化 ? / 忽略 I 文件/目录）：仅删本地文件、不做版本库操作
         setModal({
           type: 'confirm',
           title: '删除磁盘文件',
           danger: true,
           message: (
             <div>
-              将从<b>磁盘永久删除</b> {paths.length} 项（未版本化文件）。
+              将从<b>磁盘永久删除</b> {paths.length} 项（不在版本库中的文件）。
               <div style={{ marginTop: 6 }}>不可恢复，确认删除？</div>
             </div>
           ),

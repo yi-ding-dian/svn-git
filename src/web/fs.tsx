@@ -15,6 +15,16 @@ function revertName(code: string, extra = ''): { label: string; title: string } 
   return { label: `还原${extra}`, title: '' };
 }
 
+/** 磁盘存在且未被删除调度（可重命名/移动）：干净 / M / A / C（D 已删调度、R/~/U 调度中或磁盘不在 → 均不可改名） */
+function renameableCode(code: string): boolean {
+  return !code || code === 'M' || code === 'A' || code === 'C';
+}
+
+/** 有版本库内容（可从版本库移除，非添加/删除调度中）：干净 / M / C（A 添加调度用"还原=取消添加"，D 删除调度不再移除） */
+function removableFromRepo(code: string): boolean {
+  return !code || code === 'M' || code === 'C';
+}
+
 /** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
 function renameItem(code: string, repoType: 'svn' | 'git', rel: string, isDir: boolean, onAction: (op: 'move' | 'fs-move', paths: string[]) => void): CtxMenuItem {
   const fsOnly = code === '?' || code === 'I';
@@ -1108,16 +1118,32 @@ export function FsView(props: Props) {
       const tArr = [...selected].map((rel) => byRel.get(rel)).filter((x): x is { rel: string; isDir: boolean; code: string; name: string } => !!x);
       const tNew = tArr.filter((x) => x.code === '?');
       const tMod = tArr.filter((x) => ['M', 'A', 'D', 'R', 'C'].includes(x.code));
+      const tI = tArr.filter((x) => x.code === 'I');
+      // 版本化（可移除跟踪）：干净/M/C——添加(A)用「取消添加」、删除(D)调度中不再移除（D 菜单重复且有歧义）
+      const tVer = tArr.filter((x) => removableFromRepo(x.code));
+      // 磁盘删除：? 全部支持；I 仅 git（与单选一致）
+      const tFsDel = props.repoType === 'git' ? [...tNew, ...tI] : tNew;
       if (tNew.length) {
         items.push({ icon: <IconPlus />, label: `添加到版本库（${tNew.length} 项）`, cmd: cmdOfRepo(props.repoType, 'add', { paths: joinPaths(tNew.map((x) => x.rel)) }), action: () => props.onAction('add', tNew.map((x) => x.rel)) });
       }
       if (tMod.length) {
         items.push({ icon: <IconUpload />, label: `提交修改（${tMod.length} 项）…`, cmd: cmdOfRepo(props.repoType, 'commit', { msg: '…' }), action: () => props.onAction('commit', tMod.map((x) => x.rel)) });
         items.push({ icon: <IconRevert />, label: `还原（${tMod.length} 项）`, title: '对勾选项执行还原（A=取消添加 / D=恢复删除 / M=放弃本地修改）', cmd: cmdOfRepo(props.repoType, 'revert', { paths: joinPaths(tMod.map((x) => x.rel)) }), action: () => props.onAction('revert', tMod.map((x) => x.rel)) });
-        items.push({ icon: <IconClean />, label: `从版本库移除（${tMod.length} 项）`, cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: joinPaths(tMod.map((x) => x.rel)) }), action: () => props.onAction('delete', tMod.map((x) => x.rel)) });
       }
-      // 集合内无任何可操作项（全是干净/失效条目）时不加多余分隔线
-      if (tNew.length || tMod.length) items.push({ sep: true });
+      if (tVer.length) {
+        items.push({ icon: <IconClean />, label: `从版本库移除（${tVer.length} 项）`, cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: joinPaths(tVer.map((x) => x.rel)) }), action: () => props.onAction('delete', tVer.map((x) => x.rel)) });
+      }
+      if (tFsDel.length) {
+        items.push({
+          icon: <IconClean />,
+          label: `删除磁盘文件（${tFsDel.length} 项）`,
+          danger: true,
+          title: `从磁盘永久删除 ${tFsDel.length} 项（不在版本库中的文件），不可恢复，不影响版本库`,
+          action: () => props.onAction('fs-delete', tFsDel.map((x) => x.rel)),
+        });
+      }
+      // 集合内无任何可操作项（全是失效/缺失条目）时不加多余分隔线
+      if (tNew.length || tMod.length || tVer.length || tFsDel.length) items.push({ sep: true });
       items.push({
         icon: <IconCopy />,
         label: `复制完整路径（${tArr.length} 项）`,
@@ -1151,7 +1177,7 @@ export function FsView(props: Props) {
         }
         items.push({ sep: true });
         {t.code !== 'A' && items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(props.repoType, 'view_history', { path: t.rel }), action: () => viewHistory(t.rel, e) })}
-        {t.code !== '!' && items.push(renameItem(t.code, props.repoType, t.rel, true, props.onAction))}
+        {renameableCode(t.code) && items.push(renameItem(t.code, props.repoType, t.rel, true, props.onAction))}
         items.push({ icon: <IconIgnore />, label: '忽略设置…', cmd: cmdOfRepo(props.repoType, 'ignore_add', { path: t.rel, pattern: '…' }), action: () => setIgnoreModal({ dir: t.rel }) });
         // 常用文件夹（仅 svn：git 加载快无需预加载）：自身已加入显示移除；父目录已加入则不再显示；其余显示加入
         if (props.repoType === 'svn') {
@@ -1161,8 +1187,8 @@ export function FsView(props: Props) {
             items.push({ icon: <IconStar />, label: '加入常用文件夹（预加载缓存）', action: () => addFavDir(t.rel) });
           }
         }
-        // 已版本化且磁盘存在（非 '!' 缺失）才可移除跟踪
-        if (t.code !== '!') {
+        // 有版本库内容且非调度中（非 '!' 缺失；A 添加/D 删除调度不显示——各自有"取消添加/恢复删除"）
+        if (removableFromRepo(t.code)) {
           items.push({ sep: true });
           items.push({ icon: <IconClean />, label: '从版本库移除', cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: t.rel }), action: () => props.onAction('delete', [t.rel]) });
         }
@@ -1207,8 +1233,8 @@ export function FsView(props: Props) {
             items.push({ icon: <IconUpload />, label: '提交此文件', cmd: cmdOfRepo(props.repoType, 'commit', { msg: '…' }), action: () => props.onAction('commit', [t.rel]) });
             items.push({ icon: <IconRevert />, label: revertName(t.code).label, title: revertName(t.code).title || undefined, cmd: cmdOfRepo(props.repoType, 'revert', { paths: t.rel }), action: () => props.onAction('revert', [t.rel]) });
           }
-          // 已版本化且磁盘存在（非 '!' 缺失）才可删除：干净文件也提供删除
-          if (t.code !== '!') {
+          // 有版本库内容且非调度中（非 '!' 缺失；A 添加/D 删除调度不显示——各自有"取消添加/恢复删除"）
+          if (removableFromRepo(t.code)) {
             items.push({ sep: true });
             items.push({ icon: <IconClean />, label: '从版本库移除', cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: t.rel }), action: () => props.onAction('delete', [t.rel]) });
           }
@@ -1219,7 +1245,7 @@ export function FsView(props: Props) {
         {t.code !== 'M' && t.code !== 'C' && items.push({ icon: <IconFile />, label: '查看内容', action: () => void openFile(t.name, t.code, t.rel) })}
         // 未版本化(?) 与已添加(A,尚未提交过) 的文件没有历史记录 → 不显示"查看历史"
         if (t.code !== '?' && t.code !== 'A') items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(props.repoType, 'view_history', { path: t.rel }), action: () => viewHistory(t.rel, e) });
-        {t.code !== '!' && items.push(renameItem(t.code, props.repoType, t.rel, false, props.onAction))}
+        {renameableCode(t.code) && items.push(renameItem(t.code, props.repoType, t.rel, false, props.onAction))}
         if (props.repoType === 'svn' && t.code !== '?' && t.code !== 'A') {
           items.push({ sep: true });
           items.push({ icon: <IconLock />, label: '锁定', action: () => svnLock(t.rel, 'lock') });
