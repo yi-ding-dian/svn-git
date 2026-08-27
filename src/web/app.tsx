@@ -5,7 +5,7 @@ import { HistoryView } from './history.js';
 import { DiffView, type DiffTarget } from './diff.js';
 import { FsView } from './fs.js';
 import { OpenView, OpenModal } from './open.js';
-import { CommitModal, LoginModal, ConfirmModal, CommitSelectModal, UpdateResultModal, EnvInstallModal, RevertModal, type Modal } from './modals.js';
+import { CommitModal, LoginModal, ConfirmModal, CommitSelectModal, UpdateResultModal, EnvInstallModal, RevertModal, RenameModal, type Modal } from './modals.js';
 import { BranchDialog, TagDialog, StashDialog, CreateRepoDialog, CleanDialog, GitInfoModal, GitPushAuthModal } from './vcs-dialogs.js';
 import { PushConfirmModal } from './push-confirm.js';
 import { ConflictResolverModal } from './conflicts.js';
@@ -16,7 +16,7 @@ import { FontModal, FONT_MIN, FONT_MAX } from './font-modal.js';
 import { pathAutoWidth, isBinaryFile, translateVcsError } from './utils.js';
 import { cmdOfRepo } from './cmd-preview.js';
 
-type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'fs-delete' | 'push';
+type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'fs-delete' | 'push' | 'move' | 'fs-move';
 
 export function App() {
   const [info, setInfo] = useState<RepoInfo | null>(null);
@@ -282,19 +282,23 @@ export function App() {
     delete: '正在删除…',
     'fs-delete': '正在删除磁盘文件…',
     push: '正在推送…',
+    move: '正在重命名…',
+    'fs-move': '正在重命名磁盘文件…',
   };
   // 执行操作
   const runOp = useCallback(
     async (op: Op, paths: string[], keep = false): Promise<VcsResult> => {
       let r: VcsResult;
       // update/push 有独立进度窗,不重复显示短条
-      setOpBusy(op === 'add' || op === 'revert' || op === 'delete' || op === 'fs-delete' ? OP_BUSY_TEXT[op] : null);
+      setOpBusy(op === 'add' || op === 'revert' || op === 'delete' || op === 'fs-delete' || op === 'move' || op === 'fs-move' ? OP_BUSY_TEXT[op] : null);
       try {
         if (op === 'add') r = await post.add(paths);
         else if (op === 'commit') r = await post.commit(paths, '');
         else if (op === 'update') r = await post.update();
         else if (op === 'revert') r = await post.revert(paths);
         else if (op === 'fs-delete') r = await post.fsDelete(paths);
+        else if (op === 'move') r = await post.move(paths[0], paths[1]);
+        else if (op === 'fs-move') r = await post.fsMove(paths[0], paths[1]);
         else if (op === 'delete') r = keep ? await post.delete(paths, true) : await post.delete(paths);
         else r = await post.push();
       } catch (e) {
@@ -590,6 +594,9 @@ export function App() {
             }),
           secondaryCmd: cmdOfRepo(repo?.type ?? null, 'delete', { paths: paths.join(' ') }),
         });
+      } else if (op === 'move' || op === 'fs-move') {
+        // 重命名：输入新名字弹窗（versions 文件 → vcs move；?/I → 磁盘改名）
+        setModal({ type: 'rename', from: paths[0], fsMode: op === 'fs-move' });
       } else {
         void runOp(op, paths);
       }
@@ -1166,6 +1173,20 @@ export function App() {
               action: () => void doCommitSelected(paths, msg),
             })
           }
+        />
+      )}
+      {modal?.type === 'rename' && (
+        <RenameModal
+          repoType={repo?.type ?? 'git'}
+          from={modal.from}
+          fsMode={modal.fsMode}
+          onCancel={() => setModal(null)}
+          onConfirm={(to) => {
+            const mode = modal.fsMode ? 'fs-move' : 'move';
+            const from = modal.from;
+            setModal(null);
+            void runOp(mode, [from, to]);
+          }}
         />
       )}
       {modal?.type === 'confirm' && (

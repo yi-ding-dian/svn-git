@@ -159,6 +159,56 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/move' && req.method === 'POST') {
+        // 版本化文件/目录重命名/移动（svn move / git mv：本地调度，提交后生效）
+        const { vcs, repo } = vcsOf();
+        const body = await readBody(req);
+        const from = String(body.from ?? '');
+        const to = String(body.to ?? '');
+        if (!from || !to) { sendJson(res, 400, { error: '路径为空' }); return true; }
+        if (from === to) { sendJson(res, 400, { error: '新旧路径相同' }); return true; }
+        // from 存在可正常 realpath；to 可能尚未存在（新名字目录也可能未建），用 realpathSafe 逐级解析
+        if (!inRepoRoot(repo.root, path.resolve(repo.root, from)) || !inRepoRoot(repo.root, realpathSafe(path.resolve(repo.root, to)))) {
+          sendJson(res, 400, { error: '路径越界' });
+          return true;
+        }
+        const result = await vcs.move(from, to);
+        if (result.ok) invalidateStatusCache(repo.root);
+        sendJson(res, 200, {
+          ...result,
+          authError: authErrorOf(result),
+        });
+        return true;
+      }
+
+      if (p === '/api/fs-move' && req.method === 'POST') {
+        // 磁盘改名（未版本化 ? / 忽略 I 文件/目录专属：不做版本库调度，仅改本地文件名，状态不变）
+        const { repo } = vcsOf();
+        const body = await readBody(req);
+        const from = String(body.from ?? '');
+        const to = String(body.to ?? '');
+        if (!from || !to) { sendJson(res, 400, { error: '路径为空' }); return true; }
+        if (from === to) { sendJson(res, 400, { error: '新旧路径相同' }); return true; }
+        const fromAbs = path.resolve(repo.root, from);
+        const toAbs = path.resolve(repo.root, to);
+        if (!inRepoRoot(repo.root, fromAbs) || !inRepoRoot(repo.root, realpathSafe(toAbs))) {
+          sendJson(res, 400, { error: '路径越界' });
+          return true;
+        }
+        if (fs.existsSync(toAbs)) {
+          sendJson(res, 400, { error: '目标已存在' }); // renameSync 会静默覆盖，先预检拒绝
+          return true;
+        }
+        try {
+          fs.renameSync(fromAbs, toAbs);
+          invalidateStatusCache(repo.root); // ?/I 路径变化，旧缓存中路径失效
+          sendJson(res, 200, { ok: true, message: `已重命名 ${from} → ${to}（磁盘，不影响版本库）` });
+        } catch (e) {
+          sendJson(res, 500, { error: `重命名失败: ${(e as Error).message}` });
+        }
+        return true;
+      }
+
       if (p === '/api/svn-lock' && req.method === 'POST') {
         const { repo, vcs } = vcsOf();
         if (repo.type !== 'svn') {

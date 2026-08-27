@@ -166,6 +166,18 @@ console.log('== Git 操作 ==');
   check('staged revert 成功', revertStaged.ok);
   const stS2 = await vcs.status();
   check('staged revert 后 readme 不再 M', !stS2.some((s) => s.path === 'readme.md'));
+  // 重命名:git mv(改名后 status 是 "R  old -> new" 合并行,解析取新路径 code=R)
+  const mvRes = await vcs.move('readme.md', 'readme-renamed.md');
+  check('git mv 成功', mvRes.ok, mvRes.message);
+  check('git mv 磁盘旧名不存在', !fs.existsSync(path.join(GIT_DIR, 'readme.md')));
+  check('git mv 磁盘新名存在', fs.existsSync(path.join(GIT_DIR, 'readme-renamed.md')));
+  const stM = await vcs.status();
+  check('git mv status 新路径', stM.some((s) => s.path === 'readme-renamed.md'));
+  check('git mv status 旧路径消失', !stM.some((s) => s.path === 'readme.md'));
+  const mvBack = await vcs.move('readme-renamed.md', 'readme.md');
+  check('git mv 移回成功', mvBack.ok, mvBack.message);
+  const stB = await vcs.status();
+  check('git mv 移回后无改名残留', !stB.some((s) => s.path === 'readme-renamed.md'));
   const rmRes = await vcs.remove(['tmp-test.txt']);
   check('git rm', rmRes.ok);
   await vcs.commit([], 'cleanup');
@@ -186,6 +198,16 @@ console.log('== SVN 操作 ==');
   check('svn revert', revertRes.ok);
   const st2 = await vcs.status();
   check('revert 后 readme 不再 M', !st2.some((s) => s.path === 'readme.md'));
+  // 重命名:svn move(工作副本调度显示 D 旧 + A 新)
+  const mvRes = await vcs.move('readme.md', 'readme-renamed.md');
+  check('svn move 成功', mvRes.ok, mvRes.message);
+  check('svn move 磁盘新名存在', fs.existsSync(path.join(SVN_DIR, 'readme-renamed.md')));
+  const stM = await vcs.status();
+  check('svn move status D+A', stM.some((s) => s.path === 'readme.md' && s.code === 'D') && stM.some((s) => s.path === 'readme-renamed.md' && s.code === 'A'));
+  const mvBack = await vcs.move('readme-renamed.md', 'readme.md');
+  check('svn move 移回成功', mvBack.ok, mvBack.message);
+  const stB = await vcs.status();
+  check('svn move 移回后无调度残留', !stB.some((s) => s.path === 'readme.md' || s.path === 'readme-renamed.md'));
 }
 
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);

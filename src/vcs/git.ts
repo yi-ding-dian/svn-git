@@ -576,6 +576,13 @@ export class GitVcs {
     return { ok: true, message: `已从版本库移除 ${relPaths.length} 项（本地文件保留，状态变为 ? 未版本化）` };
   }
 
+  /** git mv：本地重命名/移动（文件即改磁盘+暂存，提交后生效）；未跟踪文件 git 不支持返回失败 */
+  async move(from: string, to: string): Promise<VcsResult> {
+    const res = await this.exec(['mv', from, to]);
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git mv 失败' };
+    return { ok: true, message: `已重命名 ${from} → ${to}（提交后生效）` };
+  }
+
   /** git push：认证失败时用保存的凭据(GIT_ASKPASS)自动重试；仍失败返回 authType 供前端引导认证 */
   async push(signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }> {
     // 无远程（孤仓库）：git push 只会报原始 fatal，换成友好提示（不执行命令）

@@ -135,6 +135,39 @@ try {
     fs.rmSync(path.join(GIT_DIR, f), { force: true });
   }
 
+  // ---------- 5.1 重命名：版本化 git mv + 磁盘改名 fs-move ----------
+  {
+    // vcs 重命名：版本化文件
+    const f = 'api-move-old.txt';
+    fs.writeFileSync(path.join(GIT_DIR, f), 'mv');
+    await post('/api/add', { paths: [f] });
+    const mv = await post('/api/move', { from: f, to: 'api-move-new.txt' });
+    check('git mv API 成功', mv.code === 200 && mv.body.ok === true, mv.body?.message);
+    check('git mv API 磁盘新名存在', fs.existsSync(path.join(GIT_DIR, 'api-move-new.txt')));
+    check('git mv API 磁盘旧名不存在', !fs.existsSync(path.join(GIT_DIR, f)));
+    const bad = await post('/api/move', { from: f, to: '../escape.txt' });
+    check('git mv API 越界 400', bad.code === 400);
+    const same = await post('/api/move', { from: 'api-move-new.txt', to: 'api-move-new.txt' });
+    check('git mv API 同路径 400', same.code === 400);
+    const dup = await post('/api/move', { from: 'api-move-new.txt', to: 'readme.md' });
+    check('git mv API 目标已存在报错', dup.code === 200 && dup.body.ok === false);
+    // 清理（索引还原 + 删文件）
+    await run('git', ['reset', '-q', 'HEAD', '--', 'api-move-new.txt'], { cwd: GIT_DIR });
+    fs.rmSync(path.join(GIT_DIR, 'api-move-new.txt'), { force: true });
+
+    // 磁盘改名：未版本化文件（状态不变仍 ?）
+    const uf = 'api-fsmove-old.txt';
+    fs.writeFileSync(path.join(GIT_DIR, uf), 'x');
+    const fmv = await post('/api/fs-move', { from: uf, to: 'api-fsmove-new.txt' });
+    check('fs-move API 成功', fmv.code === 200 && fmv.body.ok === true, fmv.body?.message);
+    check('fs-move API 磁盘新名存在', fs.existsSync(path.join(GIT_DIR, 'api-fsmove-new.txt')));
+    const dupF = await post('/api/fs-move', { from: 'api-fsmove-new.txt', to: 'readme.md' });
+    check('fs-move API 目标已存在 400', dupF.code === 400);
+    const badge = await get('/api/status');
+    check('fs-move 后状态仍 ?', badge.code === 200 && badge.body.items.some((i) => i.path === 'api-fsmove-new.txt' && i.code === '?'));
+    fs.rmSync(path.join(GIT_DIR, 'api-fsmove-new.txt'), { force: true });
+  }
+
   // ---------- 6. 认证识别字段与网络检测 ----------
   {
     const nc = await get('/api/net-check');

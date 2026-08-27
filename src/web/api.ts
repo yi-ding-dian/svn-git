@@ -253,6 +253,10 @@ export const post = {
     api<VcsResult>('/api/svn-extra', json({ action, path, accept, pattern })),
   gitClean: (paths?: string[]) => api<VcsResult>('/api/git-clean', json({ paths })),
   fsDelete: (paths: string[]) => api<VcsResult>('/api/fs-delete', json({ paths })),
+  /** 版本化文件/目录重命名/移动（svn move / git mv，提交后生效） */
+  move: (from: string, to: string) => api<VcsResult>('/api/move', json({ from, to })),
+  /** 未版本化 ? / 忽略 I 文件/目录磁盘改名（不影响版本库） */
+  fsMove: (from: string, to: string) => api<VcsResult>('/api/fs-move', json({ from, to })),
   resolveConflict: (path: string, mode: 'ours' | 'theirs' | 'manual', content = '') =>
     api<VcsResult>('/api/resolve-conflict', json({ path, mode, content })),
   textDiff: (left: string, right: string) => api<{ diff: string }>('/api/text-diff', json({ left, right })),

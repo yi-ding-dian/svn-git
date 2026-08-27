@@ -221,6 +221,16 @@ export function IconRevert({ size = 14 }: IconProps) {
   );
 }
 
+/** 重命名/移动：紫色铅笔 */
+export function IconRename({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M4 20l1.3-4.3L15.5 5.5a2.1 2.1 0 0 1 3 3L8.3 18.7 4 20z" stroke="#a371f7" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M13.8 7.2l3 3" stroke="#a371f7" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** 历史：蓝色时钟 */
 export function IconClock({ size = 14 }: IconProps) {
   return (

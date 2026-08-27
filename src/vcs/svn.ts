@@ -355,6 +355,13 @@ export class SvnVcs {
     return { ok: true, message: `已标记从版本库删除 ${relPaths.length} 项（本地文件保留）` };
   }
 
+  /** svn move：本地重命名/移动（提交后生效）；未版本化对象不支持返回失败 */
+  async move(from: string, to: string): Promise<VcsResult> {
+    const res = await this.exec(['move', from, to]);
+    if (res.code !== 0) return this.fail(this.authError(res), res.stderr.trim() || 'svn move 失败');
+    return { ok: true, message: `已重命名 ${from} → ${to}（提交后生效）` };
+  }
+
   /** svn delete（目录默认递归） */
   async remove(relPaths: string[]): Promise<VcsResult> {
     const res = await this.exec(['delete', ...relPaths]);
