@@ -15,6 +15,13 @@ function revertName(code: string, extra = ''): { label: string; title: string } 
   return { label: `还原${extra}`, title: '' };
 }
 
+/** 多选还原动态命名：全部 A → 取消添加（N 项）；全部 D → 恢复删除（N 项）；混合/其余 → 还原（N 项）+ 分类说明 */
+function multiRevertName(codes: string[], n: number): { label: string; title: string } {
+  if (codes.every((c) => c === 'A')) return { label: `取消添加（${n} 项）`, title: '取消添加到版本库的调度，文件保留磁盘（变回未版本化 ?）' };
+  if (codes.every((c) => c === 'D')) return { label: `恢复删除（${n} 项）`, title: '撤销删除，文件恢复到版本库内容（本地文件找回）' };
+  return { label: `还原（${n} 项）`, title: '对勾选项执行还原（A=取消添加 / D=恢复删除 / M=放弃本地修改）' };
+}
+
 /** 磁盘存在且未被删除调度（可重命名/移动）：干净 / M / A / C（D 已删调度、R/~/U 调度中或磁盘不在 → 均不可改名） */
 function renameableCode(code: string): boolean {
   return !code || code === 'M' || code === 'A' || code === 'C';
@@ -1128,7 +1135,8 @@ export function FsView(props: Props) {
       }
       if (tMod.length) {
         items.push({ icon: <IconUpload />, label: `提交修改（${tMod.length} 项）…`, cmd: cmdOfRepo(props.repoType, 'commit', { msg: '…' }), action: () => props.onAction('commit', tMod.map((x) => x.rel)) });
-        items.push({ icon: <IconRevert />, label: `还原（${tMod.length} 项）`, title: '对勾选项执行还原（A=取消添加 / D=恢复删除 / M=放弃本地修改）', cmd: cmdOfRepo(props.repoType, 'revert', { paths: joinPaths(tMod.map((x) => x.rel)) }), action: () => props.onAction('revert', tMod.map((x) => x.rel)) });
+        const rv = multiRevertName(tMod.map((x) => x.code), tMod.length);
+        items.push({ icon: <IconRevert />, label: rv.label, title: rv.title, cmd: cmdOfRepo(props.repoType, 'revert', { paths: joinPaths(tMod.map((x) => x.rel)) }), action: () => props.onAction('revert', tMod.map((x) => x.rel)) });
       }
       if (tVer.length) {
         items.push({ icon: <IconClean />, label: `从版本库移除（${tVer.length} 项）`, cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: joinPaths(tVer.map((x) => x.rel)) }), action: () => props.onAction('delete', tVer.map((x) => x.rel)) });
