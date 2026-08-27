@@ -88,7 +88,11 @@ export interface BranchListResult {
 /** 统一 VCS 操作接口：公共方法两实现均实现（必选），平台独有能力可选——server 层按 repo.type 分支或 ?. 调用。 */
 export interface Vcs {
   status(pathRel?: string): Promise<FileStatus[]>;
-  log(limit?: number, pathRel?: string): Promise<LogEntry[]>;
+  /** 分页拉取：offset=跳过前 N 条（git --skip）；afterRev=从该版本之后继续拉（svn -r rev-1:1，0=从头）。limit<=0=全量 */
+  log(limit?: number, pathRel?: string, offset?: number, afterRev?: string): Promise<LogEntry[]>;
+  /** 提交总数（轻量探测：git rev-list --count 秒级精确；svn 上限 601 条探测——exact=false 表示超过上限未测全）
+   *  供历史视图"已加载/总数"显示与"更多"档位决策 */
+  logTotal?(pathRel?: string): Promise<{ count: number; exact: boolean }>;
   diff(a?: string, b?: string, pathRel?: string): Promise<DiffResult>;
   ls(dir: string): Promise<{ name: string; isDir: boolean }[]>;
   add(relPaths: string[]): Promise<VcsResult>;

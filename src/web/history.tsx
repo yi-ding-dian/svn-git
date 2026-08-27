@@ -29,6 +29,32 @@ export function HistoryView(props: Props) {
   const [unpushed, setUnpushed] = useState<string[]>([]);
   /** 本地重载计数（修改注释/撤销提交后刷新） */
   const [reloadKey, setReloadKey] = useState(0);
+  /** 提交总数（git 精确秒回；svn 不探测=0）——用于「已全部加载」判断与标题（已加载/总数） */
+  const [total, setTotal] = useState(0);
+  /** svn 无总数时：某批不足 200 条 = 追完（exhausted），"加载更多"按钮消失 */
+  const [exhausted, setExhausted] = useState(false);
+  /** 追加加载中（防连点重复） */
+  const [loadingMore, setLoadingMore] = useState(false);
+  /** 「更多」下拉菜单位置（600/1200/全部 选项） */
+  const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
+  /** 追加期间的计数动画：显示值小步进（+10）逼近真实 logs.length，加载完成立即归位 */
+  const [shownLen, setShownLen] = useState(0);
+  useEffect(() => {
+    if (!loadingMore) {
+      setShownLen(logs?.length ?? 0);
+      return;
+    }
+    const target = logs?.length ?? 0;
+    if (shownLen >= target) return;
+    const t = setTimeout(() => setShownLen((s) => Math.min(target, s + 10)), 150);
+    return () => clearTimeout(t);
+  }, [loadingMore, shownLen, logs]);
+  /** 分批追加的每批条数 */
+  const PAGE = 200;
+  // 虚拟滚动：历史行高固定（CSS 34 + gap 2），只渲染视口附近行，几千条也顺滑
+  const ROW_H = 36;
+  const [scrollTop, setScrollTop] = useState(0);
+  const listRef = useRef<HTMLDivElement | null>(null);
   /** 操作成功提示 */
   const [notice, setNotice] = useState('');
   const [noticeErr, setNoticeErr] = useState(false);
@@ -93,10 +119,12 @@ export function HistoryView(props: Props) {
     setDiffOf(null);
     setUnpushed([]);
     get
-      .log(props.path)
+      .log(props.path, PAGE)
       .then((r) => {
         if (!cancelled) {
           setLogs(r.logs);
+          setTotal(r.total ?? 0);
+          setExhausted(r.logs.length < PAGE); // svn 小仓库：首批不足一批 = 已全部；git 由 total 判断
           setUnpushed(r.unpushed ?? []);
           if (r.logs.length > 0) setSel(r.logs[0]!);
         }
@@ -108,6 +136,37 @@ export function HistoryView(props: Props) {
       cancelled = true;
     };
   }, [props.path, props.tick, reloadKey]);
+
+  /** 追加加载：一批 200 条追加到列表底部（滚动/选中/详情不动，可继续浏览）。
+   *  target>0 = 追加至该条数；target=0 = 循环追加直到追完。本批不足 200 = 已全部（svn 据此隐藏按钮）。按 rev 去重防连点重复 */
+  const loadMore = async (target: number) => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      let merged = [...(logs ?? [])];
+      while (true) {
+        if (target > 0 && merged.length >= target) break;
+        const oldest = merged.length > 0 ? merged[merged.length - 1]!.rev : undefined;
+        const r = await get.log(props.path, PAGE, merged.length, oldest);
+        const newOnes = r.logs.filter((l) => !merged.some((m) => m.rev === l.rev));
+        if (r.logs.length === 0 || newOnes.length === 0) {
+          setExhausted(true);
+          break;
+        }
+        merged = [...merged, ...newOnes];
+        setLogs(merged);
+        if (newOnes.length < PAGE) {
+          setExhausted(true);
+          break;
+        }
+      }
+    } catch (e) {
+      setNoticeErr(true);
+      setNotice((e as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   /** 未推送 hash 集合（短 7 位比对）+ 第一条未推送（HEAD）下标 */
   const unpushedSet = new Set(unpushed.map((h) => h.slice(0, 7)));
@@ -187,7 +246,29 @@ export function HistoryView(props: Props) {
       <div style={{ width: `${leftRatio}%`, flex: '0 0 auto', display: 'flex', flexDirection: 'column', minWidth: 220 }}>
         <div className="row dim" style={{ marginBottom: 8, gap: 8 }}>
           历史: {props.path ? <span>{props.path}</span> : '全部提交'}
+          {!filterQ && logs && (
+            <span className="small" style={{ color: 'var(--dim)' }}>
+              （{loadingMore ? shownLen : logs.length}{total > (loadingMore ? shownLen : logs.length) ? `/${total}` : ''}）
+            </span>
+          )}
           {filterQ && <span className="small" style={{ color: 'var(--warn)' }}>{visibleLogs.length}/{logs?.length ?? 0}</span>}
+          {/* 「更多」单按钮：点击下拉选择 600/1200/全部（追加式加载到列表底部） */}
+          {logs && !exhausted && ((total > 0 && logs.length < total) || (total === 0 && logs.length >= PAGE)) && (
+            <button
+              className="mini"
+              disabled={loadingMore}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setMoreMenu({ x: r.left, y: r.bottom + 4 });
+              }}
+              title="追加更多提交到列表底部（加载期间可继续浏览）"
+            >
+              {loadingMore ? '⏳ 加载中…' : '更多'}
+            </button>
+          )}
+          {logs && exhausted && total === 0 && logs.length >= PAGE && (
+            <span className="dim small">已全部加载</span>
+          )}
           <span className="grow" />
           {/* 模糊过滤：按消息/作者/版本号实时过滤提交列表 */}
           <input
@@ -205,44 +286,66 @@ export function HistoryView(props: Props) {
         {!logs && !error && <div className="loading">⏳ 读取提交记录…</div>}
         {logs && logs.length === 0 && !error && <div className="empty">暂无提交记录</div>}
         {logs && logs.length > 0 && (
-          <div className="list" style={{ overflow: 'auto', flex: 1 }}>
+          <div
+            ref={listRef}
+            className="list"
+            style={{ overflow: 'auto', flex: 1, gap: 0 }}
+            onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+          >
             {visibleLogs.length === 0 && <div className="empty">没有匹配的提交</div>}
-            {visibleLogs.map((l, i) => {
-              const isUnpushed = unpushedSet.has(l.rev);
-              // 只有第一条未推送（HEAD）可右键操作：amend/reset 只作用于最近一次提交
-              const opable = isUnpushed && logs.indexOf(l) === headIdx;
-              return (
-                <div
-                  key={l.rev}
-                  className="list-item"
-                  style={{ background: sel === l ? 'var(--panel2)' : undefined }}
-                  onClick={() => {
-                    setSel(l);
-                    setDiffOf(null);
-                  }}
-                  onContextMenu={
-                    isUnpushed
-                      ? (e) => {
-                          e.preventDefault();
-                          setMenu({ x: e.clientX, y: e.clientY, index: logs.indexOf(l) });
-                        }
-                      : undefined
-                  }
-                >
-                  <span className="rev">{l.rev}</span>
-                  <span className="date">{l.date.slice(0, 16)}</span>
-                  <span className="author">{l.author}</span>
-                  <span className="msg">{l.msg}</span>
-                  <span className="stat">{l.changed.length}</span>
-                  {isUnpushed && (
-                    <span className="unpushed" title={`未推送：本地领先远程 ${unpushed.length} 个提交`}>
-                      <span className="unpushed-dot" />
-                      {opable && <span className="unpushed-n">{unpushed.length}</span>}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {/* 虚拟滚动：track 撑出总高度（flexShrink:0 防被容器压缩），只渲染可视区附近的 40 行 */}
+            <div style={{ height: visibleLogs.length * ROW_H, position: 'relative', flexShrink: 0 }}>
+              {(() => {
+                const start = Math.max(0, Math.floor(scrollTop / ROW_H) - 5);
+                const n = Math.min(visibleLogs.length - start, 40);
+                return visibleLogs.slice(start, start + n).map((l, k) => {
+                  const i = start + k;
+                  const isUnpushed = unpushedSet.has(l.rev);
+                  // 只有第一条未推送（HEAD）可右键操作：amend/reset 只作用于最近一次提交
+                  const opable = isUnpushed && logs.indexOf(l) === headIdx;
+                  return (
+                    <div
+                      key={l.rev}
+                      className="list-item"
+                      style={{
+                        background: sel === l ? 'var(--panel2)' : undefined,
+                        position: 'absolute',
+                        top: i * ROW_H,
+                        left: 0,
+                        right: 0,
+                        height: ROW_H - 2,
+                        boxSizing: 'border-box',
+                        marginBottom: 2,
+                      }}
+                      onClick={() => {
+                        setSel(l);
+                        setDiffOf(null);
+                      }}
+                      onContextMenu={
+                        isUnpushed
+                          ? (e) => {
+                              e.preventDefault();
+                              setMenu({ x: e.clientX, y: e.clientY, index: logs.indexOf(l) });
+                            }
+                          : undefined
+                      }
+                    >
+                      <span className="rev">{l.rev}</span>
+                      <span className="date">{l.date.slice(0, 16)}</span>
+                      <span className="author">{l.author}</span>
+                      <span className="msg">{l.msg}</span>
+                      <span className="stat">{l.changed.length}</span>
+                      {isUnpushed && (
+                        <span className="unpushed" title={`未推送：本地领先远程 ${unpushed.length} 个提交`}>
+                          <span className="unpushed-dot" />
+                          {opable && <span className="unpushed-n">{unpushed.length}</span>}
+                        </span>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
           </div>
         )}
       </div>
@@ -292,6 +395,20 @@ export function HistoryView(props: Props) {
         )}
       </div>
       {/* 未推送提交右键菜单（仅第一条=HEAD 可操作；其余项提示先撤销前面的提交） */}
+      {/* 「更多」下拉：追加到 600/1200/全部（按批 200 循环追加） */}
+      {moreMenu && (
+        <ContextMenu
+          x={moreMenu.x}
+          y={moreMenu.y}
+          mask
+          items={[
+            { icon: '⏬', label: '追加到 600 条', action: () => { setMoreMenu(null); void loadMore(600); } },
+            { icon: '⏬', label: '追加到 1200 条', action: () => { setMoreMenu(null); void loadMore(1200); } },
+            { icon: '⏬', label: total > 0 ? `加载全部提交（共 ${total} 条）` : '加载全部提交', action: () => { setMoreMenu(null); void loadMore(0); } },
+          ]}
+          onClose={() => setMoreMenu(null)}
+        />
+      )}
       {menu && logs && headIdx >= 0 && logs[menu.index] && (
         <ContextMenu
           x={menu.x}

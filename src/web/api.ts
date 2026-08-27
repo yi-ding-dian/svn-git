@@ -124,8 +124,15 @@ export const get = {
   /** 目录下（含子目录）该状态文件，按 mtime 降序（角标跳转定位） */
   locate: (dir: string, code: string) =>
     api<{ files: { path: string; mtime: number }[] }>(`/api/locate?dir=${encodeURIComponent(dir)}&code=${encodeURIComponent(code)}`),
-  log: (pathRel?: string) =>
-    api<{ logs: LogEntry[]; unpushed: string[] }>(`/api/log${pathRel ? `?path=${encodeURIComponent(pathRel)}` : ''}`),
+  log: (pathRel?: string, limit?: number, offset?: number, afterRev?: string) => {
+    const q = new URLSearchParams();
+    if (pathRel) q.set('path', pathRel);
+    if (limit !== undefined) q.set('limit', String(limit)); // 0 = 全量
+    if (offset) q.set('offset', String(offset)); // 续拉：已加载条数
+    if (afterRev) q.set('afterRev', afterRev); // svn 续拉：已加载最老版本
+    const qs = q.toString();
+    return api<{ logs: LogEntry[]; unpushed: string[]; total: number; totalGt?: boolean }>(`/api/log${qs ? `?${qs}` : ''}`);
+  },
   diff: (pathRel?: string, a?: string, b?: string) => {
     const q = new URLSearchParams();
     if (pathRel) q.set('path', pathRel);

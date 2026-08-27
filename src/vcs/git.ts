@@ -239,13 +239,26 @@ export class GitVcs {
   }
 
   /** git log --name-status（可限定路径） */
-  async log(limit = 200, pathRel?: string): Promise<LogEntry[]> {
+  async log(limit = 200, pathRel?: string, offset = 0): Promise<LogEntry[]> {
     // -c core.quotepath=false：中文路径不做八进制转义（否则 changed 路径乱码）
-    const args = ['-c', 'core.quotepath=false', 'log', '-n', String(limit), '--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--name-status'];
+    // limit<=0 = 全量（不带 -n）；offset>0 = 追加续拉（--skip 已加载数）
+    const args = ['-c', 'core.quotepath=false', 'log'];
+    if (limit > 0) args.push('-n', String(limit));
+    if (offset > 0) args.push('--skip', String(offset));
+    args.push('--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--name-status');
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args);
     if (res.code !== 0) throw new Error(`git log 失败: ${res.stderr.trim()}`);
     return parseGitLog(res.stdout);
+  }
+
+  /** 提交总数（rev-list --count 秒级精确） */
+  async logTotal(pathRel?: string): Promise<{ count: number; exact: boolean }> {
+    const args = ['rev-list', '--count', 'HEAD'];
+    if (pathRel) args.push('--', pathRel);
+    const res = await this.exec(args);
+    if (res.code !== 0) throw new Error(`git log 失败: ${res.stderr.trim()}`);
+    return { count: Number(res.stdout.trim()) || 0, exact: true };
   }
 
   /**

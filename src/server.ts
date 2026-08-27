@@ -744,9 +744,23 @@ export function startServer(): Promise<ServerHandle> {
           sendJson(res, 400, { error: '路径越界' });
           return;
         }
-        const limit = Number(url.searchParams.get('limit') ?? 200);
-        const logs = await vcs.log(limit, pathRel);
-        // git:附带未推送提交 hash 列表(历史视图绿灯标记);svn 无此概念
+        // limit 缺省 200（首屏）；显式 limit=0 → 全量。offset=已加载条数（git --skip 续拉）；afterRev=已加载最老版本（svn -r rev-1:1 续拉）
+        const limitRaw = url.searchParams.get('limit');
+        const limit = limitRaw === null ? 200 : Number(limitRaw);
+        const offset = Number(url.searchParams.get('offset') ?? 0) || 0;
+        const afterRev = url.searchParams.get('afterRev') || undefined;
+        // 日志（svn 不做总数探测——无轻量接口，全量 -q 会拖慢首次加载；git rev-list 秒级精确）
+        const logs = await vcs.log(limit, pathRel, offset, afterRev);
+        let total = 0;
+        if (repo.type === 'git') {
+          try {
+            const info = (await vcs.logTotal?.(pathRel)) ?? { count: 0, exact: true };
+            total = info.count;
+          } catch {
+            /* 探测失败不阻断历史列表 */
+          }
+        }
+        const totalGt = false;
         let unpushed: string[] = [];
         if (repo.type === 'git') {
           try {
@@ -755,7 +769,7 @@ export function startServer(): Promise<ServerHandle> {
             /* 计算失败不阻断历史列表 */
           }
         }
-        sendJson(res, 200, { logs, unpushed, total: 0 });
+        sendJson(res, 200, { logs, unpushed, total, totalGt });
         return;
       }
 

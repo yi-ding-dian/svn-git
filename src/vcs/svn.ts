@@ -159,10 +159,14 @@ export class SvnVcs {
     });
   }
 
-  async log(limit = 200, pathRel?: string): Promise<LogEntry[]> {
+  async log(limit = 200, pathRel?: string, _offset = 0, afterRev?: string): Promise<LogEntry[]> {
     // -r HEAD:1 范围写法：显式起点 HEAD（wc 可能停在旧 revision，mixed revision 下默认查询会查空），
     // 注意必须是 HEAD:1 范围而非 -r HEAD 单版本（单版本只返回该 revision 一条记录）
-    const args = ['log', '-r', 'HEAD:1', '-v', '--xml', '-l', String(limit)];
+    // limit<=0 = 全量（不带 -l）；afterRev=追加续拉（从该版本之后继续拉旧历史，-r rev-1:1）
+    const args = ['log', '-v', '--xml'];
+    if (afterRev) args.push('-r', `${Number(afterRev) - 1}:1`);
+    else args.push('-r', 'HEAD:1');
+    if (limit > 0) args.push('-l', String(limit));
     if (pathRel) args.push(pathRel);
     const res = await this.exec(args);
     if (res.code !== 0) {
