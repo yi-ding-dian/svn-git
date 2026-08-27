@@ -489,6 +489,8 @@ export function FsView(props: Props) {
 
   // 过滤激活时：拉取过滤后的树（仅修改/仅新文件/仅删除 → 树视图展示，双击文件跳转定位）
   const [filterTree, setFilterTree] = useState<FilterTreeNode[] | null>(null);
+  // 过滤树再拉信号：不经过 runOp 的内部操作（加入/取消忽略、忽略规则增删）成功后自增，强制重拉过滤树
+  const [filterTreeTick, setFilterTreeTick] = useState(0);
   useEffect(() => {
     if (filters.size === 0) {
       setFilterTree(null);
@@ -508,7 +510,7 @@ export function FsView(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [filters, data?.dir, props.tick]); // tick: 操作(添加/还原等)成功后 refresh() 会重置过滤树,防旧 ?/M 状态残留
+  }, [filters, data?.dir, props.tick, filterTreeTick]); // tick: 操作(添加/还原等)成功后 refresh() 会重置过滤树,防旧 ?/M 状态残留；filterTreeTick: 忽略相关内部操作
   /** 过滤树双击文件 → 跳转到所在文件夹并选中（清除过滤恢复原视图） */
   const jumpToFile = (rel: string) => {
     const idx = rel.lastIndexOf('/');
@@ -1312,6 +1314,7 @@ export function FsView(props: Props) {
         if (r.ok) {
           if (mode === 'tree') loadNode('', true);
           else void load(dir, true);
+          setFilterTreeTick((t) => t + 1); // 过滤视图（仅新文件等）重拉：? 变 I 后应从列表消失
         }
       })
       .catch((err: Error) => props.onToast(`忽略失败: ${err.message}`));
@@ -1328,6 +1331,7 @@ export function FsView(props: Props) {
         if (r.ok) {
           if (mode === 'tree') loadNode('', true);
           else void load(dir, true);
+          setFilterTreeTick((t) => t + 1); // 过滤视图重拉：I 变回 ? 后应出现在"仅新文件"里
         }
       })
       .catch((err: Error) => props.onToast(`取消忽略失败: ${err.message}`));
@@ -1978,7 +1982,11 @@ export function FsView(props: Props) {
         <IgnoreModal
           dir={ignoreModal.dir}
           onClose={() => setIgnoreModal(null)}
-          onChanged={() => (mode === 'tree' ? loadNode('', true) : void load(dir, true))}
+          onChanged={() => {
+            setFilterTreeTick((t) => t + 1); // 忽略规则增删 → ?/I 互换，过滤视图重拉
+            if (mode === 'tree') loadNode('', true);
+            else void load(dir, true);
+          }}
           onToast={props.onToast}
         />
       )}

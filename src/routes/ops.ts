@@ -86,6 +86,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 400, { error: '未知操作' });
           return true;
         }
+        if (result.ok) invalidateStatusCache(repo.root); // resolve/propset-ignore 改变状态码（C→干净、?→I）
         sendJson(res, 200, { ...result, authError: authErrorOf(result) });
         return true;
       }
@@ -104,6 +105,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean) : undefined;
         const r = (await vcs.clean?.(paths?.length ? paths : undefined)) ?? { ok: false, message: '当前仓库不支持该操作' };
+        if (r.ok) invalidateStatusCache(repo.root); // 清理后 ? 文件集变化，防过滤树显示已删文件
         sendJson(res, 200, { ...r, authError: false });
         return true;
       }
@@ -152,6 +154,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         try {
           for (const p of paths) fs.rmSync(path.join(repo.root, p), { recursive: true, force: true });
+          invalidateStatusCache(repo.root); // 磁盘文件集变化（? 项被删），防状态缓存/过滤树显示旧文件
           sendJson(res, 200, { ok: true, message: `已删除磁盘文件 ${paths.length} 项` });
         } catch (e) {
           sendJson(res, 500, { error: `删除失败: ${(e as Error).message}` });
@@ -226,6 +229,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const r = action === 'lock'
           ? (await vcs.lock?.(pathRel, force)) ?? { ok: false, message: '当前仓库不支持该操作' }
           : (await vcs.unlock?.(pathRel, force)) ?? { ok: false, message: '当前仓库不支持该操作' };
+        if (r.ok) invalidateStatusCache(repo.root); // 锁定/解锁影响状态展示（锁标）
         sendJson(res, 200, { ...r, authError: authErrorOf(r) });
         return true;
       }
@@ -402,6 +406,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           repo.type === 'git'
             ? (await vcs.ignoreAdd?.(pattern)) ?? { ok: false, message: '当前仓库不支持该操作' }
             : (await vcs.propSetIgnore?.(pathRel, pattern)) ?? { ok: false, message: '当前仓库不支持该操作' };
+        if (r.ok) invalidateStatusCache(repo.root); // 忽略后 ? → I，状态码变化
         sendJson(res, 200, { ...r, authError: authErrorOf(r) });
         return true;
       }

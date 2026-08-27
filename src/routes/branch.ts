@@ -53,7 +53,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const name = String(body.name ?? '');
         let result: VcsResult;
         if (action === 'create') result = await vcs.branchCreate(name);
-        else if (action === 'switch') result = await vcs.branchSwitch(name);
+        else if (action === 'switch') {
+          result = await vcs.branchSwitch(name);
+          // svn switch 会改写工作副本文件（回主干等）；git checkout 后工作区内容换分支——防旧状态残留
+          if (result.ok) invalidateStatusCache(vcsOf().repo.root);
+        }
         else if (action === 'delete') result = await vcs.branchDelete(name, Boolean(body.force));
         else if (action === 'merge') {
           result = await vcs.merge(name);
