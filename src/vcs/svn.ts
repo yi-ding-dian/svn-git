@@ -341,9 +341,15 @@ export class SvnVcs {
 
   /** svn revert（目录默认递归） */
   async revert(relPaths: string[]): Promise<VcsResult> {
-    const res = await this.exec(['revert', ...relPaths]);
-    if (res.code !== 0) {
-      return { ok: false, message: res.stderr.trim() || 'svn revert 失败' };
+    // svn revert 目录默认不清孩子（E155038："不能恢复目录，而不恢复孩子"）：目录单独带 --depth infinity 递归还原
+    //（取消添加 A 目录的场景：目录自身调度也只在此路径下才会被撤销），文件直接 revert
+    for (const p of relPaths) {
+      const abs = path.join(this.repo.root, p);
+      const isDir = fs.existsSync(abs) && fs.statSync(abs).isDirectory();
+      const res = await this.exec(isDir ? ['revert', '--depth', 'infinity', p] : ['revert', p]);
+      if (res.code !== 0) {
+        return { ok: false, message: res.stderr.trim() || 'svn revert 失败' };
+      }
     }
     return { ok: true, message: `已还原 ${relPaths.length} 项` };
   }

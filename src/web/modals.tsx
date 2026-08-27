@@ -805,6 +805,9 @@ export function RevertModal(props: {
   // 标题按清单状态语义化：全 A=取消添加 / 全 D=恢复删除 / 混合=还原
   const allA = props.items.length > 0 && props.items.every((i) => i.code === 'A');
   const allD = props.items.length > 0 && props.items.every((i) => i.code === 'D');
+  // 含 M/C：真丢弃本地修改（红色警告）；仅 A/D/R 等调度撤销 → 不丢数据，中性提示
+  const hasMod = props.items.some((i) => i.code === 'M' || i.code === 'C');
+  const actionName = allA ? '取消添加' : allD ? '恢复删除' : '还原';
   const titleName = allA ? '取消添加确认' : allD ? '恢复删除确认' : '还原确认';
   return (
     <div className="modal-mask">
@@ -835,8 +838,10 @@ export function RevertModal(props: {
               </label>
             ))}
           </div>
-          <div className="small" style={{ color: 'var(--err)', marginBottom: 10, flexShrink: 0 }}>
-            ⚠ 还原会放弃这些文件的本地修改（不可恢复）。未版本化（?）与忽略/外部文件不在列表中。
+          <div className="small" style={{ color: hasMod ? 'var(--err)' : 'var(--ok)', marginBottom: 10, flexShrink: 0 }}>
+            {hasMod
+              ? '⚠ 还原会放弃这些文件的本地修改（不可恢复）。未版本化（?）与忽略/外部文件不在列表中。'
+              : '✅ 仅撤销版本库调度（取消添加 / 恢复删除），磁盘文件保留，不丢失任何数据。未版本化（?）与忽略/外部文件不在列表中。'}
           </div>
         </div>
         <div className="foot">
@@ -846,11 +851,13 @@ export function RevertModal(props: {
             disabled={checked.size === 0}
             onClick={() =>
               setCfm({
-                msg: `将放弃已勾选的 ${checked.size} 个文件的本地修改，不可恢复（A 文件变为未版本化，M/C 改动丢失）。确认还原？`,
+                msg: hasMod
+                  ? `将放弃已勾选的 ${checked.size} 个文件的本地修改，不可恢复（A 文件变为未版本化，M/C 改动丢失）。确认${actionName}？`
+                  : `将撤销已勾选的 ${checked.size} 项版本库调度（${allA ? '文件变回未版本化 ?，内容保留' : '文件从版本库找回，内容保留'}），不丢失任何数据。确认${actionName}？`,
               })
             }
           >
-            ↩ 还原勾选的 {checked.size} 项
+            ↩ {actionName}勾选的 {checked.size} 项
           </button>
         </div>
       </ResizableModal>
@@ -860,7 +867,7 @@ export function RevertModal(props: {
           title={`⚠ ${titleName}`}
           message={cfm.msg}
           danger
-          confirmLabel="确认还原"
+          confirmLabel={`确认${actionName}`}
           onConfirm={() => {
             const sel = [...checked];
             setCfm(null);

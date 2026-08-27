@@ -541,9 +541,17 @@ export class GitVcs {
 
   /** git checkout HEAD -- path（暂存区+工作区一起还原到本地提交版本；git 2.20 无 restore）
    *  注意与 restoreMissing 的 checkout -- 区分：那是恢复缺失文件，不能动 */
+  /** 还原：staged/工作区统一覆盖。A（未提交新增，HEAD 无此路径）→ git rm --cached 撤销暂存（磁盘保留变 ?）；
+   *  其余 → checkout HEAD -- 覆盖工作区+暂存区（staged 修改也一并还原） */
   async revert(relPaths: string[]): Promise<VcsResult> {
-    const res = await this.exec(['checkout', 'HEAD', '--', ...relPaths]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git 还原失败' };
+    for (const p of relPaths) {
+      const inHead = await this.exec(['ls-tree', 'HEAD', '--', p]);
+      if (inHead.code !== 0) return { ok: false, message: inHead.stderr.trim() || 'git 还原失败' };
+      const r = inHead.stdout.trim()
+        ? await this.exec(['checkout', 'HEAD', '--', p])
+        : await this.exec(['rm', '--cached', '-r', '--quiet', p]);
+      if (r.code !== 0) return { ok: false, message: r.stderr.trim() || 'git 还原失败' };
+    }
     return { ok: true, message: `已还原 ${relPaths.length} 项` };
   }
 
