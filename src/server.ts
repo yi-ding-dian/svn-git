@@ -667,6 +667,12 @@ export function startServer(): Promise<ServerHandle> {
             let best = ' ';
             for (const s of sub) {
               const rk = { C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3, '?': 2 }[s.code] ?? 0;
+              // 子项全部删除调度（D）时不把目录自身升级为 D：目录自身仍版本化（可右键「从版本库移除」），
+              // D 只进角标集合；目录自身 D 调度（self D）仍走 D 分支（恢复删除）
+              if (s.code === 'D' && !self) continue;
+              // svn：子项未版本化(?)不升级目录为 ?——目录本体已版本化（无 self），
+              // 子 ? 由 unversionedCount 角标提示；只有目录自身就是 ?（未添加）才显示 ? 菜单。git 目录无本体，保持原聚合
+              if (repo.type === 'svn' && s.code === '?' && !(self && self.code === '?')) continue;
               if (rk > ({ C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3, '?': 2 }[code] ?? 0)) code = s.code;
             }
             // 变更数只统计已版本化条目（未版本化 '?' 未纳入版本控制，不计数）
@@ -676,8 +682,13 @@ export function startServer(): Promise<ServerHandle> {
             // 目录操作集合：同时显示 M/A/D 等全部操作标识；排除未版本化 '?' 与无变更 ' '；
             // 外部引用 'X' 不进父目录集合（只显示在引用目录自身，避免 src/trunk 等全带标识）
             codes = [...new Set(sub.map((s) => s.code).filter((c) => c && c !== '?' && c !== ' ' && c !== 'none' && c !== 'X'))];
-            codes.sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b));
           }
+          // 目录自身调度（svn D/A 目录本体，如"已删除"）并入角标集合——位于子项块之外：
+          // svn delete 目录后 status 只输出目录自身行（子项不单列），sub 为空时也要能显示 D
+          if (self && self.code && self.code !== ' ' && self.code !== 'none' && self.code !== 'X' && !codes?.includes(self.code)) {
+            codes = [...(codes ?? []), self.code];
+          }
+          if (codes) codes.sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b));
           // 目录自身被忽略(I)：子级无操作时徽标也应显示 I（避免被误显示为干净的 √）
           if (code === 'I' && !codes) codes = ['I'];
           // 目录自身未版本化（整个目录不在版本库）：徽标显示 '?'（与文件一致，避免误显干净的 √）
