@@ -394,6 +394,12 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .pv-hit { background: rgba(212, 167, 50, .25); }
 .pv-cur { background: rgba(212, 167, 50, .55); outline: 1px solid var(--warn); }
+/* 跳转目标块：点击一侧后另一侧对应修改块呼吸高亮（多块散布时锁定对应位置） */
+.sb-target { animation: sb-target-pulse 0.65s ease-in-out 2; }
+@keyframes sb-target-pulse {
+  0%, 100% { background: rgba(88, 166, 255, .16); box-shadow: inset 3px 0 0 var(--accent); }
+  50% { background: rgba(88, 166, 255, .32); box-shadow: inset 3px 0 0 var(--accent); }
+}
 
 /* ---------- 并排对比 ---------- */
 .sb-resizer {

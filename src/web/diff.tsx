@@ -195,15 +195,24 @@ export function DiffView(props: Props) {
   const blocksRef = useRef<{ id: number; left: number; right: number }[]>([]);
   const curBlockRef = useRef(0);
   curBlockRef.current = curBlock;
+  // 跳转目标块高亮：点击一侧/块导航后，另一侧对应块脉冲呼吸 1.5s（多块散布时一眼锁定对应修改）
+  const [targetBlock, setTargetBlock] = useState<number | null>(null);
+  const targetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashTarget = useCallback((block: number) => {
+    setTargetBlock(block);
+    if (targetTimer.current) clearTimeout(targetTimer.current);
+    targetTimer.current = setTimeout(() => setTargetBlock(null), 1500);
+  }, []);
 
   // 跳转到差异块：左右两栏都滚动到块首行
   const goBlock = useCallback((i: number) => {
     const b = blocksRef.current[i];
     if (!b) return;
     setCurBlock(i);
+    flashTarget(b.id);
     leftRefs.current.get(b.left)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     rightRefs.current.get(b.right)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, []);
+  }, [flashTarget]);
 
   // ← / Esc 返回；↑↓ 差异块导航（并排模式且有差异时）
   useEffect(() => {
@@ -391,17 +400,19 @@ export function DiffView(props: Props) {
     const paneRect = pane.getBoundingClientRect();
     pane.scrollTop += rect.top - paneRect.top - pane.clientHeight / 2;
   };
-  // 点击右侧修改行 → 左侧滚动到对应修改块首行（新增块滚到左栏占位行）
+  // 点击右侧修改行 → 左侧滚动到对应修改块首行（新增块滚到左栏占位行）并高亮该块
   const jumpLeft = (block: number) => {
     const no = blockFirstLeft.get(block);
     if (no === undefined) return;
+    flashTarget(block);
     if (no < 0) scrollToLine(leftPane.current, leftPhRefs.current.get(-no));
     else scrollToLine(leftPane.current, leftRefs.current.get(no));
   };
-  // 点击左侧修改行 → 右侧滚动
+  // 点击左侧修改行 → 右侧滚动 + 同块高亮
   const jumpRight = (block: number) => {
     const no = blockFirstRight.get(block);
     if (no === undefined) return;
+    flashTarget(block);
     scrollToLine(rightPane.current, rightRefs.current.get(no));
   };
 
@@ -542,7 +553,7 @@ export function DiffView(props: Props) {
                       else leftPhRefs.current.delete(r.block);
                     } else if (el) leftRefs.current.set(r.no, el);
                   }}
-                  className={`sb-line ${r.ph ? 'sb-ph' : r.change ? 'sb-del' : ''} ${isHitL ? 'pv-hit' : ''} ${isCurL ? 'pv-cur' : ''}`}
+                  className={`sb-line ${r.ph ? 'sb-ph' : r.change ? 'sb-del' : ''} ${isHitL ? 'pv-hit' : ''} ${isCurL ? 'pv-cur' : ''} ${r.change && r.block === targetBlock ? 'sb-target' : ''}`}
                   onClick={() => r.change && jumpRight(r.block)}
                   title={r.ph ? '右栏此处有新增（点击右侧定位）' : r.change ? '修改处（点击右侧定位）' : ''}
                 >
@@ -570,7 +581,7 @@ export function DiffView(props: Props) {
                     ref={(el) => {
                       if (el) rightRefs.current.set(r.no, el);
                     }}
-                    className={`sb-line ${r.change ? 'sb-add' : ''} ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''}`}
+                    className={`sb-line ${r.change ? 'sb-add' : ''} ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''} ${r.change && r.block === targetBlock ? 'sb-target' : ''}`}
                     onClick={() => r.change && jumpLeft(r.block)}
                     title={r.change ? '修改处（点击左侧定位）' : ''}
                   >

@@ -14,7 +14,7 @@ export function DiffRender(props: { text: string }) {
         else if (l.startsWith('-')) cls = 'del';
         return (
           <div key={i} className={`line ${cls}`}>
-            {l || ' '}
+            {l || ' '}
           </div>
         );
       })}
