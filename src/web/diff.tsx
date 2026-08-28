@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get } from './api.js';
 import { DiffRender } from './diff-render.js';
 import { langOf, highlightLine } from './highlight.js';
+import { renderMarkdown } from './markdown.js';
 
 export interface DiffTarget {
   path?: string;
@@ -129,6 +130,12 @@ export function DiffView(props: Props) {
   const [dSearchL, setDSearchL] = useState('');
   const [dSearchLActive, setDSearchLActive] = useState(false);
   const [dMatchLIdx, setDMatchLIdx] = useState(0);
+  // md 文件双栏预览：左右独立开关（预览=该栏原文 Markdown 渲染，非 diff 行视图）
+  const [previewL, setPreviewL] = useState(false);
+  const [previewR, setPreviewR] = useState(false);
+  // 双栏同步滚动（按钮开关）：滚任一栏 → 另一栏按修改块对齐跟随
+  const [syncMode, setSyncMode] = useState(false);
+  const syncLock = useRef(false);
   // 文件更新检测
   const [staleTip, setStaleTip] = useState(false);
   const mtimeRef = useRef<{ mtime: number; size: number } | null>(null);
@@ -141,6 +148,9 @@ export function DiffView(props: Props) {
   const rightPane = useRef<HTMLDivElement>(null);
 
   const sideMode = Boolean(props.target?.path);
+  // md 文件：左右栏预览（renderMarkdown 复用文件预览同款渲染；baseDir 供相对图片路径）
+  const isMd = Boolean(props.target?.path?.toLowerCase().endsWith('.md'));
+  const mdBaseDir = props.target?.path?.includes('/') ? props.target.path.slice(0, props.target.path.lastIndexOf('/')) : '';
 
   useEffect(() => {
     if (!props.target) return;
@@ -343,8 +353,14 @@ export function DiffView(props: Props) {
     if (dMatches.length === 0) return;
     const next = (dMatchIdx + 1) % dMatches.length;
     setDMatchIdx(next);
+    // 预览模式：无行元素，按匹配比例滚动预览容器（近似定位）
+    if (previewR) {
+      const p = rightPane.current;
+      if (p) p.scrollTop = (next / Math.max(1, dMatches.length)) * (p.scrollHeight - p.clientHeight);
+      return;
+    }
     rightRefs.current.get(dMatches[next]!)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [dMatches, dMatchIdx]);
+  }, [dMatches, dMatchIdx, previewR]);
 
   // 左栏搜索匹配 + 跳转
   const dMatchesL = useMemo(() => {
@@ -356,8 +372,14 @@ export function DiffView(props: Props) {
     if (dMatchesL.length === 0) return;
     const next = (dMatchLIdx + 1) % dMatchesL.length;
     setDMatchLIdx(next);
+    // 预览模式：无行元素，按匹配比例滚动预览容器（近似定位）
+    if (previewL) {
+      const p = leftPane.current;
+      if (p) p.scrollTop = (next / Math.max(1, dMatchesL.length)) * (p.scrollHeight - p.clientHeight);
+      return;
+    }
     leftRefs.current.get(dMatchesL[next]!)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [dMatchesL, dMatchLIdx]);
+  }, [dMatchesL, dMatchLIdx, previewL]);
 
   // 滚动条预览标记：修改块位置（绿=有新增/修改行，红=纯删除）
   const scrollMarkers = useMemo(() => {
@@ -392,6 +414,66 @@ export function DiffView(props: Props) {
     }
     return m;
   }, [diffLines]);
+
+  /** 双栏同步滚动：绑在两侧 pane 的 onScroll。两栏行高一致（占位行设计），
+   *  高度相近时直接等量同步；差异大时按变更块对齐（否则比例同步）；syncLock 防循环。
+   *  死区 ±2px：目标与当前差小于 2px 不设置——防止浮点取整造成的 ±1px 往返抽搐 */
+  const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onScrollSync = useCallback(
+    (side: 'left' | 'right') => (e: React.UIEvent<HTMLDivElement>) => {
+      if (!syncMode || syncLock.current) return;
+      syncLock.current = true;
+      const pane = e.currentTarget;
+      const rows = side === 'left' ? leftRows : rightRows;
+      const dstPane = (side === 'left' ? rightPane : leftPane).current;
+      const setDst = (target: number): boolean => {
+        if (!dstPane) return true;
+        if (Math.abs(dstPane.scrollTop - target) < 2) return true; // 已对齐：不动（防振荡）
+        dstPane.scrollTop = Math.max(0, target);
+        return true;
+      };
+      if (dstPane) {
+        const hDiff = Math.abs(pane.scrollHeight - dstPane.scrollHeight);
+        if (hDiff < 300) {
+          setDst(pane.scrollTop); // 等量同步（同行高 + 占位对齐，普通文件高度差 <300px）
+        } else if (rows.length > 0 && pane.firstElementChild) {
+          const rowH = (pane.firstElementChild as HTMLElement).offsetHeight || 18;
+          let i = Math.min(Math.max(0, Math.floor(pane.scrollTop / rowH)), rows.length - 1);
+          while (i < rows.length && rows[i].block < 0) i++; // 向下找视口处最近的变更块
+          if (i < rows.length && rows[i].block >= 0) {
+            const block = rows[i].block;
+            const dstBlockNo = side === 'left' ? blockFirstRight.get(block) : blockFirstLeft.get(block);
+            // 目标元素：右栏目标恒为行（无占位）；左栏目标优先占位行（phRefs key=block），否则行
+            let dstEl: HTMLDivElement | undefined = undefined;
+            if (side === 'left') dstEl = dstBlockNo !== undefined ? (rightRefs.current.get(dstBlockNo) ?? undefined) : undefined;
+            else dstEl = leftPhRefs.current.get(block) ?? (dstBlockNo !== undefined ? (leftRefs.current.get(dstBlockNo) ?? undefined) : undefined);
+            const phRow = (rows[i] as { ph?: boolean }).ph;
+            const srcEl = phRow
+              ? leftPhRefs.current.get(block)
+              : (side === 'left' ? leftRefs.current : rightRefs.current).get(rows[i].no);
+            if (dstEl && srcEl) {
+              setDst(dstEl.offsetTop + (pane.scrollTop - srcEl.offsetTop));
+            } else {
+              // 无块可对齐：比例同步
+              const maxSrc = Math.max(1, pane.scrollHeight - pane.clientHeight);
+              const maxDst = Math.max(1, dstPane.scrollHeight - dstPane.clientHeight);
+              setDst(Math.min(Math.max(0, (pane.scrollTop / maxSrc) * maxDst), maxDst));
+            }
+          } else {
+            // 无块可对齐：比例同步
+            const maxSrc = Math.max(1, pane.scrollHeight - pane.clientHeight);
+            const maxDst = Math.max(1, dstPane.scrollHeight - dstPane.clientHeight);
+            setDst(Math.min(Math.max(0, (pane.scrollTop / maxSrc) * maxDst), maxDst));
+          }
+        }
+      }
+      if (lockTimer.current) clearTimeout(lockTimer.current);
+      lockTimer.current = setTimeout(() => {
+        syncLock.current = false;
+      }, 80);
+    },
+    [syncMode, leftRows, rightRows, blockFirstLeft, blockFirstRight],
+  );
 
   // 手动滚动到指定行（scrollIntoView 会连带滚动外层容器，改为 pane 内精确滚动，左右联动可靠）
   const scrollToLine = (pane: HTMLDivElement | null, el: HTMLDivElement | undefined) => {
@@ -437,6 +519,13 @@ export function DiffView(props: Props) {
             <span className="dim small nowrap">差异点 {curBlock + 1}/{blocks.length}</span>
             <button className="mini" onClick={() => goBlock((curBlock - 1 + blocks.length) % blocks.length)}>上一个 ↑</button>
             <button className="mini" onClick={() => goBlock((curBlock + 1) % blocks.length)}>下一个 ↓</button>
+            <button
+              className={`mini${syncMode ? ' primary' : ''}`}
+              onClick={() => setSyncMode((v) => !v)}
+              title="开启后滚动任一栏，另一栏自动跟随（预览模式下为按比例跟随，无行对齐）"
+            >
+              ↔ 同步滚动
+            </button>
           </>
         )}
         <span className="dim small">← 键返回</span>
@@ -503,11 +592,21 @@ export function DiffView(props: Props) {
                 ) : (
                   <button className="mini" onClick={() => setDSearchLActive(true)}>🔍 搜索此栏</button>
                 )}
+                {isMd && previewL && (
+                  <button className="mini" onClick={() => setPreviewL((v) => !v)} title="返回差异行视图">
+                    返回对比
+                  </button>
+                )}
+                {isMd && !previewL && (
+                  <button className="mini" onClick={() => setPreviewL((v) => !v)} title="Markdown 渲染预览（原版）">
+                    👁 预览
+                  </button>
+                )}
               </div>
             </div>
             {/* 右栏：当前 */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="dim small" style={{ marginBottom: 4 }}>▶ {versions.rightLabel}</div>
+              <div className="dim small" style={{ marginBottom: 4 }}>▶ {versions?.rightLabel}</div>
               <div className="row" style={{ gap: 6 }}>
                 {dSearchActive ? (
                   <>
@@ -534,12 +633,25 @@ export function DiffView(props: Props) {
                 ) : (
                   <button className="mini" onClick={() => setDSearchActive(true)}>🔍 搜索此栏</button>
                 )}
+                {isMd && (
+                  <button className="mini" onClick={() => setPreviewR((v) => !v)} title={previewR ? '返回差异行视图' : 'Markdown 渲染预览（当前）'}>
+                    {previewR ? '返回对比' : '👁 预览'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
           <div style={{ display: 'flex', flex: 1, minHeight: 0, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
             {/* 左栏：原版（flex 不伸缩，宽度由 leftRatio 控制；sb-pane 默认 flex:1 会覆盖 width） */}
-            <div ref={leftPane} className="sb-pane" style={{ width: `${leftRatio}%`, flex: '0 0 auto' }}>
+            <div ref={leftPane} className="sb-pane" style={{ width: `${leftRatio}%`, flex: '0 0 auto' }} onScroll={onScrollSync('left')}>
+              {previewL ? (
+                <div
+                  className="md-render"
+                  style={{ padding: 16 }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(versions?.left ?? '', { baseDir: mdBaseDir }) }}
+                />
+              ) : (
+              <>
               {leftRows.length === 0 && <div className="dim" style={{ padding: 20 }}>（原版为空 — 新增文件）</div>}
               {leftRows.map((r) => {
                 const isHitL = dSearchLActive && dMatchesL.includes(r.no);
@@ -565,12 +677,22 @@ export function DiffView(props: Props) {
                 </div>
                 );
               })}
+              </>
+              )}
             </div>
             {/* 拖拽手柄 */}
             <div className="sb-resizer" onMouseDown={startDrag} title="拖动调整左右栏宽度" />
             {/* 右栏：当前 + 滚动条预览标记 */}
             <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0 }}>
-            <div ref={rightPane} className="sb-pane">
+            <div ref={rightPane} className="sb-pane" onScroll={onScrollSync('right')}>
+              {previewR ? (
+                <div
+                  className="md-render"
+                  style={{ padding: 16 }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(versions?.right ?? '', { baseDir: mdBaseDir }) }}
+                />
+              ) : (
+              <>
               {rightRows.length === 0 && <div className="dim" style={{ padding: 20 }}>（当前为空 — 文件已删除）</div>}
               {rightRows.map((r) => {
                 const isHit = dSearchActive && dMatches.includes(r.no);
@@ -593,6 +715,8 @@ export function DiffView(props: Props) {
                   </div>
                 );
               })}
+              </>
+              )}
             </div>
             {/* 滚动条预览标记：绿=新增/修改，红=删除 */}
             {scrollMarkers.length > 0 && (
