@@ -22,9 +22,10 @@ function multiRevertName(codes: string[], n: number): { label: string; title: st
   return { label: `还原（${n} 项）`, title: '对勾选项执行还原（A=取消添加 / D=恢复删除 / M=放弃本地修改）' };
 }
 
-/** 磁盘存在且未被删除调度（可重命名/移动）：干净 / M / A / C（D 已删调度、R/~/U 调度中或磁盘不在 → 均不可改名） */
+/** 磁盘存在且可改名（renameItem 内部按状态分流：?/I 走磁盘改名，其余走 svn/git move）：
+ *  干净 / M / A / C / ? / I（D 已删调度、R/~/U 调度中或磁盘不在 → 均不可改名） */
 function renameableCode(code: string): boolean {
-  return !code || code === 'M' || code === 'A' || code === 'C';
+  return !code || code === 'M' || code === 'A' || code === 'C' || code === '?' || code === 'I';
 }
 
 /** 有版本库内容（可从版本库移除，非添加/删除调度中）：干净 / M / C（A 添加调度用"还原=取消添加"，D 删除调度不再移除） */
@@ -432,6 +433,9 @@ export function FsView(props: Props) {
   // 刷新（tick 变化）：强制重新拉取
   useEffect(() => {
     if (props.tick === 0) return;
+    // 清空全部目录缓存再强刷当前目录：操作可能改动任意目录（如添加 A 目录），
+    // 仅强刷当前目录时其他目录缓存残留旧 ? 状态，再次进入会缓存命中显示旧数据
+    setNodeData(new Map());
     void load(dir, true);
   }, [props.tick, load]); // eslint-disable-line react-hooks/exhaustive-deps
 

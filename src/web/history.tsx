@@ -350,7 +350,7 @@ export function HistoryView(props: Props) {
         )}
       </div>
       <div className="sb-resizer" onMouseDown={startDrag} title="拖动调整左右栏宽度" />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         {!sel && <div className="empty">选择提交查看详情</div>}
         {sel && !diffOf && (
           <>
@@ -366,7 +366,7 @@ export function HistoryView(props: Props) {
             </div>
             <div className="dim" style={{ marginBottom: 10, whiteSpace: 'pre-wrap' }}>{sel.msg}</div>
             <div className="small dim" style={{ marginBottom: 6 }}>变更文件（点击查看 diff）：</div>
-            <div className="changed">
+            <div className="changed" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
               {sel.changed.map((c) => (
                 <div key={c.path} className="changed-row" onClick={() => void showDiff(sel.rev, undefined, c.path)}>
                   <span className={`act ${c.action}`}>{c.action}</span>
@@ -390,7 +390,7 @@ export function HistoryView(props: Props) {
               <span className="grow" />
               <button className="mini" onClick={() => setDiffOf(null)}>← 返回</button>
             </div>
-            {diffLoading ? <div className="loading">⏳ 计算差异…</div> : <DiffRender text={diffText} />}
+            {diffLoading ? <div className="loading">⏳ 计算差异…</div> : <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DiffRender text={diffText} /></div>}
           </>
         )}
       </div>
