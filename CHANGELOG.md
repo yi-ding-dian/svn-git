@@ -33,9 +33,13 @@
 - 删除确认文案按实际语义重写（提交前可还原、未跟踪文件不可恢复等）；历史视图错误信息红色区分；失败 toast 停留 5 秒不截断
 
 ### 测试与工程
-- 新增 `npm test`（build + VCS 层 32 + 扩展 29 + diff 算法 6 + **HTTP API 集成 20** = 87 项断言）
+- 新增 `npm test`（build + VCS 层 47 + 扩展 45 + diff 算法 6 + **HTTP API 集成 32** = 130 项断言）
 - 新增 `.github/workflows/test.yml`（ubuntu + svn 依赖，push/PR 自动跑全量测试）
-- 新增 `test/api-test.mjs`：真实服务端到端测试（越界拦截 6 项、CSRF、缓存失效、软删 keep、SVN net-check 等）
+- 新增 `test/api-test.mjs`：真实服务端到端测试（越界拦截 6 项、CSRF、缓存失效、软删 keep、重命名 API、SVN net-check 等）
+
+### 文档
+- **README / docs 全套文档重写**：对齐当前功能现状（重命名、远程分支删除、仅删除过滤、过滤树跳转、命令预览、历史总数、合并预检、Git 认证引导等）；修正过时描述（侧边栏导航、工具栏按钮位置、状态缓存时长、测试断言数、前端体积、高亮语言数等）
+- **截图全套重截**：docs/screenshots/ 下 git、svn 各 8 张（1280×820，当前界面布局/图标/右键菜单/分支弹窗/配色主题），文件名与 README/docs 引用一致
 
 ## [1.0.0]
 
