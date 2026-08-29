@@ -540,7 +540,8 @@ export class SvnVcs {
     }
   }
 
-  /** 创建分支：svn copy <来源> <root>/branches/<name>（来源优先 trunk，无 trunk 用当前 URL；branches/ 自动创建） */
+  /** 创建分支：svn copy <trunk> <root>/branches/<name>（仅标准布局：分支必须从 trunk 复制才保证可合并回主干；
+   *  无 trunk（非标准布局）直接拒绝，不 fallback 到当前 URL——从当前位置复制的分支无合并回主干意义） */
   async branchCreate(name: string): Promise<VcsResult> {
     const root = await this.repoRootUrl();
     // 目标已存在时 svn copy 会嵌套复制造成污染 → 先校验
@@ -550,20 +551,18 @@ export class SvnVcs {
     } catch {
       /* 不存在，继续 */
     }
-    const cur = await this.currentUrl();
-    let from = `${root}/trunk`;
-    // trunk 不存在则用当前 URL
+    // 标准布局检查：无 trunk 拒绝创建（分支=trunk 的平行线，合并回主干才是它的出路）
     try {
       await this.ls(`${root}/trunk/`);
     } catch {
-      from = cur;
+      return { ok: false, message: '仓库没有 trunk（非标准布局），无法创建分支。请先补建 trunk 目录（svn mkdir）' };
     }
     try {
       await this.ensureDir(`${root}/branches`);
     } catch (err) {
       return { ok: false, message: `创建 branches 目录失败: ${(err as Error).message}` };
     }
-    const res = await this.exec(['copy', from, `${root}/branches/${name}`, '-m', `创建分支 ${name}`], { timeoutMs: 120_000 });
+    const res = await this.exec(['copy', `${root}/trunk`, `${root}/branches/${name}`, '-m', `创建分支 ${name}`], { timeoutMs: 120_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
       return this.fail(auth, res.stderr.trim() || '创建分支失败');

@@ -119,7 +119,8 @@ export interface Vcs {
     lineConflicts?: string[];
     outdated?: { wcRev: string; headRev: string } | null;
   }>;
-  branchCreate(name: string): Promise<VcsResult>;
+  /** 创建分支（git 可选基点 base：git branch <名> [基点]；svn 固定从 trunk 复制） */
+  branchCreate(name: string, base?: string): Promise<VcsResult>;
   branchSwitch(name: string): Promise<VcsResult>;
   branchDelete(name: string, force?: boolean): Promise<VcsResult>;
   merge(name: string): Promise<VcsResult>;

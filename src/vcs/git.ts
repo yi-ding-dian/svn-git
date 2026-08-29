@@ -693,11 +693,12 @@ export class GitVcs {
     return { current: cur, branches };
   }
 
-  /** 创建分支 */
-  async branchCreate(name: string): Promise<VcsResult> {
-    const res = await this.exec(['branch', name]);
+  /** 创建分支：git branch <名> [基点]。基点缺省=当前 HEAD（现状行为）；传主干名则从主干创建——
+   * 从非主干分支开新分支会包含该分支已提交的改动，基于主干可避开（前端确认弹窗引导） */
+  async branchCreate(name: string, base?: string): Promise<VcsResult> {
+    const res = await this.exec(['branch', name, ...(base ? [base] : [])]);
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '创建分支失败' };
-    return { ok: true, message: `已创建分支 ${name}` };
+    return { ok: true, message: base ? `已创建分支 ${name}（基于 ${base}）` : `已创建分支 ${name}` };
   }
 
   /** 推送指定分支到远程（分支管理"推送到远程"）：无上游自动 git push -u origin <名字>；认证失败按保存凭据(GIT_ASKPASS)重试 */

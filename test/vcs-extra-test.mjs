@@ -10,7 +10,8 @@ import { SvnVcs } from '../dist/vcs/svn.js';
 // 测试仓库位置：相对脚本推导（项目根/svnkit-test），clone 到任何路径都能跑
 const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svnkit-test');
 const GIT_DIR = path.join(TEST_BASE, 'git-repo');
-const SVN_DIR = path.join(TEST_BASE, 'svn-wc');
+const SVN_DIR = path.join(TEST_BASE, 'svn-wc'); // 非标准布局（无 trunk，测试拒绝创建分支）
+const SVN_STD_DIR = path.join(TEST_BASE, 'svn-std-wc'); // 标准布局（trunk/branches/tags，测试分支创建/切换）
 
 let pass = 0;
 let fail = 0;
@@ -33,6 +34,10 @@ console.log('== Git 分支/标签/Stash ==');
 
   const cr = await vcs.branchCreate('test-feat');
   check('创建分支 test-feat', cr.ok);
+  // 带基点创建（从主干 master 拉新分支）
+  const cb = await vcs.branchCreate('base-feat', 'master');
+  check('带基点创建分支（基于 master）', cb.ok && cb.message.includes('master'));
+  await vcs.branchDelete('base-feat');
   const sw = await vcs.branchSwitch('test-feat');
   check('切换分支', sw.ok && (await vcs.branch()).includes('test-feat'));
   const sw2 = await vcs.branchSwitch('master');
@@ -151,12 +156,10 @@ console.log('== Git 合并预检 mergeCheck（L1 文件级 + L2 提交级试算�
   await run('git', ['branch', '-D', 'mc-far', 'mc-near'], { cwd: GIT_DIR });
 }
 
-console.log('== SVN 分支/标签/切换 ==');
+console.log('== SVN 标准布局（trunk/branches/tags）==');
 {
-  const vcs = new SvnVcs(detectRepo(SVN_DIR), null);
-  // 重置到仓库根（测试仓库无标准 trunk 布局；避免上次中断的残留分支干扰）
-  const rootUrl = (await vcs.info()).url?.replace(/\/branches\/.*$/, '').replace(/\/tags\/.*$/, '') ?? '';
-  await run('svn', ['switch', '-q', rootUrl], { cwd: SVN_DIR });
+  const vcs = new SvnVcs(detectRepo(SVN_STD_DIR), null);
+  const rootUrl = (await vcs.info()).url?.replace(/\/trunk.*$/, '').replace(/\/branches\/.*$/, '').replace(/\/tags\/.*$/, '') ?? '';
 
   const bl = await vcs.branchList();
   check('分支列表返回', bl.current && Array.isArray(bl.branches));
@@ -165,9 +168,14 @@ console.log('== SVN 分支/标签/切换 ==');
   check('创建分支 test-branch', bc.ok);
   const bl2 = await vcs.branchList();
   check('分支列表含 test-branch', bl2.branches.some((b) => b.name === 'test-branch'));
+  // 分支内容 = trunk 复制（创建时 trunk 里的 readme.md 应出现在分支中）
+  const lst = await run('svn', ['list', `${rootUrl}/branches/test-branch/`], { cwd: SVN_STD_DIR });
+  check('分支从 trunk 复制（含 readme.md）', lst.code === 0 && lst.stdout.includes('readme.md'));
 
   const sw = await vcs.branchSwitch('test-branch');
   check('切换分支 test-branch', sw.ok);
+  const swBack = await vcs.branchSwitch('trunk');
+  check('切回 trunk', swBack.ok);
 
   const tc = await vcs.tagCreate('rel-test');
   check('创建标签 rel-test', tc.ok);
@@ -177,11 +185,22 @@ console.log('== SVN 分支/标签/切换 ==');
   const tl2 = await vcs.tagList();
   check('删除标签', !tl2.includes('rel-test'));
 
-  // 回到仓库根并删除测试分支
-  await run('svn', ['switch', '-q', rootUrl], { cwd: SVN_DIR });
+  // 回到 trunk 并删除测试分支
+  await run('svn', ['switch', '-q', rootUrl], { cwd: SVN_STD_DIR });
   await vcs.branchDelete('test-branch');
   const bl3 = await vcs.branchList();
   check('删除分支', !bl3.branches.some((b) => b.name === 'test-branch'));
+}
+
+console.log('== SVN 非标准布局（无 trunk）：创建分支拒绝 ==');
+{
+  const vcs = new SvnVcs(detectRepo(SVN_DIR), null);
+  // 重置到仓库根（无 trunk 仓库；避免上次中断的残留分支干扰）
+  const rootUrl = (await vcs.info()).url?.replace(/\/branches\/.*$/, '').replace(/\/tags\/.*$/, '') ?? '';
+  await run('svn', ['switch', '-q', rootUrl], { cwd: SVN_DIR });
+
+  const noT = await vcs.branchCreate('no-trunk-branch');
+  check('无 trunk 仓库创建分支被拒绝', !noT.ok);
 }
 
 console.log('== SVN Blame / 锁定 / 忽略 / 清理 ==');

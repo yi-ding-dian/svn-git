@@ -75,6 +75,10 @@ export function BranchDialog(props: {
   const [hasRemote, setHasRemote] = useState(false);
   // 工具风格二次确认
   const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void; confirmLabel?: string; hideCancel?: boolean; confirmCmd?: string } | null>(null);
+  /** 新建分支确认（git 非主干带基点选择）：name=目标名；trunkBase=找到的主干基点 */
+  const [createCfm, setCreateCfm] = useState<{ name: string; trunkBase?: string } | null>(null);
+  /** 基点选择：trunk=基于主干（推荐）、current=基于当前分支（默认保持现状行为） */
+  const [createBase, setCreateBase] = useState<'trunk' | 'current'>('current');
 
   /** 主干分支：git main/master、svn trunk（团队稳定版本，禁止删除） */
   const isTrunkName = (name: string) => name === 'main' || name === 'master' || name === 'trunk';
@@ -134,10 +138,10 @@ export function BranchDialog(props: {
     }
   };
 
-  const act = (action: 'create' | 'switch' | 'delete' | 'merge' | 'push', name: string, force = false) => {
+  const act = (action: 'create' | 'switch' | 'delete' | 'merge' | 'push', name: string, force = false, base?: string) => {
     setBusy(true);
     void runAction(
-      () => post.branch(action, name, force),
+      () => post.branch(action, name, force, undefined, base),
       (m, err) => {
         setMsg(action === 'merge' && err ? `${m} 可在「解决冲突」中用「中止合并」放弃本次合并` : m);
         setMsgErr(Boolean(err));
@@ -148,6 +152,57 @@ export function BranchDialog(props: {
       },
       action === 'merge' // 合并冲突（ok=false）时工作区已变化：刷新后「解决冲突」入口才会出现
     ).finally(() => setBusy(false));
+  };
+
+  /** 新建分支确认：确保创建的分支能按要求合回主干——
+   *  git：当前在非主干时可选基点（基于主干/当前分支），基于主干可避免"新分支包含当前分支已提交的改动、合回主干时一并进入"；
+   *  svn：仅标准布局（有 trunk）允许，来源固定 trunk；无 trunk 弹「知道了」说明框（后端同样拒绝） */
+  const confirmCreate = (name: string) => {
+    const cur = data?.current;
+    if (props.repoType === 'svn') {
+      if (!data?.layout?.trunk) {
+        setCfm({ title: '无法创建分支', confirmLabel: '知道了', hideCancel: true, msg: `仓库没有 trunk（非标准布局），无法创建分支 ${name}。\n分支需从 trunk 复制才能保证合并回主干；请先补建 trunk 目录。`, action: () => setCfm(null) });
+        return;
+      }
+      setCfm({
+        title: '新建分支',
+        msg: `确认从 trunk 复制创建分支 ${name}？\n（标准分支策略：开发完成后在主干上点「合并」即可合回主干。创建后不自动切换，需手动切换使用。）`,
+        confirmLabel: '创建',
+        confirmCmd: cmdOfRepo(props.repoType, 'branch_create', { name }),
+        action: () => act('create', name),
+      });
+      return;
+    }
+    // git：找主干基点（本地 main/master 优先，其次远程 origin/main|master）
+    const trunkBase =
+      data?.branches.find((b) => !b.remote && (b.name === 'main' || b.name === 'master'))?.name ??
+      data?.branches.find((b) => b.remote && /^origin\/(main|master)$/.test(b.name))?.name;
+    // 当前已在主干（或拿不到当前分支）→ 简单确认
+    if (!cur || isTrunkName(cur)) {
+      setCfm({
+        title: '新建分支',
+        msg: cur
+          ? `确认从主干 ${cur} 创建分支 ${name}？\n（新分支基于 ${cur} 最新提交，开发后可直接合并回主干。创建后不自动切换，仍停留在 ${cur}。）`
+          : `确认创建分支 ${name}？\n（基于当前提交。创建后不自动切换。）`,
+        confirmLabel: '创建',
+        confirmCmd: cmdOfRepo(props.repoType, 'branch_create', { name }),
+        action: () => act('create', name),
+      });
+      return;
+    }
+    // 当前在非主干分支：找到主干 → 带基点选择的确认弹窗；找不到 → 警告确认（只能基于当前分支）
+    if (trunkBase) {
+      setCreateBase('current'); // 默认保持现状行为（基于当前分支），弹窗内推荐主干
+      setCreateCfm({ name, trunkBase });
+      return;
+    }
+    setCfm({
+      title: '新建分支',
+      msg: `确认基于当前分支 ${cur} 创建分支 ${name}？\n\n⚠ 仓库中未找到主干分支（main/master），新分支将包含 ${cur} 已提交的全部改动——合回主干时这些改动也会一并进入。`,
+      confirmLabel: '创建',
+      confirmCmd: cmdOfRepo(props.repoType, 'branch_create', { name }),
+      action: () => act('create', name),
+    });
   };
 
   // 切换 / 合并为影响工作区的操作，统一走二次确认（复用 ConfirmModal）。
@@ -321,14 +376,14 @@ export function BranchDialog(props: {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && newName.trim()) act('create', newName.trim());
+            if (e.key === 'Enter' && newName.trim()) confirmCreate(newName.trim());
           }}
           style={{ flex: 1 }}
         />
         <button
           className="primary"
           disabled={busy || !newName.trim()}
-          onClick={() => act('create', newName.trim())}
+          onClick={() => confirmCreate(newName.trim())}
           title={cmdOfRepo(props.repoType, 'branch_create', { name: newName.trim() || '…' })}
         >
           ➕ 新建分支
@@ -405,7 +460,7 @@ export function BranchDialog(props: {
         })}
       </div>
       <ResultLine msg={msg} err={msgErr} />
-          {/* 二次确认（工具风格） */}
+          {/* 新建分支二次确认（工具风格） */}
       {cfm && (
         <ConfirmModal
           title={cfm.title}
@@ -419,6 +474,45 @@ export function BranchDialog(props: {
             a();
           }}
           onCancel={() => setCfm(null)}
+        />
+      )}
+      {/* 新建分支（git 非主干）：带基点选择——基于主干（推荐）/ 基于当前分支 */}
+      {createCfm && data?.current && (
+        <ConfirmModal
+          title="新建分支"
+          width={480}
+          message={
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, whiteSpace: 'normal' }}>
+              <div>确认创建新分支 <span className="mono">{createCfm.name}</span>？</div>
+              <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="radio" checked={createBase === 'trunk'} onChange={() => setCreateBase('trunk')} />
+                <span>基于主干 <span className="mono">{createCfm.trunkBase}</span>（推荐）</span>
+              </label>
+              <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer', flexWrap: 'wrap' }}>
+                <input type="radio" checked={createBase === 'current'} onChange={() => setCreateBase('current')} />
+                <span>基于当前分支 <span className="mono">{data.current}</span></span>
+                {createBase === 'current' && (
+                  <span className="small" style={{ color: 'var(--warn)' }}>
+                    ⚠ 包含 {data.current} 已提交的改动，合并回主干时一并进入
+                  </span>
+                )}
+              </label>
+              <div className="dim small">创建后不自动切换，仍停留在当前分支 {data.current}。</div>
+            </div>
+          }
+          confirmLabel="创建"
+          confirmCmd={cmdOfRepo(
+            'git',
+            'branch_create',
+            createBase === 'trunk' ? { name: createCfm.name, base: createCfm.trunkBase! } : { name: createCfm.name },
+          )}
+          onConfirm={() => {
+            const { name, trunkBase } = createCfm;
+            const base = createBase === 'trunk' ? trunkBase : undefined;
+            setCreateCfm(null);
+            act('create', name, false, base);
+          }}
+          onCancel={() => setCreateCfm(null)}
         />
       )}
       {/* 分支推送中：转圈提示，可取消（与主推送同款） */}

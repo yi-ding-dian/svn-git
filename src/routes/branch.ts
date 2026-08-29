@@ -52,7 +52,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const action = String(body.action ?? '');
         const name = String(body.name ?? '');
         let result: VcsResult;
-        if (action === 'create') result = await vcs.branchCreate(name);
+        if (action === 'create') result = await vcs.branchCreate(name, String(body.base ?? '') || undefined);
         else if (action === 'switch') {
           result = await vcs.branchSwitch(name);
           // svn switch 会改写工作副本文件（回主干等）；git checkout 后工作区内容换分支——防旧状态残留

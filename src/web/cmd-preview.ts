@@ -1,11 +1,13 @@
 /** 操作命令预览：悬浮操作项时显示"该操作将执行的命令"（教学/透明层）。
  * 命令为语义格式（省略 -c core.quotepath 等内部标志,保留操作类型与真实参数）；
- * 占位符 %key% 由 vars 替换,未提供保持原样。 */
+ * 占位符 %key% 由 vars 替换,未提供保持原样；可选占位符 %key?% 未提供时连前导空格一并删除（避免 "git branch x %base%" 残留）。 */
 
 export type CmdVars = Record<string, string>;
 
 export function cmdOf(tpl: string, vars: CmdVars = {}): string {
-  return tpl.replace(/%(\w+)%/g, (m, k) => vars[k] ?? m);
+  return tpl
+    .replace(/(?:\s+)?%(\w+)\?%/g, (m, k) => vars[k] ?? '') // 可选占位符：有值替换、无值（连空格）删除
+    .replace(/%(\w+)%/g, (m, k) => vars[k] ?? m);
 }
 
 /** 命令模板表：key → 命令模板 */
@@ -24,7 +26,7 @@ export const CMDS: Record<string, string> = {
   g_remove_keep: 'git rm --cached -r %paths%',
   g_move: 'git mv %from% %to%',
   g_branch_list: 'git branch -a',
-  g_branch_create: 'git branch %name%',
+  g_branch_create: 'git branch %name% %base?%',
   g_branch_switch: 'git checkout %name%',
   g_branch_merge: 'git merge %name%',
   g_branch_delete: 'git branch -d %name%',
