@@ -7,6 +7,7 @@ import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { ConfirmModal, InfoModal } from './modals.js';
 import { ResizableModal } from './modal-shell.js';
 import { ClickTip } from './ui.js';
+import { IconOk, IconErr } from './icons.js';
 import { cmdOfRepo } from './cmd-preview.js';
 
 interface Props {
@@ -281,7 +282,10 @@ export function HistoryView(props: Props) {
         </div>
         {error && <div className="error">{error}</div>}
         {notice && (
-          <div className="small" style={{ color: noticeErr ? 'var(--err)' : 'var(--ok)', margin: '4px 0', wordBreak: 'break-all' }}>{notice}</div>
+          <div className="row" style={{ alignItems: 'center', gap: 6, color: noticeErr ? 'var(--err)' : 'var(--ok)', margin: '4px 0' }}>
+            {noticeErr ? <IconErr /> : <IconOk />}
+            <span style={{ wordBreak: 'break-all' }}>{notice}</span>
+          </div>
         )}
         {!logs && !error && <div className="loading">⏳ 读取提交记录…</div>}
         {logs && logs.length === 0 && !error && <div className="empty">暂无提交记录</div>}

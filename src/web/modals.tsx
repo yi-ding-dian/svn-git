@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { post } from './api.js';
 import { ResizableModal } from './modal-shell.js';
 import { HelpNote, FormRow } from './ui.js';
+import { IconOk, IconErr, IconWarn } from './icons.js';
 import { pathAutoWidth, useCheckedSet } from './utils.js';
 import { cmdOfRepo } from './cmd-preview.js';
 
@@ -28,7 +29,7 @@ export type Modal =
   | { type: 'rename'; from: string; fsMode: boolean }
   | {
       type: 'confirm';
-      title: string;
+      title: React.ReactNode;
       message: React.ReactNode;
       danger?: boolean;
       confirmLabel?: string;
@@ -164,7 +165,14 @@ export function CommitModal(props: {
             disabled={busy || !msg.trim() || checked.size === 0}
             title={`${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: msg.trim() || '…' }) ?? ''}`}
           >
-            {busy ? '⏳ 提交中…' : '✅ 确认提交'}
+            {busy ? (
+              '⏳ 提交中…'
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <IconOk size={13} />
+                确认提交
+              </span>
+            )}
           </button>
         </div>
       </ResizableModal>
@@ -211,7 +219,10 @@ export function UpdateResultModal(props: {
     <div className="modal-mask">
       <ResizableModal width={720} onEsc={props.onClose}>
         <h3 style={{ color: props.ok ? 'var(--ok)' : 'var(--err)' }}>
-          {props.ok ? '✅ 更新完成' : '❌ 更新失败'}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {props.ok ? <IconOk size={16} /> : <IconErr size={16} />}
+            {props.ok ? '更新完成' : '更新失败'}
+          </span>
         </h3>
         <div className="body">
           <div className="help-note" style={{ alignItems: 'center', marginBottom: 10 }}>
@@ -341,9 +352,13 @@ export function EnvInstallModal(props: {
     <div className="vcs-row" style={{ cursor: 'default' }}>
       <span className={`badge ${props.tool}`} style={{ minWidth: 42, textAlign: 'center' }}>{props.name.toUpperCase()}</span>
       {props.info.installed ? (
-        <span style={{ color: 'var(--ok)', fontWeight: 600 }}>✓ 已安装</span>
+        <span style={{ color: 'var(--ok)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <IconOk size={12} />已安装
+        </span>
       ) : (
-        <span style={{ color: 'var(--err)', fontWeight: 600 }}>✗ 未安装</span>
+        <span style={{ color: 'var(--err)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <IconErr size={12} />未安装
+        </span>
       )}
       <span className="dim small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {props.info.version || (props.info.installed ? '' : `仅影响 ${props.name.toUpperCase()} 仓库操作`)}
@@ -382,8 +397,9 @@ export function EnvInstallModal(props: {
                 ))}
               </div>
               {status === 'done' && (
-                <div style={{ color: 'var(--ok)', marginTop: 10, fontWeight: 600 }}>
-                  ✅ 安装完成，点击下方按钮刷新页面后即可使用
+                <div style={{ color: 'var(--ok)', marginTop: 10, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <IconOk size={13} />
+                  安装完成，点击下方按钮刷新页面后即可使用
                 </div>
               )}
               {status === 'error' && (
@@ -556,7 +572,10 @@ export function CommitSelectModal(props: {
             disabled={props.items.length === 0}
             title={`${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: '…' }) ?? ''}`}
           >
-            ✅ 提交勾选的 {checked.size} 个文件
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <IconOk size={13} />
+              提交勾选的 {checked.size} 个文件
+            </span>
           </button>
         </div>
       </ResizableModal>
@@ -669,7 +688,8 @@ export function InfoModal(props: { title: string; message: React.ReactNode; onCl
 }
 
 export function ConfirmModal(props: {
-  title: string;
+  /** 弹窗标题（可含 SVG 图标，如 <IconErr/> 推送失败） */
+  title: React.ReactNode;
   message: React.ReactNode;
   danger?: boolean;
   confirmLabel?: string;
@@ -838,10 +858,13 @@ export function RevertModal(props: {
               </label>
             ))}
           </div>
-          <div className="small" style={{ color: hasMod ? 'var(--err)' : 'var(--ok)', marginBottom: 10, flexShrink: 0 }}>
-            {hasMod
-              ? '⚠ 还原会放弃这些文件的本地修改（不可恢复）。未版本化（?）与忽略/外部文件不在列表中。'
-              : '✅ 仅撤销版本库调度（取消添加 / 恢复删除），磁盘文件保留，不丢失任何数据。未版本化（?）与忽略/外部文件不在列表中。'}
+          <div className="small" style={{ color: hasMod ? 'var(--err)' : 'var(--ok)', marginBottom: 10, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {hasMod ? <IconWarn size={13} /> : <IconOk size={13} />}
+            <span>
+              {hasMod
+                ? '还原会放弃这些文件的本地修改（不可恢复）。未版本化（?）与忽略/外部文件不在列表中。'
+                : '仅撤销版本库调度（取消添加 / 恢复删除），磁盘文件保留，不丢失任何数据。未版本化（?）与忽略/外部文件不在列表中。'}
+            </span>
           </div>
         </div>
         <div className="foot">
@@ -864,7 +887,12 @@ export function RevertModal(props: {
       {/* 最终二次确认：M/C 还原丢弃修改不可恢复 */}
       {cfm && (
         <ConfirmModal
-          title={`⚠ ${titleName}`}
+          title={
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--warn)' }}>
+              <IconWarn size={16} />
+              {titleName}
+            </span>
+          }
           message={cfm.msg}
           danger
           confirmLabel={`确认${actionName}`}

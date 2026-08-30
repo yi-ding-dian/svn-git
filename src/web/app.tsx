@@ -13,6 +13,7 @@ import { RemoteConflictModal } from './remote-conflicts.js';
 import { AppHeader, THEMES } from './header.js';
 import { Sidebar, type View } from './sidebar.js';
 import { FontModal, FONT_MIN, FONT_MAX } from './font-modal.js';
+import { IconOk, IconErr } from './icons.js';
 import { pathAutoWidth, isBinaryFile, translateVcsError } from './utils.js';
 import { cmdOfRepo } from './cmd-preview.js';
 
@@ -342,7 +343,12 @@ export function App() {
         // 其他失败：弹窗明确显示错误（避免 toast 一闪而过"没反应"）
         setModal({
           type: 'confirm',
-          title: '❌ 推送失败',
+          title: (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <IconErr size={16} />
+              推送失败
+            </span>
+          ),
           message: (
             <div className="error" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
               {r.message}
@@ -931,7 +937,10 @@ export function App() {
           }}
           title={toast}
         >
-          {translateVcsError(toast)}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            {toastErr ? <IconErr /> : <IconOk />}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{translateVcsError(toast)}</span>
+          </span>
         </div>
       )}
 
@@ -1152,7 +1161,12 @@ export function App() {
           onConfirm={(paths, msg) =>
             setModal({
               type: 'confirm',
-              title: '✅ 提交确认',
+              title: (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <IconOk size={16} />
+                  提交确认
+                </span>
+              ),
               // 宽度自适应最长文件名（与提交弹窗同规则）
               width: pathAutoWidth(paths.reduce((m, p) => Math.max(m, p.length), 0), 520, 1200),
               message: (

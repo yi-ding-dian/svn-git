@@ -1,5 +1,6 @@
 /** 通用小组件：使用说明块 / 表单行 / 跟随鼠标提示（多个弹窗共用） */
 import React, { useEffect } from 'react';
+import { IconOk } from './icons.js';
 
 /** 使用说明块（跟随主题） */
 export function HelpNote(props: { children: React.ReactNode }) {
@@ -44,7 +45,10 @@ export function ClickTip(props: {
         top: Math.max(8, props.y - 26),
       }}
     >
-      {props.msg}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <IconOk />
+        {props.msg}
+      </span>
     </div>
   );
 }

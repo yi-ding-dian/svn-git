@@ -451,3 +451,31 @@ export function IconFont({ size = 16 }: IconProps) {
     </svg>
   );
 }
+
+/** 提示图标：线条勾（操作成功；颜色取 currentColor（=var(--ok)），无底填充随文字色，纯 SVG 跨平台一致） */
+export function IconOk({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M5 12.5l4.6 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+/** 提示图标：线条叉（操作失败；颜色取 currentColor（=var(--err)），无底填充随文字色，纯 SVG 跨平台一致） */
+export function IconErr({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
+    </svg>
+  );
+}
+
+/** 提示图标：线条感叹（操作警告/风险提示；颜色取 currentColor（=var(--warn)），无底填充随文字色） */
+export function IconWarn({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M12 5v9.5" />
+      <circle cx="12" cy="18.2" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}

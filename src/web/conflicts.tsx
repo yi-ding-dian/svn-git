@@ -4,7 +4,7 @@ import { get, post } from './api.js';
 import { cmdOfRepo } from './cmd-preview.js';
 import { highlightLine, langOf } from './highlight.js';
 import { parseUnifiedDiff, markTypesOf, type DiffLine } from './diff.js';
-import { IconFolder } from './icons.js';
+import { IconFolder, IconOk } from './icons.js';
 import { ConfirmModal } from './modals.js';
 import { ResizableModal } from './modal-shell.js';
 
@@ -403,7 +403,12 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                 </>
               )}
               <div className="row" style={{ marginTop: 10, gap: 6 }}>
-                <button className="primary" disabled={busy} onClick={() => void resolve('ours')} title={`${cmdOfRepo(repoType, 'resolve_ours', { path: cur.path }) ?? ''}`}>✅ 采用本地</button>
+                <button className="primary" disabled={busy} onClick={() => void resolve('ours')} title={`${cmdOfRepo(repoType, 'resolve_ours', { path: cur.path }) ?? ''}`}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <IconOk size={13} />
+                    采用本地
+                  </span>
+                </button>
                 <button disabled={busy} onClick={() => void resolve('theirs')} title={`${cmdOfRepo(repoType, 'resolve_theirs', { path: cur.path }) ?? ''}`}>采用对方</button>
                 {!cur.binary && <button disabled={busy} onClick={() => void resolve('manual')} title={`${cmdOfRepo(repoType, 'resolve_manual', { path: cur.path }) ?? ''}`}>💾 保存手动编辑</button>}
                 {repoType === 'git' && (

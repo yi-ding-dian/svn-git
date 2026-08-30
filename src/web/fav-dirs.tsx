@@ -1,6 +1,7 @@
 /** 常用文件夹管理弹窗：查看/移除/重新预加载（预加载后进入目录命中缓存秒开） */
 import React from 'react';
 import { ModalShell } from './modal-shell.js';
+import { IconOk } from './icons.js';
 
 export interface FavDir {
   path: string;
@@ -58,7 +59,12 @@ export function FavDirsModal(props: {
             <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>
               {props.preload.running
                 ? `⏳ 正在后台预加载：${props.preload.done}/${props.preload.total}（${props.preload.cur}）`
-                : `✅ 后台预加载完成（${props.preload.done} 个目录）`}
+                : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <IconOk size={12} />
+                    后台预加载完成（{props.preload.done} 个目录）
+                  </span>
+                )}
             </div>
           )}
     </ModalShell>
