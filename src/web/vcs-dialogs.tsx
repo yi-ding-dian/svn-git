@@ -2,16 +2,29 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { get, post, type BranchInfo, type StashItem, type SvnLayout, type VcsResult } from './api.js';
 import { ModalShell, ResizableModal } from './modal-shell.js';
-import { IconBranch, IconTag, IconStash, IconPlus } from './icons.js';
+import { IconBranch, IconTag, IconStash, IconPlus, IconOk, IconErr } from './icons.js';
 import { DirPicker } from './dir-picker.js';
 import { HelpNote, FormRow } from './ui.js';
 import { ConfirmModal } from './modals.js';
 import { cmdOfRepo } from './cmd-preview.js';
 
-/** 操作结果提示行 */
+/** 操作结果提示行：成功绿√ / 失败红×（SVG 图标+文本，样式不变只加图标） */
 function ResultLine(props: { msg: string; err?: boolean }) {
   if (!props.msg) return null;
-  return <div className={props.err ? 'error mt8' : 'mt8 small'} style={props.err ? undefined : { color: 'var(--ok)' }}>{props.msg}</div>;
+  return (
+    <div
+      className={props.err ? 'error mt8' : 'mt8 small'}
+      style={{
+        ...(props.err ? {} : { color: 'var(--ok)' }),
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      {props.err ? <IconErr /> : <IconOk />}
+      <span>{props.msg}</span>
+    </div>
+  );
 }
 
 /** 执行并刷新列表的通用逻辑
@@ -422,16 +435,22 @@ export function BranchDialog(props: {
                   {props.repoType === 'git' && hasRemote && !b.remote && !isPushed && (
                     <button className="mini btn-accent" disabled={busy} onClick={() => confirmPush(b.name)} title={`该分支尚未推送到远程\n点此将 ${b.name} 推送到远程服务器（origin）`}>⬆ 推送到远程</button>
                   )}
-                  {b.remote && (
-                    <button
-                      className="mini danger"
-                      disabled={busy}
-                      onClick={() => confirmRemoteDelete(b.name)}
-                      title={`${cmdOfRepo(props.repoType, 'branch_remote_delete', { name: b.name.split('/').slice(1).join('/') }) ?? ''}\n\n删除远程分支：远程将不再存在（本地分支不受影响）`}
-                    >
-                      删除远程
-                    </button>
-                  )}
+                  {b.remote && (() => {
+                    // 远程主干（origin/main|master）同本地主干一起保护：稳定分支不提供删除入口
+                    const bare = b.name.split('/').slice(1).join('/');
+                    return (
+                      <button
+                        className="mini danger"
+                        disabled={busy || isTrunkName(bare)}
+                        onClick={() => confirmRemoteDelete(b.name)}
+                        title={isTrunkName(bare)
+                          ? '主干分支不能删除（团队稳定版本，防止误删）'
+                          : `${cmdOfRepo(props.repoType, 'branch_remote_delete', { name: bare }) ?? ''}\n\n删除远程分支：远程将不再存在（本地分支不受影响）`}
+                      >
+                        删除远程
+                      </button>
+                    );
+                  })()}
                   {!b.remote && b.name !== data.current && (
                     <>
                       <button className="mini btn-accent" disabled={busy} onClick={() => confirmMerge(b.name)} title={`${cmdOfRepo(props.repoType, 'branch_merge', { name: b.name })}\n\n把该分支的改动合并到当前分支（先确保已切到目标分支）`}>🔀 合并</button>
@@ -640,7 +659,9 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
                     }}
                     style={{ flexShrink: 0 }}
                   />
-                  <span style={{ color: 'var(--err)', flexShrink: 0 }}>✗</span>
+                  <span style={{ color: 'var(--err)', flexShrink: 0, display: 'inline-flex', alignItems: 'center' }}>
+                    <IconErr size={12} />
+                  </span>
                   <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
                 </label>
               ))}

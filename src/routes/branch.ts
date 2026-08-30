@@ -81,6 +81,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             sendJson(res, 400, { error: '需远程分支名（origin/名字）' });
             return true;
           }
+          // 远程主干同本地主干保护：main/master/trunk 是团队稳定分支，不允许删除（防绕过界面直接调接口）
+          const bare = name.split('/').slice(1).join('/');
+          if (bare === 'main' || bare === 'master' || bare === 'trunk') {
+            sendJson(res, 400, { error: '主干分支不能删除（团队稳定版本，防止误删）' });
+            return true;
+          }
           const ac = new AbortController();
           res.on('close', () => {
             if (!res.writableEnded) ac.abort();
