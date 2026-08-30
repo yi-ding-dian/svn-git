@@ -140,6 +140,53 @@ export function AppHeader(props: {
   const repo = props.repo;
   // 「⋯」更多菜单（低频操作：新建仓库 / Git 信息 / SVN 登录）定位
   const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
+
+  /** 退出确认：先智能收集当前状态（未提交修改/未跟踪文件/未推送提交），在确认框里如实提示；
+   *  查询失败不阻塞退出（仅少展示提示）——改动都在磁盘，退出不丢数据，提示是"别忘了提交/推送" */
+  const exitConfirm = async () => {
+    let changed = 0;
+    let untracked = 0;
+    let unpushed = 0;
+    try {
+      const [st, lg] = await Promise.all([
+        get.status(),
+        props.repo?.type === 'git' ? get.log(undefined, 1) : Promise.resolve(null),
+      ]);
+      const items = st.items ?? [];
+      changed = items.filter((i) => i.code && i.code !== ' ' && i.code !== 'I' && i.code !== 'X').length;
+      untracked = items.filter((i) => i.code === '?').length;
+      unpushed = lg?.unpushed?.length ?? 0;
+    } catch {
+      /* 忽略：查询失败按 0 提示 */
+    }
+    const lines: string[] = ['将关闭本地服务并退出应用（页面将无法访问）。'];
+    const warns: string[] = [];
+    if (changed > 0) warns.push(`${changed} 个未提交的修改${untracked > 0 ? `（含 ${untracked} 个未跟踪）` : ''}`);
+    if (unpushed > 0) warns.push(`${unpushed} 个提交未推送到远程`);
+    if (warns.length > 0) lines.push(`\n⚠ 当前有 ${warns.join('、')}。`);
+    lines.push('确认退出应用？');
+    props.setModal({
+      type: 'confirm',
+      title: '退出应用',
+      message: lines.join(''),
+      confirmLabel: '退出应用',
+      danger: true,
+      action: () => {
+        void post
+          .shutdown()
+          .then(() => {
+            // 先替换为提示页，再尝试关闭标签：关闭成功则页面瞬间消失；被浏览器拦截则提示页已就位
+            document.body.innerHTML =
+              '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:10px;font-family:sans-serif;background:#0d1117;color:#e6edf3">' +
+              '<div style="font-size:20px">✅ 服务已退出</div>' +
+              '<div style="color:#8b949e">本地服务已关闭，此页面已无法使用，请手动关闭本标签页</div>' +
+              '</div>';
+            window.close();
+          })
+          .catch((e: Error) => props.onToast(`退出失败: ${e.message}`));
+      },
+    });
+  };
   return (
     <div className="header" style={{ display: props.view === 'diff' ? 'none' : undefined }}>
       <span className="logo" style={{ display: 'flex', alignItems: 'center' }} title="svn-git文件版本管理">
@@ -330,34 +377,14 @@ export function AppHeader(props: {
           ]}
         />
       )}
-      {/* ⑥ 退出：危险样式红色强调,避免与高频「刷新」混同误触 */}
+      {/* ⑥ 退出：红色强调,避免与高频「刷新」混同误触（点击后智能确认：收集未提交/未推送状态再弹窗） */}
       <Sep />
       <ToolBtn
         icon={<IconExit />}
         label="退出应用"
-        title="关闭服务并退出应用（危险）"
+        title="关闭服务并退出应用（点击后需确认）"
         danger
-        onClick={() =>
-          props.setModal({
-            type: 'confirm',
-            title: '退出应用',
-            message: '将关闭本地服务并退出应用（浏览器页面将无法访问）。确认退出？',
-            action: () => {
-              void post
-                .shutdown()
-                .then(() => {
-                  // 先替换为提示页，再尝试关闭标签：关闭成功则页面瞬间消失；被浏览器拦截则提示页已就位
-                  document.body.innerHTML =
-                    '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:10px;font-family:sans-serif;background:#0d1117;color:#e6edf3">' +
-                    '<div style="font-size:20px">✅ 服务已退出</div>' +
-                    '<div style="color:#8b949e">本地服务已关闭，此页面已无法使用，请手动关闭本标签页</div>' +
-                    '</div>';
-                  window.close();
-                })
-                .catch((e: Error) => props.onToast(`退出失败: ${e.message}`));
-            },
-          })
-        }
+        onClick={() => void exitConfirm()}
       />
     </div>
   );
