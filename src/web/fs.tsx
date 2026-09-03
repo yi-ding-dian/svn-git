@@ -153,7 +153,7 @@ export function FsView(props: Props) {
   const [data, setData] = useState<FsData | null>(null); // 列表模式数据
   const [error, setError] = useState('');
   const [sel, setSel] = useState<FsEntry | null>(null);
-  const [preview, setPreview] = useState<{ name: string; text: string; note?: string; rel: string; img?: boolean } | null>(null);
+  const [preview, setPreview] = useState<{ name: string; text: string; note?: string; rel: string; img?: boolean; code?: string } | null>(null);
   // md 文件渲染预览模式（预览按钮切换；false=原文高亮，true=Markdown 渲染）
   const [mdPreview, setMdPreview] = useState(false);
   const [blameMode, setBlameMode] = useState(false);
@@ -680,7 +680,7 @@ export function FsView(props: Props) {
       try {
         const r = await get.cat(rel);
         if (!r.ok) throw new Error(r.error ?? '读取失败');
-        setPreview({ name, text: r.output, note: code === '?' ? '未版本化文件（原文）' : '无差异 — 文件原文', rel });
+        setPreview({ name, text: r.output, note: code === '?' ? '未版本化文件（原文）' : '无差异 — 文件原文', rel, code });
         setMdPreview(false); // 重新打开文件回到原文模式
         setBlameMode(false);
         setBlameData([]);
@@ -1638,7 +1638,12 @@ export function FsView(props: Props) {
             </React.Fragment>
           ))}
         </div>
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{error}</span>
+            <button className="mini" style={{ flexShrink: 0 }} onClick={() => setError('')} title="关闭错误提示">✕</button>
+          </div>
+        )}
         {bigTip && <div className="fs-big-tip">⚠ {bigTip}</div>}
         {/* 树模式首次加载 */}
         {mode === 'tree' && nodeData.size === 0 && !error && (
@@ -1901,7 +1906,16 @@ export function FsView(props: Props) {
               ) : (
                 <button className="mini" onClick={() => setSearchActive(true)}>🔍 搜索 (/)</button>
               )}
-              <button className={`mini ${blameMode ? 'primary' : ''}`} onClick={() => void toggleBlame()} title="逐行标注提交/作者">
+              <button
+                className={`mini ${blameMode ? 'primary' : ''}`}
+                disabled={preview?.code === '?' || preview?.code === 'I'}
+                onClick={() => void toggleBlame()}
+                title={
+                  preview?.code === '?' || preview?.code === 'I'
+                    ? '未版本化/忽略的文件没有提交历史，无法追溯'
+                    : '逐行标注提交/作者'
+                }
+              >
                 📜 追溯
               </button>
               <span className="grow" />
