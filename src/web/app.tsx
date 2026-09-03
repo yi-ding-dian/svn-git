@@ -314,7 +314,11 @@ export function App() {
       setToastErr(!r.ok);
       setToastErr(!r.ok);
       setToast(r.message);
-      if (r.ok) refresh();
+      if (r.ok) {
+        refresh();
+        // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]），与分支/标签弹窗 onChanged 一致
+        if (op === 'update') get.info().then((ri) => setInfo(ri)).catch(() => {});
+      }
       if (r.authError) setModal({ type: 'login' });
       return r;
     },
@@ -701,6 +705,7 @@ export function App() {
         if (r.ok) {
           refresh();
           checkRemote(); // 更新完成立即刷新远程提示条（否则要等下一轮 2 分钟轮询）
+          get.info().then((ri) => setInfo(ri)).catch(() => {}); // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]）
         }
         if (r.authError) setModal({ type: 'login' });
       } catch (e) {
