@@ -1,7 +1,8 @@
-/** 目录选择器：浏览文件夹、新建（行内输入）、重命名（行内输入、自动全选），确定返回路径（创建/克隆仓库的"所在目录"用） */
+/** 目录选择器：浏览文件夹、新建（行内输入）、重命名（行内输入、自动全选），确定返回路径（创建/克隆仓库的"所在目录"用）
+ *  新建/重命名反馈显示在自身弹窗内（不外抛），避免污染外层弹窗的结果行 */
 import React, { useEffect, useState } from 'react';
 import { get, post, type BrowseResult } from './api.js';
-import { GridIcon } from './icons.js';
+import { GridIcon, IconOk, IconErr } from './icons.js';
 import { ContextMenu } from './context-menu.js';
 
 export function DirPicker(props: {
@@ -9,11 +10,14 @@ export function DirPicker(props: {
   startDir: string;
   onPick: (path: string) => void;
   onClose: () => void;
-  onToast: (msg: string) => void;
+  /** 可选：外部通知回调（不再用于新建/重命名反馈，保留兼容） */
+  onToast?: (msg: string) => void;
 }) {
   const [dir, setDir] = useState(props.startDir);
   const [data, setData] = useState<BrowseResult | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState(''); // 新建/重命名反馈（自身弹窗内显示）
+  const [noticeErr, setNoticeErr] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; name: string } | null>(null);
   // 行内编辑：creating=新建输入框；renaming=正在重命名的文件夹名
   const [creating, setCreating] = useState(false);
@@ -42,10 +46,14 @@ export function DirPicker(props: {
       .mkdir(`${dir}/${name}`)
       .then(() => {
         setCreating(false);
-        props.onToast(`已创建 ${name}`);
+        setNotice(`已创建 ${name}`);
+        setNoticeErr(false);
         setDir(`${dir}/${name}`); // 创建后默认进入
       })
-      .catch((e: Error) => props.onToast(`创建失败: ${e.message}`));
+      .catch((e: Error) => {
+        setNotice(`创建失败: ${e.message}`);
+        setNoticeErr(true);
+      });
   };
 
   /** 重命名确认 */
@@ -56,10 +64,14 @@ export function DirPicker(props: {
     void post
       .rename(`${dir}/${oldName}`, `${dir}/${name}`)
       .then(() => {
-        props.onToast(`已重命名 ${oldName} → ${name}`);
+        setNotice(`已重命名 ${oldName} → ${name}`);
+        setNoticeErr(false);
         load(dir);
       })
-      .catch((e: Error) => props.onToast(`重命名失败: ${e.message}`));
+      .catch((e: Error) => {
+        setNotice(`重命名失败: ${e.message}`);
+        setNoticeErr(true);
+      });
   };
 
   return (
@@ -94,6 +106,20 @@ export function DirPicker(props: {
         )}
       </div>
       {error && <div className="error">{error}</div>}
+      {notice && (
+        <div
+          className={noticeErr ? 'error' : 'small'}
+          style={{
+            ...(noticeErr ? {} : { color: 'var(--ok)' }),
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          {noticeErr ? <IconErr /> : <IconOk />}
+          <span>{notice}</span>
+        </div>
+      )}
       {/* 文件夹网格：单击进入 · 右键重命名（行内输入自动全选） */}
       <div className="open-grid" style={{ maxHeight: 260 }}>
         {data?.entries.map((it) =>
@@ -118,8 +144,8 @@ export function DirPicker(props: {
               <div
                 key={it.name}
                 className="open-grid-item dir"
-                title={`${it.name}/\n单击进入 · 右键重命名`}
-                onClick={() => setDir((d) => (d === '/' ? `/${it.name}` : `${d}/${it.name}`))}
+                title={`${it.name}/\n双击进入 · 右键重命名`}
+                onDoubleClick={() => setDir((d) => (d === '/' ? `/${it.name}` : `${d}/${it.name}`))}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ x: e.clientX, y: e.clientY, name: it.name });

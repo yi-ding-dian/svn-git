@@ -1,6 +1,6 @@
 /** 版本管理对话框：分支 / 标签 / Stash / 创建仓库（git + svn 通用） */
 import React, { useEffect, useRef, useState } from 'react';
-import { get, post, type BranchInfo, type StashItem, type SvnLayout, type VcsResult } from './api.js';
+import { get, post, type BranchInfo, type StashItem, type SvnLayout, type VcsResult, type RepoCheck } from './api.js';
 import { ModalShell, ResizableModal } from './modal-shell.js';
 import { IconBranch, IconTag, IconStash, IconPlus, IconDownload, IconOk, IconErr } from './icons.js';
 import { DirPicker } from './dir-picker.js';
@@ -1187,6 +1187,7 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState(false); // 文件夹浏览选择器
+  const [pending, setPending] = useState<RepoCheck | null>(null); // 二次确认数据（打开确认框）
 
   const submit = () => {
     if (!dir.trim() || !name.trim()) {
@@ -1194,6 +1195,21 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
       setMsgErr(true);
       return;
     }
+    setBusy(true);
+    // 前置风险检测（目标已存在 / 位于仓库内），成功后弹二次确认
+    void post
+      .repoCheck(type, dir.trim(), name.trim())
+      .then((r) => setPending(r))
+      .catch((e) => {
+        setMsg((e as Error).message);
+        setMsgErr(true);
+      })
+      .finally(() => setBusy(false));
+  };
+
+  // 二次确认后执行创建
+  const doCreate = () => {
+    setPending(null);
     setBusy(true);
     void runAction(
       () => post.repoCreate(type, dir.trim(), name.trim(), '', standard),
@@ -1289,6 +1305,36 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
         </>
       )}
       <ResultLine msg={msg} err={msgErr} />
+      {/* 二次确认：目标路径 + 命令 + 风险检测 */}
+      {pending && (
+        <ConfirmModal
+          title="确认创建仓库？"
+          message={
+            <>
+              <div>目标路径：{pending.target}</div>
+              <div>将执行：{type === 'git' ? 'git init 初始化仓库' : 'svnadmin create 创建版本库 + 检出工作副本'}（命令预览见按钮）</div>
+              {pending.inRepo && (
+                <div style={{ color: 'var(--warn)', marginTop: 6 }}>
+                  ⚠ 目标位于 {pending.inRepo.type.toUpperCase()} 仓库内（{pending.inRepo.root}）——在其内部创建会成为外层仓库的未版本化内容，状态/数据可能错乱
+                </div>
+              )}
+              {pending.existsNonEmpty && (
+                <div style={{ color: 'var(--warn)', marginTop: 6 }}>
+                  ⚠ 目标目录已存在且非空（{pending.target}）——可能已有仓库/文件，继续创建可能失败或产生嵌套
+                </div>
+              )}
+            </>
+          }
+          confirmLabel="确认创建"
+          confirmCmd={
+            type === 'git'
+              ? (cmdOfRepo('git', 'init', { dir: pending.target }) ?? '')
+              : (cmdOfRepo('svn', 'create', { dir: pending.target }) ?? '')
+          }
+          onConfirm={doCreate}
+          onCancel={() => setPending(null)}
+        />
+      )}
       {/* 文件夹浏览选择器：新建/重命名，确定填充所在目录 */}
       {picker && (
         <div className="modal-mask">
@@ -1302,7 +1348,6 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
                   setPicker(false);
                 }}
                 onClose={() => setPicker(false)}
-                onToast={setMsg}
               />
             </div>
           </ResizableModal>
@@ -1322,6 +1367,7 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState(false);
+  const [pending, setPending] = useState<RepoCheck | null>(null); // 二次确认数据
 
   const submit = () => {
     if (!url.trim()) {
@@ -1334,6 +1380,21 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
       setMsgErr(true);
       return;
     }
+    setBusy(true);
+    // 前置风险检测（目标已存在 / 位于仓库内），成功后弹二次确认
+    void post
+      .repoCheck(type, dir.trim(), name.trim(), url.trim())
+      .then((r) => setPending(r))
+      .catch((e) => {
+        setMsg((e as Error).message);
+        setMsgErr(true);
+      })
+      .finally(() => setBusy(false));
+  };
+
+  // 二次确认后执行获取
+  const doGet = () => {
+    setPending(null);
     setBusy(true);
     void runAction(
       () => post.repoCreate(type, dir.trim(), name.trim(), url.trim(), true),
@@ -1424,6 +1485,36 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
         })()}
       </div>
       <ResultLine msg={msg} err={msgErr} />
+      {/* 二次确认：目标路径 + 命令 + 风险检测 */}
+      {pending && (
+        <ConfirmModal
+          title="确认获取仓库？"
+          message={
+            <>
+              <div>目标路径：{pending.target}</div>
+              <div>将执行：{type === 'git' ? `git clone ${url.trim()}` : `svn checkout ${url.trim()}`}（命令预览见按钮）</div>
+              {pending.inRepo && (
+                <div style={{ color: 'var(--warn)', marginTop: 6 }}>
+                  ⚠ 目标位于 {pending.inRepo.type.toUpperCase()} 仓库内（{pending.inRepo.root}）——检出的文件会成为外层仓库的未版本化内容，状态/数据可能错乱
+                </div>
+              )}
+              {pending.existsNonEmpty && (
+                <div style={{ color: 'var(--warn)', marginTop: 6 }}>
+                  ⚠ 目标目录已存在且非空（{pending.target}）——克隆/检出到非空目录会失败，可能已有仓库/文件
+                </div>
+              )}
+            </>
+          }
+          confirmLabel="确认获取"
+          confirmCmd={
+            type === 'git'
+              ? (cmdOfRepo('git', 'clone', { url: url.trim(), dir: pending.target }) ?? '')
+              : (cmdOfRepo('svn', 'checkout', { url: url.trim(), dir: pending.target }) ?? '')
+          }
+          onConfirm={doGet}
+          onCancel={() => setPending(null)}
+        />
+      )}
       {/* 文件夹浏览选择器：选择所在目录 */}
       {picker && (
         <div className="modal-mask">
@@ -1437,7 +1528,6 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
                   setPicker(false);
                 }}
                 onClose={() => setPicker(false)}
-                onToast={setMsg}
               />
             </div>
           </ResizableModal>

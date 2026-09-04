@@ -270,8 +270,8 @@ export function OpenBrowser(props: {
               <div
                 key={it.name}
                 className={`open-grid-item ${it.isDir ? 'dir' : ''}`}
-                title={it.isDir ? `进入目录 ${it.name}` : it.name}
-                onClick={() => {
+                title={it.isDir ? `双击进入目录 ${it.name}` : it.name}
+                onDoubleClick={() => {
                   if (it.isDir) {
                     setDir((d) => (d === '/' ? `/${it.name}` : `${d}/${it.name}`));
                   }

@@ -1091,6 +1091,35 @@ const MIME: Record<string, string> = {
       }
 
       // ---------- 版本管理扩展 API ----------
+      if (p === '/api/repo-create/check' && req.method === 'POST') {
+        // 创建/获取前的风险检测（供二次确认展示）：目标已存在/非空、目标位于仓库内（嵌套风险）
+        const body = await readBody(req);
+        const dir = String(body.dir ?? '').trim();
+        const name = String(body.name ?? '').trim();
+        if (!dir || !name) {
+          sendJson(res, 400, { error: '缺少目录或名称' });
+          return;
+        }
+        const target = path.join(dir, name);
+        let exists = false;
+        let existsNonEmpty = false;
+        try {
+          exists = fs.existsSync(target);
+          if (exists) existsNonEmpty = fs.readdirSync(target).length > 0;
+        } catch {
+          /* 目标不可读时按不存在处理，不阻断 */
+        }
+        // 位于仓库/工作副本内（目标自身是已存在的仓库也算，向上查找命中）
+        const inRepo = detectRepo(dir) ?? (exists ? detectRepo(target) : null);
+        sendJson(res, 200, {
+          target,
+          exists,
+          existsNonEmpty,
+          inRepo: inRepo ? { type: inRepo.type, root: inRepo.root } : null,
+        });
+        return;
+      }
+
       if (p === '/api/repo-create' && req.method === 'POST') {
         // 创建/克隆仓库（不依赖当前打开的仓库）
         const body = await readBody(req);

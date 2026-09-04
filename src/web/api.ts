@@ -1,5 +1,16 @@
 /** 后端 API 封装 */
 
+export interface RepoCheck {
+  /** 目标完整路径（dir/name） */
+  target: string;
+  /** 目标目录已存在（任意内容） */
+  exists: boolean;
+  /** 目标目录已存在且非空（克隆/检出到非空目录会失败或产生嵌套） */
+  existsNonEmpty: boolean;
+  /** 目标位于已有仓库/工作副本内（向上查找 .git/.svn 命中） */
+  inRepo: { type: 'git' | 'svn'; root: string } | null;
+}
+
 export interface RepoInfo {
   type: 'svn' | 'git' | null;
   root: string | null;
@@ -256,6 +267,9 @@ export const post = {
     api<VcsResult>('/api/stash', json({ action, message, index, paths })),
   repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true) =>
     api<VcsResult & { repoDir?: string }>('/api/repo-create', json({ type, dir, name, url, standard })),
+  /** 创建/获取前置风险检测（目标已存在、位于仓库内等），供二次确认展示 */
+  repoCheck: (type: 'git' | 'svn', dir: string, name: string, url = '') =>
+    api<RepoCheck>('/api/repo-create/check', json({ type, dir, name, url })),
   svnExtra: (action: 'cleanup' | 'resolve' | 'propset-ignore', path = '', accept = 'working', pattern = '') =>
     api<VcsResult>('/api/svn-extra', json({ action, path, accept, pattern })),
   gitClean: (paths?: string[]) => api<VcsResult>('/api/git-clean', json({ paths })),
