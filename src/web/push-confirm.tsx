@@ -168,7 +168,7 @@ export function PushConfirmModal(props: {
                   }}
                   title={i === 0 ? `${l.msg}\n（未推送的最新提交，右键可修改注释/撤销）` : `${l.msg}\n（右键菜单仅对最近一次提交生效）`}
                 >
-                  <span className="badge" style={{ background: '#22c55e', flexShrink: 0 }}>🟢</span>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.6)', flexShrink: 0 }} />
                   <span className="mono small" style={{ flexShrink: 0 }}>{l.rev}</span>
                   <span className="small dim" style={{ flexShrink: 0 }}>{l.date.slice(0, 16)}</span>
                   <span className="small" style={{ flexShrink: 0 }}>{l.author}</span>
