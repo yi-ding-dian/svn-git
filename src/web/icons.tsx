@@ -375,6 +375,16 @@ export function IconUpload({ size = 16 }: IconProps) {
   );
 }
 
+/** 获取（克隆/检出）：向下箭头 + 底线 */
+export function IconDownload({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M12 6.5v10M7 12.5l5 5 5-5" stroke="#1f6feb" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M4.5 19.5h15" stroke="#58a6ff" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** 查看历史：蓝色时钟 */
 export function IconHistory({ size = 16 }: IconProps) {
   return (

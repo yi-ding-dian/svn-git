@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { get, post, type BranchInfo, type StashItem, type SvnLayout, type VcsResult } from './api.js';
 import { ModalShell, ResizableModal } from './modal-shell.js';
-import { IconBranch, IconTag, IconStash, IconPlus, IconOk, IconErr } from './icons.js';
+import { IconBranch, IconTag, IconStash, IconPlus, IconDownload, IconOk, IconErr } from './icons.js';
 import { DirPicker } from './dir-picker.js';
 import { HelpNote, FormRow } from './ui.js';
 import { ConfirmModal } from './modals.js';
@@ -30,17 +30,17 @@ function ResultLine(props: { msg: string; err?: boolean }) {
 /** 执行并刷新列表的通用逻辑
  *  onFailOk=true 时失败（ok=false）也执行 afterOk：merge 冲突这类"返回失败但工作区已变"的操作（MERGE_HEAD/C 状态）
  *  不刷新的话「解决冲突」入口不会出现，用户看到提示却找不到地方 */
-async function runAction(
-  fn: () => Promise<VcsResult>,
+async function runAction<T extends VcsResult = VcsResult>(
+  fn: () => Promise<T>,
   onMsg: (msg: string, err?: boolean) => void,
-  afterOk?: () => void,
+  afterOk?: (r: T) => void,
   onFailOk = false
 ) {
   try {
     const r = await fn();
     onMsg(r.message, !r.ok);
-    if (r.ok) afterOk?.();
-    else if (onFailOk) afterOk?.();
+    if (r.ok) afterOk?.(r);
+    else if (onFailOk) afterOk?.(r);
   } catch (e) {
     onMsg((e as Error).message, true);
   }
@@ -1179,10 +1179,9 @@ export function GitPushAuthModal(props: {
 // ==================== 创建 / 克隆仓库 ====================
 
 export function CreateRepoDialog(props: { home?: string; onClose: () => void; onCreated: (dir: string) => void }) {
-  const [type, setType] = useState<'git' | 'clone' | 'svn'>('git');
+  const [type, setType] = useState<'git' | 'svn'>('git');
   const [dir, setDir] = useState(props.home ?? '');
   const [name, setName] = useState('');
-  const [url, setUrl] = useState('');
   const [standard, setStandard] = useState(true); // svn 标准布局（trunk/branches/tags），默认勾选
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
@@ -1196,21 +1195,21 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
       return;
     }
     setBusy(true);
-    const repoType = type === 'clone' ? 'git' : type;
     void runAction(
-      () => post.repoCreate(repoType, dir.trim(), name.trim(), type === 'clone' ? url.trim() : '', standard),
+      () => post.repoCreate(type, dir.trim(), name.trim(), '', standard),
       (m, err) => {
         setMsg(m);
         setMsgErr(Boolean(err));
       },
-      () => props.onCreated(`${dir.trim().replace(/\/$/, '')}/${name.trim()}`)
+      // 打开服务端返回的仓库路径（git=目标目录；svn=xxx-wc 工作副本），没返回时兜底拼路径
+      (r) => props.onCreated(r.repoDir ?? `${dir.trim().replace(/\/$/, '')}/${name.trim()}`)
     ).finally(() => setBusy(false));
   };
 
   return (
     <ModalShell
       icon={<IconPlus size={16} />}
-      title="创建 / 克隆仓库"
+      title="新建仓库"
       onClose={props.onClose}
       width={540}
       foot={
@@ -1222,11 +1221,9 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
             onClick={submit}
             title={
               `${
-                type === 'clone'
-                  ? (cmdOfRepo('git', 'clone', { url: url.trim() || '…', dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
-                  : type === 'git'
-                    ? (cmdOfRepo('git', 'init', { dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
-                    : (cmdOfRepo('svn', 'create', { dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
+                type === 'git'
+                  ? (cmdOfRepo('git', 'init', { dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
+                  : (cmdOfRepo('svn', 'create', { dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
               }`
             }
           >
@@ -1236,15 +1233,14 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
       }
     >
       <HelpNote>
-        三种方式：Git 仓库 = 在本地目录初始化新仓库（git init）；Git 克隆 = 从远程地址复制一份到本地（git clone）；SVN 仓库 = 用 svnadmin 创建本地仓库，默认创建标准布局（trunk / branches / tags）并检出 trunk 作为工作副本（目录名 + "-wc"）。
+        两种方式：Git 仓库 = 在本地目录初始化新仓库（git init）；SVN 仓库 = 用 svnadmin 创建本地仓库，默认创建标准布局（trunk / branches / tags）并检出 trunk 作为工作副本（目录名 + "-wc"）。
       </HelpNote>
       <div style={{ marginTop: 12 }} />
       <div className="row" style={{ marginBottom: 12, gap: 6 }}>
         {(
           [
             ['git', 'Git 仓库 (init)'],
-            ['clone', 'Git 克隆'],
-            ['svn', 'SVN 仓库'],
+            ['svn', 'SVN 仓库（svnadmin）'],
           ] as const
         ).map(([k, label]) => (
           <button key={k} className={`mini ${type === k ? 'primary' : ''}`} onClick={() => setType(k)}>
@@ -1252,11 +1248,6 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
           </button>
         ))}
       </div>
-      {type === 'clone' && (
-        <FormRow label="克隆地址（URL）">
-          <input type="text" placeholder="https://github.com/xxx/repo.git" value={url} onChange={(e) => setUrl(e.target.value)} />
-        </FormRow>
-      )}
       <FormRow label="所在目录（父目录路径）">
         <div className="row" style={{ gap: 8 }}>
           <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} />
@@ -1265,7 +1256,7 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
           </button>
         </div>
       </FormRow>
-      <FormRow label={type === 'clone' ? '目标文件夹名称' : '仓库名称'}>
+      <FormRow label="仓库名称">
         <input
           type="text"
           placeholder="my-project"
@@ -1276,10 +1267,12 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
           }}
         />
       </FormRow>
-      <div className="dim small">
-        {type === 'git' && '在当前目录执行 git init，创建新的 Git 仓库'}
-        {type === 'clone' && 'git clone 远程仓库到本地'}
-        {type === 'svn' && 'svnadmin create 创建本地 SVN 仓库，并自动检出工作副本（目录名 + "-wc"）'}
+      <div className="dim small" style={{ whiteSpace: 'pre-line' }}>
+        {(() => {
+          const base = `${dir.trim().replace(/\/$/, '')}/${name.trim() || '…'}`;
+          if (type === 'git') return `将创建：Git 仓库 ${base}\ngit init 创建，创建后自动打开`;
+          return `将创建：SVN 版本库 ${base}（服务器存储，不能直接编辑）\n并检出工作副本 ${base}-wc（创建后自动打开；日常编辑、添加、提交都在工作副本进行）`;
+        })()}
       </div>
       {/* SVN 标准布局选项（默认勾选，非标准布局仓库分支管理受限） */}
       {type === 'svn' && (
@@ -1297,6 +1290,141 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
       )}
       <ResultLine msg={msg} err={msgErr} />
       {/* 文件夹浏览选择器：新建/重命名，确定填充所在目录 */}
+      {picker && (
+        <div className="modal-mask">
+          <ResizableModal width={640}>
+            <h3>📂 选择所在目录</h3>
+            <div className="body">
+              <DirPicker
+                startDir={props.home ?? ''}
+                onPick={(p) => {
+                  setDir(p);
+                  setPicker(false);
+                }}
+                onClose={() => setPicker(false)}
+                onToast={setMsg}
+              />
+            </div>
+          </ResizableModal>
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
+/** 获取仓库：Git 克隆 / SVN 检出（成员从服务器/远程获取工作副本，不是新建） */
+export function GetRepoDialog(props: { home?: string; onClose: () => void; onCreated: (dir: string) => void }) {
+  const [type, setType] = useState<'git' | 'svn'>('git');
+  const [url, setUrl] = useState('');
+  const [dir, setDir] = useState(props.home ?? '');
+  const [name, setName] = useState('');
+  const [msg, setMsg] = useState('');
+  const [msgErr, setMsgErr] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [picker, setPicker] = useState(false);
+
+  const submit = () => {
+    if (!url.trim()) {
+      setMsg('请填写地址（URL）');
+      setMsgErr(true);
+      return;
+    }
+    if (!dir.trim() || !name.trim()) {
+      setMsg('请填写目标和名称');
+      setMsgErr(true);
+      return;
+    }
+    setBusy(true);
+    void runAction(
+      () => post.repoCreate(type, dir.trim(), name.trim(), url.trim(), true),
+      (m, err) => {
+        setMsg(m);
+        setMsgErr(Boolean(err));
+      },
+      // 打开服务端返回的仓库路径（git/svn 均为目标目录），没返回时兜底拼路径
+      (r) => props.onCreated(r.repoDir ?? `${dir.trim().replace(/\/$/, '')}/${name.trim()}`)
+    ).finally(() => setBusy(false));
+  };
+
+  return (
+    <ModalShell
+      icon={<IconDownload size={16} />}
+      title="获取仓库"
+      onClose={props.onClose}
+      width={540}
+      foot={
+        <>
+          <button onClick={props.onClose}>关闭</button>
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={submit}
+            title={
+              `${
+                type === 'git'
+                  ? (cmdOfRepo('git', 'clone', { url: url.trim() || '…', dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
+                  : (cmdOfRepo('svn', 'checkout', { url: url.trim() || '…', dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
+              }`
+            }
+          >
+            {busy ? '获取中…' : '获取'}
+          </button>
+        </>
+      }
+    >
+      <HelpNote>
+        两种方式：Git 克隆 = git clone（从地址复制一份到本地）；SVN 检出 = svn checkout（从服务器获取工作副本，目标目录即本地名称）。
+      </HelpNote>
+      <div style={{ marginTop: 12 }} />
+      <div className="row" style={{ marginBottom: 12, gap: 6 }}>
+        {(
+          [
+            ['git', 'Git 克隆'],
+            ['svn', 'SVN 检出'],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} className={`mini ${type === k ? 'primary' : ''}`} onClick={() => setType(k)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <FormRow label="地址（URL）">
+        <input
+          type="text"
+          placeholder={type === 'git' ? 'https://github.com/xxx/repo.git' : 'http://192.168.0.30:8080/software2/projects/xxx/trunk'}
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+      </FormRow>
+      <FormRow label="所在目录（父目录路径）">
+        <div className="row" style={{ gap: 8 }}>
+          <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} />
+          <button className="mini tool-btn" title="打开文件夹浏览（可新建/重命名文件夹）" onClick={() => setPicker(true)}>
+            📂 浏览
+          </button>
+        </div>
+      </FormRow>
+      <FormRow label="本地名称（工作副本名）">
+        <input
+          type="text"
+          placeholder="my-project"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+        />
+      </FormRow>
+      <div className="dim small" style={{ whiteSpace: 'pre-line' }}>
+        {(() => {
+          const base = `${dir.trim().replace(/\/$/, '')}/${name.trim() || '…'}`;
+          const u = url.trim() || '…';
+          if (type === 'git') return `将克隆：${u} → ${base}\ngit clone 后自动打开`;
+          return `将检出：${u} → ${base}\nsvn checkout 后自动打开（SVN 建议检出 trunk 或目标分支/标签）`;
+        })()}
+      </div>
+      <ResultLine msg={msg} err={msgErr} />
+      {/* 文件夹浏览选择器：选择所在目录 */}
       {picker && (
         <div className="modal-mask">
           <ResizableModal width={640}>

@@ -43,6 +43,7 @@ export const CMDS: Record<string, string> = {
   g_init: 'git init %dir%',
   g_clone: 'git clone %url% %dir%',
   s_create: 'svnadmin create %dir% + svn mkdir trunk/branches/tags + svn checkout（检出 trunk 为工作副本）',
+  s_checkout: 'svn checkout %url% %dir%',
   g_ignore_add: '写入 .gitignore：%pattern%',
   g_resolve_ours: 'git checkout --ours %path%',
   g_resolve_theirs: 'git checkout --theirs %path%',

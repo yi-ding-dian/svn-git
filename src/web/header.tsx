@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { get, post, type RepoInfo } from './api.js';
 import { cmdOfRepo } from './cmd-preview.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont } from './icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont } from './icons.js';
 import { type Modal } from './modals.js';
 import { type View } from './sidebar.js';
 import { ContextMenu } from './context-menu.js';
@@ -332,6 +332,14 @@ export function AppHeader(props: {
               action: () => {
                 setMoreMenu(null);
                 props.setModal({ type: 'create-repo' });
+              },
+            },
+            {
+              icon: <IconDownload size={14} />,
+              label: '获取仓库（Git 克隆 / SVN 检出）',
+              action: () => {
+                setMoreMenu(null);
+                props.setModal({ type: 'get-repo' });
               },
             },
             {

@@ -6,7 +6,7 @@ import { DiffView, type DiffTarget } from './diff.js';
 import { FsView } from './fs.js';
 import { OpenView, OpenModal } from './open.js';
 import { CommitModal, LoginModal, ConfirmModal, CommitSelectModal, UpdateResultModal, EnvInstallModal, RevertModal, RenameModal, type Modal } from './modals.js';
-import { BranchDialog, TagDialog, StashDialog, CreateRepoDialog, CleanDialog, GitInfoModal, GitPushAuthModal } from './vcs-dialogs.js';
+import { BranchDialog, TagDialog, StashDialog, CreateRepoDialog, GetRepoDialog, CleanDialog, GitInfoModal, GitPushAuthModal } from './vcs-dialogs.js';
 import { PushConfirmModal } from './push-confirm.js';
 import { ConflictResolverModal } from './conflicts.js';
 import { RemoteConflictModal } from './remote-conflicts.js';
@@ -18,6 +18,15 @@ import { pathAutoWidth, isBinaryFile, translateVcsError } from './utils.js';
 import { cmdOfRepo } from './cmd-preview.js';
 
 type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'fs-delete' | 'push' | 'move' | 'fs-move';
+
+/** 新建仓库成功后的引导条文案（说明产物与下一步） */
+function onboardText(r: RepoInfo): string {
+  const root = r.root ?? '';
+  if (r.type === 'svn') {
+    return `✅ 已创建并打开 SVN 仓库：版本库 ${root.replace(/-wc$/, '')}（存储），工作副本 ${root}（已打开，日常操作都在这里）。下一步：在文件列表右键「添加到版本库」→「提交」。`;
+  }
+  return `✅ 已创建 Git 仓库并打开：${root}。下一步：添加文件到版本库 → 提交 → 推送。`;
+}
 
 export function App() {
   const [info, setInfo] = useState<RepoInfo | null>(null);
@@ -220,6 +229,8 @@ export function App() {
   // 重点：你正在修改的文件是否被他人先提交（冲突风险预警）
   const [remoteHint, setRemoteHint] = useState<{ behind: number; locked: number; risk: number; files?: string[]; remoteLogs?: LogEntry[] } | null>(null);
   const [riskFiles, setRiskFiles] = useState<string[]>([]);
+  // 新建仓库成功后的引导条（一次性，可关闭；session 级）
+  const [onboard, setOnboard] = useState<string | null>(null);
   // 检查远程状态并刷新提示条；更新完成后立即调用，避免提示条残留旧状态
   const checkRemote = useCallback(() => {
     get
@@ -259,6 +270,7 @@ export function App() {
         const r = await get.info();
         if (r.type) {
           setInfo(r);
+          setOnboard(null); // 切换仓库时清除上次的新建引导条
           refresh();
           loadHistory();
         } else {
@@ -752,6 +764,17 @@ export function App() {
         canStash={canStash ?? true}
       />
 
+      {/* 新建仓库成功后的引导条（一次性，可关闭） */}
+      {onboard && (
+        <div
+          className="env-banner"
+          style={{ background: 'rgba(88,166,255,.12)', color: 'var(--accent)', borderBottomColor: 'var(--accent)' }}
+        >
+          <span style={{ flex: 1, minWidth: 0 }}>{onboard}</span>
+          <button className="mini" onClick={() => setOnboard(null)}>知道了</button>
+        </div>
+      )}
+
       {remoteHint && !modal && (
         <div
           className="env-banner"
@@ -915,7 +938,12 @@ export function App() {
           </>
         ) : (
           <div className="content" style={{ flex: 1 }}>
-            <OpenView startDir={info?.home ?? info?.startDir ?? ''} onOpened={(r) => { setInfo(r); refresh(); }} onToast={setToast} />
+            <OpenView
+              startDir={info?.home ?? info?.startDir ?? ''}
+              onOpened={(r) => { setInfo(r); setOnboard(null); refresh(); loadHistory(); }}
+              onCreatedRepo={(r) => setOnboard(onboardText(r))}
+              onToast={setToast}
+            />
           </div>
         )}
       </div>
@@ -968,7 +996,7 @@ export function App() {
       {modal?.type === 'open' && (
         <OpenModal
           startDir={info?.home ?? info?.startDir ?? ''}
-          onOpened={(r) => { setInfo(r); refresh(); setModal(null); loadHistory(); }}
+          onOpened={(r) => { setInfo(r); setOnboard(null); refresh(); setModal(null); loadHistory(); }}
           onToast={setToast}
           onClose={() => setModal(null)}
         />
@@ -1143,9 +1171,38 @@ export function App() {
                   setInfo(r);
                   refresh();
                   loadHistory();
+                  setView('browse'); // 新仓库直接进入文件浏览视图（创建时可能停在历史/差异视图）
+                  setOnboard(onboardText(r));
+                  setToastErr(false);
+                  setToast(`已打开仓库: ${r.root}`);
                 }
               })
               .catch((e: Error) => setToast(`创建完成，但打开失败: ${(e as Error).message}`));
+          }}
+        />
+      )}
+
+      {modal?.type === 'get-repo' && (
+        <GetRepoDialog
+          home={info?.home}
+          onClose={() => setModal(null)}
+          onCreated={(dir) => {
+            setModal(null);
+            // 打开克隆/检出的仓库
+            void post
+              .open(dir)
+              .then(async () => {
+                const r = await get.info();
+                if (r.type) {
+                  setInfo(r);
+                  refresh();
+                  loadHistory();
+                  setView('browse'); // 获取仓库后直接进入文件浏览视图
+                  setToastErr(false);
+                  setToast(`已打开仓库: ${r.root}`);
+                }
+              })
+              .catch((e: Error) => setToast(`获取完成，但打开失败: ${(e as Error).message}`));
           }}
         />
       )}

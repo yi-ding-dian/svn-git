@@ -1,4 +1,5 @@
-/** 通用弹窗壳：遮罩 + 可调整大小容器 + 标题行 + 底部操作区（默认仅「关闭」） */
+/** 通用弹窗壳：遮罩 + 可调整大小容器 + 标题行 + 底部操作区（默认仅「关闭」）
+ *  遮罩点击不关闭（只能通过关闭按钮 / Esc 关闭），避免误触弹窗消失 */
 export function ModalShell(props: {
   title: string;
   /** 标题图标：SVG 组件（优先）或 emoji；emoji 依赖系统字体，部分新字符(如 🪵)可能缺字形 */
@@ -12,7 +13,7 @@ export function ModalShell(props: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="modal-mask" onClick={props.onClose}>
+    <div className="modal-mask">
       <ResizableModal width={props.width ?? 560} minWidth={props.minWidth} onEsc={props.onClose}>
         <h3>
           {props.icon && <span style={{ marginRight: 8 }}>{props.icon}</span>}
@@ -37,13 +38,14 @@ export function ModalShell(props: {
  * - 保持 .modal 的 flex column 布局(h3 / body / foot),body 内部滚动、foot 固定底部
  *
  * 用法:
- *   <div className="modal-mask" onClick={onClose}>
+ *   <div className="modal-mask">
  *     <ResizableModal width={660}>
  *       <h3>标题</h3>
  *       <div className="body">内容</div>
  *       <div className="foot">按钮</div>
  *     </ResizableModal>
  *   </div>
+ * 注意：modal-mask 遮罩点击不关闭（防误触），关闭只能走按钮 / Esc（onEsc）
  */
 import React, { useEffect, useRef, useState } from 'react';
 

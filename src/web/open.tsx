@@ -5,6 +5,13 @@ import { get, post, type BrowseResult, type RepoInfo } from './api.js';
 import { ModalShell } from './modal-shell.js';
 import { GridIcon } from './icons.js';
 import { ContextMenu } from './context-menu.js';
+import { CreateRepoDialog, GetRepoDialog } from './vcs-dialogs.js';
+
+/** svnadmin 版本库存储目录特征（format 文件 + db/conf/hooks 等）：不是工作副本，需要打开同名 -wc */
+function isSvnBareDir(entries: { name: string }[]): boolean {
+  const names = new Set(entries.map((e) => e.name));
+  return names.has('format') && names.has('db') && names.has('conf');
+}
 
 export function OpenBrowser(props: {
   startDir: string;
@@ -14,6 +21,7 @@ export function OpenBrowser(props: {
   const [data, setData] = useState<BrowseResult | null>(null);
   const [dir, setDir] = useState(props.startDir);
   const [error, setError] = useState('');
+  const [svnBare, setSvnBare] = useState<string | null>(null); // 识别到 SVN 版本库存储目录 → 提示进入工作副本
   const [pathInput, setPathInput] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [history, setHistory] = useState<{ path: string; type: 'svn' | 'git'; lastOpened: number }[]>([]);
@@ -40,10 +48,14 @@ export function OpenBrowser(props: {
     if (!dir) return; // startDir 尚未就绪(异步返回 home)时不请求
     let cancelled = false;
     setError('');
+    setSvnBare(null);
     get
       .browse(dir)
       .then((r) => {
-        if (!cancelled) setData(r);
+        if (cancelled) return;
+        setData(r);
+        // 浏览到 svnadmin 版本库存储目录（非工作副本）：提示进入同名 -wc 工作副本（目录自身特征优先，即使嵌在别的仓库内）
+        if (isSvnBareDir(r.entries)) setSvnBare(dir);
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message);
@@ -72,6 +84,14 @@ export function OpenBrowser(props: {
     setError('');
     try {
       const r = await get.browse(t);
+      // SVN 版本库存储目录自身（svnadmin 特征）：优先于任何"向上识别"（如嵌套在 git 仓库内），引导进入同名 -wc
+      if (isSvnBareDir(r.entries)) {
+        setDir(t);
+        setPathInput('');
+        setSvnBare(t);
+        props.onToast(`检测到 SVN 版本库存储目录: ${t}`);
+        return;
+      }
       if (r.repo) {
         // 直接进入仓库
         await post.open(r.repo.root ?? t);
@@ -83,6 +103,7 @@ export function OpenBrowser(props: {
       // 目录：切换到浏览，并明确提示未识别到仓库（引导从下方文件列表继续找）
       setDir(t);
       setPathInput('');
+      setSvnBare(null);
       setError('当前目录未识别到 SVN/Git 仓库，请重新选择，或从下方文件列表中选择包含仓库的目录');
       props.onToast(`已切换到目录: ${t}`);
     } catch (e) {
@@ -211,6 +232,21 @@ export function OpenBrowser(props: {
         )}
       </div>
       {error && <div className="error">{error}</div>}
+      {svnBare && (
+        <div className="repo-enter" style={{ marginBottom: 10 }}>
+          <span className="badge svn">SVN</span>
+          <span className="info" style={{ flex: 1 }}>
+            <b>{svnBare.replace(/\/+$/, '').split('/').pop()}</b> 是 SVN 版本库存储目录（服务器数据，不能直接编辑）。
+            {' '}请打开它的工作副本进行日常操作：
+          </span>
+          <button
+            className="primary"
+            onClick={() => void openPath(`${svnBare.replace(/\/+$/, '')}-wc`)}
+          >
+            进入工作副本 {svnBare.replace(/\/+$/, '').split('/').pop()}-wc →
+          </button>
+        </div>
+      )}
       {!data && !error && <div className="loading">⏳ 读取目录…</div>}
       {data && (
         <>
@@ -257,7 +293,38 @@ export function OpenView(props: {
   startDir: string;
   onOpened: (repo: RepoInfo) => void;
   onToast: (msg: string) => void;
+  /** 新建仓库并成功打开后通知（引导条等） */
+  onCreatedRepo?: (repo: RepoInfo) => void;
 }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [showGet, setShowGet] = useState(false);
+
+  // 打开（新建/获取后）：自动进入该仓库；新建的额外回调整 onCreatedRepo（引导条）
+  const openRepo = async (dir: string, notifyCreated: boolean) => {
+    void post
+      .open(dir)
+      .then(async () => {
+        const r = await get.info();
+        if (r.type && r.root) {
+          props.onOpened(r);
+          if (notifyCreated) props.onCreatedRepo?.(r);
+          else props.onToast(`已打开仓库: ${r.root}`);
+        } else props.onToast('打开失败');
+      })
+      .catch((e: Error) => props.onToast(`打开失败: ${(e as Error).message}`));
+  };
+
+  // 新建仓库成功后：自动打开（git=仓库目录；svn=xxx-wc 工作副本，由服务端返回）
+  const onCreated = (dir: string) => {
+    setShowCreate(false);
+    void openRepo(dir, true);
+  };
+  // 获取仓库成功后：自动打开（克隆/检出目标目录）
+  const onGot = (dir: string) => {
+    setShowGet(false);
+    void openRepo(dir, false);
+  };
+
   return (
     <div className="open-wrap">
       <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -265,7 +332,25 @@ export function OpenView(props: {
         svn-git文件版本管理
       </h1>
       <div className="sub">浏览并选择 SVN/Git 仓库目录</div>
-      <OpenBrowser {...props} />
+      <div className="row" style={{ gap: 8, marginBottom: 10 }}>
+        <button className="primary" onClick={() => setShowCreate(true)}>＋ 新建仓库（git init / SVN 建库）…</button>
+        <button className="primary" onClick={() => setShowGet(true)}>⬇ 获取仓库（Git 克隆 / SVN 检出）…</button>
+      </div>
+      <OpenBrowser startDir={props.startDir} onOpened={props.onOpened} onToast={props.onToast} />
+      {showCreate && (
+        <CreateRepoDialog
+          home={props.startDir}
+          onClose={() => setShowCreate(false)}
+          onCreated={onCreated}
+        />
+      )}
+      {showGet && (
+        <GetRepoDialog
+          home={props.startDir}
+          onClose={() => setShowGet(false)}
+          onCreated={onGot}
+        />
+      )}
     </div>
   );
 }
