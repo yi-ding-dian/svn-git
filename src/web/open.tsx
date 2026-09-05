@@ -334,7 +334,7 @@ export function OpenView(props: {
       <div className="sub">浏览并选择 SVN/Git 仓库目录</div>
       <div className="row" style={{ gap: 8, marginBottom: 10 }}>
         <button className="primary" onClick={() => setShowCreate(true)}>＋ 新建仓库（git init / SVN 建库）…</button>
-        <button className="primary" onClick={() => setShowGet(true)}>⬇ 获取仓库（Git 克隆 / SVN 检出）…</button>
+        <button className="primary" onClick={() => setShowGet(true)}>⬇ 获取仓库…</button>
       </div>
       <OpenBrowser startDir={props.startDir} onOpened={props.onOpened} onToast={props.onToast} />
       {showCreate && (

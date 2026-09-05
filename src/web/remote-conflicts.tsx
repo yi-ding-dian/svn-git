@@ -37,7 +37,9 @@ export function RemoteConflictModal(props: { riskFiles: string[]; onClose: () =>
   return (
     <div className="modal-mask">
       <ResizableModal width={920} maxWidth="95vw">
-        <h3>⚠ 你修改的文件已被他人提交新版本（{props.riskFiles.length}）</h3>
+        <h3>
+          ⚠ 你修改的文件已被他人提交新版本（<span style={{ color: 'var(--err)', fontWeight: 700 }}>{props.riskFiles.length}</span>）
+        </h3>
         <div className="body" style={{ display: 'flex', gap: 12, minHeight: 420 }}>
           {/* 左：风险文件列表 */}
           <div className="vcs-list" style={{ width: 180, flexShrink: 0, maxHeight: 460 }}>

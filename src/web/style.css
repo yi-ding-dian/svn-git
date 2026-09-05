@@ -138,6 +138,11 @@ body {
 .header button { margin-left: 4px; }
 /* 按钮分组分隔线（传输 / 版本管理 / 仓库 / 维护 / 外观退出） */
 .header-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; margin-left: 4px; }
+/* 拖拽插入线：工具栏内蓝色竖条，指示插入位置 */
+.tool-drop-line {
+  width: 3px; height: 24px; border-radius: 2px; background: var(--accent);
+  box-shadow: 0 0 6px var(--accent); flex-shrink: 0; display: inline-block; margin: 0 2px;
+}
 
 .main { display: flex; flex: 1; min-height: 0; }
 
@@ -307,6 +312,14 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .push-count.on { background: #22c55e; color: #fff; box-shadow: 0 0 4px rgba(34,197,94,.5); }
 .tool-btn:disabled .push-count { opacity: .5; }
 .tool-btn svg { display: block; }
+
+/* 拖拽跟随的按钮幽灵（工具栏定制） */
+.tool-drag-ghost {
+  position: fixed; z-index: 999; pointer-events: none; display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border: 1px solid var(--accent); border-radius: 7px; background: var(--panel2);
+  opacity: .85; font-size: 13px; color: var(--text); white-space: nowrap;
+}
+.tool-drag-ghost svg { display: block; }
 
 /* ---------- 版本管理对话框 ---------- */
 .help-note {

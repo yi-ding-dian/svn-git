@@ -14,7 +14,7 @@ import { AppHeader, THEMES } from './header.js';
 import { Sidebar, type View } from './sidebar.js';
 import { FontModal, FONT_MIN, FONT_MAX } from './font-modal.js';
 import { IconOk, IconErr } from './icons.js';
-import { pathAutoWidth, isBinaryFile, translateVcsError } from './utils.js';
+import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError } from './utils.js';
 import { cmdOfRepo } from './cmd-preview.js';
 
 type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'fs-delete' | 'push' | 'move' | 'fs-move';
@@ -637,17 +637,114 @@ export function App() {
     [runOp, gotoDiff, doPush]
   );
 
+  // 更新当前目录（右键菜单）：立即弹"正在更新"窗口（转圈可取消），完成后显示结果
+  const [updating, setUpdating] = useState(false);
+  const updateAbortRef = useRef<AbortController | null>(null);
+  const doUpdateDir = useCallback(
+    async (dir: string) => {
+      setUpdating(true);
+      const ac = new AbortController();
+      updateAbortRef.current = ac;
+      try {
+        const r = await post.update(dir || undefined, ac.signal);
+        setUpdateResult({ dir: dir || '（仓库根）', ok: r.ok, message: r.message, files: r.files, warnings: r.warnings });
+        if (r.ok) {
+          refresh();
+          checkRemote(); // 更新完成立即刷新远程提示条（否则要等下一轮 2 分钟轮询）
+          get.info().then((ri) => setInfo(ri)).catch(() => {}); // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]）
+        }
+        if (r.authError) setModal({ type: 'login' });
+      } catch (e) {
+        setToastErr((e as Error).message !== '已取消');
+        setToast((e as Error).message === '已取消' ? '已取消更新' : `更新失败: ${(e as Error).message}`);
+      } finally {
+        setUpdating(false);
+        updateAbortRef.current = null;
+      }
+    },
+    [refresh, checkRemote]
+  );
+
+  // 提交失败弹窗：所有提交失败统一弹窗确认（不再 5 秒 toast 一闪而过）；
+  // out-of-date 类错误（服务器有新版本）附「先更新」按钮，点击直接更新后再重新提交；
+  // 并列出被领先提交的文件（本次提交文件 ∩ 服务器更新清单，5s 内取不到则降级为错误文案）
+  const showCommitFail = useCallback(
+    async (msg: string, paths?: string[]) => {
+      const isOutOfDate = isOutOfDateError(msg);
+      let aheadFiles: string[] = [];
+      if (isOutOfDate) {
+        const pf = await Promise.race([
+          get.preflight(),
+          new Promise<null>((r) => setTimeout(() => r(null), 5000)),
+        ]).catch(() => null);
+        if (pf) {
+          const updated = new Set(pf.updatedFiles);
+          // 优先展示"本次提交文件 ∩ 服务器更新清单"；取不到交集时降级展示服务器更新全清单
+          aheadFiles = paths?.length ? paths.filter((p) => updated.has(p)) : pf.updatedFiles;
+          if (aheadFiles.length === 0) aheadFiles = pf.updatedFiles;
+        }
+      }
+      setModal({
+        type: 'confirm',
+        title: (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <IconErr size={16} />
+            提交失败
+          </span>
+        ),
+        message: (
+          <>
+            <div className="error" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              {translateVcsError(msg)}
+            </div>
+            {aheadFiles.length > 0 && (
+              <>
+                <div className="small mt8">被他人领先提交（{aheadFiles.length} 项）：</div>
+                <div className="vcs-list" style={{ marginTop: 8 }}>
+                  {aheadFiles.map((f) => (
+                    <div
+                      key={f}
+                      className="vcs-row"
+                      title="双击查看差异"
+                      onDoubleClick={() => {
+                        setModal(null);
+                        gotoDiff(f);
+                      }}
+                    >
+                      <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {f}
+                      </span>
+                      <span className="dim small nowrap">双击查看差异</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        ),
+        confirmLabel: '知道了',
+        action: () => setModal(null),
+        secondaryLabel: isOutOfDate ? '先更新' : undefined,
+        secondaryAction: isOutOfDate ? () => { setModal(null); void doUpdateDir(''); } : undefined,
+      });
+    },
+    [doUpdateDir, gotoDiff]
+  );
+
   const doCommit = useCallback(
     async (paths: string[], message: string) => {
       const r = await post.commit(paths, message);
-      setToastErr(!r.ok);
-      setToastErr(!r.ok);
-      setToast(r.message);
-      if (r.ok) refresh();
+      if (r.ok) {
+        setToastErr(false);
+        setToast(r.message);
+        refresh();
+      } else {
+        showCommitFail(r.message, paths);
+      }
       if (r.authError) setModal({ type: 'login' });
       setModal(null);
     },
-    [refresh]
+    [refresh, showCommitFail]
   );
 
   // 打开勾选式提交弹窗（收集当前目录变更）
@@ -692,44 +789,21 @@ export function App() {
           if (needAdd.length > 0) await post.add(needAdd);
         }
         const r = await post.commit(paths, message);
-        setToast(r.message);
-        if (r.ok) refresh();
-        if (r.authError) setModal({ type: 'login' });
-      } catch (e) {
-        setToastErr(true);
-        setToast(`提交失败: ${(e as Error).message}`);
-      }
-    },
-    [refresh, repo?.type]
-  );
-
-  // 更新当前目录（右键菜单）：立即弹"正在更新"窗口（转圈可取消），完成后显示结果
-  const [updating, setUpdating] = useState(false);
-  const updateAbortRef = useRef<AbortController | null>(null);
-  const doUpdateDir = useCallback(
-    async (dir: string) => {
-      setUpdating(true);
-      const ac = new AbortController();
-      updateAbortRef.current = ac;
-      try {
-        const r = await post.update(dir || undefined, ac.signal);
-        setUpdateResult({ dir: dir || '（仓库根）', ok: r.ok, message: r.message, files: r.files, warnings: r.warnings });
         if (r.ok) {
+          setToastErr(false);
+          setToast(r.message);
           refresh();
-          checkRemote(); // 更新完成立即刷新远程提示条（否则要等下一轮 2 分钟轮询）
-          get.info().then((ri) => setInfo(ri)).catch(() => {}); // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]）
+        } else {
+          showCommitFail(r.message, paths);
         }
         if (r.authError) setModal({ type: 'login' });
       } catch (e) {
-        setToastErr((e as Error).message !== '已取消');
-        setToast((e as Error).message === '已取消' ? '已取消更新' : `更新失败: ${(e as Error).message}`);
-      } finally {
-        setUpdating(false);
-        updateAbortRef.current = null;
+        showCommitFail(`提交失败: ${(e as Error).message}`, paths);
       }
     },
-    [refresh, checkRemote]
+    [refresh, repo?.type, showCommitFail]
   );
+
   const cancelUpdate = () => updateAbortRef.current?.abort();
   // 耗时（秒）：更新/推送中每秒刷新
   const [updateElapsed, setUpdateElapsed] = useState(0);

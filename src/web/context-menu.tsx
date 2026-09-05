@@ -23,6 +23,14 @@ export interface CtxMenuItem {
   action?: () => void;
   /** 二级子菜单（悬浮/点击右侧展开,如「打开方式」） */
   submenu?: CtxMenuItem[];
+  /** 可拖拽的唯一键（按住可拖出菜单，如工具栏定制） */
+  dndKey?: string;
+  /** 拖拽开始（mousedown，配合 dndKey；仅按住拖动用途，普通点击动作不受影响） */
+  onMouseDown?: (e: React.MouseEvent) => void;
+  /** 拖拽结束（mouseup） */
+  onDragEnd?: (e: React.MouseEvent) => void;
+  /** 拖拽落点高亮（菜单内部重排：该项顶部显示蓝边） */
+  dropTop?: boolean;
 }
 
 export function ContextMenu(props: {
@@ -77,7 +85,11 @@ export function ContextMenu(props: {
                 itemRefs.current[i] = el;
               }}
               className={`ctx-item ${it.danger ? 'danger' : ''} ${it.submenu && hoverIdx === i ? 'submenu-open' : ''}`}
+              data-menu-key={it.dndKey}
+              style={it.dropTop ? { boxShadow: 'inset 0 2.5px 0 var(--accent)' } : undefined}
               title={it.cmd ? `${it.title ?? ''}\n${it.cmd}` : it.title}
+              onMouseDown={it.onMouseDown}
+              onMouseUp={it.onDragEnd}
               onClick={() => {
                 if (it.submenu) {
                   setHoverIdx(i);

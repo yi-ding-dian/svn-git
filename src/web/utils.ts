@@ -45,12 +45,20 @@ export function statusColor(code?: string): string | undefined {
   }
 }
 
+/** svn out-of-date 类错误（服务器有新版本，提交前需先更新）：判断与翻译共用同一正则 */
+const OUT_OF_DATE_RE = /E155011|E160028|E160029|File or directory is out of date/i;
+
+/** 是否为 svn out-of-date 类错误（服务器已有新版本，需先「更新」再提交） */
+export function isOutOfDateError(msg: string): boolean {
+  return OUT_OF_DATE_RE.test(msg);
+}
+
 /** 常见 svn/git 错误码 → 中文提示（含下一步动作建议）。映射不到时原样返回原文。 */
 const VCS_ERR_INFO: { re: RegExp; cn: string }[] = [
   // 环境缺失：svn/git 命令不可用（ENOENT）
   { re: /ENOENT|spawn[^\n]*ENOENT|command not found/i, cn: '⚠ 未检测到 svn/git 命令，请按顶部横幅指引安装后重试' },
   // svn: 服务器有新版本
-  { re: /E155011|E160028|E160029|File or directory is out of date/i, cn: '⚠ 服务器已有新版本，请先「更新」获取最新内容后再提交' },
+  { re: OUT_OF_DATE_RE, cn: '⚠ 服务器已有新版本，请先「更新」获取最新内容后再提交' },
   // svn: 工作副本被锁定
   { re: /E155004|working copy locked/i, cn: '⚠ 工作副本被锁定，请执行「清理」后再操作' },
   // svn: 文件存在冲突
