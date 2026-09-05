@@ -209,6 +209,24 @@ export const win32: Platform = {
     p.unref();
   },
 
+  listFontFamilies() {
+    // 注册表 Fonts 键的值名即字体名（去掉 " (TrueType)" 等括号后缀），与 CSS font-family 对应
+    try {
+      const r = spawnSync('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts'], { encoding: 'buffer', windowsHide: true });
+      const text = winRegText().decode(r.stdout ?? Buffer.alloc(0));
+      const set = new Set<string>();
+      for (const line of text.split('\n')) {
+        const m = line.match(/^\s{4}(.+?)\s+REG_[A-Z_]+\s+.+$/);
+        if (!m) continue;
+        const name = m[1]!.replace(/\s*\(.*\)$/, '').trim();
+        if (name) set.add(name);
+      }
+      return [...set];
+    } catch {
+      return [];
+    }
+  },
+
   async envInstall(tool: InstallTool, send, done) {
     const cmds =
       tool === 'svn'

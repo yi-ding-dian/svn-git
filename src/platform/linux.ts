@@ -1,6 +1,6 @@
 /** Linux 平台实现：扫描 .desktop 程序、系统图标主题、xdg-open 启动、发行版安装引导/自动安装 */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -174,6 +174,24 @@ export const linux: Platform = {
     const p = spawn('xdg-open', [url], { stdio: 'ignore', detached: true });
     p.on('error', (e) => console.error(`[svnkit] 打开浏览器失败(xdg-open): ${e.message}`));
     p.unref();
+  },
+
+  listFontFamilies() {
+    // fc-list 的 %{family} 对 TTC 会输出多个 family（逗号分隔），逐个拆分去重
+    try {
+      const res = spawnSync('fc-list', ['--format=%{family}\n'], { encoding: 'utf8', timeout: 30_000 });
+      if (res.status !== 0) return [];
+      const set = new Set<string>();
+      for (const line of res.stdout.split('\n')) {
+        for (const fam of line.split(',')) {
+          const t = fam.trim();
+          if (t) set.add(t);
+        }
+      }
+      return [...set];
+    } catch {
+      return [];
+    }
   },
 
   async envInstall(tool: InstallTool, send, done) {

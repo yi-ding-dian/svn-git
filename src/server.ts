@@ -162,6 +162,11 @@ export function startServer(): Promise<ServerHandle> {
         if (await handleBranch(ctx)) return;
         if (await handleOps(ctx)) return;
       }
+      if (p === '/api/fonts') {
+        // 系统字体表（字体设置：不存在的字体不给选；系统级查询无仓库语义，仅受 CSRF 同源限制）
+        sendJson(res, 200, { families: platform.listFontFamilies() });
+        return;
+      }
       if (p === '/api/info') {
         let version = '';
         try {

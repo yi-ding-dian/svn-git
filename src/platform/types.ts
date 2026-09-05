@@ -42,6 +42,8 @@ export interface Platform {
   revealPath(abs: string): Promise<void>;
   /** 用系统默认浏览器打开 URL */
   openUrl(url: string): void;
+  /** 列出系统可用字体 family（Linux: fc-list；Windows: 注册表 Fonts 键），供字体设置"不存在不给选" */
+  listFontFamilies(): string[];
   /** 环境安装引导/自动安装（流式 SSE；调用方已设好 SSE 头，send 写事件、done 结束响应） */
   envInstall(tool: InstallTool, send: (data: Record<string, unknown>) => void, done: () => void): Promise<void>;
 }
