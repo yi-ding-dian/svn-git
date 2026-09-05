@@ -1,7 +1,6 @@
 /** 文件夹浏览视图：列表/树/浏览(网格)三模式，支持键盘导航（↑↓ 选择、→/Enter 进入、← 返回） */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterTreeNode } from './api.js';
-import { langOf, highlightLine } from './highlight.js';
 import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon } from './icons.js';
 import { CodeBadge, DirBadge } from './badges.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
@@ -47,7 +46,6 @@ function renameItem(code: string, repoType: 'svn' | 'git', rel: string, isDir: b
 }
 import { IgnoreModal } from './ignore-modal.js';
 import { FavDirsModal } from './fav-dirs.js';
-import { renderMarkdown } from './markdown.js';
 import { fmtSize, statusColor, translateVcsError, isBinaryFile } from './utils.js';
 import { cmdOfRepo } from './cmd-preview.js';
 /** 命令预览: 多路径缩写（前 3 个 + …） */
@@ -55,6 +53,7 @@ const joinPaths = (arr: string[]) => arr.slice(0, 3).join(' ') + (arr.length > 3
 import { ModalShell } from './modal-shell.js';
 import { FormRow } from './ui.js';
 import { ConfirmModal } from './modals.js';
+import { PreviewPane } from './preview-pane.js';
 
 /** 「打开方式」程序图标：/api/icon 按 .desktop Icon 名查系统图标,缺失/失败回退通用文件图标 */
 function AppIcon({ icon }: { icon: string }) {
@@ -153,11 +152,8 @@ export function FsView(props: Props) {
   const [data, setData] = useState<FsData | null>(null); // 列表模式数据
   const [error, setError] = useState('');
   const [sel, setSel] = useState<FsEntry | null>(null);
-  const [preview, setPreview] = useState<{ name: string; text: string; note?: string; rel: string; img?: boolean; code?: string } | null>(null);
-  // md 文件渲染预览模式（预览按钮切换；false=原文高亮，true=Markdown 渲染）
-  const [mdPreview, setMdPreview] = useState(false);
-  const [blameMode, setBlameMode] = useState(false);
-  const [blameData, setBlameData] = useState<{ rev: string; author: string; date: string; line: number; text: string }[]>([]);
+  // 预览目标（文本/图片等实际内容与 md/blame/搜索状态都在 PreviewPane 内；此处只做开关与目标，供目录切换/刷新时关闭）
+  const [preview, setPreview] = useState<{ name: string; rel: string; img?: boolean; code?: string } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [mode, setMode] = useState<Mode>('browse');
@@ -183,29 +179,9 @@ export function FsView(props: Props) {
   const [ignorePattern, setIgnorePattern] = useState('');
   /** 取消忽略确认弹窗（忽略项右键：git 追加 !规则 / svn 删规则 → 变回未版本化 ?） */
   const [unignoreAsk, setUnignoreAsk] = useState<{ rel: string; name: string; isDir: boolean } | null>(null);
-  /** md 预览图片放大查看（点击图片 → 全屏显示原图） */
-  const [imgViewer, setImgViewer] = useState<string | null>(null);
-  useEffect(() => {
-    if (!imgViewer) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setImgViewer(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [imgViewer]);
-  /** md-render 容器点击：目标是图片则放大查看 */
-  const onMdRenderClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const t = e.target as HTMLElement;
-    if (t.tagName === 'IMG') setImgViewer((t as HTMLImageElement).src);
-  };
   const [focusIndex, setFocusIndex] = useState(0);
   // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
   const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[] } | null>(null);
-
-  // 原文预览搜索
-  const [searchQ, setSearchQ] = useState('');
-  const [searchActive, setSearchActive] = useState(false);
-  const [matchIdx, setMatchIdx] = useState(0);
   // 文件搜索（工具栏）
   const [fileQuery, setFileQuery] = useState('');
   const [searchResults, setSearchResults] = useState<string[]>([]);
@@ -216,7 +192,6 @@ export function FsView(props: Props) {
   const [pulseRels, setPulseRels] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const previewRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const gridRef = useRef<HTMLDivElement | null>(null);
   // 角标定位：轮转索引（dir::code → 下一次取第几个）+ 竞态令牌（连点/换目录时中断旧动画）
   const locateIdxRef = useRef<Map<string, number>>(new Map());
@@ -231,6 +206,7 @@ export function FsView(props: Props) {
       const r = await get.locate(dirRel, code);
       files = r.files;
     } catch {
+      // 定位失败即忽略（接口异常/目录不存在时不打扰用户，角标下次点击可重试）
       return;
     }
     if (token !== locateTokenRef.current || files.length === 0) return;
@@ -660,16 +636,13 @@ export function FsView(props: Props) {
   const relOf = (e: FsEntry) => (data?.dir ? `${data.dir}/${e.name}` : e.name);
   const relOfName = (d: string, name: string) => (d ? `${d}/${name}` : name);
 
-  /** 打开文件：有变更 → diff；无变更 → 原文 */
+  /** 打开文件：有变更 → diff；无变更/未版本化 → 原文预览（内容由 PreviewPane 自行读取渲染） */
   const openFile = useCallback(
-    async (name: string, code: string, rel: string) => {
+    (name: string, code: string, rel: string) => {
       setTip(null); // 双击打开时关闭悬浮卡片（视图切换后不会再触发 mouseleave,需主动清）
       // 图片文件：双击直接看图（不读文本/diff,避免二进制乱码与"不支持文本对比"提示）
       if (/.(png|jpe?g|gif|svg|webp|bmp|ico)$/i.test(rel)) {
-        setPreview({ name, text: '', rel, img: true });
-        setMdPreview(false);
-        setBlameMode(false);
-        setBlameData([]);
+        setPreview({ name, rel, img: true });
         return;
       }
       // 办公文档/压缩包等二进制：双击不打开（diff 无意义、原文会乱码、大文件拖死界面），提示走「打开方式…」
@@ -681,35 +654,11 @@ export function FsView(props: Props) {
         props.onDiff(rel);
         return;
       }
-      try {
-        const r = await get.cat(rel);
-        if (!r.ok) throw new Error(r.error ?? '读取失败');
-        setPreview({ name, text: r.output, note: code === '?' ? '未版本化文件（原文）' : '无差异 — 文件原文', rel, code });
-        setMdPreview(false); // 重新打开文件回到原文模式
-        setBlameMode(false);
-        setBlameData([]);
-      } catch (err) {
-        setError((err as Error).message);
-      }
+      // 干净/未版本化/忽略文件：打开原文预览（原 get.cat 读取移到 PreviewPane；读取失败面板回调退回列表）
+      setPreview({ name, rel, code });
     },
     [props]
   );
-
-  /** 追溯（Blame）：逐行标注提交/作者 */
-  const toggleBlame = useCallback(async () => {
-    if (!preview) return;
-    if (blameMode) {
-      setBlameMode(false);
-      return;
-    }
-    try {
-      const r = await get.blame(preview.rel);
-      setBlameData(r.lines);
-      setBlameMode(true);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }, [preview, blameMode]);
 
   type FsOp = 'add' | 'commit' | 'revert' | 'delete';
   const onAction = (op: FsOp, rel: string) => props.onAction(op, [rel]);
@@ -748,26 +697,6 @@ export function FsView(props: Props) {
     };
   }, [ctx]);
 
-  // ---------- 原文预览搜索 ----------
-  const previewLines = useMemo(() => (preview ? preview.text.split('\n') : []), [preview]);
-  const matches = useMemo(() => {
-    if (!searchActive || !searchQ.trim()) return [] as number[];
-    const q = searchQ.toLowerCase();
-    const out: number[] = [];
-    previewLines.forEach((l, i) => {
-      if (l.toLowerCase().includes(q)) out.push(i);
-    });
-    return out;
-  }, [previewLines, searchActive, searchQ]);
-
-  const goNextMatch = useCallback(() => {
-    if (matches.length === 0) return;
-    const next = (matchIdx + 1) % matches.length;
-    setMatchIdx(next);
-    const el = previewRefs.current.get(matches[next]!);
-    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [matches, matchIdx]);
-
   // 文件搜索（防抖）：仅显示结果下拉 + 当前目录匹配项框选，不自动跳转（点击/回车才定位）
   useEffect(() => {
     const q = fileQuery.trim();
@@ -785,7 +714,6 @@ export function FsView(props: Props) {
         .then((r) => {
           setSearchResults(r.paths);
           setShowResults(true);
-          setMatchIdx(0);
         })
         .catch(() => {});
     }, 400);
@@ -873,14 +801,6 @@ export function FsView(props: Props) {
   focusRef.current = focusIndex;
   const dirRef = useRef(dir);
   dirRef.current = dir;
-  const matchIdxRef = useRef(matchIdx);
-  matchIdxRef.current = matchIdx;
-  const matchesRef = useRef(matches);
-  matchesRef.current = matches;
-  const goNextRef = useRef(goNextMatch);
-  goNextRef.current = goNextMatch;
-  const searchActiveRef = useRef(searchActive);
-  searchActiveRef.current = searchActive;
 
   useEffect(() => {
     if (!props.active) return; // 视图隐藏时键盘不响应（防止穿透到其他视图）
@@ -893,25 +813,7 @@ export function FsView(props: Props) {
         }
         return;
       }
-      if (preview) {
-        if (searchActiveRef.current) {
-          if (e.key === 'Escape') setSearchActive(false);
-          return;
-        }
-        if (e.key === 'Escape' || e.key === 'ArrowLeft' || e.key === 'Backspace') {
-          e.preventDefault();
-          setPreview(null); // ← 返回列表
-          return;
-        }
-        if (e.key === '/') {
-          e.preventDefault();
-          setSearchActive(true);
-          setSearchQ('');
-          setMatchIdx(0);
-          return;
-        }
-        return;
-      }
+      if (preview) return; // 预览打开：按键由 PreviewPane 自己的监听处理（/ 搜索 · Esc/←/Backspace 返回），这里只吃键防止列表响应
       const list = rowsRef.current;
       if (list.length === 0) return;
       const k = e.key;
@@ -1570,7 +1472,6 @@ export function FsView(props: Props) {
                     if (searchResults.length > 0) {
                       const at = Math.min(activeIdx, searchResults.length - 1);
                       setPendingLocate({ rel: searchResults[at]!, at });
-                      setMatchIdx(0);
                     }
                   } else if (e.key === 'Escape') {
                     setFileQuery('');
@@ -1602,7 +1503,6 @@ export function FsView(props: Props) {
                     className={`search-item ${i === activeIdx ? 'active' : ''}`}
                     onClick={() => {
                       setPendingLocate({ rel: p, at: i });
-                      setMatchIdx(0);
                       setActiveIdx(i);
                     }}
                   >
@@ -1879,120 +1779,18 @@ export function FsView(props: Props) {
             />
           </div>
         )}
-        {/* 文件预览（语法高亮 + 搜索） */}
+        {/* 文件预览（文本/图片/md/blame + 搜索均在 PreviewPane 内；文本读取失败时面板回调退回列表） */}
         {preview && (
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div className="row" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
-              <span className="dim">{preview.name}</span>
-              {preview.note && <span className="small" style={{ color: 'var(--accent)' }}>ℹ {preview.note}</span>}
-              {searchActive ? (
-                <span className="row" style={{ gap: 6 }}>
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="搜索代码…"
-                    value={searchQ}
-                    onChange={(e) => {
-                      setSearchQ(e.target.value);
-                      setMatchIdx(0);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') goNextMatch();
-                      if (e.key === 'Escape') setSearchActive(false);
-                    }}
-                    style={{ width: 200 }}
-                  />
-                  <span className="dim small">
-                    {searchQ.trim() && matches.length > 0 ? `${matchIdx + 1}/${matches.length}` : searchQ.trim() ? '无匹配' : ''}
-                  </span>
-                  <button className="mini" onClick={goNextMatch}>下一个 ↓</button>
-                </span>
-              ) : (
-                <button className="mini" onClick={() => setSearchActive(true)}>🔍 搜索 (/)</button>
-              )}
-              <button
-                className={`mini ${blameMode ? 'primary' : ''}`}
-                disabled={preview?.code === '?' || preview?.code === 'I'}
-                onClick={() => void toggleBlame()}
-                title={
-                  preview?.code === '?' || preview?.code === 'I'
-                    ? '未版本化/忽略的文件没有提交历史，无法追溯'
-                    : '逐行标注提交/作者'
-                }
-              >
-                📜 追溯
-              </button>
-              <span className="grow" />
-              {preview.name.toLowerCase().endsWith('.md') && (
-                <button className="mini" onClick={() => setMdPreview((v) => !v)} title="Markdown 渲染预览">
-                  {mdPreview ? '📄 查看原文' : '👁 预览'}
-                </button>
-              )}
-              <span className="dim small">← 键返回列表 · / 搜索</span>
-              <button className="mini" onClick={() => setPreview(null)}>← 返回列表</button>
-            </div>
-            <div className="diff" style={{ flex: 1, overflow: 'auto' }}>
-              {/* 图片预览：直接显示图片（点击放大复用 md-render 的放大机制） */}
-              {preview.img ? (
-                <div
-                  className="md-render"
-                  onClick={onMdRenderClick}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100%', padding: 16 }}
-                >
-                  <img
-                    src={`/api/file?path=${encodeURIComponent(preview.rel)}`}
-                    alt={preview.name}
-                    style={{ maxWidth: '100%', maxHeight: 'calc(100% - 40px)', objectFit: 'contain', borderRadius: 6, cursor: 'zoom-in' }}
-                    onError={(e) => setError(`图片读取失败: ${(e.target as HTMLImageElement).alt}`)}
-                  />
-                </div>
-              ) : mdPreview && preview.name.toLowerCase().endsWith('.md') ? (
-                <div
-                  className="md-render"
-                  onClick={onMdRenderClick}
-                  dangerouslySetInnerHTML={{
-                    __html: renderMarkdown(preview.text, { baseDir: preview.rel.includes('/') ? preview.rel.slice(0, preview.rel.lastIndexOf('/')) : '' }),
-                  }}
-                />
-              ) : blameMode ? (
-                // Blame 视图：行前缀显示 版本+作者
-                blameData.map((b, i) => {
-                  const isHit = searchActive && matches.includes(i);
-                  const isCur = isHit && i === matches[matchIdx % Math.max(1, matches.length)];
-                  return (
-                    <div
-                      key={i}
-                      ref={(el) => {
-                        if (el) previewRefs.current.set(i, el);
-                      }}
-                      className={`pv-line ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''}`}
-                      title={`${b.rev} · ${b.author}${b.date ? ' · ' + b.date : ''}`}
-                    >
-                      <span className="blame-meta">{b.rev} {b.author}</span>
-                      <span dangerouslySetInnerHTML={{ __html: highlightLine(b.text, langOf(preview.name)) }} />
-                    </div>
-                  );
-                })
-              ) : (
-                previewLines.map((line, i) => {
-                  const isHit = searchActive && matches.includes(i);
-                  const isCur = isHit && i === matches[matchIdx % Math.max(1, matches.length)];
-                  return (
-                    <div
-                      key={i}
-                      ref={(el) => {
-                        if (el) previewRefs.current.set(i, el);
-                      }}
-                      className={`pv-line ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''}`}
-                    >
-                      <span className="sb-no">{i + 1}</span>
-                      <span className="pv-src" dangerouslySetInnerHTML={{ __html: highlightLine(line, langOf(preview.name)) }} />
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+          <PreviewPane
+            target={preview}
+            active={props.active}
+            onClose={() => setPreview(null)}
+            onError={(msg) => setError(msg)}
+            onOpenError={(msg) => {
+              setError(msg);
+              setPreview(null); // 文本读取失败：红条提示并退回列表（对应旧 openFile 读取失败后的终态）
+            }}
+          />
         )}
       </div>
       {/* 详情面板（列表模式） */}
@@ -2132,28 +1930,6 @@ export function FsView(props: Props) {
           onMouseEnter={cancelCtxClose} // 鼠标移入菜单 → 取消延迟关闭
           onMouseLeave={closeCtxSoon} // 鼠标移出菜单 → 延迟关闭
         />
-      )}
-      {/* md 预览图片放大查看：全屏深色遮罩 + 原图自适应，点击遮罩 / ESC 关闭 */}
-      {imgViewer && (
-        <div
-          className="modal-mask"
-          style={{
-            background: 'rgba(0,0,0,.78)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'zoom-out',
-            zIndex: 500,
-          }}
-          onClick={() => setImgViewer(null)}
-          title="点击关闭（ESC）"
-        >
-          <img
-            src={imgViewer}
-            style={{ maxWidth: '92vw', maxHeight: '92vh', objectFit: 'contain', borderRadius: 8, boxShadow: '0 12px 48px rgba(0,0,0,.55)' }}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
       )}
       {/* 网格目录悬浮提示：彩色状态徽标 + 紧凑描述（原生 title 无法着色，自定义浮层替代） */}
       {tip && (

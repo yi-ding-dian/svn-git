@@ -1,5 +1,5 @@
 /** 版本管理扩展域端点：branches / branch / tags / tag / stash / git 子操作 */
-import { sendJson, readBody, vcsOf, isAuthError, authErrorOf, invalidateStatusCache } from './util.js';
+import { sendJson, readBody, vcsOf, authErrorOf, invalidateStatusCache, runVcs, MSG_UNSUPPORTED_OP } from './util.js';
 import type { VcsResult } from '../vcs/index.js';
 import type { Ctx } from './util.js';
 
@@ -91,7 +91,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           res.on('close', () => {
             if (!res.writableEnded) ac.abort();
           });
-          result = (await vcs.branchRemoteDelete?.(name, ac.signal)) ?? { ok: false, message: '当前仓库不支持该操作' };
+          result = (await vcs.branchRemoteDelete?.(name, ac.signal)) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
         }
         else if (action === 'push') {
           // 分支推送可取消：客户端断开（fetch abort → res close 且未写完）时终止 git push 子进程
@@ -122,7 +122,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 400, { error: '注释不能为空' });
           return true;
         }
-        const result = (await vcs.amend?.(message)) ?? { ok: false, message: '当前仓库不支持该操作' };
+        const result = (await vcs.amend?.(message)) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
         sendJson(res, 200, { ...result, authError: authErrorOf(result) });
         return true;
       }
@@ -141,7 +141,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 400, { error: '参数不完整' });
           return true;
         }
-        const result = (await vcs.reword?.(hash, message)) ?? { ok: false, message: '当前仓库不支持该操作' };
+        const result = (await vcs.reword?.(hash, message)) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
         sendJson(res, 200, { ...result, authError: authErrorOf(result) });
         return true;
       }
@@ -177,11 +177,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 400, { error: '仅 git 仓库支持' });
           return true;
         }
-        const result = (await vcs.resetSoft?.()) ?? { ok: false, message: '当前仓库不支持该操作' };
-        // --soft 撤销后改动回到暂存区：失效 30s 状态缓存（否则主界面还显示"已提交"的干净状态）
-        if (result.ok) invalidateStatusCache(vcsOf().repo.root);
-        sendJson(res, 200, { ...result, authError: authErrorOf(result) });
-        return true;
+        // --soft 撤销后改动回到暂存区：runVcs 内部统一失效 30s 状态缓存（否则主界面还显示"已提交"的干净状态）
+        return runVcs(ctx, () => vcs.resetSoft?.());
       }
 
       if (p === '/api/tags') {
@@ -225,12 +222,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         let result: VcsResult;
         if (action === 'push') {
           const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean) : undefined;
-          result = (await vcs.stashPush?.(String(body.message ?? ''), paths?.length ? paths : undefined)) ?? { ok: false, message: '当前仓库不支持该操作' };
+          result = (await vcs.stashPush?.(String(body.message ?? ''), paths?.length ? paths : undefined)) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
           // stash 后工作区变干净：失效 30s 缓存，否则弹窗内的可暂存文件列表显示旧状态
           if (result.ok) invalidateStatusCache(vcsOf().repo.root);
         }
-        else if (action === 'pop') result = (await vcs.stashPop?.(Number(body.index ?? 0))) ?? { ok: false, message: '当前仓库不支持该操作' };
-        else if (action === 'drop') result = (await vcs.stashDrop?.(Number(body.index ?? 0))) ?? { ok: false, message: '当前仓库不支持该操作' };
+        else if (action === 'pop') result = (await vcs.stashPop?.(Number(body.index ?? 0))) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
+        else if (action === 'drop') result = (await vcs.stashDrop?.(Number(body.index ?? 0))) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
         else {
           sendJson(res, 400, { error: '未知操作' });
           return true;

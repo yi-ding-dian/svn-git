@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { detectRepo } from '../vcs/detect.js';
-import { createVcs, type RepoInfo } from '../vcs/index.js';
+import { createVcs, type RepoInfo, type VcsResult } from '../vcs/index.js';
 import { loadConfig } from '../config.js';
 import { BINARY_EXTS } from '../shared/types.js';
 import type { SvnCred } from '../vcs/svn.js';
@@ -16,6 +16,13 @@ export interface Ctx {
   url: URL;
   p: string;
 }
+
+/** VCS 写操作兜底文案：仓库类型/实现不支持该操作（routes 多文件共用，收敛于此） */
+export const MSG_UNSUPPORTED_OP = '当前仓库不支持该操作';
+/** 路径越界校验统一文案（防 ../ 穿越；routes 多文件共用，收敛于此） */
+export const MSG_PATH_OUT_OF_BOUNDS = '路径越界';
+/** 路径超出工作副本范围校验文案（403 域；与 MSG_PATH_OUT_OF_BOUNDS 同族不同字面，分别收敛保持响应文本不变） */
+export const MSG_OUT_OF_SCOPE = '超出工作副本范围';
 
 /** 二进制文件判断：常量来自 shared（单一来源），与前端 utils.isBinaryFile 一致 */
 export function isBinaryFile(p: string): boolean {
@@ -112,6 +119,17 @@ export function invalidateStatusCache(root: string): void {
   for (const key of statusCache.keys()) {
     if (key.startsWith(root + '::')) statusCache.delete(key);
   }
+}
+
+/** VCS 动作统一收口：兜底"不支持"文案 + 状态缓存失效 + authError 提取与发送（响应 JSON 形状与各端点原实现一致）。
+ * op 执行：返回 undefined（实现缺失）→ 发送兜底"当前仓库不支持该操作"；
+ * 成功与失败均失效状态缓存（写操作后状态集必然变化；失败时多一次重扫无害）；
+ * op 抛异常不在此吞掉——与收口前一致，由 server 层 catch 统一转 500。 */
+export async function runVcs(ctx: Ctx, op: () => VcsResult | undefined | Promise<VcsResult | undefined>): Promise<boolean> {
+  const result = (await op()) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
+  invalidateStatusCache(vcsOf().repo.root);
+  sendJson(ctx.res, 200, { ...result, authError: authErrorOf(result) });
+  return true;
 }
 
 export async function getStatusCached(repo: RepoInfo, force = false): Promise<unknown[]> {

@@ -1,5 +1,8 @@
 /** 后端 API 封装 */
 
+// 状态码中文说明：单一事实源在 src/shared/types.ts（含 ' ' 无变化 键），此处 re-export 保持 web 侧既有导入路径不变
+export { CODE_DESC } from '../shared/types.js';
+
 export interface RepoCheck {
   /** 目标完整路径（dir/name） */
   target: string;
@@ -307,20 +310,7 @@ function json(body: unknown, signal?: AbortSignal): RequestInit {
   return { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal };
 }
 
-/** 状态码中文说明 */
-export const CODE_DESC: Record<string, string> = {
-  M: '已修改',
-  A: '已添加',
-  D: '已删除',
-  '?': '未版本化',
-  '!': '缺失',
-  C: '冲突',
-  R: '已替换/重命名',
-  X: '外部引用',
-  I: '已忽略',
-  U: '已更新',
-  '~': '类型变更',
-};
+/** 状态码中文说明：见文件头 re-export（src/shared/types.ts 单一事实源） */
 
 /** 状态码优先级（目录聚合） */
 export const codeRank = (c: string): number =>

@@ -4,9 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
 import { platform } from '../platform/index.js';
-import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, isAuthError, authErrorOf, invalidateStatusCache } from './util.js';
+import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, runVcs, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE } from './util.js';
 import { diffChangedLines } from '../vcs/diff-lines.js';
-import type { VcsResult } from '../vcs/index.js';
 import type { Ctx } from './util.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
@@ -156,7 +155,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const abs = path.join(repo.root, rel);
         // 路径越界校验：manual 模式会 fs.writeFileSync(abs) 写仓库外文件
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 400, { error: '路径越界' });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
           return true;
         }
         // 防误操作：非冲突状态执行 ours/theirs 会静默覆盖本地修改
@@ -167,7 +166,6 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             return true;
           }
         }
-        let result: VcsResult;
         if (repo.type === 'git') {
           if (mode === 'manual') {
             fs.writeFileSync(abs, content);
@@ -179,16 +177,14 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               return true;
             }
           }
-          result = await vcs.add([rel]);
-          if (result.ok) result = { ok: true, message: `已解决: ${rel}（${mode === 'ours' ? '采用本地' : mode === 'theirs' ? '采用对方' : '手动编辑'}）` };
-        } else {
-          if (mode === 'manual') fs.writeFileSync(abs, content);
-          const accept = mode === 'ours' ? 'mine-full' : mode === 'theirs' ? 'theirs-full' : 'working';
-          result = (await vcs.resolve?.(rel, accept)) ?? { ok: false, message: '当前仓库不支持该操作' };
+          const added = await vcs.add([rel]);
+          // git add 为纯本地操作（无网络认证），authErrorOf 恒 false——与原固定 authError:false 等价
+          return runVcs(ctx, () => (added.ok ? { ok: true, message: `已解决: ${rel}（${mode === 'ours' ? '采用本地' : mode === 'theirs' ? '采用对方' : '手动编辑'}）` } : added));
         }
-        if (result.ok) invalidateStatusCache(repo.root);
-        sendJson(res, 200, { ...result, authError: false });
-        return true;
+        if (mode === 'manual') fs.writeFileSync(abs, content);
+        const accept = mode === 'ours' ? 'mine-full' : mode === 'theirs' ? 'theirs-full' : 'working';
+        // svn resolve 为纯本地操作，authErrorOf 恒 false——与原固定 authError:false 等价；"不支持"兜底由 runVcs 统一
+        return runVcs(ctx, () => vcs.resolve?.(rel, accept));
       }
 
       if (p === '/api/reveal' && req.method === 'POST') {
@@ -198,7 +194,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const rel = String(body.path ?? '');
         const abs = path.join(repo.root, rel);
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 403, { error: '超出工作副本范围' });
+          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE });
           return true;
         }
         if (!fs.existsSync(abs)) {

@@ -3,9 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
-import { sendJson, readBody, vcsOf, inRepoRoot, isAuthError, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached } from './util.js';
+import {
+  sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached,
+  runVcs, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS,
+} from './util.js';
 import { getSvnIgnoreMap, isIgnoredByRules } from '../vcs/ignore.js';
-import type { VcsResult } from '../vcs/index.js';
 import type { Ctx } from './util.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
@@ -57,7 +59,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
         } else if (p === '/api/revert') result = await vcs.revert(paths);
         else if (p === '/api/delete') result = body.keep === true ? await vcs.removeKeep(paths) : await vcs.remove(paths);
-        else result = (await vcs.push?.()) ?? { ok: false, message: '当前仓库不支持该操作' };
+        else result = (await vcs.push?.()) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
         if (result.ok) invalidateStatusCache(repo.root); // 状态改变 → 失效 30s 缓存,否则新文件过滤仍显示旧 ?/M
         sendJson(res, 200, {
           ...(result as object),
@@ -71,23 +73,22 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const { vcs, repo } = vcsOf();
         const body = await readBody(req);
         const action = String(body.action ?? '');
-        let result: VcsResult;
-        if (action === 'cleanup') result = (await vcs.cleanup?.()) ?? { ok: false, message: '当前仓库不支持该操作' };
-        else if (action === 'resolve' || action === 'propset-ignore') {
+        if (action === 'cleanup') return runVcs(ctx, () => vcs.cleanup?.());
+        if (action === 'resolve' || action === 'propset-ignore') {
           // 路径越界校验：resolve/propset-ignore 的 path 是相对仓库根路径
           const rel = String(body.path ?? '');
           if (!inRepoRoot(repo.root, path.resolve(repo.root, rel))) {
-            sendJson(res, 400, { error: '路径越界' });
+            sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
             return true;
           }
-          if (action === 'resolve') result = (await vcs.resolve?.(rel, String(body.accept ?? 'working'))) ?? { ok: false, message: '当前仓库不支持该操作' };
-          else result = (await vcs.propSetIgnore?.(rel, String(body.pattern ?? ''))) ?? { ok: false, message: '当前仓库不支持该操作' };
-        } else {
-          sendJson(res, 400, { error: '未知操作' });
-          return true;
+          // resolve/propset-ignore 改变状态码（C→干净、?→I），缓存失效由 runVcs 统一
+          return runVcs(ctx, () =>
+            action === 'resolve'
+              ? vcs.resolve?.(rel, String(body.accept ?? 'working'))
+              : vcs.propSetIgnore?.(rel, String(body.pattern ?? ''))
+          );
         }
-        if (result.ok) invalidateStatusCache(repo.root); // resolve/propset-ignore 改变状态码（C→干净、?→I）
-        sendJson(res, 200, { ...result, authError: authErrorOf(result) });
+        sendJson(res, 400, { error: '未知操作' });
         return true;
       }
 
@@ -104,10 +105,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const body = await readBody(req);
         const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean) : undefined;
-        const r = (await vcs.clean?.(paths?.length ? paths : undefined)) ?? { ok: false, message: '当前仓库不支持该操作' };
-        if (r.ok) invalidateStatusCache(repo.root); // 清理后 ? 文件集变化，防过滤树显示已删文件
-        sendJson(res, 200, { ...r, authError: false });
-        return true;
+        // clean 为纯本地操作（无网络认证），authErrorOf 恒 false——与原固定 authError:false 等价
+        return runVcs(ctx, () => vcs.clean?.(paths?.length ? paths : undefined));
       }
 
       if (p === '/api/locate') {
@@ -149,7 +148,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const rootAbs = path.resolve(repo.root);
         if (paths.some((p) => !inRepoRoot(repo.root, path.join(repo.root, p)) || path.resolve(repo.root, p) === rootAbs)) {
-          sendJson(res, 400, { error: '路径越界' });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
           return true;
         }
         try {
@@ -172,7 +171,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         if (from === to) { sendJson(res, 400, { error: '新旧路径相同' }); return true; }
         // from 存在可正常 realpath；to 可能尚未存在（新名字目录也可能未建），用 realpathSafe 逐级解析
         if (!inRepoRoot(repo.root, path.resolve(repo.root, from)) || !inRepoRoot(repo.root, realpathSafe(path.resolve(repo.root, to)))) {
-          sendJson(res, 400, { error: '路径越界' });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
           return true;
         }
         const result = await vcs.move(from, to);
@@ -195,7 +194,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const fromAbs = path.resolve(repo.root, from);
         const toAbs = path.resolve(repo.root, to);
         if (!inRepoRoot(repo.root, fromAbs) || !inRepoRoot(repo.root, realpathSafe(toAbs))) {
-          sendJson(res, 400, { error: '路径越界' });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
           return true;
         }
         if (fs.existsSync(toAbs)) {
@@ -222,16 +221,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const action = String(body.action ?? '');
         const pathRel = String(body.path ?? '');
         if (!inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-          sendJson(res, 400, { error: '路径越界' });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
           return true;
         }
         const force = Boolean(body.force);
-        const r = action === 'lock'
-          ? (await vcs.lock?.(pathRel, force)) ?? { ok: false, message: '当前仓库不支持该操作' }
-          : (await vcs.unlock?.(pathRel, force)) ?? { ok: false, message: '当前仓库不支持该操作' };
-        if (r.ok) invalidateStatusCache(repo.root); // 锁定/解锁影响状态展示（锁标）
-        sendJson(res, 200, { ...r, authError: authErrorOf(r) });
-        return true;
+        // 锁定/解锁影响状态展示（锁标），缓存失效由 runVcs 统一
+        return runVcs(ctx, () => (action === 'lock' ? vcs.lock?.(pathRel, force) : vcs.unlock?.(pathRel, force)));
       }
 
       if (p === '/api/ignore' && req.method === 'GET') {
@@ -241,7 +236,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         let rules: string[] = [];
         if (repo.type === 'svn') {
           if (!inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-            sendJson(res, 400, { error: '路径越界' });
+            sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
             return true;
           }
           const r = await run('svn', ['propget', 'svn:ignore', pathRel || '.'], { cwd: repo.root, timeoutMs: 30_000 });
@@ -269,7 +264,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         if (repo.type === 'svn') {
           // 路径越界校验：pathRel 用于 svn propget/propset，传 ../ 可作用于仓库外路径
           if (!inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-            sendJson(res, 400, { error: '路径越界' });
+            sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
             return true;
           }
           // propget → 过滤 → propset 回写
@@ -399,16 +394,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         // svn 分支的 propSetIgnore 作用于 pathRel 目录,须在仓库根内
         if (repo.type === 'svn' && !inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-          sendJson(res, 400, { error: '路径越界' });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
           return true;
         }
-        const r =
+        // 忽略后 ? → I，状态码变化，缓存失效由 runVcs 统一
+        return runVcs(ctx, () =>
           repo.type === 'git'
-            ? (await vcs.ignoreAdd?.(pattern)) ?? { ok: false, message: '当前仓库不支持该操作' }
-            : (await vcs.propSetIgnore?.(pathRel, pattern)) ?? { ok: false, message: '当前仓库不支持该操作' };
-        if (r.ok) invalidateStatusCache(repo.root); // 忽略后 ? → I，状态码变化
-        sendJson(res, 200, { ...r, authError: authErrorOf(r) });
-        return true;
+            ? vcs.ignoreAdd?.(pattern)
+            : vcs.propSetIgnore?.(pathRel, pattern)
+        );
       }
 
   return false;
