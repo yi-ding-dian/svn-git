@@ -983,6 +983,7 @@ export function App() {
                   target={diffTarget}
                   tick={tick}
                   active={view === 'diff'}
+                  onToast={setToast}
                   onBack={() => {
                     setView(diffFrom);
                     // 从「提交修改的文件」弹窗双击进入差异：返回时恢复该弹窗

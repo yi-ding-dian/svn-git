@@ -537,16 +537,24 @@ export function startServer(): Promise<ServerHandle> {
             } catch {
               continue;
             }
-            if (st.isDirectory()) walkUnversionedDir(rel);
-            else pushFile(rel, '?');
+            if (st.isDirectory()) {
+              // 递归子目录：未版本化目录内的子目录同为未版本化，'?'
+              const sub = ensureDir(rel);
+              sub.code = '?';
+              walkUnversionedDir(rel);
+            } else pushFile(rel, '?');
           }
         };
         for (const it of items) {
           if (!it.path.startsWith(prefix) || !codes.has(it.code)) continue;
           if (it.code === '?' && it.isDir) {
+            // 未版本化目录（如 git status 的 "?? dir/" 聚合条目）：目录自身显示 '?'，展开内部全部文件
+            const d = ensureDir(it.path);
+            d.code = '?';
             walkUnversionedDir(it.path);
           } else if (it.isDir) {
-            ensureDir(it.path);
+            // 目录自身有状态码（svn 目录 M/A/D 等）：容器节点用其状态码，而非一律显示无状态
+            ensureDir(it.path).code = it.code;
           } else {
             pushFile(it.path, it.code);
           }

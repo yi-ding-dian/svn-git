@@ -4,6 +4,8 @@ import { get } from './api.js';
 import { DiffRender } from './diff-render.js';
 import { langOf, highlightLine } from './highlight.js';
 import { renderMarkdown } from './markdown.js';
+import { IconCopy } from './icons.js';
+import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 
 export interface DiffTarget {
   path?: string;
@@ -17,6 +19,8 @@ interface Props {
   onBack: () => void;
   /** 当前视图是否激活（视图常驻挂载、display 切换；键盘监听只在激活时生效，防止隐藏时 ←/Esc 误触发返回） */
   active: boolean;
+  /** 复制成功提示（全局 toast） */
+  onToast?: (msg: string) => void;
 }
 
 /** unified diff 解析出的行 */
@@ -122,6 +126,29 @@ export function DiffView(props: Props) {
   const [error, setError] = useState('');
   // 差异块导航
   const [curBlock, setCurBlock] = useState(0);
+  // 行右键菜单（左右栏文本复制）；selRef：右键 mousedown 时快照选区——
+  // 浏览器右键按下会清空文本选区（contextmenu 时 getSelection 已空），mousedown 捕获仍在
+  const [lineCtx, setLineCtx] = useState<{ x: number; y: number; items: CtxMenuItem[] } | null>(null);
+  const selRef = useRef('');
+  const copyText = (t: string, label: string) => {
+    void navigator.clipboard
+      ?.writeText(t)
+      .then(() => props.onToast?.(`${label}已复制`))
+      .catch(() => props.onToast?.('复制失败'));
+  };
+  const openLineMenu = (e: React.MouseEvent, rowText: string, side: 'left' | 'right') => {
+    e.preventDefault();
+    const sel = selRef.current;
+    const items: CtxMenuItem[] = [];
+    if (sel) {
+      items.push({ icon: <IconCopy />, label: '复制选中文本', action: () => copyText(sel, '选中文本') });
+    }
+    items.push(
+      { icon: <IconCopy />, label: '复制此行', action: () => copyText(rowText, '本行') },
+      { icon: <IconCopy />, label: `复制${side === 'left' ? '左栏' : '右栏'}全部文本`, action: () => copyText((side === 'left' ? leftRows : rightRows).map((r) => r.text).join('\n'), `${side === 'left' ? '左栏' : '右栏'}全部文本`) },
+    );
+    setLineCtx({ x: e.clientX, y: e.clientY, items });
+  };
   // diff 内搜索（右栏 = 当前内容）
   const [dSearch, setDSearch] = useState('');
   const [dSearchActive, setDSearchActive] = useState(false);
@@ -667,6 +694,8 @@ export function DiffView(props: Props) {
                   }}
                   className={`sb-line ${r.ph ? 'sb-ph' : r.change ? 'sb-del' : ''} ${isHitL ? 'pv-hit' : ''} ${isCurL ? 'pv-cur' : ''} ${r.change && r.block === targetBlock ? 'sb-target' : ''}`}
                   onClick={() => r.change && jumpRight(r.block)}
+                  onContextMenu={(e) => openLineMenu(e, r.text, 'left')}
+                  onMouseDown={(e) => { if (e.button === 2) selRef.current = (window.getSelection()?.toString() ?? '').trim(); }}
                   title={r.ph ? '右栏此处有新增（点击右侧定位）' : r.change ? '修改处（点击右侧定位）' : ''}
                 >
                   <span className="sb-no">{r.ph ? '' : r.no}</span>
@@ -705,6 +734,8 @@ export function DiffView(props: Props) {
                     }}
                     className={`sb-line ${r.change ? 'sb-add' : ''} ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''} ${r.change && r.block === targetBlock ? 'sb-target' : ''}`}
                     onClick={() => r.change && jumpLeft(r.block)}
+                    onContextMenu={(e) => openLineMenu(e, r.text, 'right')}
+                    onMouseDown={(e) => { if (e.button === 2) selRef.current = (window.getSelection()?.toString() ?? '').trim(); }}
                     title={r.change ? '修改处（点击左侧定位）' : ''}
                   >
                     <span className="sb-no">{r.no}</span>
@@ -741,6 +772,9 @@ export function DiffView(props: Props) {
       )}
       {!loading && !error && sideMode && !versions && <div className="empty">（无差异）</div>}
       {!loading && !error && !sideMode && <DiffRender text={text} />}
+      {lineCtx && (
+        <ContextMenu x={lineCtx.x} y={lineCtx.y} items={lineCtx.items} onClose={() => setLineCtx(null)} mask />
+      )}
     </div>
   );
 }

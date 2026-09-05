@@ -557,11 +557,13 @@ export function FsView(props: Props) {
     };
     const walk = (nodes: FilterTreeNode[], depth: number) => {
       for (const n of nodes) {
+        // 与列表/树模式一致的隐藏文件开关：未勾选时不显示 . 开头的隐藏文件/目录（如 .playwright-mcp）
+        if (!showHidden && n.name.startsWith('.')) continue;
         const open = n.isDir && !collapsed.has(n.path);
         rows.push({
           rel: n.path,
           name: n.name,
-          code: n.isDir ? '' : n.code,
+          code: n.code, // 目录也带自身状态码（未版本化目录 '?'；无状态目录为空 → 显示 √）
           isDir: n.isDir,
           size: n.size ?? 0,
           mtime: n.mtime ?? '',
@@ -569,13 +571,15 @@ export function FsView(props: Props) {
           depth,
           open,
           locked: false,
+          // 目录徽标用自身状态码（未版本化目录 '?'）；无自身码的容器（命中文件所在目录）保持 √
+          codes: n.isDir && n.code ? [n.code] : undefined,
         });
         if (n.isDir && open) walk(n.children, depth + 1);
       }
     };
     walk(filterTree ?? [], 0);
     return rows;
-  }, [filterTree, collapsed]);
+  }, [filterTree, collapsed, showHidden]);
   /** 树行渲染（树列表与过滤树共用；filtered=true 时目录点击折叠、双击文件跳转） */
   const renderTreeRow = (row: VisibleRow, i: number, filtered: boolean) => (
     <div
