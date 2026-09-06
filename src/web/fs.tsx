@@ -5,6 +5,7 @@ import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnl
 import { CodeBadge, DirBadge } from './badges.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { flashBreadcrumbs } from './motion.js';
+import { ModuleIndexDialog } from './dialogs/module-index.js';
 
 /** 还原菜单按状态语义化命名：A=取消添加 / D=恢复删除 / M·C·R=还原（extra 为后缀，如"目录"） */
 function revertName(code: string, extra = ''): { label: string; title: string } {
@@ -263,6 +264,30 @@ export function FsView(props: Props) {
     }
   };
   const [favs, setFavs] = useState<FavDir[]>(() => (props.repoRoot ? loadFavs(props.repoRoot) : []));
+  // 模块索引（md 文件说明注入）：仓库相对路径 → 描述；null=未加载/无索引。加载时机：仓库打开时一次性
+  const [moduleIndex, setModuleIndex] = useState<Map<string, string> | null>(null);
+  const [moduleIndexModal, setModuleIndexModal] = useState<{ md: string } | null>(null);
+  const loadModuleIndex = useCallback(() => {
+    get
+      .moduleIndex()
+      .then((r) => {
+        const m = new Map<string, string>();
+        // 父目录先（短路径优先），子目录索引后写入覆盖 → 命中"向上就近/子覆盖父"
+        const dirs = Object.keys(r.indexes).sort((a, b) => a.split('/').length - b.split('/').length);
+        for (const dir of dirs) {
+          for (const e of r.indexes[dir]?.entries ?? []) {
+            m.set(dir ? `${dir}/${e.path}` : e.path, e.desc);
+          }
+        }
+        setModuleIndex(m);
+      })
+      .catch(() => setModuleIndex(null));
+  }, []);
+  useEffect(() => {
+    loadModuleIndex();
+  }, [props.repoRoot, loadModuleIndex]);
+  /** 行 rel → 描述（无索引/无命中返回空串） */
+  const descOf = useCallback((rel: string) => moduleIndex?.get(rel) ?? '', [moduleIndex]);
   const [favModal, setFavModal] = useState(false);
   // 预加载进度（done/total 渐进；running=false 表示已完成）
   const [preload, setPreload] = useState<{ done: number; total: number; cur: string; running: boolean } | null>(null);
@@ -573,11 +598,7 @@ export function FsView(props: Props) {
       onMouseEnter={(ev) => {
         if (!ctxLocked) setFocusIndex(-1);
         else if (ctxRelRef.current === row.rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
-        // 悬浮卡片: 显示名称/大小/修改时间/状态(与浏览网格一致)
-        setTip({
-          x: ev.clientX, y: ev.clientY, name: row.name, isDir: row.isDir,
-          size: row.size, mtime: row.mtime, code: row.code, codes: row.codes, count: row.count,
-        });
+        // 树行信息已行内展示（名称/描述/大小/时间），不再弹悬浮卡（网格仍保留）
       }}
       onMouseLeave={() => {
         closeCtxSoon();
@@ -614,10 +635,15 @@ export function FsView(props: Props) {
       <span className={`name ${row.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(row.isDir ? row.codes?.[0] : row.code) }}>
         {row.name}
         {row.count ? <span className="count"> （{row.count} 项）</span> : null}
+        {descOf(row.rel) && (
+          <span className="dim small" style={{ marginLeft: 10, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            · {descOf(row.rel)}
+          </span>
+        )}
       </span>
+      {rowButtons(row)}
       {!filtered && !row.isDir && <span className="dim small nowrap">{fmtSize(row.size)}</span>}
       {!filtered && !row.isDir && <span className="dim small nowrap" style={{ width: 110 }}>{row.mtime}</span>}
-      {rowButtons(row)}
     </div>
   );
 
@@ -1169,6 +1195,16 @@ export function FsView(props: Props) {
           items.push({ icon: <IconLock />, label: '锁定', action: () => svnLock(t.rel, 'lock') });
           items.push({ icon: <IconUnlock />, label: '解锁', action: () => svnLock(t.rel, 'unlock') });
         }
+        // md 文件：可注入文件说明（自定义模块索引，仅作用于当前浏览目录及子树）
+        if (t.name.toLowerCase().endsWith('.md')) {
+          items.push({ sep: true });
+          items.push({
+            icon: <IconFile />,
+            label: '注入文件说明…',
+            title: '解析此 md 的「路径 ← 描述」树图/表格，在文件名旁显示说明；仅作用于当前浏览目录及子树，重新注入可更新',
+            action: () => setModuleIndexModal({ md: t.rel }),
+          });
+        }
       }
     }
     items.push({ sep: true });
@@ -1321,10 +1357,15 @@ export function FsView(props: Props) {
         <span className={`name ${e.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}>
           {e.name}
           {e.count ? <span className="count"> （{e.count} 项）</span> : null}
+          {descOf(rel) && (
+            <span className="dim small" style={{ marginLeft: 10, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              · {descOf(rel)}
+            </span>
+          )}
         </span>
+        {rowButtons({ ...e, rel })}
         {!e.isDir && <span className="dim small nowrap">{fmtSize(e.size)}</span>}
         {!e.isDir && <span className="dim small nowrap" style={{ width: 110 }}>{e.mtime}</span>}
-        {rowButtons({ ...e, rel })}
       </div>
     );
   };
@@ -1904,6 +1945,18 @@ export function FsView(props: Props) {
           confirmLabel="取消忽略"
           onConfirm={doUnignore}
           onCancel={() => setUnignoreAsk(null)}
+        />
+      )}
+
+      {/* md 文件说明注入弹窗 */}
+      {moduleIndexModal && (
+        <ModuleIndexDialog
+          dir={data?.dir ?? ''}
+          dirLabel={data?.dir ?? '（仓库根）'}
+          md={moduleIndexModal.md}
+          onClose={() => setModuleIndexModal(null)}
+          onDone={loadModuleIndex}
+          onToast={props.onToast}
         />
       )}
 

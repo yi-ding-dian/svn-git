@@ -188,6 +188,46 @@ try {
   } else {
     console.log('⚠️ 跳过 SVN net-check 断言（svn-wc 不存在,先跑 vcs-test 生成）');
   }
+  // ---------- 8. 模块索引（md 文件说明注入）：注入/勾选过滤/清除 ----------
+  {
+    // 第 7 段 SVN 检查切换过 SVNKIT_REPO_DIR，本段恢复 git 仓库
+    process.env.SVNKIT_REPO_DIR = GIT_DIR;
+    fs.writeFileSync(
+      path.join(GIT_DIR, 'api-index-demo.md'),
+      `# Api Index Demo
+\`\`\`
+api-index-demo.md   ← 测试 md 自身
+src/
+├── app.js          ← 测试应用入口
+└── helper.js       ← 测试辅助函数
+\`\`\`
+| util.js | 测试工具 |
+`
+    );
+    const idxFile = path.join(GIT_DIR, 'api-index-demo.md');
+    const preview = await get(`/api/module-index/preview?md=${encodeURIComponent('api-index-demo.md')}`);
+    check(
+      'module-index preview 解析树图+表格（层级：src/app.js）',
+      preview.code === 200 && preview.body.entries?.length === 4 && preview.body.entries.some((e) => e.path === 'src/app.js'),
+      `code=${preview.code} entries=${preview.body.entries?.length}`
+    );
+    const inj = await post('/api/module-index', { dir: '', md: 'api-index-demo.md', included: null });
+    check('module-index 注入成功（全保留 4 条）', inj.code === 200 && inj.body.ok === true && inj.body.count === 4, `count=${inj.body.count}`);
+    const rd = await get('/api/module-index');
+    check(
+      'module-index 读取命中（src/app.js → 描述）',
+      rd.code === 200 && rd.body.indexes?.['']?.entries?.some((e) => e.path === 'src/app.js' && e.desc.includes('应用入口')),
+    );
+    const inj2 = await post('/api/module-index', { dir: '', md: 'api-index-demo.md', included: ['util.js'] });
+    check('module-index 更新（勾选过滤为 1 条）', inj2.code === 200 && inj2.body.count === 1, `count=${inj2.body.count}`);
+    const rd2 = await get('/api/module-index');
+    check('module-index 过滤后读取（仅 util.js）', rd2.code === 200 && rd2.body.indexes?.['']?.entries?.length === 1 && rd2.body.indexes[''].entries[0].path === 'util.js');
+    const clear = await post('/api/module-index/clear', { dir: '' });
+    check('module-index 清除成功', clear.code === 200 && clear.body.ok === true);
+    const rd3 = await get('/api/module-index');
+    check('module-index 清除后为空', rd3.code === 200 && (rd3.body.indexes?.[''] ?? null) === null);
+    fs.rmSync(idxFile, { force: true });
+  }
 } finally {
   // ---------- teardown：重置仓库,仅保留 api 测试文件之外的状态 ----------
   process.env.SVNKIT_REPO_DIR = GIT_DIR;

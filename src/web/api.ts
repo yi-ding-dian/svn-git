@@ -200,6 +200,13 @@ export const get = {
   ignoreRules: (path: string) => api<{ rules: string[] }>(`/api/ignore?path=${encodeURIComponent(path)}`),
   conflictDetail: (path: string) =>
     api<{ path: string; theirsDiff: string; myDiff: string }>(`/api/conflict-detail?path=${encodeURIComponent(path)}`),
+  /** 模块索引（md 文件说明注入）：全仓库作用目录→条目；preview=注入前解析预览 */
+  moduleIndex: () =>
+    api<{ indexes: Record<string, { md: string; entries: { path: string; desc: string }[] }> }>('/api/module-index'),
+  moduleIndexPreview: (dir: string, md: string) =>
+    api<{ entries: { path: string; desc: string }[] }>(
+      `/api/module-index/preview?dir=${encodeURIComponent(dir)}&md=${encodeURIComponent(md)}`,
+    ),
   branches: () => api<BranchInfo>('/api/branches'),
   switchCheck: (branch: string) =>
     api<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>(
@@ -257,6 +264,10 @@ export interface StashItem {
 
 export const post = {
   open: (dir: string) => api<{ ok: boolean }>('/api/open', json({ path: dir })),
+  /** 模块索引注入/更新（included：勾选保留的 path 清单，null/缺省=全保留）；clear=清除作用目录注入 */
+  moduleIndexSet: (dir: string, md: string, included: string[] | null) =>
+    api<{ ok: boolean; count: number }>('/api/module-index', json({ dir, md, included })),
+  moduleIndexClear: (dir: string) => api<{ ok: boolean }>('/api/module-index/clear', json({ dir })),
   history: (path: string, type: 'svn' | 'git') => api<{ ok: boolean }>('/api/history', json({ path, type })),
   add: (paths: string[]) => api<VcsResult>('/api/add', json({ paths })),
   commit: (paths: string[], message: string) => api<VcsResult>('/api/commit', json({ paths, message })),

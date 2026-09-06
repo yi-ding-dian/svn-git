@@ -11,6 +11,7 @@ import { handle as handleBranch } from './routes/branch.js';
 import { handle as handleOps } from './routes/ops.js';
 import { handle as handleMisc } from './routes/misc.js';
 import { handle as handleConfig } from './routes/config.js';
+import { handle as handleModuleIndex } from './routes/module-index.js';
 
 /** 前端静态目录：开发 = 项目根/dist/web；打包 = asar 内 dist/web */
 const WEB_DIR = path.resolve(import.meta.dirname ?? '.', 'web');
@@ -55,6 +56,7 @@ export function startServer(): Promise<ServerHandle> {
         if (await handleOps(ctx)) return;
         if (await handleMisc(ctx)) return;
         if (await handleConfig(ctx)) return;
+        if (await handleModuleIndex(ctx)) return;
       }
 
       // ---------- 版本管理扩展 API ----------
