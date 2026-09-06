@@ -227,6 +227,14 @@ export const win32: Platform = {
     }
   },
 
+  installAppMenu() {
+    // Windows 用安装包（NSIS）的快捷方式，无桌面文件安装概念
+    return { ok: false, message: 'Windows 请使用安装包（NSIS 自动创建开始菜单/桌面快捷方式）' };
+  },
+  uninstallAppMenu() {
+    return { ok: false, message: 'Windows 请使用安装包的卸载程序' };
+  },
+
   async envInstall(tool: InstallTool, send, done) {
     const cmds =
       tool === 'svn'

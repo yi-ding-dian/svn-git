@@ -184,6 +184,8 @@ export const get = {
   /** 系统可用打开方式（按扩展名匹配 .desktop 程序）；chooseOpen(仅 win32) 为「选择其他应用…」哨兵命令 */
   appsFor: (ext: string) =>
     api<{ apps: { name: string; exec: string; icon: string }[]; chooseOpen?: string | null }>(`/api/apps-for?ext=${encodeURIComponent(ext)}`),
+  /** 系统应用菜单集成状态（AppImage 运行方式；installed=已安装到应用菜单） */
+  appMenu: () => api<{ appImage: boolean; installed: boolean }>('/api/app-menu'),
   preflight: (signal?: AbortSignal) =>
     api<{
       remoteHasUpdate: boolean;
@@ -264,6 +266,9 @@ export interface StashItem {
 
 export const post = {
   open: (dir: string) => api<{ ok: boolean }>('/api/open', json({ path: dir })),
+  /** 安装到系统应用菜单（POST）；卸载走 DELETE */
+  appMenuInstall: () => api<{ ok: boolean; message: string }>('/api/app-menu', json({})),
+  appMenuUninstall: () => api<{ ok: boolean; message: string }>('/api/app-menu', { method: 'DELETE' }),
   /** 模块索引注入/更新（included：勾选保留的 path 清单，null/缺省=全保留）；clear=清除作用目录注入 */
   moduleIndexSet: (dir: string, md: string, included: string[] | null) =>
     api<{ ok: boolean; count: number }>('/api/module-index', json({ dir, md, included })),

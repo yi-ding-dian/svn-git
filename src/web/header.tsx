@@ -416,6 +416,14 @@ export function AppHeader(props: {
 
   // 工具栏布局（默认 → localStorage；拖拽即时更新）
   const [layout, setLayout] = useState<ToolbarLayout>(loadLayout);
+  // 系统应用菜单集成状态（AppImage 方式下有「安装/卸载」入口；源码/浏览器运行不显示）
+  const [appMenuState, setAppMenuState] = useState<{ appImage: boolean; installed: boolean }>({ appImage: false, installed: false });
+  useEffect(() => {
+    get
+      .appMenu()
+      .then((r) => setAppMenuState({ appImage: r.appImage, installed: r.installed }))
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     try {
       localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
@@ -727,6 +735,25 @@ export function AppHeader(props: {
               } as const;
             }),
             { sep: true } as const,
+            // 系统应用菜单集成：固定项（分隔符上方，不参与拖拽定制；仅 AppImage 显示）
+            ...(appMenuState.appImage
+              ? [{
+                  icon: <IconFolder />,
+                  label: appMenuState.installed ? '卸载系统应用菜单' : '安装到系统应用菜单…',
+                  title: appMenuState.installed
+                    ? '撤销集成：删除系统应用菜单里本工具条目（.desktop 与图标）'
+                    : '生成系统应用菜单条目（.desktop + 图标），之后可从系统左上角菜单直接启动本工具（可卸载）',
+                  action: () => {
+                    setMoreMenu(null);
+                    void (appMenuState.installed ? post.appMenuUninstall() : post.appMenuInstall())
+                      .then((r) => props.onToast(r.message))
+                      .catch((e: Error) => props.onToast(e.message))
+                      .finally(() => {
+                        get.appMenu().then((r) => setAppMenuState({ appImage: r.appImage, installed: r.installed })).catch(() => {});
+                      });
+                  },
+                }]
+              : []),
             {
               icon: '|',
               label: '分隔符',

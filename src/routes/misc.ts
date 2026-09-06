@@ -1059,6 +1059,30 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         sendJson(res, r.ok ? 200 : 500, r.ok ? { ok: true, message: r.message } : { ok: false, error: r.message });
         return true;
       }
+      if (p === '/api/app-menu') {
+        // 系统应用菜单集成（AppImage 运行方式）：GET 查状态；POST 安装；DELETE 卸载
+        if (req.method === 'GET') {
+          const desktopPath = path.join(os.homedir(), '.local', 'share', 'applications', 'svnkit.desktop');
+          sendJson(res, 200, {
+            appImage: Boolean(process.env.APPIMAGE),
+            installed: process.platform === 'linux' && fs.existsSync(desktopPath),
+          });
+          return true;
+        }
+        if (req.method === 'POST') {
+          const appImagePath = process.env.APPIMAGE;
+          if (!appImagePath) {
+            sendJson(res, 400, { error: '仅 AppImage 运行方式支持；源码运行请用 scripts/install-appimage.sh' });
+            return true;
+          }
+          sendJson(res, 200, platform.installAppMenu(appImagePath));
+          return true;
+        }
+        if (req.method === 'DELETE') {
+          sendJson(res, 200, platform.uninstallAppMenu());
+          return true;
+        }
+      }
       if (p === '/api/net-check') {
         // 远程连通性检测（网络灯）：只握手不取数据(git ls-remote / svn ls),8s 超时。
         // 区分"网络断"与"认证失败"：认证失败=网络通的（前端显示绿,tooltip 说明认证问题）

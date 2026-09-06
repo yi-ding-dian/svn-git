@@ -23,6 +23,8 @@ linux:
   maintainer: svn-git
   synopsis: SVN/Git 状态检测与操作工具
   executableName: svnkit
+  # 窗口关联：desktopName（package.json 顶层）与 WM_CLASS 一致，桌面环境才能把窗口绑定到应用菜单条目
+  syncDesktopName: true
 win:
   icon: build/icon.png
   target:

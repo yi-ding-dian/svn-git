@@ -76,7 +76,7 @@ export function App() {
   const [fontSize, setFontSize] = useState(() => {
     try {
       const n = Number(localStorage.getItem('svnkit-fontsize'));
-      return Number.isFinite(n) && n >= FONT_MIN && n <= FONT_MAX ? n : 14;
+      return Number.isFinite(n) && n >= FONT_MIN && n <= FONT_MAX ? n : 16;
     } catch {
       return 14;
     }

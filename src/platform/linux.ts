@@ -194,6 +194,63 @@ export const linux: Platform = {
     }
   },
 
+  installAppMenu(exePath) {
+    // 应用内"安装到系统应用菜单"（AppImage 运行方式）：~/.local/share/applications/svnkit.desktop + hicolor 图标
+    try {
+      const appsDir = path.join(os.homedir(), '.local', 'share', 'applications');
+      fs.mkdirSync(appsDir, { recursive: true });
+      // 图标：运行时资源（dist/web/icon.png 打包在 asar 内，electron fs 兼容读取）拷入 hicolor；
+      // 本文件编译后位于 dist/platform/ → 图标候选：dist/web/icon.png、项目根/build/icon.png
+      const iconRel = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'svnkit.png');
+      let iconOk = false;
+      const here = import.meta.dirname ?? '.';
+      for (const cand of [
+        path.resolve(here, '..', 'web', 'icon.png'),
+        path.resolve(here, '..', '..', 'build', 'icon.png'),
+      ]) {
+        try {
+          fs.mkdirSync(path.dirname(iconRel), { recursive: true });
+          fs.copyFileSync(cand, iconRel);
+          iconOk = true;
+          break;
+        } catch {
+          /* 尝试下一候选 */
+        }
+      }
+      // Icon 用绝对路径（部分桌面环境按主题名查找不稳定；绝对路径各环境通用）
+      const desktop = [
+        '[Desktop Entry]',
+        'Type=Application',
+        'Name=svn-git文件版本管理',
+        'Comment=SVN/Git 状态检测与操作工具',
+        `Exec="${exePath}" %U`,
+        `Icon=${iconRel}`,
+        'Terminal=false',
+        'Categories=Development;',
+        'StartupWMClass=svnkit',
+      ].join('\n') + '\n';
+      fs.writeFileSync(path.join(appsDir, 'svnkit.desktop'), desktop, { mode: 0o644 });
+      // 刷新菜单/图标缓存（工具存在则执行，失败忽略——部分发行版无该命令）
+      spawnSync('update-desktop-database', [appsDir], { stdio: 'ignore', timeout: 15_000 });
+      spawnSync('gtk-update-icon-cache', ['-f', path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')], { stdio: 'ignore', timeout: 15_000 });
+      return { ok: true, message: `已安装到系统应用菜单${iconOk ? '' : '（图标未找到，菜单项显示默认图标）'}（注销/重登后系统菜单刷新生效）` };
+    } catch (e) {
+      return { ok: false, message: `安装失败: ${(e as Error).message}` };
+    }
+  },
+
+  uninstallAppMenu() {
+    try {
+      const desktop = path.join(os.homedir(), '.local', 'share', 'applications', 'svnkit.desktop');
+      const icon = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'svnkit.png');
+      if (fs.existsSync(desktop)) fs.rmSync(desktop);
+      if (fs.existsSync(icon)) fs.rmSync(icon);
+      return { ok: true, message: '已从系统应用菜单卸载' };
+    } catch (e) {
+      return { ok: false, message: `卸载失败: ${(e as Error).message}` };
+    }
+  },
+
   async envInstall(tool: InstallTool, send, done) {
     const pkgs = tool === 'svn' ? ['subversion'] : tool === 'git' ? ['git'] : ['git', 'subversion'];
     /** 发行版包管理器探测（/etc/os-release）：不同发行版 svn/git 包名与安装命令不同 */
