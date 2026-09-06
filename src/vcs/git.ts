@@ -9,7 +9,7 @@ import type { FileStatus, LogEntry, RepoInfo, VcsResult } from './types.js';
 
 /** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限） */
 function createAskPass(cred: { username: string; password: string }): { path: string; cleanup: () => void } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svnkit-askpass-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svngit-askpass-'));
   const file = path.join(dir, 'askpass.sh');
   const u = Buffer.from(cred.username, 'utf8').toString('base64');
   const p = Buffer.from(cred.password, 'utf8').toString('base64');
@@ -364,7 +364,7 @@ export class GitVcs {
       lineNo = Number(depth.stdout.trim()) || 1;
     }
     // 4. 生成临时脚本：序列编辑器（第 lineNo 行 pick→reword）+ 消息编辑器（写新注释）
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svnkit-reword-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svngit-reword-'));
     const seq = path.join(dir, 'seq.sh');
     fs.writeFileSync(seq, `#!/bin/sh\nsed -i "${lineNo}s/^pick /reword /" "$1"\n`, { mode: 0o700 });
     const msgScript = path.join(dir, 'msg.sh');

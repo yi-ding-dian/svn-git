@@ -1,8 +1,8 @@
 {
-  "name": "svnkit",
+  "name": "svngit",
   "version": "1.0.0",
   "description": "SVN/Git 图形化版本管理工具（浏览器界面，双引擎并发防护）",
-  "desktopName": "svnkit",
+  "desktopName": "svngit",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {

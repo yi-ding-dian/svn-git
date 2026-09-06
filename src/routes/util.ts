@@ -32,10 +32,10 @@ export function isBinaryFile(p: string): boolean {
 }
 
 /** 启动目录（Electron 传入） */
-export const  START_DIR = process.env.SVNKIT_DIR ?? process.cwd();
+export const  START_DIR = process.env.SVNGIT_DIR ?? process.cwd();
 
 export function  repoInfo(): RepoInfo | null {
-  const dir = process.env.SVNKIT_REPO_DIR ?? START_DIR;
+  const dir = process.env.SVNGIT_REPO_DIR ?? START_DIR;
   return detectRepo(dir);
 }
 

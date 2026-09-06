@@ -10,7 +10,7 @@ import { platform } from './platform/index.js';
 const require = createRequire(import.meta.url);
 
 /** 启动目录（命令行参数或环境变量） */
-const START_DIR = process.env.SVNKIT_DIR ?? process.cwd();
+const START_DIR = process.env.SVNGIT_DIR ?? process.cwd();
 
 /**
  * 打开界面：
@@ -62,13 +62,13 @@ async function boot() {
   // 启动目录不是仓库时，优先打开最近使用的常用项目（星号标记）；显式指定目录则尊重指定
   if (!repo) {
     try {
-      const histPath = path.join(os.homedir(), '.config', 'svnkit', 'history.json');
+      const histPath = path.join(os.homedir(), '.config', 'svngit', 'history.json');
       if (fs.existsSync(histPath)) {
         const hist = JSON.parse(fs.readFileSync(histPath, 'utf8')) as { path: string; fav?: boolean; lastOpened: number }[];
         const favs = (Array.isArray(hist) ? hist : []).filter((h) => h.fav && h.path);
         if (favs.length) {
           favs.sort((a, b) => b.lastOpened - a.lastOpened); // 最近打开的常用项目优先
-          process.env.SVNKIT_REPO_DIR = favs[0]!.path;
+          process.env.SVNGIT_REPO_DIR = favs[0]!.path;
           repo = detectRepo(favs[0]!.path);
         }
       }
@@ -94,7 +94,7 @@ async function boot() {
       });
     } catch (e) {
       /* 纯 node 运行时无对话框 */
-      console.error('[svnkit] 注入系统目录选择失败（浏览器模式将无法选择目录）:', e);
+      console.error('[svngit] 注入系统目录选择失败（浏览器模式将无法选择目录）:', e);
     }
   }
 

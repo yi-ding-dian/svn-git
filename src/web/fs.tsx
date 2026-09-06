@@ -255,7 +255,7 @@ export function FsView(props: Props) {
     name: string;
     addedAt: number;
   }
-  const favKey = (root: string) => `svnkit:fav-dirs:${root}`;
+  const favKey = (root: string) => `svngit:fav-dirs:${root}`;
   const loadFavs = (root: string): FavDir[] => {
     try {
       return JSON.parse(localStorage.getItem(favKey(root)) ?? '[]') as FavDir[];

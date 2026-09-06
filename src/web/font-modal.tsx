@@ -56,7 +56,7 @@ const CODE_SAMPLE = `const greet = (name) => {
   // 代码字体预览
   return \`Hello, \${name}!\`;
 };
-greet('svnkit');`;
+greet('svngit');`;
 
 /** 字体下拉（自绘面板）：系统没有的字体灰色+禁止选择，悬浮 title 提示。
  * 原生 <select> 的 option 在 Chromium 下拉面板中悬浮不显示 tooltip，故用自绘。 */

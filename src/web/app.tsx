@@ -67,7 +67,7 @@ export function App() {
   const [env, setEnv] = useState<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } } | null>(null);
   const [theme, setTheme] = useState(() => {
     try {
-      const t = localStorage.getItem('svnkit-theme');
+      const t = localStorage.getItem('svngit-theme');
       return THEMES.some((x) => x.key === t) ? t! : 'light';
     } catch {
       return 'light';
@@ -75,7 +75,7 @@ export function App() {
   });
   const [fontSize, setFontSize] = useState(() => {
     try {
-      const n = Number(localStorage.getItem('svnkit-fontsize'));
+      const n = Number(localStorage.getItem('svngit-fontsize'));
       return Number.isFinite(n) && n >= FONT_MIN && n <= FONT_MAX ? n : 16;
     } catch {
       return 14;
@@ -84,14 +84,14 @@ export function App() {
   // 界面字体 / 代码字体（空 = 系统默认，随弹窗即时应用并持久化）
   const [uiFont, setUiFont] = useState(() => {
     try {
-      return localStorage.getItem('svnkit-uifont') ?? '';
+      return localStorage.getItem('svngit-uifont') ?? '';
     } catch {
       return '';
     }
   });
   const [codeFont, setCodeFont] = useState(() => {
     try {
-      return localStorage.getItem('svnkit-codefont') ?? '';
+      return localStorage.getItem('svngit-codefont') ?? '';
     } catch {
       return '';
     }
@@ -101,7 +101,7 @@ export function App() {
   useEffect(() => {
     document.body.dataset.theme = theme;
     try {
-      localStorage.setItem('svnkit-theme', theme);
+      localStorage.setItem('svngit-theme', theme);
     } catch {
       /* ignore */
     }
@@ -111,7 +111,7 @@ export function App() {
   useEffect(() => {
     document.documentElement.style.setProperty('--font-size', `${fontSize}px`);
     try {
-      localStorage.setItem('svnkit-fontsize', String(fontSize));
+      localStorage.setItem('svngit-fontsize', String(fontSize));
     } catch {
       /* ignore */
     }
@@ -122,8 +122,8 @@ export function App() {
     document.body.style.fontFamily = uiFont || '';
     document.documentElement.style.setProperty('--code-font', codeFont || '');
     try {
-      localStorage.setItem('svnkit-uifont', uiFont);
-      localStorage.setItem('svnkit-codefont', codeFont);
+      localStorage.setItem('svngit-uifont', uiFont);
+      localStorage.setItem('svngit-codefont', codeFont);
     } catch {
       /* ignore */
     }

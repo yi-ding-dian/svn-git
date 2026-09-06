@@ -26,7 +26,7 @@ record.md
 svn-untracked.txt
 
 # 本地测试仓库（不提交）
-svnkit-test/
+svngit-test/
 !record.md
 record.md
 record.md

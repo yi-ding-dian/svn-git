@@ -107,7 +107,7 @@ Windows 安装包(`.exe`)由 GitHub Actions 在 tag 发布时自动构建(见 `.
 src/
 ├── server.ts          # HTTP 服务层(API + 静态文件 + 路由分发)
 ├── main.tsx           # Electron 入口(打包版窗口 / --browser 外部浏览器)
-├── config.ts          # 配置读写(~/.config/svnkit/config.json,600 权限)
+├── config.ts          # 配置读写(~/.config/svngit/config.json,600 权限)
 ├── preload.cjs        # Electron preload
 ├── routes/            # API 路由域模块
 │   ├── ops.ts         #   操作类:add/commit/update/revert/delete/push/重命名/忽略/锁定
@@ -215,7 +215,7 @@ npm test   # 一键执行全部 130 项断言
 | `test/diff-lines-test.mjs` | 行级冲突算法 6 项 |
 | `test/api-test.mjs` | HTTP API 集成 32 项(真实服务端到端:越界拦截/CSRF/缓存失效/软删 keep/重命名 API 等) |
 
-> 测试仓库在项目根 `svnkit-test/` 下(vcs-test 会自动重建 SVN 仓库并将 Git 仓库重置到固定基准提交,不依赖外部网络);CI(`.github/workflows/test.yml`)在 push/PR 时自动跑全量测试。
+> 测试仓库在项目根 `svngit-test/` 下(vcs-test 会自动重建 SVN 仓库并将 Git 仓库重置到固定基准提交,不依赖外部网络);CI(`.github/workflows/test.yml`)在 push/PR 时自动跑全量测试。
 
 ---
 

@@ -51,6 +51,6 @@ jobs:
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: svnkit-${{ runner.os }}
+          name: svngit-${{ runner.os }}
           path: dist-appimage/*
           if-no-files-found: error

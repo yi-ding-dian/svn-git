@@ -1,5 +1,5 @@
 /** 模块索引域：md 文件说明注入——文件列表名称右侧显示自定义描述。
- * 索引快照存 ~/.config/svnkit/module-index.json（600 权限，同 config 惯例）；
+ * 索引快照存 ~/.config/svngit/module-index.json（600 权限，同 config 惯例）；
  * 解析 md 的"目录树与文件说明"代码块（'路径 ← 描述'）与 md 表格（'| 路径 | 描述 |'）两种格式。
  * 作用域 = 注入时选定的仓库相对目录（前端默认当前浏览目录），只对该目录及子树生效。 */
 import fs from 'node:fs';
@@ -19,7 +19,7 @@ export interface DirIndex {
   entries: IndexEntry[];
 }
 
-const INDEX_PATH = path.join(os.homedir(), '.config', 'svnkit', 'module-index.json');
+const INDEX_PATH = path.join(os.homedir(), '.config', 'svngit', 'module-index.json');
 
 type IndexFile = { repos: Record<string, Record<string, DirIndex>> }; // 仓库根 → 作用目录 → 索引
 

@@ -131,7 +131,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const left = String(body.left ?? '');
         const right = String(body.right ?? '');
-        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'svnkit-diff-'));
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'svngit-diff-'));
         const f1 = path.join(tmpDir, 'ours.txt');
         const f2 = path.join(tmpDir, 'theirs.txt');
         try {

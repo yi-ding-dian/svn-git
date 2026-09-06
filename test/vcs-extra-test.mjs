@@ -7,8 +7,8 @@ import { detectRepo } from '../dist/vcs/detect.js';
 import { GitVcs } from '../dist/vcs/git.js';
 import { SvnVcs } from '../dist/vcs/svn.js';
 
-// 测试仓库位置：相对脚本推导（项目根/svnkit-test），clone 到任何路径都能跑
-const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svnkit-test');
+// 测试仓库位置：相对脚本推导（项目根/svngit-test），clone 到任何路径都能跑
+const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svngit-test');
 const GIT_DIR = path.join(TEST_BASE, 'git-repo');
 const SVN_DIR = path.join(TEST_BASE, 'svn-wc'); // 非标准布局（无 trunk，测试拒绝创建分支）
 const SVN_STD_DIR = path.join(TEST_BASE, 'svn-std-wc'); // 标准布局（trunk/branches/tags，测试分支创建/切换）

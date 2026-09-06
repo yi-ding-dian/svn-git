@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import type { LaunchResult } from './types.js';
 
 /** 文件占位符哨兵：先替换进 exec 再拆分 argv（保证含空格路径是一个整体参数），最后还原为绝对路径 */
-const FILE_TOK = '__SVNKIT_FILE__';
+const FILE_TOK = '__SVNGIT_FILE__';
 
 /**
  * 还原 Exec 模板并拆成 argv 数组。

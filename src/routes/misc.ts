@@ -22,7 +22,7 @@ export function setPickDirHandler(fn: () => Promise<string | null>): void {
 }
 
 /** 最近打开的项目历史（服务端持久化：浏览器端口随机，localStorage 不可靠） */
-const HISTORY_PATH = path.join(os.homedir(), '.config', 'svnkit', 'history.json');
+const HISTORY_PATH = path.join(os.homedir(), '.config', 'svngit', 'history.json');
 const HISTORY_MAX = 20;
 
 export interface HistoryItem {
@@ -321,7 +321,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 400, { error: `${dir} 不是 SVN/Git 工作副本` });
           return true;
         }
-        process.env.SVNKIT_REPO_DIR = r.root;
+        process.env.SVNGIT_REPO_DIR = r.root;
         // 记录操作范围：打开的目录相对仓库根(子项目);打开根目录则为空(全仓库)
         currentScopes.set(r.root, dir === r.root ? '' : path.relative(r.root, dir));
         addHistory({ path: r.root, type: r.type }); // 记录到最近项目
@@ -1062,7 +1062,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       if (p === '/api/app-menu') {
         // 系统应用菜单集成（AppImage 运行方式）：GET 查状态；POST 安装；DELETE 卸载
         if (req.method === 'GET') {
-          const desktopPath = path.join(os.homedir(), '.local', 'share', 'applications', 'svnkit.desktop');
+          const desktopPath = path.join(os.homedir(), '.local', 'share', 'applications', 'svngit.desktop');
           sendJson(res, 200, {
             appImage: Boolean(process.env.APPIMAGE),
             installed: process.platform === 'linux' && fs.existsSync(desktopPath),

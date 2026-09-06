@@ -1,5 +1,5 @@
 /** HTTP API 集成测试：起真实服务，对 30+ 端点中安全/状态关键面发请求断言。
- * 测试仓库：svnkit-test/git-repo（setup/teardown 均硬重置到固定提交,保证可重复）。
+ * 测试仓库：svngit-test/git-repo（setup/teardown 均硬重置到固定提交,保证可重复）。
  * 覆盖本轮回归重点：路径越界拦截 ×6、CSRF、localhost 放行、软删 keep、写后缓存失效、核心数据结构。 */
 import path from 'node:path';
 import fs from 'node:fs';
@@ -8,7 +8,7 @@ import { run } from '../dist/vcs/exec.js';
 import { startServer } from '../dist/server.js';
 
 // 测试仓库位置（与 vcs-test.mjs 同一约定）
-const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svnkit-test');
+const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svngit-test');
 const GIT_DIR = path.join(TEST_BASE, 'git-repo');
 const GIT_BASE_COMMIT = 'b4f4eef2ffcf01bbb063c7a7a25d745d4818f39d';
 const SVN_DIR = path.join(TEST_BASE, 'svn-wc');
@@ -27,8 +27,8 @@ if (!fs.existsSync(path.join(GIT_DIR, '.git'))) {
   console.log('  git-repo 不存在,自建测试仓库…');
   fs.mkdirSync(GIT_DIR, { recursive: true });
   await run('git', ['init', '-q'], { cwd: GIT_DIR }); // 分支名无关断言(porcelain 相对路径); -b 需 git>=2.28 故不用
-  await run('git', ['config', 'user.email', 'test@svnkit.local'], { cwd: GIT_DIR });
-  await run('git', ['config', 'user.name', 'svnkit-test'], { cwd: GIT_DIR });
+  await run('git', ['config', 'user.email', 'test@svngit.local'], { cwd: GIT_DIR });
+  await run('git', ['config', 'user.name', 'svngit-test'], { cwd: GIT_DIR });
   fs.writeFileSync(`${GIT_DIR}/readme.md`, 'hello v0\n');
   fs.mkdirSync(`${GIT_DIR}/src`, { recursive: true });
   fs.writeFileSync(`${GIT_DIR}/src/app.js`, 'console.log(1)\n');
@@ -41,7 +41,7 @@ if (!fs.existsSync(path.join(GIT_DIR, '.git'))) {
 // 固定 hash 存在则用其重置（本地维护的仓库）;CI 自建仓库 hash 不同 → 重置当前 HEAD
 const b4 = await run('git', ['cat-file', '-t', GIT_BASE_COMMIT], { cwd: GIT_DIR });
 await run('git', ['reset', '-q', '--hard', b4.code === 0 ? GIT_BASE_COMMIT : 'HEAD'], { cwd: GIT_DIR });
-process.env.SVNKIT_REPO_DIR = GIT_DIR;
+process.env.SVNGIT_REPO_DIR = GIT_DIR;
 
 const handle = await startServer();
 const B = `http://127.0.0.1:${handle.port}`;
@@ -178,7 +178,7 @@ try {
 
   // ---------- 7. SVN 侧:net-check 用 vcs.info URL（恒"未配置"bug 回归） ----------
   if (fs.existsSync(SVN_DIR)) {
-    process.env.SVNKIT_REPO_DIR = SVN_DIR;
+    process.env.SVNGIT_REPO_DIR = SVN_DIR;
     const nc = await get('/api/net-check');
     check(
       'SVN net-check 正常（ok=true, reason=网络正常）',
@@ -190,8 +190,8 @@ try {
   }
   // ---------- 8. 模块索引（md 文件说明注入）：注入/勾选过滤/清除 ----------
   {
-    // 第 7 段 SVN 检查切换过 SVNKIT_REPO_DIR，本段恢复 git 仓库
-    process.env.SVNKIT_REPO_DIR = GIT_DIR;
+    // 第 7 段 SVN 检查切换过 SVNGIT_REPO_DIR，本段恢复 git 仓库
+    process.env.SVNGIT_REPO_DIR = GIT_DIR;
     fs.writeFileSync(
       path.join(GIT_DIR, 'api-index-demo.md'),
       `# Api Index Demo
@@ -230,7 +230,7 @@ src/
   }
 } finally {
   // ---------- teardown：重置仓库,仅保留 api 测试文件之外的状态 ----------
-  process.env.SVNKIT_REPO_DIR = GIT_DIR;
+  process.env.SVNGIT_REPO_DIR = GIT_DIR;
   const b4t = await run('git', ['cat-file', '-t', GIT_BASE_COMMIT], { cwd: GIT_DIR });
   await run('git', ['reset', '-q', '--hard', b4t.code === 0 ? GIT_BASE_COMMIT : 'HEAD'], { cwd: GIT_DIR });
   fs.rmSync(path.join(GIT_DIR, 'api-cache-test.txt'), { force: true });

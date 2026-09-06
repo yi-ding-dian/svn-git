@@ -1,4 +1,4 @@
-/** 配置管理：~/.config/svnkit/config.json（600 权限），存 SVN 账号密码 */
+/** 配置管理：~/.config/svngit/config.json（600 权限），存 SVN 账号密码 */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,7 +17,7 @@ export interface AppConfig {
   };
 }
 
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'svnkit');
+const CONFIG_DIR = path.join(os.homedir(), '.config', 'svngit');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
 const DEFAULTS: AppConfig = { svn: { username: '', password: '', trustServerCert: false }, git: { username: '', password: '' } };

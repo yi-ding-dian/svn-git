@@ -172,7 +172,7 @@ export const linux: Platform = {
 
   openUrl(url) {
     const p = spawn('xdg-open', [url], { stdio: 'ignore', detached: true });
-    p.on('error', (e) => console.error(`[svnkit] 打开浏览器失败(xdg-open): ${e.message}`));
+    p.on('error', (e) => console.error(`[svngit] 打开浏览器失败(xdg-open): ${e.message}`));
     p.unref();
   },
 
@@ -195,13 +195,13 @@ export const linux: Platform = {
   },
 
   installAppMenu(exePath) {
-    // 应用内"安装到系统应用菜单"（AppImage 运行方式）：~/.local/share/applications/svnkit.desktop + hicolor 图标
+    // 应用内"安装到系统应用菜单"（AppImage 运行方式）：~/.local/share/applications/svngit.desktop + hicolor 图标
     try {
       const appsDir = path.join(os.homedir(), '.local', 'share', 'applications');
       fs.mkdirSync(appsDir, { recursive: true });
       // 图标：运行时资源（dist/web/icon.png 打包在 asar 内，electron fs 兼容读取）拷入 hicolor；
       // 本文件编译后位于 dist/platform/ → 图标候选：dist/web/icon.png、项目根/build/icon.png
-      const iconRel = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'svnkit.png');
+      const iconRel = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'svngit.png');
       let iconOk = false;
       const here = import.meta.dirname ?? '.';
       for (const cand of [
@@ -227,9 +227,9 @@ export const linux: Platform = {
         `Icon=${iconRel}`,
         'Terminal=false',
         'Categories=Development;',
-        'StartupWMClass=svnkit',
+        'StartupWMClass=svngit',
       ].join('\n') + '\n';
-      fs.writeFileSync(path.join(appsDir, 'svnkit.desktop'), desktop, { mode: 0o644 });
+      fs.writeFileSync(path.join(appsDir, 'svngit.desktop'), desktop, { mode: 0o644 });
       // 刷新菜单/图标缓存（工具存在则执行，失败忽略——部分发行版无该命令）
       spawnSync('update-desktop-database', [appsDir], { stdio: 'ignore', timeout: 15_000 });
       spawnSync('gtk-update-icon-cache', ['-f', path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')], { stdio: 'ignore', timeout: 15_000 });
@@ -241,8 +241,8 @@ export const linux: Platform = {
 
   uninstallAppMenu() {
     try {
-      const desktop = path.join(os.homedir(), '.local', 'share', 'applications', 'svnkit.desktop');
-      const icon = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'svnkit.png');
+      const desktop = path.join(os.homedir(), '.local', 'share', 'applications', 'svngit.desktop');
+      const icon = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'svngit.png');
       if (fs.existsSync(desktop)) fs.rmSync(desktop);
       if (fs.existsSync(icon)) fs.rmSync(icon);
       return { ok: true, message: '已从系统应用菜单卸载' };

@@ -27,7 +27,7 @@ function write(p, content) {
   fs.writeFileSync(p, content, 'utf8');
 }
 
-const REPO = fs.mkdtempSync(path.join(os.tmpdir(), 'svnkit-win-test-'));
+const REPO = fs.mkdtempSync(path.join(os.tmpdir(), 'svngit-win-test-'));
 console.log('测试仓库:', REPO);
 try {
   sh('git', ['init', '-q'], REPO);
@@ -50,7 +50,7 @@ try {
 }
 
 // ---------- 2. 启动服务 ----------
-process.env.SVNKIT_REPO_DIR = REPO;
+process.env.SVNGIT_REPO_DIR = REPO;
 const { startServer } = await import('../dist/server.js');
 const handle = await startServer();
 const base = handle.url;

@@ -129,7 +129,7 @@ function ToolBtn(props: {
 
 // ==================== 工具栏定制：注册表 + localStorage ====================
 
-const LAYOUT_KEY = 'svnkit-toolbar';
+const LAYOUT_KEY = 'svngit-toolbar';
 
 /** shown 序列项：按钮 key 或分隔符唯一 id（'sep-N'，多个分隔符必须唯一——布局跨仓库类型共享）
  *  分隔符 id 前缀固定 'sep-'，按钮 key 均为纯字母 */

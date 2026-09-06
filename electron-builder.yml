@@ -1,5 +1,5 @@
 # electron-builder 配置：Linux AppImage 打包
-appId: com.svnkit.tool
+appId: com.svngit.tool
 productName: svn-git文件版本管理
 electronVersion: 33.4.11
 # 只保留中英文语言包（locales 40M → ~2M，显著减小产物）
@@ -22,7 +22,7 @@ linux:
   category: Development
   maintainer: svn-git
   synopsis: SVN/Git 状态检测与操作工具
-  executableName: svnkit
+  executableName: svngit
   # 窗口关联：desktopName（package.json 顶层）与 WM_CLASS 一致，桌面环境才能把窗口绑定到应用菜单条目
   syncDesktopName: true
 win:

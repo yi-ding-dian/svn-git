@@ -7,21 +7,21 @@ import { detectRepo } from '../dist/vcs/detect.js';
 import { GitVcs } from '../dist/vcs/git.js';
 import { SvnVcs } from '../dist/vcs/svn.js';
 
-// 测试仓库位置：相对脚本推导（项目根/svnkit-test），clone 到任何路径都能跑
-const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svnkit-test');
+// 测试仓库位置：相对脚本推导（项目根/svngit-test），clone 到任何路径都能跑
+const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svngit-test');
 const GIT_DIR = path.join(TEST_BASE, 'git-repo');
 const SVN_DIR = path.join(TEST_BASE, 'svn-wc');
 
 // ---------- 重置并构造确定状态 ----------
 console.log('== 构造测试状态 ==');
-// git 测试仓库自举：CI clone 没有 svnkit-test/git-repo（fixture 不入库），首次运行自建固定提交历史的仓库。
+// git 测试仓库自举：CI clone 没有 svngit-test/git-repo（fixture 不入库），首次运行自建固定提交历史的仓库。
 // 本地已存在（手工保存的 b4f4eef 历史）则沿用原逻辑。
 if (!fs.existsSync(path.join(GIT_DIR, '.git'))) {
   console.log('  git-repo 不存在,自建测试仓库…');
   fs.mkdirSync(GIT_DIR, { recursive: true });
   await run('git', ['init', '-q'], { cwd: GIT_DIR }); // 分支名无关断言(porcelain 相对路径); -b 需 git>=2.28 故不用
-  await run('git', ['config', 'user.email', 'test@svnkit.local'], { cwd: GIT_DIR });
-  await run('git', ['config', 'user.name', 'svnkit-test'], { cwd: GIT_DIR });
+  await run('git', ['config', 'user.email', 'test@svngit.local'], { cwd: GIT_DIR });
+  await run('git', ['config', 'user.name', 'svngit-test'], { cwd: GIT_DIR });
   fs.writeFileSync(`${GIT_DIR}/readme.md`, 'hello v0\n');
   fs.mkdirSync(`${GIT_DIR}/src`, { recursive: true });
   fs.writeFileSync(`${GIT_DIR}/src/app.js`, 'console.log(1)\n');
@@ -149,7 +149,7 @@ console.log('== Git 操作 ==');
   const vcs = new GitVcs(detectRepo(GIT_DIR));
   const addRes = await vcs.add(['tmp-test.txt']);
   check('git add', addRes.ok);
-  const commitRes = await vcs.commit([], 'test commit from svnkit');
+  const commitRes = await vcs.commit([], 'test commit from svngit');
   check('git commit', commitRes.ok, commitRes.message);
   const st = await vcs.status();
   check('提交后 tmp-test 不再是 ?', !st.some((s) => s.path === 'tmp-test.txt'));
@@ -190,7 +190,7 @@ console.log('== SVN 操作 ==');
   const vcs = new SvnVcs(detectRepo(SVN_DIR), null);
   const addRes = await vcs.add(['tmp-svn.txt']);
   check('svn add', addRes.ok);
-  const commitRes = await vcs.commit([], 'test commit from svnkit');
+  const commitRes = await vcs.commit([], 'test commit from svngit');
   check('svn commit', commitRes.ok, commitRes.message);
   const st = await vcs.status();
   check('提交后 tmp-svn 不再是 ?', !st.some((s) => s.path === 'tmp-svn.txt'));

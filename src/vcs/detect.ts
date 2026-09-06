@@ -20,8 +20,8 @@ export function detectRepo(dir: string): RepoInfo | null {
   }
 }
 
-/** 识别当前目录仓库；支持环境变量 SVNKIT_DIR 覆盖启动路径 */
+/** 识别当前目录仓库；支持环境变量 SVNGIT_DIR 覆盖启动路径 */
 export function detectCwd(override?: string): RepoInfo | null {
-  const start = override ?? process.env.SVNKIT_DIR ?? process.cwd();
+  const start = override ?? process.env.SVNGIT_DIR ?? process.cwd();
   return detectRepo(start);
 }

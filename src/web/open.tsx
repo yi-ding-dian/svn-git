@@ -119,8 +119,8 @@ export function OpenBrowser(props: {
     const f = e.dataTransfer.files?.[0] as (File & { path?: string }) | undefined;
     if (!f) return;
     // ① Electron 内嵌窗口：webUtils.getPathForFile（preload 注入，替代已移除的 File.path）
-    const el = window as unknown as { svnkit?: { getPathForFile: (file: File) => string | null } };
-    const epath = el.svnkit?.getPathForFile(f);
+    const el = window as unknown as { svngit?: { getPathForFile: (file: File) => string | null } };
+    const epath = el.svngit?.getPathForFile(f);
     if (epath) {
       void openPath(epath);
       return;

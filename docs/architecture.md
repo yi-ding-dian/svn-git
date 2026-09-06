@@ -84,7 +84,7 @@
 - **内容上限**：文本读取 5MB 预检（先 statSync 再读）、图片 50MB、请求体超限即 `req.destroy()` 断连
 - **认证错误统一处理**：VCS 层识别打标（`VcsResult.code: 'AUTH'`），服务层 `authErrorOf` 透传 → 前端自动弹登录框
 - 静态文件带 `Last-Modified`（开发模式热刷新依赖）
-- **最近项目历史**（`~/.config/svnkit/history.json`，600 权限）：服务端持久化（浏览器端口随机，localStorage 不可靠），上限 20 条，支持常用标记（fav，启动时优先打开）
+- **最近项目历史**（`~/.config/svngit/history.json`，600 权限）：服务端持久化（浏览器端口随机，localStorage 不可靠），上限 20 条，支持常用标记（fav，启动时优先打开）
 
 ### 3.3 Web 前端（src/web/）
 
@@ -132,7 +132,7 @@
 - 双 tsconfig：后端编译输出 / 前端仅类型检查
 
 ### 4.3 凭据安全
-- SVN 密码 + Git 推送凭据存 `~/.config/svnkit/config.json`（chmod 600；git 凭据 base64 存储）
+- SVN 密码 + Git 推送凭据存 `~/.config/svngit/config.json`（chmod 600；git 凭据 base64 存储）
 - 调用 svn 用 `--password-from-stdin` 从管道传密码——**不出现在进程列表（ps）**
 - Git 推送用 `GIT_ASKPASS` 脚本重试（脚本 600 权限）
 - 支持 HTTPS 自签名证书开关
@@ -185,7 +185,7 @@
 src/
 ├── main.tsx            # 入口：启动服务 + Electron 窗口 / --browser 外部浏览器
 ├── server.ts           # HTTP 服务：API 分发 + 静态文件 + 固定端口 23456（约 1300 行）
-├── config.ts           # 配置读写（~/.config/svnkit/config.json，600 权限）
+├── config.ts           # 配置读写（~/.config/svngit/config.json，600 权限）
 ├── preload.cjs         # Electron preload 桥接（目录选择/文件路径）
 ├── routes/             # API 路由域模块
 │   ├── conflicts.ts    #   冲突防护：preflight/conflicts/merge-check/blame

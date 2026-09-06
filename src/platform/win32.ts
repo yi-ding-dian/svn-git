@@ -133,7 +133,7 @@ const winIconCache = new Map<string, Buffer>();
 function extractWinIcon(exe: string): Buffer | null {
   const hit = winIconCache.get(exe);
   if (hit) return hit;
-  const tmp = path.join(os.tmpdir(), `svnkit-icon-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
+  const tmp = path.join(os.tmpdir(), `svngit-icon-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
   const exeQ = exe.replace(/'/g, "''");
   const tmpQ = tmp.replace(/'/g, "''");
   const script = `Add-Type -AssemblyName System.Drawing; $i=[System.Drawing.Icon]::ExtractAssociatedIcon('${exeQ}'); if($i){$b=$i.ToBitmap(); $b.Save('${tmpQ}',[System.Drawing.Imaging.ImageFormat]::Png); exit 0} exit 1`;
@@ -205,7 +205,7 @@ export const win32: Platform = {
 
   openUrl(url) {
     const p = spawn('cmd', ['/c', 'start', '', url], { stdio: 'ignore', detached: true });
-    p.on('error', (e) => console.error(`[svnkit] 打开浏览器失败(cmd): ${e.message}`));
+    p.on('error', (e) => console.error(`[svngit] 打开浏览器失败(cmd): ${e.message}`));
     p.unref();
   },
 

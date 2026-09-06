@@ -1,5 +1,5 @@
 /** 配置域端点：全局配置与凭据读写（config / git-auth）+ git 远程地址配置（git-config）。
- * 读写 ~/.config/svnkit/config.json（见 src/config.ts）；git-config 为当前仓库 origin 远程设置（非 VCS 写操作，归本域）。 */
+ * 读写 ~/.config/svngit/config.json（见 src/config.ts）；git-config 为当前仓库 origin 远程设置（非 VCS 写操作，归本域）。 */
 import { sendJson, readBody, vcsOf } from './util.js';
 import { loadConfig, saveConfig } from '../config.js';
 import type { Ctx } from './util.js';
