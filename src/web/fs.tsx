@@ -173,6 +173,18 @@ export function FsView(props: Props) {
   // 浏览模式拖拽框选：拖拽起点 / 框选矩形（ref 直接操作 DOM，避免 mousemove 高频 re-render 卡顿） / 本次是否发生过拖动（供 click 判断，避免空白点击清空误伤框选结果）
   const selBoxRef = useRef<HTMLDivElement | null>(null);
   const selDragRef = useRef<{ startX: number; startY: number } | null>(null);
+  // 框选 mouseup 丢失兜底（松手移出窗口/松开在菜单遮罩上等）：任何 position 清除拖拽状态并隐藏矩形，
+  // 避免"没按左键移动鼠标也画出框选"；grid 内正常松开由 grid 的 onMouseUp 先行处理，此兜底无副作用
+  useEffect(() => {
+    const onWinUp = () => {
+      if (selDragRef.current) {
+        selDragRef.current = null;
+        if (selBoxRef.current) selBoxRef.current.style.display = 'none';
+      }
+    };
+    window.addEventListener('mouseup', onWinUp);
+    return () => window.removeEventListener('mouseup', onWinUp);
+  }, []);
   const lastWasDragRef = useRef(false);
   const [ignoreModal, setIgnoreModal] = useState<{ dir: string } | null>(null);
   /** 加入忽略输入弹窗（替代 window.prompt：目标文件 + 规则输入） */
@@ -1681,8 +1693,9 @@ export function FsView(props: Props) {
               if (el) gridRef.current = el;
             }}
             onMouseDown={(ev) => {
-              // 空白处按下启动框选（点击条目由条目自身处理）
-              if ((ev.target as HTMLElement).closest('.grid-item')) return;
+              // 空白处按下启动框选（点击条目由条目自身处理）；仅左键——右键按下会打开菜单，
+              // 若也启动框选，菜单打开后无按键移动鼠标就会画出"幽灵框选"
+              if (ev.button !== 0 || (ev.target as HTMLElement).closest('.grid-item')) return;
               lastWasDragRef.current = false; // 消费上次可能残留的拖拽标记（mouseup 丢失时），避免吞掉本次空白点击的清空
               selDragRef.current = { startX: ev.clientX, startY: ev.clientY };
             }}
