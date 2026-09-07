@@ -557,6 +557,22 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             }
           }
         }
+        // 目录内所有条目（一层文件/子目录）都被忽略规则命中 → 目录整体视为已忽略
+        // （如 .claude/ 内只有 settings.local.json 被 *.local.json 命中：目录名不匹配规则，
+        //   但目录无任何版本库内容——不显示 I 会被误显示为 √ 干净，误导"已在版本库"）
+        const isDirAllIgnored = (dirRel: string, rules: string[]): boolean => {
+          let names: string[];
+          try {
+            names = fs.readdirSync(path.join(repo.root, dirRel));
+          } catch {
+            return true; // 读取失败：无可忽略内容，视作全体忽略
+          }
+          if (names.length === 0) return false; // 真空目录：无内容可忽略，保持"干净"
+          return names.every((n) => {
+            if (n === '.git' || n === '.svn') return true;
+            return isIgnoredByRules(rules, n);
+          });
+        };
         const prefix = rel ? rel + '/' : '';
         const dirs: string[] = [];
         const files: string[] = [];
@@ -587,6 +603,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             else {
               const rules = await getIgnoreRules(path.dirname(relDir) === '.' ? '.' : path.dirname(relDir));
               if (rules.length && isIgnoredByRules(rules, d)) code = 'I';
+              // 目录名未被规则命中,但目录内全部条目都被规则忽略 → 目录整体视作"已忽略"
+              else if (rules.length && isDirAllIgnored(relDir, rules)) code = 'I';
             }
           }
           const sub = items.filter((i) => i.path.startsWith(relDir + '/'));

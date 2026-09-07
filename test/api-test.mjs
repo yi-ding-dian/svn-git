@@ -297,6 +297,22 @@ src/
     const c3Rm = await post('/api/ignore-remove', { path: '', pattern: 'api-cyc2-demo.txt' });
     check('跨档取反清理', c3Rm.code === 200 && c3Rm.body.ok === true, `msg=${c3Rm.body.message}`);
   }
+  // ---------- 10. 目录全忽略 → I（.claude 场景：目录名不命中规则,内部文件全部被忽略） ----------
+  {
+    const gif = path.join(GIT_DIR, '.gitignore');
+    const giBackup = fs.readFileSync(gif, 'utf8');
+    fs.writeFileSync(gif, giBackup.replace(/\n*$/, '') + '\n*.local.json\n');
+    fs.mkdirSync(path.join(GIT_DIR, 'cfg-dir'), { recursive: true });
+    fs.writeFileSync(path.join(GIT_DIR, 'cfg-dir', 'settings.local.json'), '{}');
+    const fsDir = await get('/api/fs?dir=');
+    check(
+      '目录全忽略显示 I（.claude 场景）',
+      fsDir.code === 200 && fsDir.body.entries?.some((e) => e.name === 'cfg-dir' && e.code === 'I'),
+      `code=${JSON.stringify(fsDir.body.entries?.find((e) => e.name === 'cfg-dir')?.code)}`,
+    );
+    fs.rmSync(path.join(GIT_DIR, 'cfg-dir'), { recursive: true, force: true });
+    fs.writeFileSync(gif, giBackup);
+  }
 } finally {
   // ---------- teardown：重置仓库,仅保留 api 测试文件之外的状态 ----------
   process.env.SVNGIT_REPO_DIR = GIT_DIR;
