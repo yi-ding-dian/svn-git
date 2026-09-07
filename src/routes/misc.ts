@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { detectRepo } from '../vcs/detect.js';
 import { platform } from '../platform/index.js';
-import { isIgnoredByRules, getSvnIgnoreMap } from '../vcs/ignore.js';
+import { isIgnoredByRules, getSvnIgnoreMap, gitIgnoreSources } from '../vcs/ignore.js';
 import { BINARY_EXTS } from '../shared/types.js';
 import { run } from '../vcs/exec.js';
 import {
@@ -428,21 +428,16 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
         };
         // 忽略规则（与 /api/fs 一致）：未版本化目录展开时,被 .gitignore 匹配的条目不显示为 '?'
-        let gitignoreRules: string[] | null = null;
-        const loadGitignore = (): string[] => {
-          if (gitignoreRules) return gitignoreRules;
-          const g = path.join(repo.root, '.gitignore');
-          gitignoreRules = fs.existsSync(g)
-            ? fs
-                .readFileSync(g, 'utf8')
-                .split('\n')
-                .map((s) => s.trim())
-                .filter((s) => s && !s.startsWith('#'))
-            : [];
-          return gitignoreRules;
+        // 忽略规则（与 /api/fs 一致）：未版本化目录展开时,被 git 忽略（.gitignore/global/exclude 三来源）匹配的条目不显示为 '?'
+        let gitIgnoreRulesAll: string[] | null = null;
+        const loadGitignore = async (): Promise<string[]> => {
+          if (!gitIgnoreRulesAll) {
+            gitIgnoreRulesAll = (await gitIgnoreSources(repo.root)).flatMap((s) => s.rules);
+          }
+          return gitIgnoreRulesAll;
         };
         // '?' 目录：递归展开内部全部文件（未版本化目录内的所有内容都是新文件）
-        const walkUnversionedDir = (relDir: string) => {
+        const walkUnversionedDir = async (relDir: string) => {
           let names: string[];
           try {
             names = fs.readdirSync(path.join(repo.root, relDir));
@@ -452,7 +447,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           for (const n of names) {
             if (n === '.svn' || n === '.git') continue;
             // 被忽略规则匹配（如 dist/、node_modules/）→ 不视为新文件,跳过
-            if (isIgnoredByRules(loadGitignore(), n)) continue;
+            if (isIgnoredByRules(await loadGitignore(), n)) continue;
             const base = relDir.replace(/\/+$/, '');
             const rel = base ? `${base}/${n}` : n;
             const abs = path.join(repo.root, rel);
@@ -466,7 +461,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               // 递归子目录：未版本化目录内的子目录同为未版本化，'?'
               const sub = ensureDir(rel);
               sub.code = '?';
-              walkUnversionedDir(rel);
+              await walkUnversionedDir(rel);
             } else pushFile(rel, '?');
           }
         };
@@ -476,7 +471,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             // 未版本化目录（如 git status 的 "?? dir/" 聚合条目）：目录自身显示 '?'，展开内部全部文件
             const d = ensureDir(it.path);
             d.code = '?';
-            walkUnversionedDir(it.path);
+            await walkUnversionedDir(it.path);
           } else if (it.isDir) {
             // 目录自身有状态码（svn 目录 M/A/D 等）：容器节点用其状态码，而非一律显示无状态
             ensureDir(it.path).code = it.code;
@@ -531,20 +526,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const dirSelf = unversionedAncestor || items.find((i) => i.path === rel && i.code === '?');
 
-        // 忽略规则检测：status 无条目的磁盘文件/目录，若被 svn:ignore / .gitignore 匹配则标记 'I'
-        let gitignoreRules: string[] | null = null;
+        // 忽略规则检测：status 无条目的磁盘文件/目录，若被 git 忽略规则匹配则标记 'I'
+        // （与 ops.ts 写入侧同源：.gitignore / global(excludesFile) / .git/info/exclude 三来源都算）
+        let gitIgnoreRulesAll: string[] | null = null;
         const getIgnoreRules = async (dirRel: string): Promise<string[]> => {
           if (repo.type === 'git') {
-            if (gitignoreRules) return gitignoreRules;
-            const g = path.join(repo.root, '.gitignore');
-            gitignoreRules = fs.existsSync(g)
-              ? fs
-                  .readFileSync(g, 'utf8')
-                  .split('\n')
-                  .map((s) => s.trim())
-                  .filter((s) => s && !s.startsWith('#'))
-              : [];
-            return gitignoreRules;
+            if (!gitIgnoreRulesAll) {
+              gitIgnoreRulesAll = (await gitIgnoreSources(repo.root)).flatMap((s) => s.rules);
+            }
+            return gitIgnoreRulesAll;
           }
           // svn:ignore：一次 `-R` 全量拉取缓存后，所有目录直接查内存 Map（不再逐目录跑 svn 进程）
           const map = await getSvnIgnoreMap(repo.root);

@@ -5,7 +5,8 @@ import { get, post } from './api.js';
 import { ModalShell } from './modal-shell.js';
 
 export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged: () => void; onToast: (m: string) => void }) {
-  const [rules, setRules] = useState<string[]>([]);
+  // 规则列表：{ pattern, where }（where=来源：.gitignore / 全局 / info/exclude——三档合并展示） */
+  const [rules, setRules] = useState<{ pattern: string; where: string }[]>([]);
   const [pattern, setPattern] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -20,7 +21,13 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
   const load = useCallback(() => {
     get
       .ignoreRules(props.dir)
-      .then((r) => setRules(r.rules))
+      .then((r) =>
+        setRules(
+          (r.sources ?? []).map((s) => ({ pattern: s.pattern, where: s.where })).length > 0
+            ? (r.sources ?? []).map((s) => ({ pattern: s.pattern, where: s.where }))
+            : r.rules.map((p) => ({ pattern: p, where: '' })) // 旧接口/svn 回退：未知来源
+        )
+      )
       .catch((e: Error) => setMsg(e.message));
   }, [props.dir]);
   useEffect(load, [load]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -44,7 +51,7 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
     if (!pattern.trim()) return;
     setBusy(true);
     void post
-      .ignore(props.dir, pattern.trim())
+      .ignore(props.dir, pattern.trim(), 'gitignore')
       .then((r) => {
         setMsg(r.message);
         if (r.ok) {
@@ -63,11 +70,12 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
           <div className="vcs-list" style={{ minHeight: 100 }}>
             {rules.length === 0 && <div className="dim" style={{ padding: 10 }}>暂无忽略规则</div>}
             {rules.map((r) => (
-              <div key={r} className="vcs-row" style={{ cursor: 'default' }}>
-                <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r}>
-                  {r}
+              <div key={r.pattern} className="vcs-row" style={{ cursor: 'default' }}>
+                <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.pattern}>
+                  {r.pattern}
                 </span>
-                <button className="mini danger" disabled={busy} onClick={() => remove(r)}>删除</button>
+                <span className="dim small nowrap" style={{ margin: '0 8px' }}>{r.where}</span>
+                <button className="mini danger" disabled={busy} onClick={() => remove(r.pattern)}>删除</button>
               </div>
             ))}
           </div>

@@ -199,7 +199,8 @@ export const get = {
     }>('/api/preflight', { signal }),
   conflicts: () =>
     api<{ conflicts: { path: string; ours: string; theirs: string; base: string; work: string }[] }>('/api/conflicts'),
-  ignoreRules: (path: string) => api<{ rules: string[] }>(`/api/ignore?path=${encodeURIComponent(path)}`),
+  ignoreRules: (path: string) =>
+    api<{ rules: string[]; sources?: { pattern: string; where: string }[] }>(`/api/ignore?path=${encodeURIComponent(path)}`),
   conflictDetail: (path: string) =>
     api<{ path: string; theirsDiff: string; myDiff: string }>(`/api/conflict-detail?path=${encodeURIComponent(path)}`),
   /** 模块索引（md 文件说明注入）：全仓库作用目录→条目；preview=注入前解析预览 */
@@ -305,7 +306,9 @@ export const post = {
   reveal: (path: string) => api<{ ok: boolean }>('/api/reveal', json({ path })),
   svnLock: (action: 'lock' | 'unlock', path: string, force = false) => api<VcsResult>('/api/svn-lock', json({ action, path, force })),
   ignoreRemove: (path: string, pattern: string) => api<VcsResult>('/api/ignore-remove', json({ path, pattern })),
-  ignore: (path: string, pattern: string) => api<VcsResult>('/api/ignore', json({ path, pattern })),
+  /** 加入忽略：target=gitignore(默认，随仓库分发)/global(仅本机全部仓库)/exclude(仅本机本仓库) */
+  ignore: (path: string, pattern: string, target: 'gitignore' | 'global' | 'exclude' = 'gitignore') =>
+    api<VcsResult>('/api/ignore', json({ path, pattern, target })),
   unignore: (path: string) => api<VcsResult>('/api/unignore', json({ path })),
   config: (cfg: { username: string; password: string; trustServerCert: boolean }) => api<{ ok: boolean }>('/api/config', json(cfg)),
   historyRemove: (path: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remove', json({ path })),

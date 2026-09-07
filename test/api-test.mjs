@@ -228,6 +228,75 @@ src/
     check('module-index 清除后为空', rd3.code === 200 && (rd3.body.indexes?.[''] ?? null) === null);
     fs.rmSync(idxFile, { force: true });
   }
+  // ---------- 9. 忽略三向（git）：.gitignore 与 .git/info/exclude 写入/删除（global 涉及用户全局配置，不在此测） ----------
+  {
+    // target=exclude：写入测试仓库 .git/info/exclude
+    const demoFile = path.join(GIT_DIR, 'api-exclude-demo.txt');
+    fs.writeFileSync(demoFile, 'x');
+    const ex1 = await post('/api/ignore', { path: '', pattern: 'api-exclude-demo.txt', target: 'exclude' });
+    check('ignore exclude 写入成功', ex1.code === 200 && ex1.body.ok === true && /info\/exclude/.test(ex1.body.message), `msg=${ex1.body.message}`);
+    // 渲染侧兜底：status 无条目文件（exclude 来源）→ /api/fs 标 I（三来源检测回归：此前只认 .gitignore）
+    const fsI = await get('/api/fs?dir=');
+    check(
+      '/api/fs 对 exclude 忽略文件标 I（非 √）',
+      fsI.code === 200 && fsI.body.entries?.some((e) => e.name === 'api-exclude-demo.txt' && e.code === 'I'),
+      `code=${JSON.stringify(fsI.body.entries?.find((e) => e.name === 'api-exclude-demo.txt')?.code)}`,
+    );
+    const rd = await get('/api/ignore');
+    check(
+      'ignore GET 含来源（sources 标 .git/info/exclude）',
+      rd.code === 200 && rd.body.rules?.includes('api-exclude-demo.txt') && rd.body.sources?.some((s) => s.pattern === 'api-exclude-demo.txt' && s.where.includes('info/exclude')),
+    );
+    // target=gitignore（默认）写入仓库 .gitignore
+    const gi1 = await post('/api/ignore', { path: '', pattern: 'api-gitignore-demo.txt' });
+    check('ignore .gitignore 写入成功', gi1.code === 200 && gi1.body.ok === true && /\.gitignore/.test(gi1.body.message), `msg=${gi1.body.message}`);
+    // 删除：ignore-remove 扫三处（exclude 中的规则）
+    const rm1 = await post('/api/ignore-remove', { path: '', pattern: 'api-exclude-demo.txt' });
+    check('ignore-remove 删除（扫到 exclude）', rm1.code === 200 && rm1.body.ok === true && /info\/exclude/.test(rm1.body.message), `msg=${rm1.body.message}`);
+    const rm2 = await post('/api/ignore-remove', { path: '', pattern: 'api-gitignore-demo.txt' });
+    check('ignore-remove 删除（.gitignore）', rm2.code === 200 && rm2.body.ok === true, `msg=${rm2.body.message}`);
+    fs.rmSync(demoFile, { force: true });
+
+    // 循环守卫：忽略→取消（! 行真实写入测试仓库）→再忽略（清 ! 重写，非"规则已存在"）
+    const cyc = await post('/api/ignore', { path: '', pattern: 'api-cyc-demo.txt', target: 'exclude' });
+    check('循环-1 忽略写入', cyc.code === 200 && cyc.body.ok === true, `msg=${cyc.body.message}`);
+    const cycU = await post('/api/unignore', { path: 'api-cyc-demo.txt' });
+    const mockExclude = fs.readFileSync(path.join(GIT_DIR, '.git', 'info', 'exclude'), 'utf8');
+    const mainExclude = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), '.git', 'info', 'exclude');
+    check(
+      '循环-2 取消忽略写对仓库（! 行入测试仓库且不污染主仓库）',
+      cycU.code === 200 && cycU.body.ok === true &&
+        mockExclude.split('\n').some((l) => l.trim() === '!api-cyc-demo.txt') &&
+        (!fs.existsSync(mainExclude) || !fs.readFileSync(mainExclude, 'utf8').includes('api-cyc-demo')),
+    );
+    const cyc2 = await post('/api/ignore', { path: '', pattern: 'api-cyc-demo.txt', target: 'exclude' });
+    const mockExclude2 = fs.readFileSync(path.join(GIT_DIR, '.git', 'info', 'exclude'), 'utf8').split('\n').filter((l) => l.includes('api-cyc-demo'));
+    // 有效判定标准：! 行已清（文件仅剩正规则）且 git 判定确实忽略——正规则已存在时提示"已恢复生效"同样算成功
+    const igCyc = await run('git', ['check-ignore', '-q', '--', 'api-cyc-demo.txt'], { cwd: GIT_DIR });
+    check(
+      '循环-3 再忽略生效（! 清掉且 git 判定忽略）',
+      cyc2.code === 200 && cyc2.body.ok === true &&
+        mockExclude2.length === 1 && mockExclude2[0] === 'api-cyc-demo.txt' && igCyc.code === 0,
+      `msg=${cyc2.body.message}`,
+    );
+    const cycRm = await post('/api/ignore-remove', { path: '', pattern: 'api-cyc-demo.txt' });
+    check('循环-4 清理', cycRm.code === 200 && cycRm.body.ok === true, `msg=${cycRm.body.message}`);
+    // 跨档取反治理：高层 .gitignore 的 !（优先级高于 exclude）→ target=exclude 忽略应清掉它并生效
+    const gifile = path.join(GIT_DIR, '.gitignore');
+    const giOrig = fs.readFileSync(gifile, 'utf8');
+    fs.writeFileSync(gifile, giOrig.replace(/\n*$/, '') + '\n!api-cyc2-demo.txt\n');
+    const c3 = await post('/api/ignore', { path: '', pattern: 'api-cyc2-demo.txt', target: 'exclude' });
+    const giAfter = fs.readFileSync(gifile, 'utf8');
+    const ig = await run('git', ['check-ignore', '-q', '--', 'api-cyc2-demo.txt'], { cwd: GIT_DIR });
+    check(
+      '跨档取反被清（高层 ! 移除且 git 判定忽略）',
+      c3.code === 200 && c3.body.ok === true && !giAfter.includes('!api-cyc2-demo') && ig.code === 0,
+      `msg=${c3.body.message} checkIgnoreCode=${ig.code}`,
+    );
+    fs.writeFileSync(gifile, giOrig); // 还原 .gitignore 原始内容
+    const c3Rm = await post('/api/ignore-remove', { path: '', pattern: 'api-cyc2-demo.txt' });
+    check('跨档取反清理', c3Rm.code === 200 && c3Rm.body.ok === true, `msg=${c3Rm.body.message}`);
+  }
 } finally {
   // ---------- teardown：重置仓库,仅保留 api 测试文件之外的状态 ----------
   process.env.SVNGIT_REPO_DIR = GIT_DIR;

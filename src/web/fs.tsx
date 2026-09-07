@@ -190,6 +190,13 @@ export function FsView(props: Props) {
   /** 加入忽略输入弹窗（替代 window.prompt：目标文件 + 规则输入） */
   const [ignoreAsk, setIgnoreAsk] = useState<{ rel: string; name: string } | null>(null);
   const [ignorePattern, setIgnorePattern] = useState('');
+  // 忽略写入去向（.gitignore 随仓库分发 / global 仅本机全部仓库 / exclude 仅本机本仓库）
+  const [ignoreTarget, setIgnoreTarget] = useState<'gitignore' | 'global' | 'exclude'>('gitignore');
+  const IGNORE_WHERE_LABEL: Record<'gitignore' | 'global' | 'exclude', string> = {
+    gitignore: '仓库 .gitignore（随仓库分发）',
+    global: '全局忽略（仅本机，所有仓库生效）',
+    exclude: '.git/info/exclude（仅本机本仓库）',
+  };
   /** 取消忽略确认弹窗（忽略项右键：git 追加 !规则 / svn 删规则 → 变回未版本化 ?） */
   const [unignoreAsk, setUnignoreAsk] = useState<{ rel: string; name: string; isDir: boolean } | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
@@ -1151,7 +1158,16 @@ export function FsView(props: Props) {
       } else {
         // 未版本化目录：只能添加/忽略/磁盘删除（无历史/无 diff/无忽略设置——不在版本管理里）
         items.push({ icon: <IconPlus />, label: '添加到版本库', cmd: cmdOfRepo(props.repoType, 'add', { paths: t.rel }), action: () => props.onAction('add', [t.rel]) });
-        items.push({ icon: <IconIgnore />, label: '加入忽略…', cmd: cmdOfRepo(props.repoType, 'ignore_add', { path: t.rel, pattern: '…' }), action: () => ignoreFile(t) });
+        items.push({
+          icon: <IconIgnore />,
+          label: '加入忽略…',
+          cmd: cmdOfRepo(props.repoType, 'ignore_add', { path: t.rel, pattern: '…' }),
+          submenu: [
+            { icon: <IconIgnore />, label: '.gitignore', cmd: cmdOfRepo(props.repoType, 'ignore_add', { pattern: t.name }), title: '写入仓库 .gitignore——随仓库分发，其他用户拉取后同样被忽略（适合项目通用内容）', action: () => { setIgnoreTarget('gitignore'); ignoreFile(t); } },
+            { icon: <IconIgnore />, label: '~/.gitignore_global', cmd: cmdOfRepo(props.repoType, 'ignore_add_global', { pattern: t.name }), title: '写入全局忽略——仅本机生效、所有仓库统一，绝不随仓库分发（适合 record.md 等私人文件）', action: () => { setIgnoreTarget('global'); ignoreFile(t); } },
+            { icon: <IconIgnore />, label: '.git/info/exclude', cmd: cmdOfRepo(props.repoType, 'ignore_add_exclude', { pattern: t.name }), title: '写入仓库本地 exclude——仅本机、仅本仓库，绝不随仓库分发（适合本地测试数据）', action: () => { setIgnoreTarget('exclude'); ignoreFile(t); } },
+          ],
+        });
         items.push(renameItem(t.code, props.repoType, t.rel, true, props.onAction));
         items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该目录，不可恢复（不影响版本库）', action: () => props.onAction('fs-delete', [t.rel]) });
         // 常用文件夹（仅 svn：git 加载快无需预加载）：自身已加入显示移除；父目录已加入则不再显示；其余显示加入
@@ -1180,7 +1196,16 @@ export function FsView(props: Props) {
         if (t.code === '?') {
           // 未版本化文件：添加/忽略/磁盘删除（"从版本库移除后变 ?" 的最终清理入口）；重命名在下方统一行（按状态自适应）
           items.push({ icon: <IconPlus />, label: '添加到版本库', cmd: cmdOfRepo(props.repoType, 'add', { paths: t.rel }), action: () => props.onAction('add', [t.rel]) });
-          items.push({ icon: <IconIgnore />, label: '加入忽略…', cmd: cmdOfRepo(props.repoType, 'ignore_add', { path: t.rel, pattern: '…' }), action: () => ignoreFile(t) });
+          items.push({
+          icon: <IconIgnore />,
+          label: '加入忽略…',
+          cmd: cmdOfRepo(props.repoType, 'ignore_add', { path: t.rel, pattern: '…' }),
+          submenu: [
+            { icon: <IconIgnore />, label: '.gitignore', cmd: cmdOfRepo(props.repoType, 'ignore_add', { pattern: t.name }), title: '写入仓库 .gitignore——随仓库分发，其他用户拉取后同样被忽略（适合项目通用内容）', action: () => { setIgnoreTarget('gitignore'); ignoreFile(t); } },
+            { icon: <IconIgnore />, label: '~/.gitignore_global', cmd: cmdOfRepo(props.repoType, 'ignore_add_global', { pattern: t.name }), title: '写入全局忽略——仅本机生效、所有仓库统一，绝不随仓库分发（适合 record.md 等私人文件）', action: () => { setIgnoreTarget('global'); ignoreFile(t); } },
+            { icon: <IconIgnore />, label: '.git/info/exclude', cmd: cmdOfRepo(props.repoType, 'ignore_add_exclude', { pattern: t.name }), title: '写入仓库本地 exclude——仅本机、仅本仓库，绝不随仓库分发（适合本地测试数据）', action: () => { setIgnoreTarget('exclude'); ignoreFile(t); } },
+          ],
+        });
           items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该文件，不可恢复（不影响版本库）', action: () => props.onAction('fs-delete', [t.rel]) });
         } else {
           const modified = t.code === 'M' || t.code === 'A' || t.code === 'D' || t.code === 'R' || t.code === 'C';
@@ -1300,7 +1325,7 @@ export function FsView(props: Props) {
     const pattern = ignorePattern.trim();
     if (!pattern) return;
     post
-      .ignore(ignoreAsk.rel, pattern)
+      .ignore(ignoreAsk.rel, pattern, ignoreTarget)
       .then((r) => {
         props.onToast(r.message);
         if (r.ok) {
@@ -1901,7 +1926,7 @@ export function FsView(props: Props) {
       {/* 加入忽略输入弹窗（替代 window.prompt） */}
       {ignoreAsk && (
         <ModalShell
-          title="⚠ 加入忽略"
+          title={`⚠ 加入忽略（写入 ${IGNORE_WHERE_LABEL[ignoreTarget]}）`}
           width={440}
           onClose={() => setIgnoreAsk(null)}
           foot={

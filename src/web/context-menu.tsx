@@ -8,7 +8,7 @@
  * 二级子菜单定位：悬浮/点击带 submenu 的菜单项时,用该项的真实 DOM 矩形贴其右侧
  * （fixed + 视口坐标,非估算行高）,菜单项高度/分隔线如何变化都能精确对齐。
  */
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export interface CtxMenuItem {
   icon?: React.ReactNode;
@@ -108,33 +108,56 @@ export function ContextMenu(props: {
             </div>
           )
         )}
-        {/* 二级子菜单面板：贴住对应项右侧（真实 DOM 定位,详见文件头注释） */}
+        {/* 二级子菜单面板：贴住对应项右侧；右侧空间不足（子菜单宽 > 右缘余量）时向左展开（真实 DOM 定位,详见文件头注释） */}
         {openSub && subRect && (
-          <div
-            className="ctx-menu ctx-submenu"
-            style={{ position: 'fixed', left: subRect.right - 2, top: subRect.top }}
-            onMouseEnter={() => setHoverIdx(openSub!.i)}
-            onMouseLeave={() => {
-              setHoverIdx(null);
-              setPinIdx(null);
-            }}
-          >
-            {openSub!.it.submenu!.map((s, si) => (
-              <div
-                key={si}
-                className={`ctx-item ${s.danger ? 'danger' : ''}`}
-                onClick={() => {
-                  props.onClose();
-                  s.action?.();
-                }}
-              >
-                <span className="ctx-icon">{s.icon}</span>
-                <span>{s.label}</span>
-              </div>
-            ))}
-          </div>
+          <SubmenuPane openSub={openSub} subRect={subRect} onEnter={() => setHoverIdx(openSub.i)} onLeave={() => { setHoverIdx(null); setPinIdx(null); }} onAction={() => props.onClose()} />
         )}
       </div>
     </>
+  );
+}
+
+/** 二级子菜单面板：ref 量宽后决定向左/向右展开（右缘不足向左），避免被屏幕右边界截断 */
+function SubmenuPane(props: {
+  openSub: { it: CtxMenuItem; i: number };
+  subRect: DOMRect;
+  onEnter: () => void;
+  onLeave: () => void;
+  onAction: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [flip, setFlip] = useState(false);
+  useEffect(() => {
+    if (!ref.current) return;
+    const w = ref.current.offsetWidth;
+    setFlip(props.subRect.right - 2 + w > window.innerWidth);
+  }, [props.subRect, props.openSub, props.openSub.it]);
+  return (
+    <div
+      ref={ref}
+      className="ctx-menu ctx-submenu"
+      style={{
+        position: 'fixed',
+        left: flip && ref.current ? props.subRect.left - ref.current.offsetWidth + 2 : props.subRect.right - 2,
+        top: props.subRect.top,
+      }}
+      onMouseEnter={props.onEnter}
+      onMouseLeave={props.onLeave}
+    >
+      {props.openSub.it.submenu!.map((s, si) => (
+        <div
+          key={si}
+          className={`ctx-item ${s.danger ? 'danger' : ''}`}
+          title={s.cmd ? `${s.cmd}\n${s.title ?? ''}` : s.title}
+          onClick={() => {
+            props.onAction();
+            s.action?.();
+          }}
+        >
+          <span className="ctx-icon">{s.icon}</span>
+          <span>{s.label}</span>
+        </div>
+      ))}
+    </div>
   );
 }

@@ -1,14 +1,58 @@
 /** 操作域端点：add/commit/update/revert/delete/push + svn-extra + 忽略规则 + 锁定/清理 */
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
 import {
   sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached,
   runVcs, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS,
 } from './util.js';
-import { getSvnIgnoreMap, isIgnoredByRules } from '../vcs/ignore.js';
+import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile } from '../vcs/ignore.js';
 import type { Ctx } from './util.js';
+
+/** git 忽略三处去向（展示名与写入目标）——仓库 .gitignore / 全局 excludesFile / .git/info/exclude */
+const GIT_IGNORE_WHERE = {
+  gitignore: '仓库 .gitignore',
+  global: '全局忽略（~/.gitignore_global）',
+  exclude: '.git/info/exclude',
+} as const;
+type GitIgnoreTarget = keyof typeof GIT_IGNORE_WHERE;
+
+/** 三个忽略文件清单（global 未配置时 GET/删除不含；写入 global 时先确保配置）
+ * 全局文件查询/确保逻辑共用 vcs/ignore.ts（渲染侧 /api/fs 同样从该处读取三来源） */
+async function gitIgnoreFiles(repoRoot: string, forWriteGlobal = false): Promise<{ where: GitIgnoreTarget; file: string }[]> {
+  const global = forWriteGlobal ? await ensureGitGlobalExcludesFile() : await gitGlobalExcludesFile();
+  const out: { where: GitIgnoreTarget; file: string }[] = [
+    { where: 'gitignore', file: path.join(repoRoot, '.gitignore') },
+  ];
+  if (global) out.push({ where: 'global', file: path.resolve(global) });
+  out.push({ where: 'exclude', file: path.join(repoRoot, '.git', 'info', 'exclude') });
+  return out;
+}
+/** 追加忽略规则到文件（去重：已含同 pattern 行返回 false；末尾补一行）。
+ * 同文件已有其取反行 !pattern（规则被「取消忽略」废止）时：清掉 pattern/取反两行、重写干净 pattern——
+ * 保证"加入忽略"必然生效（否则重复 忽略→取消→忽略 会卡在"规则已存在"而 git 实际未忽略）。
+ * pattern 以 ! 开头（取消忽略的否定行）不做取反清理，仅行去重（避免!!!叠加）。 */
+function appendIgnoreLine(file: string, pattern: string): boolean {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n') : [];
+  if (!pattern.startsWith('!') && lines.some((l) => l.trim() === '!' + pattern)) {
+    fs.writeFileSync(file, [...lines.filter((l) => { const t = l.trim(); return t !== pattern && t !== '!' + pattern; }), pattern].join('\n') + '\n');
+    return true;
+  }
+  if (lines.some((l) => l.trim() === pattern)) return false;
+  fs.writeFileSync(file, [...lines.filter((l) => l.trim()), pattern].join('\n') + '\n');
+  return true;
+}
+
+/** 清除文件中的取反行（!pattern）：任一档的取反正则按优先级（… > .gitignore > exclude > global）都能覆盖目标档，
+ * 加入忽略=用户意图"文件必被忽略"，写入前清全部档位取反，避免跨档覆盖导致看似写入实则未忽略 */
+function removeNegationLine(file: string, pattern: string): void {
+  if (pattern.startsWith('!') || !fs.existsSync(file)) return;
+  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  if (lines.some((l) => l.trim() === '!' + pattern)) {
+    fs.writeFileSync(file, lines.filter((l) => { const t = l.trim(); return t && t !== '!' + pattern; }).join('\n') + '\n');
+  }
+}
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
@@ -241,18 +285,25 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
           const r = await run('svn', ['propget', 'svn:ignore', pathRel || '.'], { cwd: repo.root, timeoutMs: 30_000 });
           if (r.code === 0 && r.stdout.trim()) rules = r.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+          sendJson(res, 200, { rules });
+          return true;
         } else {
-          const g = path.join(repo.root, '.gitignore');
-          if (fs.existsSync(g)) {
-            rules = fs
-              .readFileSync(g, 'utf8')
-              .split('\n')
-              .map((s) => s.trim())
-              .filter((s) => s && !s.startsWith('#'));
+          // git：三档规则合并（仓库 .gitignore / 全局 excludesFile / .git/info/exclude），sources 标注来源
+          const files = await gitIgnoreFiles(repo.root);
+          const rules: string[] = [];
+          const sources: { pattern: string; where: string }[] = [];
+          for (const { where, file } of files) {
+            if (!fs.existsSync(file)) continue;
+            for (const l of fs.readFileSync(file, 'utf8').split('\n')) {
+              const t = l.trim();
+              if (!t || t.startsWith('#') || t.startsWith('!')) continue; // 注释与否定行不列
+              rules.push(t);
+              sources.push({ pattern: t, where: GIT_IGNORE_WHERE[where] });
+            }
           }
+          sendJson(res, 200, { rules, sources });
+          return true;
         }
-        sendJson(res, 200, { rules });
-        return true;
       }
 
       if (p === '/api/ignore-remove' && req.method === 'POST') {
@@ -279,11 +330,22 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             return true;
           }
         } else {
-          const g = path.join(repo.root, '.gitignore');
-          if (fs.existsSync(g)) {
-            const content = fs.readFileSync(g, 'utf8');
-            fs.writeFileSync(g, content.split('\n').filter((l) => l.trim() !== pattern).join('\n'));
+          // git：三档任一文件删除该行（where 未知/global 未配置时自然跳过）
+          const files = await gitIgnoreFiles(repo.root);
+          let removedAt = '';
+          for (const { where, file } of files) {
+            if (!fs.existsSync(file)) continue;
+            const lines = fs.readFileSync(file, 'utf8').split('\n');
+            const left = lines.filter((l) => l.trim() !== pattern);
+            if (left.length !== lines.length) {
+              fs.writeFileSync(file, left.filter((l) => l.trim()).join('\n') + '\n');
+              removedAt = GIT_IGNORE_WHERE[where];
+              break;
+            }
           }
+          invalidateStatusCache(repo.root);
+          sendJson(res, 200, { ok: true, message: removedAt ? `已删除规则: ${pattern}（${removedAt}）` : `未找到规则: ${pattern}` });
+          return true;
         }
         invalidateStatusCache(repo.root);
         sendJson(res, 200, { ok: true, message: `已删除规则: ${pattern}` });
@@ -301,51 +363,33 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const parts = rel.split('/').filter(Boolean);
         if (repo.type === 'git') {
-          // git：规则全部在根 .gitignore，从根逐级找第一级被匹配的段 → 追加 !<段>（目录带 /）
-          const g = path.join(repo.root, '.gitignore');
-          let rules: string[] = [];
-          if (fs.existsSync(g)) {
-            rules = fs
-              .readFileSync(g, 'utf8')
-              .split('\n')
-              .map((s) => s.trim())
-              .filter((s) => s && !s.startsWith('#'));
-          }
-          let matched = ''; // 被匹配段（可能为祖先目录）
-          let acc = '';
-          for (const part of parts) {
-            acc = acc ? `${acc}/${part}` : part;
-            if (isIgnoredByRules(rules, part)) {
-              matched = acc;
-              break;
-            }
-          }
-          if (!matched) {
-            sendJson(res, 200, { ok: false, message: `未找到忽略 ${rel} 的规则（可能来自 .git/info/exclude 或全局配置，请手动处理）` });
-            return true;
-          }
-          // 匹配段是祖先（非最后一段）→ 必为目录；是路径自身 → 按磁盘类型判断
-          const isLast = matched === rel;
-          let isDir = !isLast;
-          if (isLast) {
+          // git：check-ignore -v 定位命中来源（.gitignore / 全局 excludesFile / .git/info/exclude），
+          // 否定规则追加到**同档文件**——跨档优先级 exclude > global > .gitignore，写错档会不生效
+          const probe = await run('git', ['check-ignore', '-v', '--', rel], { cwd: repo.root, timeoutMs: 15_000 });
+          const srcLine = probe.code === 0 && probe.stdout.trim() ? probe.stdout.split('\n')[0] : '';
+          // source 输出为相对仓库根的路径（如 .git/info/exclude）——必须相对 repo.root 解析：
+          // 用 process.cwd() 解析会错位到启动目录（打开子项目仓库时写入错误位置，曾污染父仓库）
+          const srcFile = srcLine ? path.resolve(repo.root, srcLine.split(':')[0] ?? '') : null;
+          if (srcLine && srcFile) {
+            // 命中：在来源档追加 !<路径>（目录带 / 与反序列化交给 git 判定：直接追加路径本身）
+            const isLast = parts.length >= 2 || (srcLine === srcLine && rel.includes('/') === false);
+            let isDir = false;
             try {
-              isDir = fs.statSync(path.join(repo.root, matched)).isDirectory();
+              isDir = fs.statSync(path.join(repo.root, rel)).isDirectory();
             } catch {
               isDir = false;
             }
-          }
-          const neg = isDir ? `!${matched}/` : `!${matched}`;
-          try {
-            let content = '';
-            if (fs.existsSync(g)) content = fs.readFileSync(g, 'utf8');
-            if (!content.endsWith('\n') && content) content += '\n';
-            fs.writeFileSync(g, content + neg + '\n');
-          } catch (err) {
-            sendJson(res, 200, { ok: false, message: `写入 .gitignore 失败: ${(err as Error).message}` });
+            appendIgnoreLine(srcFile, isDir ? `!${rel}/` : `!${rel}`);
+            invalidateStatusCache(repo.root);
+            const where = srcFile === path.join(repo.root, '.gitignore')
+              ? GIT_IGNORE_WHERE.gitignore
+              : String(srcFile).includes('info') && String(srcFile).includes('exclude')
+                ? GIT_IGNORE_WHERE.exclude
+                : GIT_IGNORE_WHERE.global;
+            sendJson(res, 200, { ok: true, message: `已取消忽略: ${rel}（追加否定到 ${where}）` });
             return true;
           }
-          invalidateStatusCache(repo.root);
-          sendJson(res, 200, { ok: true, message: `已取消忽略: ${neg}（${isDir ? '目录下文件将按剩余规则重新判定' : rel + ' 变为未版本化'}）` });
+          sendJson(res, 200, { ok: false, message: `未找到忽略 ${rel} 的规则（该文件当前未被任何档忽略）` });
           return true;
         }
         // svn：逐级（根→自身）找承载匹配规则的目录，删除该条规则（svn:ignore 不支持否定语法）
@@ -398,11 +442,32 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         // 忽略后 ? → I，状态码变化，缓存失效由 runVcs 统一
-        return runVcs(ctx, () =>
-          repo.type === 'git'
-            ? vcs.ignoreAdd?.(pattern)
-            : vcs.propSetIgnore?.(pathRel, pattern)
-        );
+        if (repo.type === 'git') {
+          // git：三向写入（.gitignore / 全局 excludesFile / .git/info/exclude）；target 缺省 .gitignore
+          const target = String(body.target ?? 'gitignore') as GitIgnoreTarget;
+          if (target !== 'gitignore' && target !== 'global' && target !== 'exclude') {
+            sendJson(res, 400, { error: '未知忽略去向' });
+            return true;
+          }
+          const files = await gitIgnoreFiles(repo.root, target === 'global'); // global 写入时先确保配置
+          const hit = files.find((f) => f.where === target);
+          if (!hit) {
+            sendJson(res, 400, { error: '全局忽略未配置，请先点击「加入忽略 → 全局」重新尝试（将自动配置 core.excludesFile）' });
+            return true;
+          }
+          // 清除所有档位的取反行（!pattern）后写入：保证 git 当前判定确实忽略（跨档取反会覆盖目标档）
+          for (const f of files) removeNegationLine(f.file, pattern);
+          if (appendIgnoreLine(hit.file, pattern)) {
+            invalidateStatusCache(repo.root);
+            sendJson(res, 200, { ok: true, message: `已加入忽略: ${pattern}（${GIT_IGNORE_WHERE[target]}）` });
+          } else {
+            // 正规则已存在：由于取反行已清，忽略已生效——提示"已恢复"而非"未写入"
+            invalidateStatusCache(repo.root);
+            sendJson(res, 200, { ok: true, message: `规则已存在,已恢复忽略生效: ${pattern}（${GIT_IGNORE_WHERE[target]}）` });
+          }
+          return true;
+        }
+        return runVcs(ctx, () => vcs.propSetIgnore?.(pathRel, pattern));
       }
 
   return false;
