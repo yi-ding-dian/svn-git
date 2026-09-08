@@ -24,7 +24,10 @@ export interface RepoInfo {
   startRel?: string;
   /** 用户 home 目录（打开项目默认浏览位置） */
   home?: string;
+  /** 应用版本（package.json，构建信息） */
   version?: string;
+  /** 构建日期（dist/build-info.json，构建脚本写入） */
+  buildDate?: string;
 }
 
 export interface FileStatus {

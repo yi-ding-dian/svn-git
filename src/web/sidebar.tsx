@@ -103,9 +103,6 @@ export function Sidebar(props: {
           </div>
         </>
       )}
-      <div className="small dim" style={{ padding: '14px 20px 10px', borderTop: '1px solid var(--border)', marginTop: 8 }}>
-        v{props.version ?? '1.0.0'}
-      </div>
     </div>
   );
 }

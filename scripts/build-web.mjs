@@ -62,3 +62,12 @@ if (!WATCH) {
   copyStatic();
   console.log('👀 前端热构建模式运行中（改代码自动重建，浏览器自动刷新）…');
 }
+
+/** 构建信息（版本 + 构建日期）：供「关于」弹窗展示（server /api/info 读取 dist/build-info.json） */
+function writeBuildInfo() {
+  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const info = { version: pkg.version, buildDate: new Date().toISOString().slice(0, 10) };
+  fs.writeFileSync('dist/build-info.json', JSON.stringify(info, null, 2) + '\n');
+  console.log(`🕒 构建信息: v${info.version} · ${info.buildDate}`);
+}
+writeBuildInfo();

@@ -119,15 +119,32 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
       if (p === '/api/info') {
+        // 版本与构建日期：构建脚本写入 dist/build-info.json（每次 npm run build 更新）
+        // package.json 相对 misc 编译产物有 1-2 层（dist 或 dist/routes），逐个候选路径尝试
         let version = '';
-        try {
-          version = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname ?? '.', '../package.json'), 'utf8')).version ?? '';
-        } catch {
-          /* ignore */
+        let buildDate = '';
+        {
+          const base = import.meta.dirname ?? '.';
+          for (const rel of ['../package.json', '../../package.json']) {
+            try {
+              version = JSON.parse(fs.readFileSync(path.resolve(base, rel), 'utf8')).version ?? '';
+              break;
+            } catch {
+              /* 尝试下一个候选 */
+            }
+          }
+          for (const rel of ['../build-info.json', '../../build-info.json']) {
+            try {
+              buildDate = JSON.parse(fs.readFileSync(path.resolve(base, rel), 'utf8')).buildDate ?? '';
+              break;
+            } catch {
+              /* 尝试下一个候选 */
+            }
+          }
         }
         const repo = repoInfo();
         if (!repo) {
-          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version });
+          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version, buildDate });
           return true;
         }
         const { vcs } = vcsOf();
@@ -156,6 +173,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           startRel: currentScopes.get(repo.root) ?? '',
           home: os.homedir(),
           version,
+          buildDate,
         });
         return true;
       }
