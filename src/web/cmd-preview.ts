@@ -19,7 +19,7 @@ export const CMDS: Record<string, string> = {
   g_add: 'git add %paths%',
   g_status: 'git status',
   g_commit: 'git commit -m "%msg%"',
-  g_update: 'git pull',
+  g_update: 'git pull（整个仓库）',
   g_push: 'git push',
   g_revert: 'git checkout HEAD -- %paths%',
   g_delete: 'git rm -r %paths%',

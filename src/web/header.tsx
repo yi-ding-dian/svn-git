@@ -202,7 +202,7 @@ const TOOLS: ToolDef[] = [
   {
     key: 'pull', zone: 'toolbar', visible: (c) => c.repoType === 'git',
     render: (c) => ({
-      icon: <IconRefresh />,
+      icon: <IconDownload />,
       label: '拉取',
       title: '拉取远程更新（可取消）',
       cmd: 'git pull',
@@ -212,7 +212,7 @@ const TOOLS: ToolDef[] = [
   {
     key: 'update', zone: 'toolbar', visible: (c) => c.repoType === 'svn',
     render: (c) => ({
-      icon: <IconRefresh />,
+      icon: <IconDownload />,
       label: '更新',
       title: '更新工作副本（svn update，可取消）',
       cmd: 'svn update',

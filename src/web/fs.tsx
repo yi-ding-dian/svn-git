@@ -1,7 +1,7 @@
 /** 文件夹浏览视图：列表/树/浏览(网格)三模式，支持键盘导航（↑↓ 选择、→/Enter 进入、← 返回） */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterTreeNode } from './api.js';
-import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon } from './icons.js';
+import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconDownload, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon } from './icons.js';
 import { CodeBadge, DirBadge } from './badges.js';
 import { ContextMenu, type CtxMenuItem } from './context-menu.js';
 import { flashBreadcrumbs } from './motion.js';
@@ -1016,7 +1016,7 @@ export function FsView(props: Props) {
     ctxRelRef.current = null; // 空白右键：任何条目都不算"原条目"，鼠标离开即关
     setCtxLocked(false); // 空白右键不锁定任何条目（防止前一次右键的锁定残留）
     const items: CtxItem[] = [
-      { icon: <IconRefresh />, label: '更新当前目录', cmd: cmdOfRepo(props.repoType, 'update', { path: data?.dir ?? '' }), action: () => props.onUpdateDir(data?.dir ?? '') },
+      { icon: <IconDownload />, label: props.repoType === 'git' ? '更新仓库' : '更新当前目录', cmd: cmdOfRepo(props.repoType, 'update', { path: data?.dir ?? '' }), action: () => props.onUpdateDir(data?.dir ?? '') },
       { icon: <IconUpload />, label: '提交修改的文件…', cmd: cmdOfRepo(props.repoType, 'commit', { msg: '…' }), action: () => props.onCommitSelect(data?.dir ?? '', data?.dir ?? '') },
       { icon: <IconHistory />, label: '查看历史记录', cmd: cmdOfRepo(props.repoType, 'view_history', { path: data?.dir ?? '.' }), action: () => props.onLog(data?.dir ?? '') },
       {
@@ -1132,7 +1132,7 @@ export function FsView(props: Props) {
         }
       } else if (t.code !== '?') {
         // 版本化目录：更新/提交/还原/历史/忽略设置/删除（无 diff）
-        items.push({ icon: <IconRefresh />, label: '更新此目录', cmd: cmdOfRepo(props.repoType, 'update', { path: t.rel }), action: () => props.onUpdateDir(t.rel) });
+        items.push({ icon: <IconDownload />, label: props.repoType === 'git' ? '更新仓库' : '更新此目录', cmd: cmdOfRepo(props.repoType, 'update', { path: t.rel }), action: () => props.onUpdateDir(t.rel) });
         if (t.code) {
           items.push({ icon: <IconUpload />, label: '提交此目录修改…', cmd: cmdOfRepo(props.repoType, 'commit', { msg: '…' }), action: () => props.onCommitSelect(t.rel, t.rel) });
           items.push({ sep: true });
