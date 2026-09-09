@@ -390,7 +390,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .search-drop {
   position: absolute; top: 100%; left: 0; z-index: 120;
   background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 8px 30px rgba(0,0,0,.25); min-width: 260px; max-width: 420px; margin-top: 4px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.25); min-width: 260px; margin-top: 4px;
+  overflow-y: auto; /* 展开全部时超高的部分面板内滚动 */
+  /* 最大宽度/高度由前端按视口动态计算（延伸至右缘/下缘才截断 …） */
 }
 .search-item {
   display: flex; gap: 8px; padding: 6px 10px; cursor: pointer; align-items: center;

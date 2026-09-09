@@ -173,6 +173,8 @@ export function FsView(props: Props) {
   // 浏览模式拖拽框选：拖拽起点 / 框选矩形（ref 直接操作 DOM，避免 mousemove 高频 re-render 卡顿） / 本次是否发生过拖动（供 click 判断，避免空白点击清空误伤框选结果）
   const selBoxRef = useRef<HTMLDivElement | null>(null);
   const selDragRef = useRef<{ startX: number; startY: number } | null>(null);
+  // 搜索框容器：搜索下拉面板宽度按「容器左缘 → 屏幕右缘」计算（路径可延伸到最右侧才截断 …）
+  const searchWrapRef = useRef<HTMLSpanElement | null>(null);
   // 框选 mouseup 丢失兜底（松手移出窗口/松开在菜单遮罩上等）：任何 position 清除拖拽状态并隐藏矩形，
   // 避免"没按左键移动鼠标也画出框选"；grid 内正常松开由 grid 的 onMouseUp 先行处理，此兜底无副作用
   useEffect(() => {
@@ -204,6 +206,8 @@ export function FsView(props: Props) {
   const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[] } | null>(null);
   // 文件搜索（工具栏）
   const [fileQuery, setFileQuery] = useState('');
+  // 搜索下拉展开全部（第 11 行「…」点击后全量列出；超过屏幕高度部分滚动）
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -1530,7 +1534,7 @@ export function FsView(props: Props) {
             <IconUp /> 上级
           </button>
           <span className="row" style={{ position: 'relative' }}>
-            <span style={{ position: 'relative' }}>
+            <span style={{ position: 'relative' }} ref={searchWrapRef}>
               <input
                 type="text"
                 placeholder="🔍 搜索文件…"
@@ -1538,6 +1542,7 @@ export function FsView(props: Props) {
                 onChange={(e) => {
                   setFileQuery(e.target.value);
                   setActiveIdx(0);
+                  setSearchExpanded(false);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowDown') {
@@ -1553,6 +1558,7 @@ export function FsView(props: Props) {
                     }
                   } else if (e.key === 'Escape') {
                     setFileQuery('');
+                    setSearchExpanded(false);
                     setShowResults(false);
                   }
                 }}
@@ -1573,9 +1579,16 @@ export function FsView(props: Props) {
               )}
             </span>
             {showResults && fileQuery.trim() && (
-              <div className="search-drop">
+              <div
+                className="search-drop"
+                style={{
+                  maxWidth: Math.max(260, window.innerWidth - (searchWrapRef.current?.getBoundingClientRect().left ?? 0) - 12),
+                  // 最长到屏幕最下方，超出部分在面板内滚动（不越出视口）
+                  maxHeight: Math.max(120, window.innerHeight - (searchWrapRef.current?.getBoundingClientRect().bottom ?? 0) - 10),
+                }}
+              >
                 {searchResults.length === 0 && <div className="dim" style={{ padding: '6px 10px' }}>无匹配文件</div>}
-                {searchResults.slice(0, 10).map((p, i) => (
+                {(searchExpanded ? searchResults : searchResults.slice(0, 10)).map((p, i) => (
                   <div
                     key={p}
                     className={`search-item ${i === activeIdx ? 'active' : ''}`}
@@ -1588,7 +1601,18 @@ export function FsView(props: Props) {
                     <span className="search-path" title={p}>{p}</span>
                   </div>
                 ))}
-                {searchResults.length > 10 && <div className="dim" style={{ padding: '4px 10px' }}>…共 {searchResults.length} 个匹配</div>}
+                {searchResults.length > 10 && (
+                  <div
+                    className="search-item"
+                    style={{ justifyContent: 'center' }}
+                    title={searchExpanded ? '收起列表' : '点击展开全部匹配'}
+                    onClick={() => setSearchExpanded(!searchExpanded)}
+                  >
+                    <span className="dim">
+                      {searchExpanded ? `收起 ▲（共 ${searchResults.length} 项）` : `… 共 ${searchResults.length} 个匹配（点击展开全部）`}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </span>
