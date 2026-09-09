@@ -185,6 +185,49 @@ try {
       nc.code === 200 && nc.body.ok === true && nc.body.reason === '网络正常',
       `ok=${nc.body.ok} reason=${nc.body.reason}`
     );
+    // svn 缺失条目（磁盘删除已跟踪文件/目录 → status '!' missing）→ /api/fs miss 行 + revert 恢复
+    {
+      const svnDel = path.join(SVN_DIR, 'readme.md');
+      if (fs.existsSync(svnDel)) fs.rmSync(svnDel, { force: true });
+      const fsSvn = await get('/api/fs?dir=&force=1');
+      const svnEntry = fsSvn.body.entries?.find((e) => e.name === 'readme.md');
+      check(
+        'svn 缺失文件显示 ! + miss 标记',
+        fsSvn.code === 200 && svnEntry?.code === '!' && svnEntry?.miss === true && svnEntry?.isDir === false,
+        `entry=${JSON.stringify(svnEntry)}`,
+      );
+      const svnRev = await post('/api/revert', { paths: ['readme.md'] });
+      check('svn 缺失文件还原成功（svn revert 拉回）', svnRev.code === 200 && svnRev.body.ok === true, `msg=${svnRev.body.message}`);
+      check('svn 还原后文件回到磁盘', fs.existsSync(svnDel));
+      const fsSvn2 = await get('/api/fs?dir=');
+      const svnEntry2 = fsSvn2.body.entries?.find((e) => e.name === 'readme.md');
+      check('svn 还原后 miss 行消失（回到干净）', fsSvn2.code === 200 && !svnEntry2?.miss, `entry=${JSON.stringify(svnEntry2)}`);
+      // 缺失文件"从版本库删除"（有意删除未走移除流程）：svn delete --keep-local → 显示 D 调度行 → revert 可恢复
+      if (fs.existsSync(svnDel)) fs.rmSync(svnDel, { force: true });
+      const delSvn = await post('/api/delete', { paths: ['readme.md'] });
+      check('svn 缺失文件从版本库删除成功', delSvn.code === 200 && delSvn.body.ok === true, `msg=${delSvn.body.message}`);
+      const fsSvnD = await get('/api/fs?dir=&force=1');
+      const svnD = fsSvnD.body.entries?.find((e) => e.name === 'readme.md');
+      check('svn 删除后显示 D 调度行（非 miss）', fsSvnD.code === 200 && svnD?.code === 'D' && !svnD?.miss, `entry=${JSON.stringify(svnD)}`);
+      const svnRevD = await post('/api/revert', { paths: ['readme.md'] });
+      check('svn 从版本库删除后可再还原', svnRevD.code === 200 && svnRevD.body.ok === true && fs.existsSync(svnDel), `msg=${svnRevD.body.message}`);
+      // 缺失目录（kind=dir '!'）：目录整棵磁盘删除 → revert 走 --depth infinity（isDir 判定用状态 kind 兜底）
+      const svnDir = path.join(SVN_DIR, 'src');
+      if (fs.existsSync(svnDir)) fs.rmSync(svnDir, { recursive: true, force: true });
+      const fsSvnDir = await get('/api/fs?dir=&force=1');
+      const svnDirEntry = fsSvnDir.body.entries?.find((e) => e.name === 'src');
+      check(
+        'svn 缺失目录显示 ! miss（isDir=true）',
+        fsSvnDir.code === 200 && svnDirEntry?.code === '!' && svnDirEntry?.miss === true && svnDirEntry?.isDir === true,
+        `entry=${JSON.stringify(svnDirEntry)}`,
+      );
+      const svnDirRev = await post('/api/revert', { paths: ['src'] });
+      check('svn 缺失目录还原成功（--depth infinity）', svnDirRev.code === 200 && svnDirRev.body.ok === true, `msg=${svnDirRev.body.message}`);
+      check('svn 目录还原后回到磁盘', fs.existsSync(svnDir));
+      const fsSvnDir2 = await get('/api/fs?dir=');
+      const svnDirEntry2 = fsSvnDir2.body.entries?.find((e) => e.name === 'src');
+      check('svn 缺失目录还原后 miss 行消失', fsSvnDir2.code === 200 && !svnDirEntry2?.miss, `entry=${JSON.stringify(svnDirEntry2)}`);
+    }
   } else {
     console.log('⚠️ 跳过 SVN net-check 断言（svn-wc 不存在,先跑 vcs-test 生成）');
   }
@@ -312,6 +355,37 @@ src/
     );
     fs.rmSync(path.join(GIT_DIR, 'cfg-dir'), { recursive: true, force: true });
     fs.writeFileSync(gif, giBackup);
+  }
+
+  // ---------- 11. 磁盘缺失条目（git " D" → '!'）：/api/fs 合并 miss 行 + revert 拉回 ----------
+  {
+    const delFile = path.join(GIT_DIR, 'del.txt');
+    if (fs.existsSync(delFile)) fs.rmSync(delFile, { force: true });
+    const fsRoot = await get('/api/fs?dir=&force=1');
+    const entry = fsRoot.body.entries?.find((e) => e.name === 'del.txt');
+    check(
+      'git 缺失文件显示 ! + miss 标记',
+      fsRoot.code === 200 && entry?.code === '!' && entry?.miss === true,
+      `entry=${JSON.stringify(entry)}`,
+    );
+    const rev = await post('/api/revert', { paths: ['del.txt'] });
+    check('git 缺失文件还原成功（checkout 拉回）', rev.code === 200 && rev.body.ok === true, `msg=${rev.body.message}`);
+    check('git 还原后文件回到磁盘', fs.existsSync(delFile));
+    const fsRoot2 = await get('/api/fs?dir=');
+    const entry2 = fsRoot2.body.entries?.find((e) => e.name === 'del.txt');
+    check('git 还原后 miss 行消失（回到干净）', fsRoot2.code === 200 && !entry2?.miss && (entry2?.code ?? '') === '', `entry=${JSON.stringify(entry2)}`);
+    // 缺失文件"从版本库删除"（有意删除未走移除流程）：git rm --cached 只清索引、不碰磁盘 → 行消失
+    if (fs.existsSync(delFile)) fs.rmSync(delFile, { force: true });
+    const del2 = await post('/api/delete', { paths: ['del.txt'] });
+    check('git 缺失文件从版本库删除成功', del2.code === 200 && del2.body.ok === true, `msg=${del2.body.message}`);
+    const fsRootD = await get('/api/fs?dir=');
+    const entryD = fsRootD.body.entries?.find((e) => e.name === 'del.txt');
+    check('git 删除后缺失行消失（版本库记录已清）', fsRootD.code === 200 && (entryD === undefined || !entryD?.miss), `entry=${JSON.stringify(entryD)}`);
+    // 删除后仍可改主意：HEAD 还在，还原可拉回文件
+    const rev2 = await post('/api/revert', { paths: ['del.txt'] });
+    check('git 从版本库删除后可再还原（HEAD 仍在）', rev2.code === 200 && rev2.body.ok === true && fs.existsSync(delFile), `msg=${rev2.body.message}`);
+    const fsRoot3 = await get('/api/fs?dir=');
+    check('git 再还原后干净', fsRoot3.code === 200 && (fsRoot3.body.entries?.find((e) => e.name === 'del.txt')?.code ?? '') === '', `entry=${JSON.stringify(fsRoot3.body.entries?.find((e) => e.name === 'del.txt'))}`);
   }
 } finally {
   // ---------- teardown：重置仓库,仅保留 api 测试文件之外的状态 ----------

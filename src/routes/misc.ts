@@ -517,7 +517,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         const items = (await getStatusCached(repo, force)) as { path: string; code: string; isDir: boolean }[];
-        const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; count?: number; codes?: string[]; unversionedCount?: number }[] = [];
+        const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; count?: number; codes?: string[]; unversionedCount?: number; miss?: boolean }[] = [];
         // 目录多状态徽标显示顺序：修改 / 添加 / 删除 / 冲突 / 替换 / 缺失 / 更新 / 类型变更
         const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
         let names: string[];
@@ -738,14 +738,19 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             code,
           });
         }
-        // 合并 status 中磁盘已删除(D/R)的条目：磁盘不存在但版本库有删除记录 → 显示删除标识
+        // 合并 status 中磁盘已删除的条目：磁盘不存在但版本库有记录 → 显示缺失/删除标识（虚拟行）
+        // code '!'（svn 缺失 / git " D" 磁盘删除）与 'D' 都是磁盘没有、版本库还在：
+        // '!' 渲染为虚化缺失条目（miss 标记，悬浮"已在磁盘上缺失"、右键可还原）；
+        // D（用户主动删除调度）与 R（重命名旧路径）保持原有删除标识，不标 miss（不是"意外缺失"）
+        // git 的 R（重命名）旧路径同样磁盘不存在：一并合并（现状保留）
         for (const it of items) {
-          if (it.isDir || it.path === rel || !it.path.startsWith(prefix)) continue;
+          if (it.path === rel || !it.path.startsWith(prefix)) continue;
           const name = it.path.slice(prefix.length);
           if (!name || name.includes('/')) continue; // 只处理当前目录直接子项
-          if (it.code !== 'D' && it.code !== 'R') continue;
-          if (fs.existsSync(path.join(abs, name))) continue; // 磁盘存在已由 files 处理
-          entries.push({ name, isDir: false, size: 0, mtime: '', code: it.code });
+          if (it.code !== 'D' && it.code !== 'R' && it.code !== '!') continue;
+          if (fs.existsSync(path.join(abs, name))) continue; // 磁盘存在已由 dirs/files 处理
+          // 目录缺失（svn kind=dir 的 '!'）：磁盘已不在，仍显示目录条目（进入拦截在渲染侧）
+          entries.push({ name, isDir: it.isDir, size: 0, mtime: '', code: it.code, miss: it.code === '!' });
         }
         // SVN：自己锁定的文件列表（显示锁图标）
         let selfLocked: string[] = [];

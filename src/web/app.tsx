@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo, type VcsResult, type LogEntry } from './api.js';
 import { HistoryView } from './history.js';
 import { DiffView, type DiffTarget } from './diff.js';
-import { FsView } from './fs.js';
+import { FsView } from './fileSystem/index.js';
 import { OpenView, OpenModal } from './open.js';
 import { CommitModal, LoginModal, ConfirmModal, CommitSelectModal, UpdateResultModal, EnvInstallModal, RevertModal, RenameModal, type Modal } from './modals.js';
 import { BranchDialog, TagDialog, StashDialog, CreateRepoDialog, GetRepoDialog, CleanDialog, GitInfoModal, GitPushAuthModal } from './vcs-dialogs.js';
@@ -591,13 +591,14 @@ export function App() {
           action: () => void runOp('fs-delete', paths),
         });
       } else if (op === 'delete') {
-        // 从版本库移除 = 仅标记删除、磁盘文件保留（提交后生效；提交前可还原）
+        // 从版本库移除 = 仅标记删除、磁盘文件不受影响（提交后生效；提交前可还原）
+        // 缺失条目（磁盘已删未走移除流程）同走此入口：保持缺失状态，仅从版本库删除记录
         setModal({
           type: 'confirm',
           title: '从版本库移除',
           message: (
             <div>
-              将<b>从版本库移除</b> {paths.length} 项（<b>磁盘文件保留</b>；提交后该文件标记为未版本化 ?）。
+              将<b>从版本库移除</b> {paths.length} 项（<b>磁盘文件不受影响</b>；提交后从版本库删除）。
               <div className="dim small" style={{ marginTop: 6, lineHeight: 1.8 }}>
                 · 提交前可右键「还原」取消移除；版本库历史保留
               </div>

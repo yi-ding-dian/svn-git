@@ -227,6 +227,9 @@ body {
 .tree-row .actions { display: none; gap: 4px; margin-left: auto; }
 .tree-row:hover .actions { display: flex; }
 .tree-row.selected { background: var(--panel2); outline: 1px solid var(--border); }
+/* 磁盘缺失条目（svn '!' / git " D"）：虚化渲染，提示已在磁盘上缺失 */
+.tree-row.miss { opacity: .6; }
+.tree-row.miss .name { font-style: italic; }
 
 .arrow { color: var(--dim); width: 14px; text-align: center; flex-shrink: 0; }
 .folder-ico { width: 14px; text-align: center; color: var(--accent); flex-shrink: 0; }
@@ -273,6 +276,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .grid-item:hover { background: var(--panel2); border-color: var(--accent); }
 .grid-item.selected { background: var(--panel2); border-color: var(--accent); }
+/* 磁盘缺失条目（svn '!' / git " D"）：虚化渲染，悬浮卡提示已在磁盘上缺失 */
+.grid-item.miss { opacity: .6; }
+.grid-item.miss .grid-name { font-style: italic; }
 /* 搜索匹配项：当前目录内框选高亮 */
 .search-hit { outline: 2px solid var(--accent) !important; outline-offset: -2px; }
 

@@ -31,6 +31,7 @@ export function statusColor(code?: string): string | undefined {
     case 'A': return 'var(--ok)';
     case 'D': return 'var(--err)';
     case 'C': return 'var(--err)';
+    case '!': return 'var(--err)'; // 磁盘缺失（svn ! / git " D"）
     case '?': return 'var(--dim)';
     default: return undefined;
   }

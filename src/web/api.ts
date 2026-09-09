@@ -92,6 +92,8 @@ export interface FsEntry {
   codes?: string[];
   /** 目录内部未版本化文件数量（'?' 不显示徽标，筛选"仅新文件"时用于提示新文件位置） */
   unversionedCount?: number;
+  /** 磁盘上已缺失（svn '!' / git " D"）：磁盘无文件、版本库仍在 → 虚化渲染，右键可还原 */
+  miss?: boolean;
 }
 
 export interface FsData {

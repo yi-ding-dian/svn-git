@@ -125,6 +125,14 @@ export class SvnVcs {
         });
       }
     }
+    // 缺失条目（svn status --xml 的 item="missing" 不输出 kind 属性，默认 'file' 会误解）：
+    // 目录整体从磁盘删除时，其子项同样以 missing 列出——存在"self/ 前缀"条目即为目录。
+    // 否则缺失目录会被当文件：revert 不带 --depth infinity（目录恢复但子项残留 missing）
+    for (const f of list) {
+      if (f.code === '!' && !f.isDir && list.some((x) => x.path.startsWith(f.path + '/'))) {
+        f.isDir = true;
+      }
+    }
     return list;
   }
 
@@ -349,7 +357,17 @@ export class SvnVcs {
     //（取消添加 A 目录的场景：目录自身调度也只在此路径下才会被撤销），文件直接 revert
     for (const p of relPaths) {
       const abs = path.join(this.repo.root, p);
-      const isDir = fs.existsSync(abs) && fs.statSync(abs).isDirectory();
+      // 磁盘不存在（缺失 '!' 目录）时 existsSync 判不出目录：用状态缓存 kind 兜底，
+      // 否则缺失目录会走不带 --depth infinity 的 revert（E155038 无法恢复目录子树）
+      let isDir = fs.existsSync(abs) && fs.statSync(abs).isDirectory();
+      if (!isDir) {
+        try {
+          const st = await this.status();
+          isDir = st.some((f) => f.path === p && f.isDir);
+        } catch {
+          /* 状态查询失败：按文件处理，常见缺失文件场景不受影响 */
+        }
+      }
       const res = await this.exec(isDir ? ['revert', '--depth', 'infinity', p] : ['revert', p]);
       if (res.code !== 0) {
         return { ok: false, message: res.stderr.trim() || 'svn revert 失败' };
