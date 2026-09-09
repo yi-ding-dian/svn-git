@@ -6,12 +6,23 @@ const WATCH = process.argv.includes('--watch');
 
 fs.mkdirSync('dist/web', { recursive: true });
 
+/** 构建版本戳（YYYYMMDD-HHmm 本地时间）：注入 index.html 静态引用 ?v=，每次构建变化 →
+ * 任何浏览器都无法命中旧缓存（配合服务端 Cache-Control: no-store 双保险） */
+const BUILD_TAG = (() => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+})();
+
 /** 复制静态文件 */
 function copyStatic() {
   fs.copyFileSync('src/web/index.html', 'dist/web/index.html');
   fs.copyFileSync('src/web/style.css', 'dist/web/style.css');
   fs.copyFileSync('build/icon.png', 'dist/web/icon.png');
   fs.copyFileSync('src/preload.cjs', 'dist/preload.cjs'); // Electron preload
+  // index.html 的 %BUILD_TAG% 占位符替换为最新构建戳（每次复制后立即处理）
+  const html = fs.readFileSync('dist/web/index.html', 'utf8').replaceAll('%BUILD_TAG%', BUILD_TAG);
+  fs.writeFileSync('dist/web/index.html', html);
 }
 copyStatic();
 

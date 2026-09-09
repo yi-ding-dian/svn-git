@@ -591,41 +591,21 @@ export function App() {
           action: () => void runOp('fs-delete', paths),
         });
       } else if (op === 'delete') {
+        // 从版本库移除 = 仅标记删除、磁盘文件保留（提交后生效；提交前可还原）
         setModal({
           type: 'confirm',
           title: '从版本库移除',
           message: (
-            <>
-              <div>
-                将<b>从版本库移除</b> {paths.length} 项（<b>磁盘文件保留</b>；提交后该文件标记为未版本化 ?）。
-              </div>
+            <div>
+              将<b>从版本库移除</b> {paths.length} 项（<b>磁盘文件保留</b>；提交后该文件标记为未版本化 ?）。
               <div className="dim small" style={{ marginTop: 6, lineHeight: 1.8 }}>
                 · 提交前可右键「还原」取消移除；版本库历史保留
-                <br />· 若确实要把<b>磁盘文件也删除</b>（不复存在），请点下方红色「磁盘文件也删除」
               </div>
-            </>
+            </div>
           ),
           confirmLabel: '从版本库移除',
           action: () => void runOp('delete', paths, true),
           confirmCmd: cmdOfRepo(repo?.type ?? null, 'remove_keep', { paths: paths.join(' ') }),
-          secondaryLabel: '磁盘文件也删除',
-          secondaryDanger: true,
-          secondaryAction: () =>
-            setModal({
-              type: 'confirm',
-              title: '⚠ 确认删除磁盘文件',
-              danger: true,
-              message: (
-                <>
-                  <div>将<b>删除磁盘上的 {paths.length} 项文件</b>，并标记从版本库删除。文件不可恢复！</div>
-                  <div className="dim small" style={{ marginTop: 6 }}>确认需要一并删除磁盘文件？</div>
-                </>
-              ),
-              confirmLabel: '删除磁盘文件',
-              action: () => void runOp('delete', paths),
-              confirmCmd: cmdOfRepo(repo?.type ?? null, 'delete', { paths: paths.join(' ') }),
-            }),
-          secondaryCmd: cmdOfRepo(repo?.type ?? null, 'delete', { paths: paths.join(' ') }),
         });
       } else if (op === 'move' || op === 'fs-move') {
         // 重命名：输入新名字弹窗（versions 文件 → vcs move；?/I → 磁盘改名）
@@ -634,7 +614,7 @@ export function App() {
         void runOp(op, paths);
       }
     },
-    [runOp, gotoDiff, doPush]
+    [runOp, gotoDiff, doPush, repo]
   );
 
   // 更新当前目录（右键菜单）：立即弹"正在更新"窗口（转圈可取消），完成后显示结果
@@ -1358,6 +1338,8 @@ export function App() {
           danger={modal.danger}
           confirmLabel={modal.confirmLabel}
           secondaryLabel={modal.secondaryLabel}
+          confirmCmd={modal.confirmCmd}
+          secondaryCmd={modal.secondaryCmd}
           width={modal.width}
           onConfirm={() => {
             const a = modal.action;

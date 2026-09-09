@@ -695,7 +695,7 @@ export function ConfirmModal(props: {
   danger?: boolean;
   confirmLabel?: string;
   secondaryLabel?: string;
-  /** 副按钮是否红色（危险选项，如「磁盘文件也删除」） */
+  /** 副按钮是否红色（危险选项） */
   secondaryDanger?: boolean;
   /** 隐藏「取消」按钮：仅"知道了"一种回应（信息型通知） */
   hideCancel?: boolean;

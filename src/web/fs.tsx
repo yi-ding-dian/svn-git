@@ -81,7 +81,7 @@ interface Props {
   repoRoot?: string | null;
   /** 操作范围(相对仓库根):大仓库打开的子项目,浏览从这里开始 */
   startRel?: string | null;
-  onAction: (op: 'add' | 'revert' | 'delete' | 'commit' | 'fs-delete' | 'move' | 'fs-move', paths: string[]) => void;
+  onAction: (op: 'add' | 'revert' | 'delete' | 'commit' | 'fs-delete' | 'move' | 'fs-move', paths: string[], keep?: boolean) => void;
   onDiff: (path: string) => void;
   onLog: (path: string) => void;
   onCommitSelect: (dir: string, dirLabel: string) => void;
@@ -706,7 +706,7 @@ export function FsView(props: Props) {
   );
 
   type FsOp = 'add' | 'commit' | 'revert' | 'delete';
-  const onAction = (op: FsOp, rel: string) => props.onAction(op, [rel]);
+  const onAction = (op: FsOp, rel: string, keep?: boolean) => props.onAction(op, [rel], keep);
 
   // 关闭右键菜单（同时解锁右键选中锁定，并清空"原右键条目"记录，避免残留误判）
   const closeCtx = () => {
@@ -1094,7 +1094,7 @@ export function FsView(props: Props) {
         items.push({ icon: <IconRevert />, label: rv.label, title: rv.title, cmd: cmdOfRepo(props.repoType, 'revert', { paths: joinPaths(tMod.map((x) => x.rel)) }), action: () => props.onAction('revert', tMod.map((x) => x.rel)) });
       }
       if (tVer.length) {
-        items.push({ icon: <IconClean />, label: `从版本库移除（${tVer.length} 项）`, cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: joinPaths(tVer.map((x) => x.rel)) }), action: () => props.onAction('delete', tVer.map((x) => x.rel)) });
+        items.push({ icon: <IconClean />, label: `从版本库移除（${tVer.length} 项）`, cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: joinPaths(tVer.map((x) => x.rel)) }), action: () => props.onAction('delete', tVer.map((x) => x.rel), true) });
       }
       if (tFsDel.length) {
         items.push({
@@ -1153,7 +1153,7 @@ export function FsView(props: Props) {
         // 有版本库内容且非调度中（非 '!' 缺失；A 添加/D 删除调度不显示——各自有"取消添加/恢复删除"）
         if (removableFromRepo(t.code)) {
           items.push({ sep: true });
-          items.push({ icon: <IconClean />, label: '从版本库移除', cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: t.rel }), action: () => props.onAction('delete', [t.rel]) });
+          items.push({ icon: <IconClean />, label: '从版本库移除', cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: t.rel }), action: () => props.onAction('delete', [t.rel], true) });
         }
       } else {
         // 未版本化目录：只能添加/忽略/磁盘删除（无历史/无 diff/无忽略设置——不在版本管理里）
@@ -1217,7 +1217,7 @@ export function FsView(props: Props) {
           // 有版本库内容且非调度中（非 '!' 缺失；A 添加/D 删除调度不显示——各自有"取消添加/恢复删除"）
           if (removableFromRepo(t.code)) {
             items.push({ sep: true });
-            items.push({ icon: <IconClean />, label: '从版本库移除', cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: t.rel }), action: () => props.onAction('delete', [t.rel]) });
+            items.push({ icon: <IconClean />, label: '从版本库移除', cmd: cmdOfRepo(props.repoType, 'remove_keep', { paths: t.rel }), action: () => props.onAction('delete', [t.rel], true) });
           }
         }
         items.push({ sep: true });
@@ -1433,7 +1433,7 @@ export function FsView(props: Props) {
       {(e.code === 'M' || e.code === 'A' || e.code === 'D' || e.code === 'R') && (
         <>
           <ActionBtn icon={<IconRevert />} label="还原" cmd={cmdOfRepo(props.repoType, 'revert', { paths: e.rel })} onClick={() => onAction('revert', e.rel)} />
-          <ActionBtn icon={<IconClean />} label="从版本库移除" cmd={cmdOfRepo(props.repoType, 'remove_keep', { paths: e.rel })} onClick={() => onAction('delete', e.rel)} />
+          <ActionBtn icon={<IconClean />} label="从版本库移除" cmd={cmdOfRepo(props.repoType, 'remove_keep', { paths: e.rel })} onClick={() => onAction('delete', e.rel, true)} />
         </>
       )}
       {!e.isDir && e.code !== '?' && props.repoType === 'svn' && (
@@ -1894,7 +1894,7 @@ export function FsView(props: Props) {
                 {(sel.code === 'M' || sel.code === 'A' || sel.code === 'D') && (
                   <>
                     <button className="mini" onClick={() => onAction('revert', relOf(sel))}>还原</button>
-                    <button className="mini" onClick={() => onAction('delete', relOf(sel))}>从版本库移除</button>
+                    <button className="mini" onClick={() => onAction('delete', relOf(sel), true)}>从版本库移除</button>
                   </>
                 )}
                 <button className="mini" onClick={() => props.onLog(relOf(sel))}>历史记录</button>

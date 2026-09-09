@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { detectRepo } from '../vcs/detect.js';
 import { platform } from '../platform/index.js';
-import { isIgnoredByRules, getSvnIgnoreMap, gitIgnoreSources } from '../vcs/ignore.js';
+import { isIgnoredByRules, gitIgnoreSources } from '../vcs/ignore.js';
 import { BINARY_EXTS } from '../shared/types.js';
 import { run } from '../vcs/exec.js';
 import {
@@ -543,20 +543,62 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
         }
         const dirSelf = unversionedAncestor || items.find((i) => i.path === rel && i.code === '?');
+        // 祖先目录删除调度（svn delete 目录 → 整树调度删除，status 只列目录行不递归列出内部）：
+        // 内部所有条目统一显示 D（随目录从版本库移除），避免外层 D 内层 √ 的误导
+        let deletedAncestor = false;
+        {
+          const parts = rel.split('/');
+          let acc = '';
+          for (const p of parts) {
+            acc = acc ? `${acc}/${p}` : p;
+            const anc = items.find((i) => i.path === acc);
+            if (anc && anc.code === 'D') {
+              deletedAncestor = true;
+              break;
+            }
+          }
+        }
 
-        // 忽略规则检测：status 无条目的磁盘文件/目录，若被 git 忽略规则匹配则标记 'I'
-        // （与 ops.ts 写入侧同源：.gitignore / global(excludesFile) / .git/info/exclude 三来源都算）
+        // 忽略规则检测：status 无条目的磁盘文件/目录，若被忽略规则匹配则标记 'I'
+        // （git：.gitignore / global(excludesFile) / .git/info/exclude 三来源；svn：status 权威判定）
         let gitIgnoreRulesAll: string[] | null = null;
         const getIgnoreRules = async (dirRel: string): Promise<string[]> => {
-          if (repo.type === 'git') {
-            if (!gitIgnoreRulesAll) {
-              gitIgnoreRulesAll = (await gitIgnoreSources(repo.root)).flatMap((s) => s.rules);
-            }
-            return gitIgnoreRulesAll;
+          if (!gitIgnoreRulesAll) {
+            gitIgnoreRulesAll = (await gitIgnoreSources(repo.root)).flatMap((s) => s.rules);
           }
-          // svn:ignore：一次 `-R` 全量拉取缓存后，所有目录直接查内存 Map（不再逐目录跑 svn 进程）
-          const map = await getSvnIgnoreMap(repo.root);
-          return map.get(dirRel) ?? [];
+          return gitIgnoreRulesAll;
+        };
+        // svn 忽略族：`svn status --no-ignore` 单次全量取 ignored 路径集合（规则来源一律权威：
+        // svn:ignore 属性 / 客户端 global-ignores / 服务器端——注意 svn status --xml 默认不含
+        // ignored 条目，必须用 plain 文本解析；被忽略目录整体标 I，其内部条目由祖先链判定）
+        let svnIgnored: Set<string> | null = null;
+        const getSvnIgnored = async (): Promise<Set<string>> => {
+          if (!svnIgnored) {
+            svnIgnored = new Set();
+            try {
+              const r = await run('svn', ['status', '--no-ignore'], { cwd: repo.root, timeoutMs: 120_000 });
+              if (r.code === 0) {
+                for (const line of r.stdout.split('\n')) {
+                  // 首列 I = ignored；! 列（missing）非忽略，排除；路径可能与列粘连（非 8 列对齐的版本），用正则取尾段
+                  if (line.startsWith('I')) {
+                    const m = line.match(/^I\s+(\S.*)$/);
+                    if (m) svnIgnored.add(m[1]!.trim());
+                  }
+                }
+              }
+            } catch {
+              /* 收集失败：不误标 I */
+            }
+          }
+          return svnIgnored;
+        };
+        /** 当前仓库忽略判定：svn 用 status 集合（权威）；git 用三来源规则 */
+        const isIgnoredEntry = async (dirRel: string, name: string): Promise<boolean> => {
+          if (repo.type === 'svn') {
+            return (await getSvnIgnored()).has((dirRel === '' || dirRel === '.' ? '' : dirRel + '/') + name);
+          }
+          const rules = await getIgnoreRules(dirRel);
+          return rules.length > 0 && isIgnoredByRules(rules, name);
         };
         // 祖先链上有被忽略目录（如 .gitignore 的 node_modules/）→ 内部所有内容都算忽略（I）
         // （被忽略目录不在 status 条目里，需逐级用忽略规则匹配祖先目录名）
@@ -568,8 +610,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             const part = parts[i]!;
             acc = acc ? `${acc}/${part}` : part;
             const parentOf = path.dirname(acc);
-            const rules = await getIgnoreRules(parentOf === '.' ? '.' : parentOf);
-            if (rules.length && isIgnoredByRules(rules, part)) {
+            if (await isIgnoredEntry(parentOf === '.' ? '' : parentOf, part)) {
               ignoredAncestor = true;
               break;
             }
@@ -609,6 +650,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         for (const d of dirs) {
           const relDir = prefix + d;
           let code = dirSelf ? '?' : '';
+          // 祖先删除调度（含自身）→ 目录随删，优先于规则/无状态判定
+          if (deletedAncestor && !code) code = 'D';
           let count: number | undefined;
           let codes: string[] | undefined;
           let unversionedCount = 0;
@@ -619,10 +662,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           if (!code && !self) {
             if (ignoredAncestor) code = 'I';
             else {
-              const rules = await getIgnoreRules(path.dirname(relDir) === '.' ? '.' : path.dirname(relDir));
-              if (rules.length && isIgnoredByRules(rules, d)) code = 'I';
-              // 目录名未被规则命中,但目录内全部条目都被规则忽略 → 目录整体视作"已忽略"
-              else if (rules.length && isDirAllIgnored(relDir, rules)) code = 'I';
+              const parentOf = path.dirname(relDir) === '.' ? '' : path.dirname(relDir);
+              if (await isIgnoredEntry(parentOf, d)) code = 'I';
+              // git：目录名未被规则命中,但目录内全部条目都被规则忽略 → 目录整体视作"已忽略"（.claude 场景）
+              else if (repo.type === 'git') {
+                const rules = await getIgnoreRules(parentOf);
+                if (rules.length && isDirAllIgnored(relDir, rules)) code = 'I';
+              }
             }
           }
           const sub = items.filter((i) => i.path.startsWith(relDir + '/'));
@@ -654,6 +700,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           if (codes) codes.sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b));
           // 目录自身被忽略(I)：子级无操作时徽标也应显示 I（避免被误显示为干净的 √）
           if (code === 'I' && !codes) codes = ['I'];
+          // 删除调度（目录自身或祖先）同样兜底——避免 DirBadge 无徽标时显示 √
+          if (code === 'D' && !codes) codes = ['D'];
           // 目录自身未版本化（整个目录不在版本库）：徽标显示 '?'（与文件一致，避免误显干净的 √）
           if (code === '?' && !codes) codes = ['?'];
           // 目录自身是外部引用（svn:externals 拉取的内容）：自身显示链环标识（父目录不显示）
@@ -672,12 +720,14 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           const relFile = prefix + f;
           const it = items.find((i) => i.path === relFile);
           let code = dirSelf ? '?' : it?.code ?? '';
+          // 祖先删除调度（含当前目录自身 D）→ 文件随目录移除，显示 D
+          if (deletedAncestor && !code) code = 'D';
           // 无条目且非未版本化：祖先被忽略（如 node_modules 内）→ 直接 I；否则按忽略规则判断
           if (!code && !it) {
             if (ignoredAncestor) code = 'I';
             else {
-              const rules = await getIgnoreRules(path.dirname(relFile) === '.' ? '.' : path.dirname(relFile));
-              if (rules.length && isIgnoredByRules(rules, f)) code = 'I';
+              const parentOf = path.dirname(relFile) === '.' ? '' : path.dirname(relFile);
+              if (await isIgnoredEntry(parentOf, f)) code = 'I';
             }
           }
           entries.push({
