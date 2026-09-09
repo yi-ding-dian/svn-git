@@ -99,6 +99,8 @@ export interface Vcs {
   commit(relPaths: string[], msg: string): Promise<VcsResult>;
   restoreMissing(): Promise<string[]>;
   revert(relPaths: string[]): Promise<VcsResult>;
+  /** 还原到指定历史版本：git checkout REV -- path；svn cat -r REV 写回工作区（文件级，二进制拒绝） */
+  restoreToRev?(relPath: string, rev: string): Promise<VcsResult>;
   remove(relPaths: string[]): Promise<VcsResult>;
   /** 仅从版本库移除（磁盘保留：git rm --cached / svn delete --keep-local） */
   removeKeep(relPaths: string[]): Promise<VcsResult>;

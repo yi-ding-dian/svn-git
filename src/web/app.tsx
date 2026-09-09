@@ -973,7 +973,7 @@ export function App() {
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
               <div style={{ display: view === 'log' ? undefined : 'none', height: '100%' }}>
-                <HistoryView path={logPath} tick={tick} onChanged={refresh} onBack={() => setView('browse')} />
+                <HistoryView path={logPath} tick={tick} repoType={repo?.type ?? 'git'} onChanged={refresh} onBack={() => setView('browse')} />
               </div>
               <div style={{ display: view === 'diff' ? undefined : 'none', height: '100%' }}>
                 <DiffView

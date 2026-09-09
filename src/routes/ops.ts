@@ -181,6 +181,19 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/restore-version' && req.method === 'POST') {
+        // 还原到指定历史版本：git checkout REV -- path / svn cat -r REV 写回工作区（二进制/目录 svn 拒绝）
+        const { vcs, repo } = vcsOf();
+        const body = await readBody(req);
+        const relPath = String(body.path ?? '');
+        const rev = String(body.rev ?? '');
+        if (!relPath || !rev || !inRepoRoot(repo.root, path.resolve(repo.root, relPath))) {
+          sendJson(res, 400, { error: '参数不合法' });
+          return true;
+        }
+        return runVcs(ctx, () => vcs.restoreToRev?.(relPath, rev) ?? { ok: false, message: MSG_UNSUPPORTED_OP });
+      }
+
       if (p === '/api/fs-delete' && req.method === 'POST') {
         // 磁盘删除（未版本化 ? 文件/目录专属入口：不做版本库调度，仅删本地文件）
         const { repo } = vcsOf();

@@ -285,6 +285,8 @@ export const post = {
   update: (path?: string, signal?: AbortSignal) =>
     api<VcsResult & { path?: string; files?: { path: string; status: string; code?: string }[] }>('/api/update', json({ path }, signal)),
   revert: (paths: string[]) => api<VcsResult>('/api/revert', json({ paths })),
+  /** 还原到指定历史版本（git checkout REV -- path / svn cat -r REV 写回工作区） */
+  restoreVersion: (path: string, rev: string) => api<VcsResult>('/api/restore-version', json({ path, rev })),
   delete: (paths: string[], keep = false) => api<VcsResult>('/api/delete', json({ paths, keep })),
   push: (signal?: AbortSignal) => api<VcsResult>('/api/push', json({}, signal)),
   branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete', name: string, force = false, signal?: AbortSignal, base?: string) =>

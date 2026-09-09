@@ -679,7 +679,11 @@ export function InfoModal(props: { title: string; message: React.ReactNode; onCl
     <div className="modal-mask">
       <ResizableModal width={440} minWidth={420} onEsc={props.onClose}>
         <h3>{props.title}</h3>
-        <div className="body" style={{ whiteSpace: 'pre-wrap' }}>{props.message}</div>
+        <div className="body" style={{ whiteSpace: 'pre-wrap' }}>
+          {/* 内层文本流容器：body 是 flex column，message 若是裸片段（无外层元素）会被拆成一行一个段，
+              包一层 div 让文本自然内联（行宽不足才换行），所有调用方一致 */}
+          <div style={{ lineHeight: 1.7 }}>{props.message}</div>
+        </div>
         <div className="foot">
           <button className="primary" onClick={props.onClose}>知道了</button>
         </div>
@@ -712,7 +716,11 @@ export function ConfirmModal(props: {
     <div className="modal-mask">
       <ResizableModal width={props.width ?? 440} minWidth={420} onEsc={props.onCancel}>
         <h3>{props.title}</h3>
-        <div className="body" style={{ whiteSpace: 'pre-wrap' }}>{props.message}</div>
+        <div className="body" style={{ whiteSpace: 'pre-wrap' }}>
+          {/* 内层文本流容器：body 是 flex column，message 若是裸片段（无外层元素）会被拆成一行一个段，
+              包一层 div 让文本自然内联（行宽不足才换行），所有调用方一致 */}
+          <div style={{ lineHeight: 1.7 }}>{props.message}</div>
+        </div>
         <div className="foot">
           {!props.hideCancel && <button onClick={props.onCancel}>取消</button>}
           {props.secondaryLabel && props.onSecondary && (

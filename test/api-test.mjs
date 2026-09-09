@@ -237,6 +237,15 @@ try {
       const fsSvnDir2 = await get('/api/fs?dir=');
       const svnDirEntry2 = fsSvnDir2.body.entries?.find((e) => e.name === 'src');
       check('svn 缺失目录还原后 miss 行消失', fsSvnDir2.code === 200 && !svnDirEntry2?.miss, `entry=${JSON.stringify(svnDirEntry2)}`);
+      // 还原到指定版本（svn cat -r 写回工作区，文件级）：readme 改脏 → 还原 r1 内容
+      const r1 = (await run('svn', ['cat', '-r', '1', path.join(SVN_DIR, 'readme.md')], { cwd: SVN_DIR })).stdout;
+      fs.writeFileSync(svnDel, `${r1}dirty\n`);
+      const rvSvn = await post('/api/restore-version', { path: 'readme.md', rev: '1' });
+      check('svn 还原到 r1 成功', rvSvn.code === 200 && rvSvn.body.ok === true, `msg=${rvSvn.body.message}`);
+      check('svn 还原后内容 = r1（含写回）', fs.readFileSync(svnDel, 'utf8') === r1, `got=${JSON.stringify(fs.readFileSync(svnDel, 'utf8').slice(0, 40))}`);
+      // 清理：svn revert 回到当前修订（避免污染后续测试与仓库）
+      await run('svn', ['revert', 'readme.md'], { cwd: SVN_DIR });
+      check('svn 还原测试后工作区干净', (await get('/api/fs?dir=&force=1')).body.entries?.find((e) => e.name === 'readme.md')?.miss !== true, ``);
     }
   } else {
     console.log('⚠️ 跳过 SVN net-check 断言（svn-wc 不存在,先跑 vcs-test 生成）');
@@ -396,6 +405,24 @@ src/
     check('git 从版本库删除后可再还原（HEAD 仍在）', rev2.code === 200 && rev2.body.ok === true && fs.existsSync(delFile), `msg=${rev2.body.message}`);
     const fsRoot3 = await get('/api/fs?dir=');
     check('git 再还原后干净', fsRoot3.code === 200 && (fsRoot3.body.entries?.find((e) => e.name === 'del.txt')?.code ?? '') === '', `entry=${JSON.stringify(fsRoot3.body.entries?.find((e) => e.name === 'del.txt'))}`);
+  }
+
+  // ---------- 12. 还原到指定版本（git checkout REV -- path，历史视图右键） ----------
+  {
+    const f = path.join(GIT_DIR, 'readme.md');
+    fs.writeFileSync(f, 'version-one\n');
+    const c1 = await post('/api/commit', { paths: ['readme.md'], message: 'v1' });
+    check('restore-version 准备：v1 提交成功', c1.code === 200 && c1.body.ok === true, `msg=${c1.body.message}`);
+    fs.writeFileSync(f, 'version-two\n');
+    // 还原到 BASE（根提交），工作区 ≠ HEAD → M；内容断言动态取 base 版本（测试仓库 readme 内容随维护变化）
+    const revBase = (await run('git', ['rev-list', '--max-parents=0', 'HEAD'], { cwd: GIT_DIR })).stdout.trim();
+    const baseContent = (await run('git', ['show', `${revBase}:readme.md`], { cwd: GIT_DIR })).stdout;
+    const rv = await post('/api/restore-version', { path: 'readme.md', rev: revBase });
+    check('git 还原到指定版本成功', rv.code === 200 && rv.body.ok === true, `msg=${rv.body.message}`);
+    check('git 还原后文件内容为该版本内容', fs.readFileSync(f, 'utf8') === baseContent, `got=${JSON.stringify(fs.readFileSync(f, 'utf8'))}`);
+    const st12 = await get('/api/status');
+    const item12 = st12.body.items?.find((i) => i.path === 'readme.md');
+    check('git restore 后显示 M（工作区修改，可提交）', st12.code === 200 && item12?.code === 'M', `code=${item12?.code}`);
   }
 } finally {
   // ---------- teardown：重置仓库,仅保留 api 测试文件之外的状态 ----------

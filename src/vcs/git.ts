@@ -597,6 +597,13 @@ export class GitVcs {
     return { ok: true, message: `已从版本库移除 ${relPaths.length} 项（本地文件保留，状态变为 ? 未版本化）` };
   }
 
+  /** 还原到指定历史版本：git checkout REV -- path（任意提交；文件/目录；结果=工作区修改，可提交） */
+  async restoreToRev(relPath: string, rev: string): Promise<VcsResult> {
+    const r = await this.exec(['checkout', rev, '--', relPath]);
+    if (r.code !== 0) return { ok: false, message: r.stderr.trim() || '还原到指定版本失败' };
+    return { ok: true, message: `已将 ${relPath} 还原到 ${rev.slice(0, 7)} 版本（工作区修改，可提交）` };
+  }
+
   /** git mv：本地重命名/移动（文件即改磁盘+暂存，提交后生效）；未跟踪文件 git 不支持返回失败 */
   async move(from: string, to: string): Promise<VcsResult> {
     const res = await this.exec(['mv', from, to]);

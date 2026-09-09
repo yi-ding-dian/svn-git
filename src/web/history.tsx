@@ -13,6 +13,7 @@ import { cmdOfRepo } from './cmd-preview.js';
 interface Props {
   path?: string;
   tick: number;
+  repoType?: 'svn' | 'git';
   /** 提交操作（修改注释/撤销提交）后通知父级刷新文件状态 */
   onChanged?: () => void;
   /** 返回按钮：退出历史视图回到文件浏览 */
@@ -68,6 +69,8 @@ export function HistoryView(props: Props) {
   const [amendMsg, setAmendMsg] = useState('');
   /** 撤销提交二次确认 */
   const [resetCfm, setResetCfm] = useState(false);
+  /** 还原到指定版本：待确认的提交（rev）；还原对象 = 当前查看路径（props.path） */
+  const [restoreOf, setRestoreOf] = useState<{ rev: string } | null>(null);
   const [busy, setBusy] = useState(false);
   /** 跟随鼠标提示（修改注释成功显示在点击处） */
   const [clickTip, setClickTip] = useState<{ x: number; y: number; msg: string } | null>(null);
@@ -201,6 +204,24 @@ export function HistoryView(props: Props) {
     }
   };
 
+  /** 还原到指定版本：覆盖当前工作区（成功后刷新历史与文件状态） */
+  const doRestore = async (rev: string) => {
+    if (!props.path) return;
+    setRestoreOf(null);
+    let r;
+    try {
+      r = await post.restoreVersion(props.path, rev);
+    } catch (e) {
+      r = { ok: false, message: (e as Error).message };
+    }
+    setNoticeErr(!r.ok);
+    setNotice(r.ok ? r.message : `还原失败: ${r.message}`);
+    if (r.ok) {
+      setReloadKey((k) => k + 1); // 工作区变化：重载历史（diff 状态刷新）
+      props.onChanged?.();
+    }
+  };
+
   /** 撤销提交确认 */
   const doReset = async () => {
     setBusy(true);
@@ -326,7 +347,7 @@ export function HistoryView(props: Props) {
                         setDiffOf(null);
                       }}
                       onContextMenu={
-                        isUnpushed
+                        isUnpushed || props.path
                           ? (e) => {
                               e.preventDefault();
                               setMenu({ x: e.clientX, y: e.clientY, index: logs.indexOf(l) });
@@ -413,33 +434,48 @@ export function HistoryView(props: Props) {
           onClose={() => setMoreMenu(null)}
         />
       )}
-      {menu && logs && headIdx >= 0 && logs[menu.index] && (
+      {menu && logs && logs[menu.index] && (
         <ContextMenu
           x={menu.x}
           y={menu.y}
           mask
           items={[
-            {
-              icon: '✏️',
-              label: '修改注释',
-              cmd: menu.index === headIdx ? cmdOfRepo('git', 'amend', { msg: '…' }) : cmdOfRepo('git', 'reword'),
-              action: () => {
-                // 所有未推送提交都可改注释：HEAD 走 amend，其余走 reword（重写注释、代码不变）
-                setAmendOf(logs[menu.index]!);
-                setAmendMsg(logs[menu.index]!.msg);
-              },
-            },
-            { sep: true },
-            {
-              icon: '↩',
-              label: '撤销提交',
-              danger: true,
-              cmd: cmdOfRepo('git', 'reset_soft'),
-              action: () => {
-                if (menu.index === headIdx) setResetCfm(true);
-                else setInfoTip(`仅支持撤销最近一次提交。此项之前还有 ${headIdx - menu.index} 个更新提交，需先逐一撤销前面的提交后，此项才可操作`);
-              },
-            },
+            ...(props.path
+              ? [
+                  {
+                    icon: '↩',
+                    label: '还原此版本',
+                    title: `还原 ${props.path} 到提交 ${logs[menu.index]!.rev.slice(0, 7)} 的版本内容（覆盖当前工作区，还原后为一次本地修改）`,
+                    cmd: cmdOfRepo(props.repoType ?? 'git', 'restore_rev', { rev: logs[menu.index]!.rev, path: props.path }),
+                    action: () => setRestoreOf({ rev: logs[menu.index]!.rev }),
+                  },
+                ]
+              : []),
+            ...(unpushedSet.has(logs[menu.index]!.rev)
+              ? [
+                  {
+                    icon: '✏️',
+                    label: '修改注释',
+                    cmd: menu.index === headIdx ? cmdOfRepo('git', 'amend', { msg: '…' }) : cmdOfRepo('git', 'reword'),
+                    action: () => {
+                      // 所有未推送提交都可改注释：HEAD 走 amend，其余走 reword（重写注释、代码不变）
+                      setAmendOf(logs[menu.index]!);
+                      setAmendMsg(logs[menu.index]!.msg);
+                    },
+                  },
+                  { sep: true },
+                  {
+                    icon: '↩',
+                    label: '撤销提交',
+                    danger: true,
+                    cmd: cmdOfRepo('git', 'reset_soft'),
+                    action: () => {
+                      if (menu.index === headIdx) setResetCfm(true);
+                      else setInfoTip(`仅支持撤销最近一次提交。此项之前还有 ${headIdx - menu.index} 个更新提交，需先逐一撤销前面的提交后，此项才可操作`);
+                    },
+                  },
+                ]
+              : []),
           ]}
           onClose={() => setMenu(null)}
         />
@@ -490,6 +526,21 @@ export function HistoryView(props: Props) {
           danger
           onConfirm={() => void doReset()}
           onCancel={() => setResetCfm(false)}
+        />
+      )}
+      {restoreOf && props.path && (
+        <ConfirmModal
+          title="↩ 还原到指定版本"
+          message={
+            <>
+              将把 <b>{props.path}</b> 还原到提交 <span className="mono">{restoreOf.rev.slice(0, 7)}</span> 的版本内容：
+              覆盖当前工作区（还原后为一次本地修改，可再次提交）。确认？
+            </>
+          }
+          confirmLabel="还原此版本"
+          onConfirm={() => void doRestore(restoreOf.rev)}
+          onCancel={() => setRestoreOf(null)}
+          confirmCmd={cmdOfRepo(props.repoType ?? 'git', 'restore_rev', { rev: restoreOf.rev, path: props.path })}
         />
       )}
       {/* 非 HEAD 未推送提交操作说明弹窗 */}

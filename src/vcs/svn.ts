@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { XMLParser } from 'fast-xml-parser';
 import { run } from './exec.js';
+import { BINARY_EXTS } from '../shared/types.js';
 import type { FileStatus, LogEntry, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
 export interface SvnCred {
@@ -407,6 +408,20 @@ export class SvnVcs {
       output: res.stdout,
       error: res.code !== 0 ? res.stderr.trim() : undefined,
     };
+  }
+
+  /** 还原到指定历史版本：svn cat -r REV 内容写回工作区（仅文件级；二进制/目录拒绝——cat 文本经 UTF-8 写回会损坏） */
+  async restoreToRev(relPath: string, rev: string): Promise<VcsResult> {
+    const ext = relPath.split('.').pop()?.toLowerCase() ?? '';
+    if (BINARY_EXTS.has(ext)) {
+      return { ok: false, message: `二进制文件（${ext}）不支持还原到指定版本（svn cat 文本输出会损坏内容），请在版本库侧处理` };
+    }
+    const abs = path.join(this.repo.root, relPath);
+    const cat = await this.catRev(rev, relPath);
+    if (!cat.ok) return { ok: false, message: cat.error ?? `svn cat -r ${rev} 失败` };
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, cat.output);
+    return { ok: true, message: `已将 ${relPath} 还原到 r${rev} 版本（工作区修改，可提交）` };
   }
 
   /** svn cat：查看版本库内文件内容 */
