@@ -77,11 +77,29 @@ export function buildMultiItems(
   const items: CtxMenuItem[] = [];
   const tNew = tArr.filter((x) => x.code === '?');
   const tMod = tArr.filter((x) => ['M', 'A', 'D', 'R', 'C'].includes(x.code));
+  const tMiss = tArr.filter((x) => x.code === '!');
   const tI = tArr.filter((x) => x.code === 'I');
   const tVer = tArr.filter((x) => removableFromRepo(x.code));
   const tFsDel = s.repoType === 'git' ? [...tNew, ...tI] : tNew;
   if (tNew.length) {
     items.push({ icon: <IconPlus />, label: `添加到版本库（${tNew.length} 项）`, cmd: cmdOfRepo(s.repoType, 'add', { paths: joinPaths(tNew.map((x) => x.rel)) }), action: () => s.onAction('add', tNew.map((x) => x.rel)) });
+  }
+  if (tMiss.length) {
+    // 缺失条目（磁盘已删）：与单选菜单对称——全部还原 或 从版本库删除（有意删除补录到版本库）
+    items.push({
+      icon: <IconRevert />,
+      label: `还原（${tMiss.length} 项）`,
+      title: `${tMiss.length} 项已在磁盘上缺失，全部还原从版本库恢复（${s.repoType === 'svn' ? 'svn revert' : 'git checkout'}）`,
+      cmd: cmdOfRepo(s.repoType, 'revert', { paths: joinPaths(tMiss.map((x) => x.rel)) }),
+      action: () => s.onAction('revert', tMiss.map((x) => x.rel)),
+    });
+    items.push({
+      icon: <IconClean />,
+      label: `从版本库删除（${tMiss.length} 项）`,
+      title: `${tMiss.length} 项已在磁盘上缺失；从版本库移除记录（提交后生效，提交前可「还原」取消）`,
+      cmd: cmdOfRepo(s.repoType, 'remove_keep', { paths: joinPaths(tMiss.map((x) => x.rel)) }),
+      action: () => s.onAction('delete', tMiss.map((x) => x.rel), true),
+    });
   }
   if (tMod.length) {
     items.push({ icon: <IconUpload />, label: `提交修改（${tMod.length} 项）…`, cmd: cmdOfRepo(s.repoType, 'commit', { msg: '…' }), action: () => s.onAction('commit', tMod.map((x) => x.rel)) });
@@ -100,7 +118,7 @@ export function buildMultiItems(
       action: () => s.onAction('fs-delete', tFsDel.map((x) => x.rel)),
     });
   }
-  if (tNew.length || tMod.length || tVer.length || tFsDel.length) items.push({ sep: true });
+  if (tNew.length || tMiss.length || tMod.length || tVer.length || tFsDel.length) items.push({ sep: true });
   items.push({
     icon: <IconCopy />,
     label: `复制完整路径（${tArr.length} 项）`,
