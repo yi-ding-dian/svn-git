@@ -174,6 +174,16 @@ try {
     check('net-check 返回 ok/reason 字段', nc.code === 200 && typeof nc.body.ok === 'boolean' && typeof nc.body.reason === 'string');
     const uc = await get('/api/git-unpushed-count');
     check('git-unpushed-count 数值', uc.code === 200 && typeof uc.body.count === 'number');
+    // 提交前检查（preflight 远程信息带缓存：git-repo 无 origin → fetch 快速失败，接口本身快速返回）
+    const t0 = Date.now();
+    const pf = await get('/api/preflight');
+    check(
+      'preflight 返回结构（remoteHasUpdate/conflictRisk/updatedFiles）',
+      pf.code === 200 && typeof pf.body.remoteHasUpdate === 'boolean' && typeof pf.body.behind === 'number' && Array.isArray(pf.body.conflictRisk) && Array.isArray(pf.body.updatedFiles),
+      `timing=${Date.now() - t0}ms remoteHasUpdate=${pf.body.remoteHasUpdate}`,
+    );
+    const pf2 = await get('/api/preflight');
+    check('preflight 二次调用命中缓存（快速返回）', pf2.code === 200 && Date.now() - t0 < 3000, `timing=${Date.now() - t0}ms`);
   }
 
   // ---------- 7. SVN 侧:net-check 用 vcs.info URL（恒"未配置"bug 回归） ----------
