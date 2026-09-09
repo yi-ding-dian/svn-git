@@ -182,7 +182,7 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
           items.push({ icon: <IconStar />, label: '加入常用文件夹（预加载缓存）', action: () => s.addFavDir(t.rel) });
         }
       }
-      // 有版本库内容且非调度中（非 '!' 缺失；A 添加/D 删除调度不显示——各自有"取消添加/恢复删除"）
+      // 有版本库内容且非调度中（非 '!' 缺失；A 添加/D 删除调度不显示——各自有"取消添加/撤销删除"）
       if (removableFromRepo(t.code)) {
         items.push({ sep: true });
         items.push({ icon: <IconClean />, label: '从版本库移除', cmd: cmdOfRepo(s.repoType, 'remove_keep', { paths: t.rel }), action: () => s.onAction('delete', [t.rel], true) });
@@ -244,7 +244,7 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
           items.push({ icon: <IconUpload />, label: '提交此文件', cmd: cmdOfRepo(s.repoType, 'commit', { msg: '…' }), action: () => s.onAction('commit', [t.rel]) });
           items.push({ icon: <IconRevert />, label: revertName(t.code).label, title: revertName(t.code).title || undefined, cmd: cmdOfRepo(s.repoType, 'revert', { paths: t.rel }), action: () => s.onAction('revert', [t.rel]) });
         }
-        // 有版本库内容且非调度中（非 '!' 缺失；A 添加/D 删除调度不显示——各自有"取消添加/恢复删除"）
+        // 有版本库内容且非调度中（非 '!' 缺失；A 添加/D 删除调度不显示——各自有"取消添加/撤销删除"）
         if (removableFromRepo(t.code)) {
           items.push({ sep: true });
           items.push({ icon: <IconClean />, label: '从版本库移除', cmd: cmdOfRepo(s.repoType, 'remove_keep', { paths: t.rel }), action: () => s.onAction('delete', [t.rel], true) });

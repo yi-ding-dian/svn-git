@@ -823,13 +823,13 @@ export function RevertModal(props: {
   // 弹窗宽度自适应最长文件名（与提交面板同公式）
   const maxPathLen = props.items.reduce((m, i) => Math.max(m, i.path.length), 0);
   const autoWidth = pathAutoWidth(maxPathLen, 620, 1400);
-  // 标题按清单状态语义化：全 A=取消添加 / 全 D=恢复删除 / 混合=还原
+  // 标题按清单状态语义化：全 A=取消添加 / 全 D=撤销删除 / 混合=还原
   const allA = props.items.length > 0 && props.items.every((i) => i.code === 'A');
   const allD = props.items.length > 0 && props.items.every((i) => i.code === 'D');
   // 含 M/C：真丢弃本地修改（红色警告）；仅 A/D/R 等调度撤销 → 不丢数据，中性提示
   const hasMod = props.items.some((i) => i.code === 'M' || i.code === 'C');
-  const actionName = allA ? '取消添加' : allD ? '恢复删除' : '还原';
-  const titleName = allA ? '取消添加确认' : allD ? '恢复删除确认' : '还原确认';
+  const actionName = allA ? '取消添加' : allD ? '撤销删除' : '还原';
+  const titleName = allA ? '取消添加确认' : allD ? '撤销删除确认' : '还原确认';
   return (
     <div className="modal-mask">
       <ResizableModal width={autoWidth}>
@@ -864,7 +864,7 @@ export function RevertModal(props: {
             <span>
               {hasMod
                 ? '还原会放弃这些文件的本地修改（不可恢复）。未版本化（?）与忽略/外部文件不在列表中。'
-                : '仅撤销版本库调度（取消添加 / 恢复删除），磁盘文件保留，不丢失任何数据。未版本化（?）与忽略/外部文件不在列表中。'}
+                : '仅撤销版本库调度（取消添加 / 撤销删除），磁盘文件保留，不丢失任何数据。未版本化（?）与忽略/外部文件不在列表中。'}
             </span>
           </div>
         </div>

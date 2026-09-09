@@ -8,7 +8,7 @@ import type { CtxMenuItem } from '../context-menu.js';
 export type Filter = 'changed' | 'new' | 'deleted';
 export type Mode = 'list' | 'tree' | 'browse';
 
-/** 还原菜单按状态语义化命名：A=取消添加 / D=恢复删除 / M·C·R=还原（extra 为后缀，如"目录"） */
+/** 还原菜单按状态语义化命名：A=取消添加 / D=撤销删除 / M·C·R=还原（extra 为后缀，如"目录"） */
 export function revertName(code: string, extra = ''): { label: string; title: string } {
   if (code === 'A') return { label: `取消添加${extra}`, title: '取消添加到版本库的调度，文件保留磁盘（变回未版本化 ?）' };
   if (code === 'D') return { label: `撤销删除${extra}`, title: '撤销删除，文件恢复到版本库内容（本地文件找回）' };
@@ -16,11 +16,11 @@ export function revertName(code: string, extra = ''): { label: string; title: st
   return { label: `还原${extra}`, title: '' };
 }
 
-/** 多选还原动态命名：全部 A → 取消添加（N 项）；全部 D → 恢复删除（N 项）；混合/其余 → 还原（N 项）+ 分类说明 */
+/** 多选还原动态命名：全部 A → 取消添加（N 项）；全部 D → 撤销删除（N 项）；混合/其余 → 还原（N 项）+ 分类说明 */
 export function multiRevertName(codes: string[], n: number): { label: string; title: string } {
   if (codes.every((c) => c === 'A')) return { label: `取消添加（${n} 项）`, title: '取消添加到版本库的调度，文件保留磁盘（变回未版本化 ?）' };
   if (codes.every((c) => c === 'D')) return { label: `撤销删除（${n} 项）`, title: '撤销删除，文件恢复到版本库内容（本地文件找回）' };
-  return { label: `还原（${n} 项）`, title: '对勾选项执行还原（A=取消添加 / D=恢复删除 / M=放弃本地修改）' };
+  return { label: `还原（${n} 项）`, title: '对勾选项执行还原（A=取消添加 / D=撤销删除 / M=放弃本地修改）' };
 }
 
 /** 磁盘存在且可改名（renameItem 内部按状态分流：?/I 走磁盘改名，其余走 svn/git move）：

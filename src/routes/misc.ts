@@ -677,7 +677,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             for (const s of sub) {
               const rk = { C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3, '?': 2 }[s.code] ?? 0;
               // 子项全部删除调度（D）时不把目录自身升级为 D：目录自身仍版本化（可右键「从版本库移除」），
-              // D 只进角标集合；目录自身 D 调度（self D）仍走 D 分支（恢复删除）
+              // D 只进角标集合；目录自身 D 调度（self D）仍走 D 分支（撤销删除）
               if (s.code === 'D' && !self) continue;
               // svn：子项未版本化(?)不升级目录为 ?——目录本体已版本化（无 self），
               // 子 ? 由 unversionedCount 角标提示；只有目录自身就是 ?（未添加）才显示 ? 菜单。git 目录无本体，保持原聚合

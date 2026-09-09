@@ -433,9 +433,16 @@ export class SvnVcs {
     updatedFiles: string[];
     remoteLogs: LogEntry[];
   }> {
+    // status -u 是服务器查询（网络）：缓存整体结果——成功 60s（提交不必每次查服务器）、
+    // 失败 10s 内不重试（弱网防连环挂起；20s 超时慢失败）
+    const now = Date.now();
+    const c = this.preflightCache;
+    if (c && now - c.time < (c.ok ? 60_000 : 10_000)) return c.data;
     const res = await this.exec(['status', '-u'], { timeoutMs: 20_000 }); // 快速失败:网络不通时防卡连接槽 60s+
     if (res.code !== 0) {
-      return { remoteHasUpdate: false, behind: 0, conflictRisk: [], lockedByOthers: [], updatedFiles: [], remoteLogs: [] };
+      const empty = { remoteHasUpdate: false, behind: 0, conflictRisk: [], lockedByOthers: [], updatedFiles: [], remoteLogs: [] };
+      this.preflightCache = { time: now, ok: false, data: empty };
+      return empty;
     }
     const out = res.stdout.split('\n');
     // 格式（cat -A 实测）：条目行 "[列1状态][7空格][* 过期标记][ 版本号 ][ 路径]"
@@ -466,7 +473,7 @@ export class SvnVcs {
       const lg = await this.exec(['log', '-r', 'HEAD:BASE', '-v', '--xml']);
       if (lg.code === 0) remoteLogs = this.parseLogXml(lg.stdout);
     }
-    return {
+    const result = {
       remoteHasUpdate: expiredCount > 0,
       // behind 语义 = 提交数（HEAD:BASE 的版本数），而非 status -u 的过期文件数；
       // log 获取失败时回退文件数（至少提示有更新）
@@ -476,7 +483,12 @@ export class SvnVcs {
       updatedFiles,
       remoteLogs,
     };
+    this.preflightCache = { time: now, ok: true, data: result };
+    return result;
   }
+
+  /** preflight 结果缓存（status -u 是服务器查询）：成功 60s / 失败 10s 内不重试 */
+  private preflightCache: { time: number; ok: boolean; data: Awaited<ReturnType<SvnVcs['preflight']>> } | null = null;
 
   /** svn status 文本解析：自己锁定的文件（锁列在 index 5，K=自己锁） */
   async selfLockedFiles(): Promise<string[]> {

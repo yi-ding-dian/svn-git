@@ -968,9 +968,40 @@ export class GitVcs {
     updatedFiles: string[];
     remoteLogs: LogEntry[];
   }> {
+    // 远程信息走缓存（fetch 是网络请求：弱网 15s 超时会堵住"提交"弹窗秒开）
+    const remote = await this.remoteCheck();
+    // 本地修改文件（不含未跟踪）；-c core.quotepath=false：中文路径不做八进制转义（unquote 只解引号不解转义）
+    const st = await this.exec(['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-unormal']);
+    const localChanged = new Set<string>();
+    for (const line of st.stdout.split('\n')) {
+      if (!line || line.length < 4) continue;
+      const xy = line.slice(0, 2);
+      const p = unquote(line.slice(3).trim());
+      if (xy[0] !== '?' && xy[0] !== '!') localChanged.add(p);
+    }
+    const conflictRisk = [...localChanged].filter((p) => remote.updatedFiles.includes(p));
+    return {
+      remoteHasUpdate: remote.behind > 0,
+      behind: remote.behind,
+      ahead: remote.ahead,
+      conflictRisk,
+      updatedFiles: [...remote.updatedFiles],
+      remoteLogs: remote.remoteLogs,
+    };
+  }
+
+  /** 远程信息（fetch + ahead/behind + 远程变更文件/提交列表）：带缓存
+   * 成功缓存 60s（远程提示存在即可，提交不必每次拉最新）；失败缓存 10s（弱网防连环挂起 15s） */
+  private remoteCache: { time: number; ok: boolean; behind: number; ahead: number; updatedFiles: string[]; remoteLogs: LogEntry[] } | null = null;
+  private async remoteCheck() {
+    const now = Date.now();
+    const c = this.remoteCache;
+    if (c && now - c.time < (c.ok ? 60_000 : 10_000)) {
+      return { behind: c.behind, ahead: c.ahead, updatedFiles: c.updatedFiles, remoteLogs: c.remoteLogs };
+    }
     // 拉取远程元数据（静默，失败不阻塞）
     // 15s 快速失败（网络不通时 60s 挂起会占住浏览器连接槽,阻塞目录加载）
-    await this.exec(['fetch', '--quiet', 'origin'], { timeoutMs: 15_000 }).catch(() => {});
+    const fetched = await this.exec(['fetch', '--quiet', 'origin'], { timeoutMs: 15_000 }).catch((e) => ({ code: -1, stdout: '', stderr: String(e?.message ?? '') }));
     const branch = await this.branch();
     const upstream = `origin/${branch}`;
     // ahead/behind 计数：git rev-list --left-right --count HEAD...origin/xxx
@@ -981,15 +1012,6 @@ export class GitVcs {
       const parts = cnt.stdout.trim().split(/\s+/);
       ahead = Number(parts[0] ?? 0) || 0;
       behind = Number(parts[1] ?? 0) || 0;
-    }
-    // 本地修改文件（不含未跟踪）；-c core.quotepath=false：中文路径不做八进制转义（unquote 只解引号不解转义）
-    const st = await this.exec(['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-unormal']);
-    const localChanged = new Set<string>();
-    for (const line of st.stdout.split('\n')) {
-      if (!line || line.length < 4) continue;
-      const xy = line.slice(0, 2);
-      const p = unquote(line.slice(3).trim());
-      if (xy[0] !== '?' && xy[0] !== '!') localChanged.add(p);
     }
     // 远程新提交修改的文件
     const remoteChanged = new Set<string>();
@@ -1008,8 +1030,9 @@ export class GitVcs {
       );
       if (lg.code === 0) remoteLogs = parseGitLog(lg.stdout);
     }
-    const conflictRisk = [...localChanged].filter((p) => remoteChanged.has(p));
-    return { remoteHasUpdate: behind > 0, behind, ahead, conflictRisk, updatedFiles: [...remoteChanged], remoteLogs };
+    const ok = fetched.code === 0 && cnt.code === 0;
+    this.remoteCache = { time: now, ok, behind, ahead, updatedFiles: [...remoteChanged], remoteLogs };
+    return { behind, ahead, updatedFiles: [...remoteChanged], remoteLogs };
   }
 
   // ============ Blame 追溯 ============

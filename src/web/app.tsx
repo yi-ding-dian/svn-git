@@ -37,6 +37,9 @@ export function App() {
   const [toast, setToast] = useState('');
   const [toastErr, setToastErr] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
+  // modal 最新引用：后台校验（提交前检查）完成后判断用户是否已关窗/切换，避免结果打扰
+  const modalRef = useRef<Modal>(null);
+  modalRef.current = modal;
   const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
   // 从「提交修改的文件」弹窗进入差异视图时记录，返回时恢复该弹窗
   const [diffReturnModal, setDiffReturnModal] = useState<Modal>(null);
@@ -415,11 +418,11 @@ export function App() {
       const isD = code === 'D';
       setModal({
         type: 'confirm',
-        title: isA ? '取消添加确认' : isD ? '恢复删除确认' : '还原确认',
+        title: isA ? '取消添加确认' : isD ? '撤销删除确认' : '还原确认',
         message: isA ? (
           <>将<b>取消添加到版本库</b>：<b>{dir}</b> 变回未版本化（?），磁盘文件保留。确认？</>
         ) : isD ? (
-          <>将<b>恢复删除</b>：<b>{dir}</b> 回到版本库内容。确认？</>
+          <>将<b>撤销删除</b>：<b>{dir}</b> 回到版本库内容。确认？</>
         ) : (
           <>将放弃对 <b>{dir}</b> 的本地修改，不可恢复。确认还原？</>
         ),
@@ -458,118 +461,129 @@ export function App() {
     }
   };
 
+  /** 提交前安全检查（提交窗已秒开，本函数后台并行）：
+   * preflight 完成后若用户仍在原弹窗（back 类型），行冲突 → 覆盖拦截弹窗；远程更新且有交集 → 覆盖提示；
+   * 用户已关窗/切换 → 结果丢弃；检查失败 → 明示"不经过行级冲突拦截"。 */
+  const checkCommitBackground = useCallback(
+    (paths: string[], back: Exclude<Modal, null>) => {
+      void (async () => {
+        let pf;
+        try {
+          pf = await get.preflight();
+        } catch (e) {
+          // 冲突检查未完成（网络抖动/服务器超时等）：不静默放行——明示本次提交不经过行级冲突拦截
+          if (modalRef.current?.type !== back.type) return;
+          const msg = (e as Error).message || '未知错误';
+          setModal({
+            type: 'confirm',
+            title: '⚠ 冲突检查未完成',
+            message: (
+              <>
+                提交前的冲突检查<b>未能完成</b>（{msg}）。本次提交将<b>不经过行级冲突拦截</b>：
+                <div className="error mt8" style={{ lineHeight: 1.8 }}>
+                  若服务器上有他人修改与你的修改冲突，提交可能失败或覆盖对方修改。请先更新后再提交。
+                </div>
+              </>
+            ),
+            confirmLabel: '仍然提交',
+            secondaryLabel: '取消',
+            action: () => setModal(back),
+            secondaryAction: () => setModal(null),
+          });
+          return;
+        }
+        if (modalRef.current?.type !== back.type) return; // 用户已离开原弹窗 → 不打扰
+        const clash = pf.conflictRisk.filter((f) => f.lines.length > 0);
+        if (clash.length > 0) {
+          // ⚠ 行冲突：禁止提交，引导手动处理（备份→删除→更新→手动合并）
+          setModal({
+            type: 'confirm',
+            title: '⚠ 存在行冲突，禁止提交',
+            // 宽度随最长文件名自适应
+            width: pathAutoWidth(clash.reduce((m, f) => Math.max(m, f.path.length), 0), 520, 1200),
+            message: (
+              <>
+                以下文件与服务器版本存在<b>行冲突</b>，请先手动处理后再提交：
+                <div className="error mt8" style={{ minHeight: 100, overflow: 'auto' }}>
+                  {clash.map((f) => (
+                    <div key={f.path} className="mono">
+                      ⚠ {f.path}：{f.lines.map((l) => (l === 0 ? '文件开头' : `第 ${l} 行`)).join('、')} 冲突
+                    </div>
+                  ))}
+                </div>
+                <div className="dim small mt8" style={{ lineHeight: 1.8 }}>
+                  处理步骤：
+                  <br />1. 点「查看对比」确认对方改了哪里、你改了哪里
+                  <br />2. <b>先备份你的修改</b>（复制内容保存到本地）
+                  <br />3. 删除该文件，再点「更新」获取服务器最新版本
+                  <br />4. 按冲突位置手动合并两边内容 → 重新提交
+                </div>
+              </>
+            ),
+            confirmLabel: '知道了',
+            secondaryLabel: '查看对比',
+            action: () => setModal(null),
+            secondaryAction: () => {
+              setModal({ type: 'remote-conflicts', files: clash.map((f) => f.path) });
+            },
+          });
+          return; // 不放行提交
+        }
+        if (pf.remoteHasUpdate) {
+          // 仅当待提交文件与服务器更新文件有交集时才提示（列出可能冲突文件，双击看差异）；
+          // 无交集 → 不打扰（原弹窗保持）
+          const same = (pf.updatedFiles ?? []).filter((f) => paths.includes(f));
+          if (same.length === 0) return;
+          setModal({
+            type: 'confirm',
+            title: '⚠ 服务器有新版本',
+            // 宽度随最长文件名自适应
+            width: pathAutoWidth(same.reduce((m, p) => Math.max(m, p.length), 0), 520, 1200),
+            message: (
+              <>
+                服务器有 <b>{pf.behind}</b> 个新提交，以下 <b>{same.length}</b> 个待提交文件服务器也有新版本，<b>可能冲突</b>（双击查看差异）：
+                <div className="vcs-list" style={{ minHeight: 120, marginTop: 8 }}>
+                  {same.map((f) => (
+                    <div
+                      key={f}
+                      className="vcs-row"
+                      title="双击查看差异"
+                      onDoubleClick={() => {
+                        setModal(null);
+                        gotoDiff(f);
+                      }}
+                    >
+                      <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {f}
+                      </span>
+                      <span className="dim small nowrap">双击查看差异</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ),
+            confirmLabel: '继续提交',
+            secondaryLabel: '先更新',
+            action: () => setModal(back),
+            secondaryAction: () => {
+              setModal(null);
+              void doUpdateDir('');
+            },
+          });
+        }
+      })();
+    },
+    // doUpdateDir 为稳定引用，闭包捕获即可（与 handleAction 同模式；不放入依赖避免使用前声明）
+    [gotoDiff],
+  );
+
   const handleAction = useCallback(
     (op: Op, paths: string[]) => {
       if (op === 'commit') {
-        // 提交前检查：行冲突 → 强制拦截；仅服务器更新 → 提示先更新
-        void (async () => {
-          try {
-            const pf = await get.preflight();
-            const clash = pf.conflictRisk.filter((f) => f.lines.length > 0);
-            if (clash.length > 0) {
-              // ⚠ 行冲突：禁止提交，引导手动处理（备份→删除→更新→手动合并）
-              setModal({
-                type: 'confirm',
-                title: '⚠ 存在行冲突，禁止提交',
-                // 宽度随最长文件名自适应
-                width: pathAutoWidth(clash.reduce((m, f) => Math.max(m, f.path.length), 0), 520, 1200),
-                message: (
-                  <>
-                    以下文件与服务器版本存在<b>行冲突</b>，请先手动处理后再提交：
-                    <div className="error mt8" style={{ minHeight: 100, overflow: 'auto' }}>
-                      {clash.map((f) => (
-                        <div key={f.path} className="mono">
-                          ⚠ {f.path}：{f.lines.map((l) => (l === 0 ? '文件开头' : `第 ${l} 行`)).join('、')} 冲突
-                        </div>
-                      ))}
-                    </div>
-                    <div className="dim small mt8" style={{ lineHeight: 1.8 }}>
-                      处理步骤：
-                      <br />1. 点「查看对比」确认对方改了哪里、你改了哪里
-                      <br />2. <b>先备份你的修改</b>（复制内容保存到本地）
-                      <br />3. 删除该文件，再点「更新」获取服务器最新版本
-                      <br />4. 按冲突位置手动合并两边内容 → 重新提交
-                    </div>
-                  </>
-                ),
-                confirmLabel: '知道了',
-                secondaryLabel: '查看对比',
-                action: () => setModal(null),
-                secondaryAction: () => {
-                  setModal({ type: 'remote-conflicts', files: clash.map((f) => f.path) });
-                },
-              });
-              return; // 不放行提交
-            }
-            if (pf.remoteHasUpdate) {
-              // 仅当待提交文件与服务器更新文件有交集时才提示（列出可能冲突文件，双击看差异）；
-              // 无交集 → 不打扰，直接进提交界面
-              const same = (pf.updatedFiles ?? []).filter((f) => paths.includes(f));
-              if (same.length === 0) {
-                setModal({ type: 'commit', paths });
-                return;
-              }
-              setModal({
-                type: 'confirm',
-                title: '⚠ 服务器有新版本',
-                // 宽度随最长文件名自适应
-                width: pathAutoWidth(same.reduce((m, p) => Math.max(m, p.length), 0), 520, 1200),
-                message: (
-                  <>
-                    服务器有 <b>{pf.behind}</b> 个新提交，以下 <b>{same.length}</b> 个待提交文件服务器也有新版本，<b>可能冲突</b>（双击查看差异）：
-                    <div className="vcs-list" style={{ minHeight: 120, marginTop: 8 }}>
-                      {same.map((f) => (
-                        <div
-                          key={f}
-                          className="vcs-row"
-                          title="双击查看差异"
-                          onDoubleClick={() => {
-                            setModal(null);
-                            gotoDiff(f);
-                          }}
-                        >
-                          <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {f}
-                          </span>
-                          <span className="dim small nowrap">双击查看差异</span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                ),
-                confirmLabel: '继续提交',
-                secondaryLabel: '先更新',
-                action: () => setModal({ type: 'commit', paths }),
-                secondaryAction: () => {
-                  setModal(null);
-                  void doUpdateDir('');
-                },
-              });
-            } else {
-              setModal({ type: 'commit', paths });
-            }
-          } catch (e) {
-            // 冲突检查未完成（网络抖动/服务器超时等）：不静默放行——
-            // 明示本次提交不经过行级冲突拦截，由用户知情决策
-            const msg = (e as Error).message || '未知错误';
-            setModal({
-              type: 'confirm',
-              title: '⚠ 冲突检查未完成',
-              message: (
-                <>
-                  提交前的冲突检查<b>未能完成</b>（{msg}）。本次提交将<b>不经过行级冲突拦截</b>：
-                  <div className="error mt8" style={{ lineHeight: 1.8 }}>
-                    若服务器上有他人修改与你的修改冲突，提交可能失败或覆盖对方修改。请先更新后再提交。
-                  </div>
-                </>
-              ),
-              confirmLabel: '仍然提交',
-              secondaryLabel: '取消',
-              action: () => setModal({ type: 'commit', paths }),
-              secondaryAction: () => setModal(null),
-            });
-          }
-        })();
+        // 提交窗秒开（git fetch 是网络请求，不再堵住弹窗）；行冲突/远程检查后台并行（checkCommitBackground）
+        setModal({ type: 'commit', paths });
+        checkCommitBackground(paths, { type: 'commit', paths });
+        return;
       } else if (op === 'push') {
         // 统一走 doPush（确认窗 + 进度窗口 + 认证引导）
         doPush();
@@ -751,6 +765,8 @@ export function App() {
           return;
         }
         setModal({ type: 'commit-select', dir, dirLabel, items });
+        // 与"提交此文件"一致的提交前安全：行冲突/远程检查后台并行（用户勾选期间完成，关窗则丢弃）
+        checkCommitBackground(items.map((i) => i.path), { type: 'commit-select', dir, dirLabel, items });
       } catch (e) {
         setToastErr(true);
         setToast(`读取变更失败: ${(e as Error).message}`);
