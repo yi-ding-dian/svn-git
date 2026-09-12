@@ -145,6 +145,10 @@ export interface Vcs {
   unpushed?(): Promise<string[]>;
   unpushedCount?(): Promise<number>;
   unpushedLog?(): Promise<LogEntry[]>;
+  /** 读取提交完整说明（标题+正文，%B）：「修改注释」弹窗回显完整内容（列表接口只带 %s 标题） */
+  commitMessage?(rev: string): Promise<string>;
+  /** 批量读取提交完整说明（rev 前 7 位 → 说明）：提交列表悬浮提示用 */
+  commitMessages?(revs: string[]): Promise<Record<string, string>>;
   amend?(message: string): Promise<VcsResult>;
   reword?(hash: string, message: string): Promise<VcsResult>;
   resetSoft?(): Promise<VcsResult>;

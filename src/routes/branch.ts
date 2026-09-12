@@ -109,6 +109,49 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/commit-message') {
+        // 读取提交的完整说明（标题+正文，仅 git）：「修改注释」弹窗回显（列表接口只带标题）
+        const { vcs, repo } = vcsOf();
+        if (repo.type !== 'git') {
+          sendJson(res, 400, { error: '仅 git 仓库支持' });
+          return true;
+        }
+        const rev = String(url.searchParams.get('rev') ?? '').trim();
+        if (!rev) {
+          sendJson(res, 400, { error: '缺少 rev 参数' });
+          return true;
+        }
+        try {
+          const message = (await vcs.commitMessage?.(rev)) ?? '';
+          sendJson(res, 200, { message });
+        } catch (e) {
+          sendJson(res, 400, { error: (e as Error).message });
+        }
+        return true;
+      }
+
+      if (p === '/api/commit-messages' && req.method === 'POST') {
+        // 批量读取提交完整说明（仅 git）：提交列表悬浮提示（列表接口只带 %s 标题）
+        const { vcs, repo } = vcsOf();
+        if (repo.type !== 'git') {
+          sendJson(res, 400, { error: '仅 git 仓库支持' });
+          return true;
+        }
+        const body = await readBody(req);
+        const revs = Array.isArray(body.revs) ? body.revs.map((r) => String(r)).filter(Boolean) : [];
+        if (revs.length === 0) {
+          sendJson(res, 200, { messages: {} });
+          return true;
+        }
+        try {
+          const messages = (await vcs.commitMessages?.(revs)) ?? {};
+          sendJson(res, 200, { messages });
+        } catch (e) {
+          sendJson(res, 400, { error: (e as Error).message });
+        }
+        return true;
+      }
+
       if (p === '/api/git-amend' && req.method === 'POST') {
         // 修改最近一次提交注释（仅 git）
         const { vcs, repo } = vcsOf();

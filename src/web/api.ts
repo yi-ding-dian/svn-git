@@ -235,6 +235,8 @@ export const get = {
       '/api/git-info',
     ),
   gitAuth: () => api<{ username: string; hasPassword: boolean }>('/api/git-auth'),
+  /** 提交完整说明（标题+正文）：改注释弹窗回显用（列表接口只带 %s 标题，不含正文） */
+  commitMessage: (rev: string) => api<{ message: string }>(`/api/commit-message?rev=${encodeURIComponent(rev)}`),
   gitUnpushedCount: () => api<{ count: number }>('/api/git-unpushed-count'),
   gitUnpushed: () => api<{ count: number; unpushed: LogEntry[] }>('/api/git-unpushed'),
 };
@@ -325,6 +327,8 @@ export const post = {
   gitConfig: (remoteUrl: string) => api<VcsResult>('/api/git-config', json({ remoteUrl })),
   gitAuthSave: (username: string, password: string) => api<VcsResult>('/api/git-auth', json({ username, password })),
   gitAmend: (message: string) => api<VcsResult>('/api/git-amend', json({ message })),
+  /** 批量提交完整说明（rev → 标题+正文）：提交列表悬浮提示用 */
+  commitMessages: (revs: string[]) => api<{ messages: Record<string, string> }>('/api/commit-messages', json({ revs })),
   gitReword: (hash: string, message: string) => api<VcsResult>('/api/git-reword', json({ hash, message })),
   gitReset: () => api<VcsResult>('/api/git-reset', json({})),
   shutdown: () => api<{ ok: boolean }>('/api/shutdown', json({})),

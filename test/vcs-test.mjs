@@ -210,5 +210,28 @@ console.log('== SVN 操作 ==');
   check('svn move 移回后无调度残留', !stB.some((s) => s.path === 'readme.md' || s.path === 'readme-renamed.md'));
 }
 
+console.log('== 修改提交注释（amend 不丢正文）==');
+{
+  const vcs = new GitVcs(detectRepo(GIT_DIR));
+  // 造基线提交：标题 + 正文（含 # 开头的 Markdown 标题行，用于验证 cleanup 不误删）
+  // 注意 --cleanup=whitespace：默认 strip 在造基线时就会把 # 行吃掉，测不出问题
+  const BODY = '正文第一行\n正文第二行\n# 井号开头的 Markdown 标题';
+  fs.writeFileSync(path.join(GIT_DIR, 'amend-test.txt'), 'amend test\n');
+  await run('git', ['add', 'amend-test.txt'], { cwd: GIT_DIR });
+  await run('git', ['commit', '-q', '--cleanup=whitespace', '-m', 'amend 原标题', '-m', BODY], { cwd: GIT_DIR });
+
+  const full = await vcs.commitMessage('HEAD');
+  check('commitMessage 读到标题', full.includes('amend 原标题'));
+  check('commitMessage 读到正文（列表接口只有 %s 标题，靠这个补）', full.includes('正文第一行') && full.includes('正文第二行'));
+
+  // amend 改标题：正文必须原样保留（旧实现用 -m <标题> 会整段覆盖，正文与 Co-Authored-By 全丢）
+  const r = await vcs.amend(`amend 改后标题\n\n${BODY}`);
+  check('amend 成功', r.ok, r.message);
+  const after = await vcs.commitMessage('HEAD');
+  check('amend 后标题已更新', after.split('\n')[0] === 'amend 改后标题', `实际: ${after.split('\n')[0]}`);
+  check('amend 后正文保留（回归：曾整段丢失）', after.includes('正文第一行') && after.includes('正文第二行'));
+  check('amend 后 # 开头行未被 cleanup 吃掉', after.includes('# 井号开头的 Markdown 标题'));
+}
+
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail ? 1 : 0);

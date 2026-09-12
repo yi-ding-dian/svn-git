@@ -69,6 +69,28 @@ export function HistoryView(props: Props) {
   const [amendMsg, setAmendMsg] = useState('');
   /** 撤销提交二次确认 */
   const [resetCfm, setResetCfm] = useState(false);
+  /** 提交完整说明缓存（rev → 标题+正文）：悬浮提示用（列表接口只带 %s 标题） */
+  const [fullMsgs, setFullMsgs] = useState<Record<string, string>>({});
+  /** 已请求过完整说明的 rev：翻页/重载时只拉新增，避免重复请求 */
+  const msgRequested = useRef<Set<string>>(new Set());
+  // 拉取提交完整说明（悬浮提示用）：失败静默降级为标题，并允许下次重试
+  useEffect(() => {
+    const revs = (logs ?? []).map((l) => l.rev).filter((r) => !msgRequested.current.has(r));
+    if (revs.length === 0) return;
+    revs.forEach((r) => msgRequested.current.add(r));
+    let cancelled = false;
+    post
+      .commitMessages(revs)
+      .then((r) => {
+        if (!cancelled) setFullMsgs((prev) => ({ ...prev, ...r.messages }));
+      })
+      .catch(() => {
+        revs.forEach((r) => msgRequested.current.delete(r));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [logs]);
   /** 还原到指定版本：待确认的提交（rev）；还原对象 = 当前查看路径（props.path） */
   const [restoreOf, setRestoreOf] = useState<{ rev: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -332,6 +354,7 @@ export function HistoryView(props: Props) {
                     <div
                       key={l.rev}
                       className="list-item"
+                      title={fullMsgs[l.rev] ?? l.msg}
                       style={{
                         background: sel === l ? 'var(--panel2)' : undefined,
                         position: 'absolute',
@@ -379,9 +402,11 @@ export function HistoryView(props: Props) {
         {!sel && <div className="empty">选择提交查看详情</div>}
         {sel && !diffOf && (
           <>
-            {/* 返回按钮行：与左栏标题栏同一水平线（marginBottom/高度一致，视觉同行） */}
+            {/* 返回按钮行：与左栏标题栏同一水平线（marginBottom/高度一致，视觉同行）。
+                按钮 lineHeight 固定 16px：中文字体 normal 行高约 20px 会让按钮实高 28px，
+                超出本行 24px 上限→上溢部分被面板 overflow:hidden 裁掉上边框 */}
             <div className="row" style={{ marginBottom: 8, height: 24, alignItems: 'center' }}>
-              <button className="mini" onClick={props.onBack}>← 返回</button>
+              <button className="mini" style={{ lineHeight: '16px' }} onClick={props.onBack}>← 返回</button>
               <span className="grow" />
             </div>
             <div className="row" style={{ marginBottom: 10 }}>
@@ -413,7 +438,7 @@ export function HistoryView(props: Props) {
                 差异: {diffOf.rev}{diffOf.path ? ` — ${diffOf.path}` : ''}
               </span>
               <span className="grow" />
-              <button className="mini" onClick={() => setDiffOf(null)}>← 返回</button>
+              <button className="mini" style={{ lineHeight: '16px' }} onClick={() => setDiffOf(null)}>← 返回</button>
             </div>
             {diffLoading ? <div className="loading">⏳ 计算差异…</div> : <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DiffRender text={diffText} /></div>}
           </>
@@ -459,8 +484,13 @@ export function HistoryView(props: Props) {
                     cmd: menu.index === headIdx ? cmdOfRepo('git', 'amend', { msg: '…' }) : cmdOfRepo('git', 'reword'),
                     action: () => {
                       // 所有未推送提交都可改注释：HEAD 走 amend，其余走 reword（重写注释、代码不变）
-                      setAmendOf(logs[menu.index]!);
-                      setAmendMsg(logs[menu.index]!.msg);
+                      const it = logs[menu.index]!;
+                      setAmendOf(it);
+                      setAmendMsg(it.msg); // 先回显标题（列表只带标题），完整说明异步补上，避免此前只编辑标题导致正文被覆盖丢失
+                      void get
+                        .commitMessage(it.rev)
+                        .then((r) => setAmendMsg(r.message))
+                        .catch(() => {});
                     },
                   },
                   { sep: true },
@@ -491,7 +521,8 @@ export function HistoryView(props: Props) {
               </div>
               <textarea
                 className="mono"
-                rows={4}
+                rows={8}
+                title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
                 style={{ width: '100%' }}
                 value={amendMsg}
                 onChange={(e) => setAmendMsg(e.target.value)}

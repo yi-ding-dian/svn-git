@@ -12,21 +12,18 @@ npm-debug.log*
 .vscode/
 *.swp
 .DS_Store
+# 工具缓存
+.playwright-mcp/
 # 本地配置
 *.local.json
 # 内部开发记录（含个人项目路径，开源不公开）
 record.md
 # 测试遗留/临时文件
 svn-untracked.txt
+新建文本.txt
 # 本地测试仓库（不提交）
 svngit-test/
-!record.md
-record.md
-record.md
-record.md
-!record.md
-record.md
-新建文本.txt
 test2
+# 模块说明.md：.git/info/exclude 里有同名忽略规则，下面两行把它翻回「不忽略」（维持当前实际状态）
 模块说明.md
 !模块说明.md

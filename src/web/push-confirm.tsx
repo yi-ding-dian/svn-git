@@ -39,6 +39,8 @@ export function PushConfirmModal(props: {
   const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);
   const [amendOf, setAmendOf] = useState<LogEntry | null>(null);
   const [amendMsg, setAmendMsg] = useState('');
+  /** 提交完整说明缓存（rev → 标题+正文）：悬浮提示用（列表接口只带 %s 标题） */
+  const [fullMsgs, setFullMsgs] = useState<Record<string, string>>({});
   const [resetCfm, setResetCfm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -55,6 +57,22 @@ export function PushConfirmModal(props: {
       .then((r) => setUnpushed(r.unpushed))
       .catch(() => {});
   };
+
+  // 拉取未推送提交的完整说明（悬浮提示用）：不阻塞列表显示，失败静默降级为标题
+  useEffect(() => {
+    const revs = unpushed.map((l) => l.rev);
+    if (revs.length === 0) return;
+    let cancelled = false;
+    post
+      .commitMessages(revs)
+      .then((r) => {
+        if (!cancelled) setFullMsgs(r.messages);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [unpushed]);
 
   /** 修改注释确认（HEAD 用 amend；其余未推送提交用 reword 重写注释，代码内容不变） */
   const doAmend = async (x: number, y: number) => {
@@ -166,7 +184,7 @@ export function PushConfirmModal(props: {
                     e.preventDefault();
                     setMenu({ x: e.clientX, y: e.clientY, index: i });
                   }}
-                  title={i === 0 ? `${l.msg}\n（未推送的最新提交，右键可修改注释/撤销）` : `${l.msg}\n（右键菜单仅对最近一次提交生效）`}
+                  title={`${fullMsgs[l.rev] ?? l.msg}\n${i === 0 ? '（未推送的最新提交，右键可修改注释/撤销）' : '（右键菜单仅对最近一次提交生效）'}`}
                 >
                   <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.6)', flexShrink: 0 }} />
                   <span className="mono small" style={{ flexShrink: 0 }}>{l.rev}</span>
@@ -229,8 +247,13 @@ export function PushConfirmModal(props: {
               label: '修改注释',
               action: () => {
                 // 所有未推送提交都可改注释：HEAD 走 amend，其余走 reword（重写注释、代码不变）
-                setAmendOf(unpushed[menu.index]!);
-                setAmendMsg(unpushed[menu.index]!.msg);
+                const it = unpushed[menu.index]!;
+                setAmendOf(it);
+                setAmendMsg(it.msg); // 先回显标题（列表只带标题），完整说明异步补上，避免此前只编辑标题导致正文被覆盖丢失
+                void get
+                  .commitMessage(it.rev)
+                  .then((r) => setAmendMsg(r.message))
+                  .catch(() => {});
               },
             },
             { sep: true },
@@ -258,7 +281,8 @@ export function PushConfirmModal(props: {
               </div>
               <textarea
                 className="mono"
-                rows={4}
+                rows={8}
+                title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
                 style={{ width: '100%' }}
                 value={amendMsg}
                 onChange={(e) => setAmendMsg(e.target.value)}

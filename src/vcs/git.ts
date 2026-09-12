@@ -147,6 +147,7 @@ export class GitVcs {
       cwd: this.repo.root,
       timeoutMs: extra.timeoutMs ?? 120_000,
       signal: extra.signal,
+      stdinData: extra.stdinData, // 透传：此前声明了但漏传，导致 -F - 读到空说明
       // GIT_TERMINAL_PROMPT=0：禁用终端交互提示（否则 git 检测到启动终端会卡在 "Username for..." 等输入，
       //  不走工具的认证弹窗）；GIT_SSH_COMMAND BatchMode：SSH 不交互（不卡主机指纹/密码输入），失败快速返回
       env: { GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new', ...extra.env },
@@ -319,9 +320,35 @@ export class GitVcs {
     return parseGitLog(res.stdout);
   }
 
-  /** 修改最近一次提交注释（--amend，-m 避免打开编辑器） */
+  /** 读取指定提交的完整说明（标题 + 正文，%B）：「修改注释」弹窗回显用。
+   *  列表接口的 format 只有 %s（parseGitLog 按行扫描，含换行的 %B 会破坏解析），故完整说明按需单独拉取。 */
+  async commitMessage(rev: string): Promise<string> {
+    const res = await this.exec(['-c', 'core.quotepath=false', 'log', '-1', '--format=%B', rev]);
+    if (res.code !== 0) throw new Error(`读取提交说明失败: ${res.stderr.trim() || '提交不存在'}`);
+    return res.stdout.replace(/\n+$/, '');
+  }
+
+  /** 批量读取提交完整说明（rev 前 7 位 → 标题+正文）：提交列表悬浮提示用。
+   *  --no-walk 只取指定提交、不遍历祖先；结果按 %x1e 切分而非按行（%B 含换行，按行扫描会串行）。 */
+  async commitMessages(revs: string[]): Promise<Record<string, string>> {
+    if (revs.length === 0) return {};
+    const res = await this.exec(['-c', 'core.quotepath=false', 'log', '--no-walk', '--format=%H%x1f%B%x1e', ...revs]);
+    if (res.code !== 0) throw new Error(`读取提交说明失败: ${res.stderr.trim()}`);
+    const out: Record<string, string> = {};
+    for (const chunk of res.stdout.split('\x1e')) {
+      const sep = chunk.indexOf('\x1f');
+      if (sep < 0) continue;
+      const hash = chunk.slice(0, sep).trim();
+      if (hash) out[hash.slice(0, 7)] = chunk.slice(sep + 1).replace(/^\n+/, '').replace(/\n+$/, '');
+    }
+    return out;
+  }
+
+  /** 修改最近一次提交注释（--amend；完整说明经 stdin 传入，避免命令行转义与长度限制）。
+   *  不能用 -m 单参数：-m 会整体替换提交信息，只传标题会把正文（含 Co-Authored-By）丢掉。
+   *  --cleanup=whitespace：默认 strip 会删掉以 # 开头的行（Markdown 标题会被静默吃掉）。 */
   async amend(message: string): Promise<VcsResult> {
-    const res = await this.exec(['commit', '--amend', '-m', message]);
+    const res = await this.exec(['commit', '--amend', '--cleanup=whitespace', '-F', '-'], { stdinData: message });
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '修改注释失败' };
     const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
     return { ok: true, message: m ? `已修改注释 ${m[2]?.slice(0, 7)}` : '已修改注释' };
@@ -371,7 +398,8 @@ export class GitVcs {
     const b64 = Buffer.from(message, 'utf8').toString('base64');
     fs.writeFileSync(msgScript, `#!/bin/sh\nprintf '%s' '${b64}' | base64 -d > "$1"\n`, { mode: 0o700 });
     try {
-      const res = await this.exec(['-c', 'core.quotepath=false', 'rebase', '-i', base], {
+      // commit.cleanup=whitespace：reword 写回时 git 默认 strip 会删掉以 # 开头的行
+      const res = await this.exec(['-c', 'core.quotepath=false', '-c', 'commit.cleanup=whitespace', 'rebase', '-i', base], {
         timeoutMs: 120_000,
         env: { GIT_SEQUENCE_EDITOR: seq, GIT_EDITOR: msgScript },
       });
