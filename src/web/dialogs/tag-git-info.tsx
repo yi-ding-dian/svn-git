@@ -1,10 +1,10 @@
 /** 标签与 Git 配置弹窗：标签管理（TagDialog，含 RemoteList 辅助）/ Git 信息（GitInfoModal）/ 推送认证（GitPushAuthModal） */
 import React, { useEffect, useState } from 'react';
 import { get, post, type SvnLayout } from '../api.js';
-import { ModalShell, ResizableModal } from '../modal-shell.js';
-import { IconTag } from '../icons.js';
-import { HelpNote, FormRow } from '../ui.js';
-import { ConfirmModal } from '../modals.js';
+import { ModalShell, ResizableModal } from '../modals/modal-shell.js';
+import { IconTag } from '../ui/icons.js';
+import { HelpNote, FormRow } from '../ui/ui.js';
+import { ConfirmModal } from '../modals/modals.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 import { LayoutNote, ResultLine, runAction } from './common.js';
 // ==================== 标签管理 ====================

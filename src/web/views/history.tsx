@@ -1,14 +1,14 @@
 /** 历史视图：提交列表 + 变更文件详情，点击查看 diff；未推送提交显示绿灯可修改注释/撤销 */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { get, post, type LogEntry } from './api.js';
-import { isBinaryFile } from './utils.js';
-import { DiffRender } from './diff-render.js';
-import { ContextMenu, type CtxMenuItem } from './context-menu.js';
-import { ConfirmModal, InfoModal } from './modals.js';
-import { ResizableModal } from './modal-shell.js';
-import { ClickTip } from './ui.js';
-import { IconOk, IconErr } from './icons.js';
-import { cmdOfRepo } from './cmd-preview.js';
+import { get, post, type LogEntry } from '../api.js';
+import { isBinaryFile } from '../utils.js';
+import { DiffRender } from '../ui/diff-render.js';
+import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
+import { ConfirmModal, InfoModal } from '../modals/modals.js';
+import { ResizableModal } from '../modals/modal-shell.js';
+import { ClickTip } from '../ui/ui.js';
+import { IconOk, IconErr } from '../ui/icons.js';
+import { cmdOfRepo } from '../cmd-preview.js';
 
 interface Props {
   path?: string;
@@ -75,6 +75,7 @@ export function HistoryView(props: Props) {
   const msgRequested = useRef<Set<string>>(new Set());
   // 拉取提交完整说明（悬浮提示用）：失败静默降级为标题，并允许下次重试
   useEffect(() => {
+    if (props.repoType !== 'git') return; // svn 无「完整说明（%B）」概念，不请求（否则后端按"仅 git 支持"返回 400）
     const revs = (logs ?? []).map((l) => l.rev).filter((r) => !msgRequested.current.has(r));
     if (revs.length === 0) return;
     revs.forEach((r) => msgRequested.current.add(r));

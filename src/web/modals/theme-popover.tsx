@@ -10,7 +10,7 @@
  *  关闭：点遮罩 / Esc / 关闭时取消未保存的预览（onPreview(null) 回到正式主题）。
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { THEMES } from './header.js';
+import { THEMES } from '../header.js';
 
 /** 自定义主题：只存 6 个自选色，其余变量由 deriveThemeVars 推导 */
 export interface MyTheme {

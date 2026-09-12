@@ -2,8 +2,8 @@
 import React from 'react';
 import { CODE_DESC, codeRank, type FsEntry } from '../../api.js';
 import { fmtSize } from '../../utils.js';
-import { CodeBadge, DirBadge } from '../../badges.js';
-import { GridIcon, IconLock } from '../../icons.js';
+import { CodeBadge, DirBadge } from '../../ui/badges.js';
+import { GridIcon, IconLock } from '../../ui/icons.js';
 
 /** 网格卡片（图标+状态角标+名称+大小；目录状态字母最多显示 2 个） */
 export function GridItem(props: {

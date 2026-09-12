@@ -1,7 +1,7 @@
 /** 远程冲突对比：你修改的文件被他人先提交 → 查看对方改动 vs 我的改动 */
 import React, { useEffect, useState } from 'react';
-import { get } from './api.js';
-import { DiffRender } from './diff-render.js';
+import { get } from '../api.js';
+import { DiffRender } from '../ui/diff-render.js';
 import { ResizableModal } from './modal-shell.js';
 
 export function RemoteConflictModal(props: { riskFiles: string[]; onClose: () => void }) {

@@ -2,7 +2,7 @@
  * 作用域 = 弹窗传入的浏览目录（含子树）；已注入过可点「更新注入」或「清除注入」。 */
 import React, { useEffect, useMemo, useState } from 'react';
 import { get, post } from '../api.js';
-import { ModalShell } from '../modal-shell.js';
+import { ModalShell } from '../modals/modal-shell.js';
 
 interface Entry {
   path: string;

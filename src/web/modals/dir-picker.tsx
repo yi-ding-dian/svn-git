@@ -1,9 +1,9 @@
 /** 目录选择器：浏览文件夹、新建（行内输入）、重命名（行内输入、自动全选），确定返回路径（创建/克隆仓库的"所在目录"用）
  *  新建/重命名反馈显示在自身弹窗内（不外抛），避免污染外层弹窗的结果行 */
 import React, { useEffect, useState } from 'react';
-import { get, post, type BrowseResult } from './api.js';
-import { GridIcon, IconOk, IconErr } from './icons.js';
-import { ContextMenu } from './context-menu.js';
+import { get, post, type BrowseResult } from '../api.js';
+import { GridIcon, IconOk, IconErr } from '../ui/icons.js';
+import { ContextMenu } from '../ui/context-menu.js';
 
 export function DirPicker(props: {
   /** 初始浏览目录（默认 home） */

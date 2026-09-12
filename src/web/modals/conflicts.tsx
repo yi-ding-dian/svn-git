@@ -1,10 +1,10 @@
 /** 三方冲突解决器：冲突文件列表 + 基础/本地/对方 内容 + 手动编辑 + 采用按钮 */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { get, post } from './api.js';
-import { cmdOfRepo } from './cmd-preview.js';
-import { highlightLine, langOf } from './highlight.js';
-import { parseUnifiedDiff, markTypesOf, type DiffLine } from './diff.js';
-import { IconFolder, IconOk } from './icons.js';
+import { get, post } from '../api.js';
+import { cmdOfRepo } from '../cmd-preview.js';
+import { highlightLine, langOf } from '../highlight.js';
+import { parseUnifiedDiff, markTypesOf, type DiffLine } from '../views/diff.js';
+import { IconFolder, IconOk } from '../ui/icons.js';
 import { ConfirmModal } from './modals.js';
 import { ResizableModal } from './modal-shell.js';
 

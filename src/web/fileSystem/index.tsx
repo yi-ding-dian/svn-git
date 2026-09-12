@@ -1,31 +1,33 @@
 /** 文件夹浏览视图：列表/树/浏览(网格)三模式，支持键盘导航（↑↓ 选择、→/Enter 进入、← 返回） */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterTreeNode } from '../api.js';
-import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconDownload, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon } from '../icons.js';
-import { CodeBadge, DirBadge } from '../badges.js';
-import { ContextMenu, type CtxMenuItem } from '../context-menu.js';
+import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconDownload, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon } from '../ui/icons.js';
+import { CodeBadge, DirBadge } from '../ui/badges.js';
+import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { multiRevertName, renameableCode, removableFromRepo, renameItem, joinPaths, fsSortRank, filterEntries, revertName, type Filter, type Mode, type VisibleRow } from './utils.js';
 import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } from './menus.js';
 import { useFileSearch, FsSearchBox } from './search.js';
 import { useFilterTree } from './filter-tree.js';
+import { useIgnoreFlow } from './use-ignore-flow.js';
 import { TreeRow } from './views/rows.js';
 import { GridItem, FileTipCard } from './views/grid.js';
-import { flashBreadcrumbs } from '../motion.js';
+import { flashBreadcrumbs } from '../ui/motion.js';
+import { useDirPreload } from './use-dir-preload.js';
 import { ModuleIndexDialog } from '../dialogs/module-index.js';
 
 /** 磁盘存在且可改名（renameItem 内部按状态分流：?/I 走磁盘改名，其余走 svn/git move）：
  *  干净 / M / A / C / ? / I（D 已删调度、R/~/U 调度中或磁盘不在 → 均不可改名） */
 /** 有版本库内容（可从版本库移除，非添加/删除调度中）：干净 / M / C（A 添加调度用"还原=取消添加"，D 删除调度不再移除） */
 /** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
-import { IgnoreModal } from '../ignore-modal.js';
-import { FavDirsModal } from '../fav-dirs.js';
+import { IgnoreModal } from '../modals/ignore-modal.js';
+import { FavDirsModal } from '../modals/fav-dirs.js';
 import { fmtSize, statusColor, translateVcsError, isBinaryFile } from '../utils.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 /** 命令预览: 多路径缩写（前 3 个 + …） */
-import { ModalShell } from '../modal-shell.js';
-import { FormRow } from '../ui.js';
-import { ConfirmModal } from '../modals.js';
-import { PreviewPane } from '../preview-pane.js';
+import { ModalShell } from '../modals/modal-shell.js';
+import { FormRow } from '../ui/ui.js';
+import { ConfirmModal } from '../modals/modals.js';
+import { PreviewPane } from '../views/preview-pane.js';
 
 interface Props {
   tick: number;
@@ -106,19 +108,12 @@ export function FsView(props: Props) {
     return () => window.removeEventListener('mouseup', onWinUp);
   }, []);
   const lastWasDragRef = useRef(false);
-  const [ignoreModal, setIgnoreModal] = useState<{ dir: string } | null>(null);
-  /** 加入忽略输入弹窗（替代 window.prompt：目标文件 + 规则输入） */
-  const [ignoreAsk, setIgnoreAsk] = useState<{ rel: string; name: string } | null>(null);
-  const [ignorePattern, setIgnorePattern] = useState('');
-  // 忽略写入去向（.gitignore 随仓库分发 / global 仅本机全部仓库 / exclude 仅本机本仓库）
-  const [ignoreTarget, setIgnoreTarget] = useState<'gitignore' | 'global' | 'exclude'>('gitignore');
+  /** 忽略写入去向的中文说明（JSX 用；状态本身在 useIgnoreFlow 里） */
   const IGNORE_WHERE_LABEL: Record<'gitignore' | 'global' | 'exclude', string> = {
     gitignore: '仓库 .gitignore（随仓库分发）',
     global: '全局忽略（仅本机，所有仓库生效）',
     exclude: '.git/info/exclude（仅本机本仓库）',
   };
-  /** 取消忽略确认弹窗（忽略项右键：git 追加 !规则 / svn 删规则 → 变回未版本化 ?） */
-  const [unignoreAsk, setUnignoreAsk] = useState<{ rel: string; name: string; isDir: boolean } | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
   // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
   const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean } | null>(null);
@@ -227,65 +222,11 @@ export function FsView(props: Props) {
   /** 行 rel → 描述（无索引/无命中返回空串） */
   const descOf = useCallback((rel: string) => moduleIndex?.get(rel) ?? '', [moduleIndex]);
   const [favModal, setFavModal] = useState(false);
-  // 预加载进度（done/total 渐进；running=false 表示已完成）
-  const [preload, setPreload] = useState<{ done: number; total: number; cur: string; running: boolean } | null>(null);
-  // 预加载引擎：全局队列 + 并发 6 + 代际停止（仓库切换时旧 worker 立即停，不污染新仓库缓存）
-  const preloadQueueRef = useRef<{ rel: string; depth: number }[]>([]);
-  const preloadSeenRef = useRef<Set<string>>(new Set());
-  const preloadGenRef = useRef(0);
-  const preloadRunningRef = useRef(false);
-  // 预加载跳过已知产物/大目录（build/bin/CMakeFiles 等,省时也无"秒开"价值;树模式点击仍懒加载）
-  const PRELOAD_SKIP = new Set(['build', 'bin', 'CMakeFiles', 'out', 'dist', 'node_modules', 'vendor', '.svn', '.git', 'third_party', 'thirdparty']);
-  /** 预加载上限与深度：fav 目录只预拉自身 + 一层子目录（防止大仓库整树递归拉取,如 SCA_HB 5639 目录×0.65s） */
-  const PRELOAD_MAX_QUEUE = 300;
-  const PRELOAD_MAX_DEPTH = 1;
-  /** 预加载目录（BFS + 并发 6,结果写入 nodeData 缓存,之后进入秒开）
-   * 深度 ≤ PRELOAD_MAX_DEPTH（fav 目录=0,只递归一层）;深层由树模式展开时懒加载 */
-  const preloadDir = useCallback((rootRel: string) => {
-    const queue = preloadQueueRef.current;
-    const rootDepth = 0;
-    if (!preloadSeenRef.current.has(rootRel)) {
-      preloadSeenRef.current.add(rootRel);
-      queue.push({ rel: rootRel, depth: rootDepth });
-    }
-    if (preloadRunningRef.current) return; // 已在预加载中，新目录并入队列
-    preloadRunningRef.current = true;
-    const gen = preloadGenRef.current;
-    let done = 0;
-    setPreload({ done: 0, total: 1, cur: rootRel, running: true });
-    const worker = async () => {
-      while (queue.length) {
-        if (preloadGenRef.current !== gen) return; // 仓库已切换，停止
-        const cur = queue.shift()!;
-        const d = cur.rel;
-        try {
-          const r = await get.fs(d, false);
-          setNodeData((m) => new Map(m).set(d, r));
-          // 只继续一层：产物目录跳过 + 深度限制 + 队列上限
-          if (cur.depth < PRELOAD_MAX_DEPTH) {
-            for (const e of r.entries ?? []) {
-              if (e.isDir && !PRELOAD_SKIP.has(e.name)) {
-                const sub = d ? `${d}/${e.name}` : e.name;
-                if (!preloadSeenRef.current.has(sub) && queue.length < PRELOAD_MAX_QUEUE) {
-                  preloadSeenRef.current.add(sub);
-                  queue.push({ rel: sub, depth: cur.depth + 1 });
-                }
-              }
-            }
-          }
-        } catch {
-          /* 单目录失败不阻断其余 */
-        }
-        done++;
-        setPreload({ done, total: done + queue.length, cur: d, running: true });
-      }
-    };
-    void Promise.all(Array.from({ length: 6 }, () => worker())).then(() => {
-      preloadRunningRef.current = false;
-      setPreload((p) => (p ? { ...p, running: false } : null));
-      setTimeout(() => setPreload(null), 2500);
-    });
-  }, []);
+  // 预加载引擎（BFS + 并发 6 + 代际停止）抽到 useDirPreload；拉到的目录写进树缓存 nodeData
+  const { preload, preloadDir, resetPreload } = useDirPreload((d, r) => {
+    setNodeData((m) => new Map(m).set(d, r));
+  });
+
   /** 加入常用文件夹（去重后保存 + 立即预加载） */
   const addFavDir = (rel: string) => {
     if (!props.repoRoot) return;
@@ -356,11 +297,7 @@ export function FsView(props: Props) {
     setNodeData(new Map());
     // 自动预加载该仓库保存的常用文件夹（仅 svn，git 无需预加载；后台，不阻塞界面）
     if (props.repoRoot) {
-      // 停掉旧仓库的预加载 worker，清空队列与已见集合，避免污染新仓库缓存
-      preloadGenRef.current++;
-      preloadQueueRef.current = [];
-      preloadSeenRef.current = new Set();
-      preloadRunningRef.current = false;
+      resetPreload(); // 停掉旧仓库的预加载 worker，清空队列与已见集合，避免污染新仓库缓存
       if (props.repoType === 'svn') {
         const saved = loadFavs(props.repoRoot);
         setFavs(saved);
@@ -957,45 +894,27 @@ export function FsView(props: Props) {
     setCtx({ ...ctxPos(e, items.length), items });
   };
 
-  /** 加入忽略：git 写 .gitignore / svn 设置 svn:ignore（弹自定义输入框替代 window.prompt） */
-  const ignoreFile = (e: { code: string; rel: string; name: string }) => {
-    setIgnorePattern(e.name);
-    setIgnoreAsk(e);
-  };
-  const doIgnore = () => {
-    if (!ignoreAsk) return;
-    const pattern = ignorePattern.trim();
-    if (!pattern) return;
-    post
-      .ignore(ignoreAsk.rel, pattern, ignoreTarget)
-      .then((r) => {
-        props.onToast(r.message);
-        if (r.ok) {
-          if (mode === 'tree') loadNode('', true);
-          else void load(dir, true);
-          ft.setFilterTreeTick((t) => t + 1); // 过滤视图（仅新文件等）重拉：? 变 I 后应从列表消失
-        }
-      })
-      .catch((err: Error) => props.onToast(`忽略失败: ${err.message}`));
-    setIgnoreAsk(null);
-  };
-
-  /** 取消忽略：确认后调接口，该项变回未版本化(?)（具体规则由接口返回,toast 展示） */
-  const doUnignore = () => {
-    if (!unignoreAsk) return;
-    post
-      .unignore(unignoreAsk.rel)
-      .then((r) => {
-        props.onToast(r.message);
-        if (r.ok) {
-          if (mode === 'tree') loadNode('', true);
-          else void load(dir, true);
-          ft.setFilterTreeTick((t) => t + 1); // 过滤视图重拉：I 变回 ? 后应出现在"仅新文件"里
-        }
-      })
-      .catch((err: Error) => props.onToast(`取消忽略失败: ${err.message}`));
-    setUnignoreAsk(null);
-  };
+  // 忽略流程（状态 + 提交逻辑）抽到 useIgnoreFlow；三个弹窗的 JSX 仍在下方渲染。
+  // 这里的两个回调是惰性的（只在用户点确认忽略时才执行），故可引用下方定义的 load/loadNode/ft。
+  const {
+    ignoreModal,
+    setIgnoreModal,
+    ignoreAsk,
+    setIgnoreAsk,
+    ignorePattern,
+    setIgnorePattern,
+    ignoreTarget,
+    setIgnoreTarget,
+    unignoreAsk,
+    setUnignoreAsk,
+    ignoreFile,
+    doIgnore,
+    doUnignore,
+  } = useIgnoreFlow({
+    onToast: props.onToast,
+    reloadDir: () => (mode === 'tree' ? loadNode('', true) : void load(dir, true)),
+    reloadFilter: () => ft.setFilterTreeTick((t) => t + 1),
+  });
 
   /** 列表/浏览模式共用的条目行渲染 */
   const renderEntryRow = (e: FsEntry, i: number) => {

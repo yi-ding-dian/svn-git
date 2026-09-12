@@ -1,11 +1,11 @@
 /** 差异视图：并排双栏对比（左原版/右当前，修改行 M 标识，语法高亮，点击联动）/ 版本间文本 diff */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { get } from './api.js';
-import { DiffRender } from './diff-render.js';
-import { langOf, highlightLine } from './highlight.js';
-import { renderMarkdown } from './markdown.js';
-import { IconCopy } from './icons.js';
-import { ContextMenu, type CtxMenuItem } from './context-menu.js';
+import { get } from '../api.js';
+import { DiffRender } from '../ui/diff-render.js';
+import { langOf, highlightLine } from '../highlight.js';
+import { renderMarkdown } from '../markdown.js';
+import { IconCopy } from '../ui/icons.js';
+import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 
 export interface DiffTarget {
   path?: string;

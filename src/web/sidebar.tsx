@@ -1,8 +1,8 @@
 /** 侧边栏：视图导航 + 最近项目列表（右键删除/设常用）+ 版本号 */
 import React, { useState } from 'react';
-import { IconClock, IconFolder } from './icons.js';
-// import { IconDiff } from './icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
-import { ContextMenu } from './context-menu.js';
+import { IconClock, IconFolder } from './ui/icons.js';
+// import { IconDiff } from './ui/icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
+import { ContextMenu } from './ui/context-menu.js';
 import { THEMES, THEME_PINNED } from './header.js';
 import type { HistoryItem } from './api.js';
 

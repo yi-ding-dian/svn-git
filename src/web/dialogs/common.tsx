@@ -2,7 +2,7 @@
  *  ResultLine：操作结果提示行（成功绿√ / 失败红×） / runAction：执行并刷新列表的通用逻辑 / LayoutNote：SVN 仓库布局提示条 */
 import React from 'react';
 import type { SvnLayout, VcsResult } from '../api.js';
-import { IconErr, IconOk } from '../icons.js';
+import { IconErr, IconOk } from '../ui/icons.js';
 /** 操作结果提示行：成功绿√ / 失败红×（SVG 图标+文本，样式不变只加图标） */
 export function ResultLine(props: { msg: string; err?: boolean }) {
   if (!props.msg) return null;

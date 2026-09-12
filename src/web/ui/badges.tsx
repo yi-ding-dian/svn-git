@@ -1,6 +1,6 @@
 /** 状态徽标：文件状态码徽标（CodeBadge）与目录操作集合徽标（DirBadge） */
 import React from 'react';
-import { CODE_DESC } from './api.js';
+import { CODE_DESC } from '../api.js';
 import { IconExternal } from './icons.js';
 
 function CodeBadge({ code, title, onClick }: { code: string; title?: string; onClick?: (e: React.MouseEvent) => void }) {

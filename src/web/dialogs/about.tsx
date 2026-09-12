@@ -1,6 +1,6 @@
 /** 关于弹窗：应用图标 + 名称 + 版本号 + 构建日期（数据来自 /api/info，构建信息由 build-web.mjs 写入） */
 import React from 'react';
-import { ModalShell } from '../modal-shell.js';
+import { ModalShell } from '../modals/modal-shell.js';
 
 export function AboutModal(props: { version: string; buildDate: string; onClose: () => void }) {
   return (

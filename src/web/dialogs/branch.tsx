@@ -1,10 +1,10 @@
 /** 分支管理弹窗：列表 / 新建 / 切换 / 合并 / 删除 / 推送（git + svn 通用） */
 import React, { useEffect, useRef, useState } from 'react';
 import { get, post, type BranchInfo } from '../api.js';
-import { ModalShell } from '../modal-shell.js';
-import { IconBranch } from '../icons.js';
-import { HelpNote } from '../ui.js';
-import { ConfirmModal } from '../modals.js';
+import { ModalShell } from '../modals/modal-shell.js';
+import { IconBranch } from '../ui/icons.js';
+import { HelpNote } from '../ui/ui.js';
+import { ConfirmModal } from '../modals/modals.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 import { LayoutNote, ResultLine, runAction } from './common.js';
 // ==================== 分支管理 ====================

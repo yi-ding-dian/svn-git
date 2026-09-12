@@ -1,11 +1,11 @@
 /** 打开项目：目录浏览选择仓库（启动页 / 打开项目模态框共用） */
 import React, { useEffect, useRef, useState } from 'react';
-import { translateVcsError } from './utils.js';
-import { get, post, type BrowseResult, type RepoInfo } from './api.js';
-import { ModalShell } from './modal-shell.js';
-import { GridIcon } from './icons.js';
-import { ContextMenu } from './context-menu.js';
-import { CreateRepoDialog, GetRepoDialog } from './vcs-dialogs.js';
+import { translateVcsError } from '../utils.js';
+import { get, post, type BrowseResult, type RepoInfo } from '../api.js';
+import { ModalShell } from '../modals/modal-shell.js';
+import { GridIcon } from '../ui/icons.js';
+import { ContextMenu } from '../ui/context-menu.js';
+import { CreateRepoDialog, GetRepoDialog } from '../modals/vcs-dialogs.js';
 
 /** svnadmin 版本库存储目录特征（format 文件 + db/conf/hooks 等）：不是工作副本，需要打开同名 -wc */
 function isSvnBareDir(entries: { name: string }[]): boolean {

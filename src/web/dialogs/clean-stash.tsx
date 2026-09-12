@@ -1,10 +1,10 @@
 /** 工作区整理弹窗：git 清理未跟踪文件（CleanDialog）+ Stash 暂存区（StashDialog） */
 import React, { useEffect, useState } from 'react';
 import { get, post, type StashItem } from '../api.js';
-import { ModalShell } from '../modal-shell.js';
-import { IconErr, IconStash } from '../icons.js';
-import { HelpNote } from '../ui.js';
-import { ConfirmModal } from '../modals.js';
+import { ModalShell } from '../modals/modal-shell.js';
+import { IconErr, IconStash } from '../ui/icons.js';
+import { HelpNote } from '../ui/ui.js';
+import { ConfirmModal } from '../modals/modals.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 import { ResultLine, runAction } from './common.js';
 // ==================== git 清理未跟踪（预览+确认） ====================

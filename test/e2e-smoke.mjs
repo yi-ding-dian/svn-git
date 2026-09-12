@@ -42,6 +42,8 @@ function ensureAmendFixture() {
   fs.writeFileSync(path.join(dir, 'readme.md'), 'v2\n');
   git(['add', '-A'], dir);
   git(['commit', '-q', '--cleanup=whitespace', '-m', 'e2e 标题', '-m', 'e2e 正文第一行\n# 井号行'], dir);
+  // 再留一个未提交改动：Stash 按钮依赖"工作区有改动"才可点（弹窗回归要用）
+  fs.writeFileSync(path.join(dir, 'readme.md'), 'v3 未提交\n');
   return dir;
 }
 
@@ -156,6 +158,27 @@ try {
   check('切回内置主题无 inline 残留', inlineCount === 0, `(残留 ${inlineCount} 个)`);
   await page.mouse.click(900, 820); // 点遮罩关气泡
   await page.waitForTimeout(400);
+
+  console.log('== 弹窗渲染（ModalHost 拆分前的回归网）==');
+  for (const btn of ['分支', 'Stash']) {
+    const b = page.locator('button', { hasText: btn }).first();
+    if ((await b.count()) === 0) {
+      console.log(`  ⏭  跳过「${btn}」：顶栏无此按钮`);
+      continue;
+    }
+    if (await b.isDisabled()) {
+      console.log(`  ⏭  跳过「${btn}」：按钮当前禁用（前置条件不满足）`);
+      continue;
+    }
+    await b.click();
+    await page.waitForTimeout(1000);
+    const n = await page.locator('.modal-mask').count();
+    const head = n ? (await page.locator('.modal-mask').first().innerText()).split('\n').filter(Boolean)[0] : '';
+    check(`「${btn}」弹窗能打开`, n > 0, `(标题: ${head})`);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(700);
+    check(`「${btn}」弹窗能关闭`, (await page.locator('.modal-mask').count()) === 0);
+  }
 
   console.log('== 修改提交注释（回归：曾只回显标题，确认后覆盖丢失正文）==');
   await page.locator('.list-item').first().click({ button: 'right' });

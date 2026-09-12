@@ -1,8 +1,8 @@
 /** 文件系统视图 · 树形行渲染（fs 拆分批次 3）：列表/树/过滤树三模式共用的行组件（状态徽标/名称描述/行按钮） */
 import React from 'react';
 import { fmtSize, statusColor } from '../../utils.js';
-import { CodeBadge, DirBadge } from '../../badges.js';
-import { IconLock } from '../../icons.js';
+import { CodeBadge, DirBadge } from '../../ui/badges.js';
+import { IconLock } from '../../ui/icons.js';
 import type { VisibleRow } from '../utils.js';
 
 /** 树形行：视觉与交互完全由 props 驱动（回调回 index/Hook 上下文） */

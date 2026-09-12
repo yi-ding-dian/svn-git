@@ -1,11 +1,11 @@
 /** 模态框：提交信息 / SVN 登录 / 危险操作确认 */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { post } from './api.js';
+import { post } from '../api.js';
 import { ResizableModal } from './modal-shell.js';
-import { HelpNote, FormRow } from './ui.js';
-import { IconOk, IconErr, IconWarn } from './icons.js';
-import { pathAutoWidth, useCheckedSet } from './utils.js';
-import { cmdOfRepo } from './cmd-preview.js';
+import { HelpNote, FormRow } from '../ui/ui.js';
+import { IconOk, IconErr, IconWarn } from '../ui/icons.js';
+import { pathAutoWidth, useCheckedSet } from '../utils.js';
+import { cmdOfRepo } from '../cmd-preview.js';
 
 /** 全局弹窗状态（App 根组件 / 顶部工具栏共用） */
 export type Modal =

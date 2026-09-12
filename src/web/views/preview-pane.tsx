@@ -6,9 +6,9 @@
  *    其余键吞掉不让列表响应），与列表联动的焦点/滚动/跨行跳转定位逻辑保留在 FsView。
  *  - 错误分两级回调：文本读取失败（致命，退回列表）与展示类错误（图片加载失败，仅红条提示）。 */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { get } from './api.js';
-import { langOf, highlightLine } from './highlight.js';
-import { renderMarkdown } from './markdown.js';
+import { get } from '../api.js';
+import { langOf, highlightLine } from '../highlight.js';
+import { renderMarkdown } from '../markdown.js';
 
 /** 预览目标：{文件名, 相对路径, 状态码?, 是否图片?}；文本内容由面板自行加载 */
 export interface PreviewTarget {

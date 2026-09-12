@@ -4,7 +4,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { ModalShell } from './modal-shell.js';
-import { get } from './api.js';
+import { get } from '../api.js';
 
 /** 界面字体选项（value 为 CSS font-family 字符串；空 = 系统默认） */
 export const UI_FONTS: { label: string; value: string }[] = [

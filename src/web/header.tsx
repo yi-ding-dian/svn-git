@@ -2,10 +2,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo } from './api.js';
 import { cmdOfRepo } from './cmd-preview.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo } from './icons.js';
-import { type Modal } from './modals.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo } from './ui/icons.js';
+import { type Modal } from './modals/modals.js';
 import { type View } from './sidebar.js';
-import { ContextMenu } from './context-menu.js';
+import { ContextMenu } from './ui/context-menu.js';
 import { AboutModal } from './dialogs/about.js';
 
 /** 主题列表（浅色系，色块按钮） */

@@ -1,7 +1,7 @@
 /** 常用文件夹管理弹窗：查看/移除/重新预加载（预加载后进入目录命中缓存秒开） */
 import React from 'react';
 import { ModalShell } from './modal-shell.js';
-import { IconOk } from './icons.js';
+import { IconOk } from '../ui/icons.js';
 
 export interface FavDir {
   path: string;

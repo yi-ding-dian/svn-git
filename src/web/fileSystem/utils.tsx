@@ -1,9 +1,9 @@
 /** 文件系统视图纯工具：状态判断/菜单项组装/排序过滤/树扁平化（fs 拆分批次 1，原 fileSystem/index.tsx 模块级 helper） */
 import React from 'react';
 import { codeRank } from '../api.js';
-import { IconRename } from '../icons.js';
+import { IconRename } from '../ui/icons.js';
 import { cmdOfRepo } from '../cmd-preview.js';
-import type { CtxMenuItem } from '../context-menu.js';
+import type { CtxMenuItem } from '../ui/context-menu.js';
 
 export type Filter = 'changed' | 'new' | 'deleted';
 export type Mode = 'list' | 'tree' | 'browse';

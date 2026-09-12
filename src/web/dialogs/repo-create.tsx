@@ -1,11 +1,11 @@
 /** 新建 / 获取仓库弹窗：新建仓库（CreateRepoDialog，git init / svnadmin create）+ 获取仓库（GetRepoDialog，git clone / svn checkout） */
 import React, { useState } from 'react';
 import { post, type RepoCheck } from '../api.js';
-import { ModalShell, ResizableModal } from '../modal-shell.js';
-import { IconDownload, IconPlus } from '../icons.js';
-import { DirPicker } from '../dir-picker.js';
-import { HelpNote, FormRow } from '../ui.js';
-import { ConfirmModal } from '../modals.js';
+import { ModalShell, ResizableModal } from '../modals/modal-shell.js';
+import { IconDownload, IconPlus } from '../ui/icons.js';
+import { DirPicker } from '../modals/dir-picker.js';
+import { HelpNote, FormRow } from '../ui/ui.js';
+import { ConfirmModal } from '../modals/modals.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 import { ResultLine, runAction } from './common.js';
 // ==================== 创建 / 克隆仓库 ====================

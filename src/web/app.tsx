@@ -1,39 +1,25 @@
-/** 根组件：侧边栏布局 + 全局状态 + 操作流程 */
+/** 根组件：侧边栏布局 + 全局状态 + 操作流程（全部弹窗集中在 modal-host.tsx） */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { get, post, type RepoInfo, type VcsResult, type LogEntry } from './api.js';
-import { HistoryView } from './history.js';
-import { DiffView, type DiffTarget } from './diff.js';
+import { get, post, type RepoInfo, type VcsResult } from './api.js';
+import { HistoryView } from './views/history.js';
+import { DiffView, type DiffTarget } from './views/diff.js';
 import { FsView } from './fileSystem/index.js';
-import { OpenView, OpenModal } from './open.js';
-import { CommitModal, LoginModal, ConfirmModal, CommitSelectModal, UpdateResultModal, EnvInstallModal, RevertModal, RenameModal, type Modal } from './modals.js';
-import { BranchDialog, TagDialog, StashDialog, CreateRepoDialog, GetRepoDialog, CleanDialog, GitInfoModal, GitPushAuthModal } from './vcs-dialogs.js';
-import { PushConfirmModal } from './push-confirm.js';
-import { ConflictResolverModal } from './conflicts.js';
-import { RemoteConflictModal } from './remote-conflicts.js';
-import { AppHeader, THEMES } from './header.js';
-import { ThemePopover, deriveThemeVars, THEME_VAR_KEYS, type MyTheme } from './theme-popover.js';
+import { OpenView } from './views/open.js';
+import { type Modal } from './modals/modals.js';
+import { AppHeader } from './header.js';
+import { useAppearance } from './hooks/use-appearance.js';
+import { useRepoStatus } from './hooks/use-repo-status.js';
+import { useProjectHistory } from './hooks/use-project-history.js';
+import { ModalHost, onboardText, type Op } from './modals/modal-host.js';
 import { Sidebar, type View } from './sidebar.js';
-import { FontModal, FONT_MIN, FONT_MAX } from './font-modal.js';
-import { IconOk, IconErr } from './icons.js';
+import { IconOk, IconErr } from './ui/icons.js';
 import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError } from './utils.js';
 import { cmdOfRepo } from './cmd-preview.js';
-
-type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'fs-delete' | 'push' | 'move' | 'fs-move';
-
-/** 新建仓库成功后的引导条文案（说明产物与下一步） */
-function onboardText(r: RepoInfo): string {
-  const root = r.root ?? '';
-  if (r.type === 'svn') {
-    return `✅ 已创建并打开 SVN 仓库：版本库 ${root.replace(/-wc$/, '')}（存储），工作副本 ${root}（已打开，日常操作都在这里）。下一步：在文件列表右键「添加到版本库」→「提交」。`;
-  }
-  return `✅ 已创建 Git 仓库并打开：${root}。下一步：添加文件到版本库 → 提交 → 推送。`;
-}
 
 export function App() {
   const [info, setInfo] = useState<RepoInfo | null>(null);
   const repo = info?.type ? info : null;
   const [view, setView] = useState<View>('browse');
-  const [history, setHistory] = useState<{ path: string; type: 'svn' | 'git'; lastOpened: number }[]>([]);
   const [tick, setTick] = useState(0);
   const [toast, setToast] = useState('');
   const [toastErr, setToastErr] = useState(false);
@@ -69,161 +55,39 @@ export function App() {
     warnings?: string[];
   } | null>(null);
   const [env, setEnv] = useState<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } } | null>(null);
-  const [theme, setTheme] = useState(() => {
-    try {
-      return localStorage.getItem('svngit-theme') ?? 'light'; // 内置 key 或 my-xxx，有效性在下方 effect 校验
-    } catch {
-      return 'light';
-    }
-  });
-  /** 「我的主题」：自定义配色（6 色 + 名称），持久化 localStorage */
-  const [myThemes, setMyThemes] = useState<MyTheme[]>(() => {
-    try {
-      const arr = JSON.parse(localStorage.getItem('svngit-my-themes') ?? '[]');
-      return Array.isArray(arr) ? (arr.filter((t) => t && typeof t.key === 'string' && typeof t.bg === 'string') as MyTheme[]) : [];
-    } catch {
-      return [];
-    }
-  });
-  /** 主题气泡位置（null = 未打开） */
-  const [themePop, setThemePop] = useState<{ x: number; y: number } | null>(null);
-  const [fontSize, setFontSize] = useState(() => {
-    try {
-      const n = Number(localStorage.getItem('svngit-fontsize'));
-      return Number.isFinite(n) && n >= FONT_MIN && n <= FONT_MAX ? n : 16;
-    } catch {
-      return 14;
-    }
-  });
-  // 界面字体 / 代码字体（空 = 系统默认，随弹窗即时应用并持久化）
-  const [uiFont, setUiFont] = useState(() => {
-    try {
-      return localStorage.getItem('svngit-uifont') ?? '';
-    } catch {
-      return '';
-    }
-  });
-  const [codeFont, setCodeFont] = useState(() => {
-    try {
-      return localStorage.getItem('svngit-codefont') ?? '';
-    } catch {
-      return '';
-    }
-  });
+  // 外观（主题 / 我的主题 / 字号 / 界面与代码字体）：状态、localStorage 持久化与应用 effect 都在 hook 内
+  const {
+    theme,
+    setTheme,
+    myThemes,
+    previewTheme,
+    saveMyTheme,
+    deleteMyTheme,
+    themePop,
+    setThemePop,
+    fontSize,
+    setFontSize,
+    uiFont,
+    setUiFont,
+    codeFont,
+    setCodeFont,
+  } = useAppearance();
 
-  // 应用主题：内置主题靠 CSS 的 body[data-theme=xxx] 提供变量；自定义主题（my-xxx）由 6 色推导后
-  // 写到 body 的 inline 变量上。inline 优先级最高会盖住 CSS，所以切回内置主题时必须逐个清掉。
-  useEffect(() => {
-    const my = myThemes.find((t) => t.key === theme);
-    // 主题已失效（"我的主题"被删 / 换了浏览器 / 旧 key）：回退默认浅白
-    if (!my && !THEMES.some((t) => t.key === theme)) {
-      setTheme('light');
-      return;
-    }
-    document.body.dataset.theme = my ? '' : theme;
-    if (my) {
-      for (const [k, v] of Object.entries(deriveThemeVars(my))) document.body.style.setProperty(k, v);
-    } else {
-      for (const k of THEME_VAR_KEYS) document.body.style.removeProperty(k);
-    }
-    try {
-      localStorage.setItem('svngit-theme', theme);
-    } catch {
-      /* ignore */
-    }
-  }, [theme, myThemes]);
-
-  /** 自定义配色的实时预览：临时写变量（不落库）；传 null 时恢复正式主题的变量 */
-  const previewTheme = useCallback(
-    (t: Omit<MyTheme, 'key' | 'name'> | null) => {
-      if (t) {
-        for (const [k, v] of Object.entries(deriveThemeVars(t))) document.body.style.setProperty(k, v);
-        return;
-      }
-      const my = myThemes.find((x) => x.key === theme);
-      if (my) {
-        for (const [k, v] of Object.entries(deriveThemeVars(my))) document.body.style.setProperty(k, v);
-      } else {
-        for (const k of THEME_VAR_KEYS) document.body.style.removeProperty(k);
-      }
-    },
-    [myThemes, theme],
-  );
-
-  /** 保存「我的主题」并立即应用 */
-  const saveMyTheme = useCallback((t: MyTheme) => {
-    setMyThemes((prev) => {
-      const next = [...prev, t];
-      try {
-        localStorage.setItem('svngit-my-themes', JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-    setTheme(t.key);
-  }, []);
-
-  /** 删除「我的主题」；删的若是当前主题则回退浅白 */
-  const deleteMyTheme = useCallback((key: string) => {
-    setMyThemes((prev) => {
-      const next = prev.filter((t) => t.key !== key);
-      try {
-        localStorage.setItem('svngit-my-themes', JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-    setTheme((cur) => (cur === key ? 'light' : cur));
-  }, []);
-
-  // 应用字号
-  useEffect(() => {
-    document.documentElement.style.setProperty('--font-size', `${fontSize}px`);
-    try {
-      localStorage.setItem('svngit-fontsize', String(fontSize));
-    } catch {
-      /* ignore */
-    }
-  }, [fontSize]);
-
-  // 应用界面/代码字体：空值移除 inline 覆盖，回退 CSS 默认栈
-  useEffect(() => {
-    document.body.style.fontFamily = uiFont || '';
-    document.documentElement.style.setProperty('--code-font', codeFont || '');
-    try {
-      localStorage.setItem('svngit-uifont', uiFont);
-      localStorage.setItem('svngit-codefont', codeFont);
-    } catch {
-      /* ignore */
-    }
-  }, [uiFont, codeFont]);
-
-  // 未推送提交数（推送按钮角标；git 仓库有效，svn 保持 null 不显示）
-  const [unpushedCount, setUnpushedCount] = useState<number | null>(null);
-  const refreshUnpushed = useCallback(() => {
-    get
-      .gitUnpushedCount()
-      .then((r) => setUnpushedCount(r.count))
-      .catch(() => setUnpushedCount(null));
-  }, []);
-  // 仓库变化（打开/切换）时自动刷新角标；refreshUnpushed 每次 refresh() 时也会调用
-  useEffect(() => {
-    void refreshUnpushed();
-  }, [repo?.type]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // stash 条数（Stash 按钮角标；git 仓库有效，svn 返回无 items → null 不显示）
-  const [stashCount, setStashCount] = useState<number | null>(null);
-  const refreshStash = useCallback(() => {
-    get
-      .stash()
-      .then((r) => setStashCount(r.items?.length ?? null))
-      .catch(() => setStashCount(null));
-  }, []);
-  useEffect(() => {
-    void refreshStash();
-  }, [repo?.type]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 仓库状态角标（未推送 / stash / 冲突 / 可否 stash）+ 远程更新监控，一并抽到 useRepoStatus
+  const {
+    unpushedCount,
+    stashCount,
+    conflictCount,
+    canStash,
+    remoteHint,
+    riskFiles,
+    onboard,
+    setOnboard,
+    checkRemote,
+    remoteFileCount,
+    refreshUnpushed,
+    refreshStash,
+  } = useRepoStatus({ repoType: repo?.type, repoRoot: info?.root, tick });
 
   const refresh = useCallback(() => {
     setTick((t) => t + 1);
@@ -231,32 +95,11 @@ export function App() {
     void refreshStash();
   }, [refreshUnpushed, refreshStash]);
 
-  // 冲突计数：有 C 状态文件时显示"解决冲突"入口
-  const [conflictCount, setConflictCount] = useState(0);
-  // 工作区是否有可 stash 的改动（Stash 按钮禁用条件；未跟踪也算，与 stash -u 语义一致）
-  const [canStash, setCanStash] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (!repo?.type) {
-      setConflictCount(0);
-      setCanStash(null);
-      return;
-    }
-    get
-      .status()
-      .then((r) => {
-        setConflictCount(r.items.filter((i) => i.code === 'C').length);
-        setCanStash(r.items.some((i) => i.code && i.code !== 'I' && i.code !== 'X' && i.code !== 'C'));
-      })
-      .catch(() => {});
-  }, [repo?.type, tick]);
-
-  // 加载历史项目
-  const loadHistory = useCallback(() => {
-    get
-      .history()
-      .then((r) => setHistory(r.items))
-      .catch(() => {});
-  }, []);
+  // 最近项目列表（加载 / 删除 / 设常用）抽到 useProjectHistory；错误统一走 toast
+  const { history, loadHistory, removeHistory, setFav } = useProjectHistory((msg) => {
+    setToastErr(true);
+    setToast(msg);
+  });
 
   useEffect(() => {
     get
@@ -272,22 +115,6 @@ export function App() {
       .catch(() => {});
   }, [loadHistory]);
 
-  // 删除最近项目（侧边栏右键菜单）：删除后刷新列表
-  const removeHistory = useCallback((path: string) => {
-    void post
-      .historyRemove(path)
-      .then((r) => setHistory(r.items))
-      .catch(() => { setToastErr(true); setToast('删除失败'); });
-  }, []);
-
-  // 设置/取消常用项目（侧边栏右键菜单）：星号标记，下次启动优先打开
-  const setFav = useCallback((path: string, fav: boolean) => {
-    void post
-      .historyFav(path, fav)
-      .then((r) => setHistory(r.items))
-      .catch(() => { setToastErr(true); setToast(fav ? '设置常用失败' : '取消常用失败'); });
-  }, []);
-
   // 环境缺失:只提示「当前仓库类型需要」的引擎;未打开仓库时任一缺失都提示
   // (用户可能只用 Git 或只用 SVN,不强制两者都装)
   const needSvn = !repo?.type || repo.type === 'svn';
@@ -295,43 +122,6 @@ export function App() {
   const missingSvn = !!(env && needSvn && !env.svn.installed);
   const missingGit = !!(env && needGit && !env.git.installed);
   const envMissing = missingSvn || missingGit;
-
-  // 远程更新监控：每 2 分钟检查一次（git fetch / svn status -u 均为轻量操作）
-  // 重点：你正在修改的文件是否被他人先提交（冲突风险预警）
-  const [remoteHint, setRemoteHint] = useState<{ behind: number; locked: number; risk: number; files?: string[]; remoteLogs?: LogEntry[] } | null>(null);
-  const [riskFiles, setRiskFiles] = useState<string[]>([]);
-  // 新建仓库成功后的引导条（一次性，可关闭；session 级）
-  const [onboard, setOnboard] = useState<string | null>(null);
-  // 检查远程状态并刷新提示条；更新完成后立即调用，避免提示条残留旧状态
-  const checkRemote = useCallback(() => {
-    get
-      .preflight()
-      .then((r) => {
-        const risk = r.conflictRisk?.length ?? 0;
-        if (r.behind > 0 || (r.lockedByOthers?.length ?? 0) > 0 || risk > 0) {
-          setRemoteHint({ behind: r.behind, locked: r.lockedByOthers?.length ?? 0, risk, files: r.updatedFiles ?? [], remoteLogs: r.remoteLogs ?? [] });
-          setRiskFiles((r.conflictRisk ?? []).map((f) => f.path));
-        } else {
-          setRemoteHint(null);
-          setRiskFiles([]);
-        }
-      })
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
-    // 首次延迟 6s 再检查远程（网络不通时 fetch 慢,立即并发会占住浏览器连接槽,阻塞目录加载）
-    const first = setTimeout(checkRemote, 6_000);
-    const t = setInterval(checkRemote, 120_000);
-    return () => {
-      clearTimeout(first);
-      clearInterval(t);
-    };
-  }, [info?.root, checkRemote]);
-
-  // 远程新提交涉及的文件总数（remoteLogs 去重；无 logs 时用 updatedFiles 数）
-  const remoteFileCount = remoteHint?.remoteLogs?.length
-    ? new Set(remoteHint.remoteLogs.flatMap((l) => l.changed.map((c) => c.path))).size
-    : (remoteHint?.files?.length ?? 0);
 
   // 从历史列表打开项目
   const openHistoryItem = useCallback(
@@ -1119,346 +909,27 @@ export function App() {
         </div>
       )}
 
-      {modal?.type === 'commit' && (
-        <CommitModal
-          repoType={repo?.type ?? ''}
-          paths={modal.paths}
-          onClose={() => setModal(null)}
-          onDone={async (msg, paths) => doCommit(paths, msg)}
-        />
-      )}
-      {modal?.type === 'login' && (
-        <LoginModal
-          username={configUser}
-          onClose={() => setModal(null)}
-          onSaved={() => { setConfigUser(''); get.config().then((c) => setConfigUser(c.username)).catch(() => {}); refresh(); }}
-          onToast={setToast}
-        />
-      )}
-      {modal?.type === 'open' && (
-        <OpenModal
-          startDir={info?.home ?? info?.startDir ?? ''}
-          onOpened={(r) => { setInfo(r); setOnboard(null); refresh(); setModal(null); loadHistory(); }}
-          onToast={setToast}
-          onClose={() => setModal(null)}
-        />
-      )}
-      {modal?.type === 'font' && (
-        <FontModal
-          fontSize={fontSize}
-          setFontSize={setFontSize}
-          uiFont={uiFont}
-          setUiFont={setUiFont}
-          codeFont={codeFont}
-          setCodeFont={setCodeFont}
-          onClose={() => setModal(null)}
-        />
-      )}
-      {/* 推送中：转圈提示，可取消 */}
-      {pushing && (
-        <div className="modal-mask">
-          <div className="modal" style={{ width: 380 }}>
-            <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
-              <div className="spinner" />
-              <div style={{ marginTop: 14, fontWeight: 600 }}>正在推送…</div>
-              {repo?.url && (
-                <div className="mono small dim" style={{ marginTop: 6 }} title="推送目标仓库">
-                  📤 {repo.url}
-                </div>
-              )}
-              <div className="dim small" style={{ marginTop: 6 }}>视网络情况可能需要一些时间，可随时取消</div>
-              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>已耗时 {updateElapsed}s</div>
-              <button className="mini danger" style={{ marginTop: 18 }} onClick={cancelPush}>
-                取消推送
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* 更新中：转圈提示，可取消 */}
-      {updating && (
-        <div className="modal-mask">
-          <div className="modal" style={{ width: 380 }}>
-            <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
-              <div className="spinner" />
-              <div style={{ marginTop: 14, fontWeight: 600 }}>正在更新…</div>
-              <div className="dim small" style={{ marginTop: 6 }}>视仓库大小和网络情况可能需要一些时间，可随时取消</div>
-              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>已耗时 {updateElapsed}s</div>
-              <button className="mini danger" style={{ marginTop: 18 }} onClick={cancelUpdate}>
-                取消更新
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {updateResult && (
-        <UpdateResultModal
-          dir={updateResult.dir}
-          ok={updateResult.ok}
-          message={updateResult.message}
-          files={updateResult.files}
-          warnings={updateResult.warnings}
-          onClose={() => setUpdateResult(null)}
-        />
-      )}
-
-      {/* 版本管理对话框：操作后刷新数据 + 重新拉取仓库信息（分支/版本变化） */}
-      {modal?.type === 'branches' && repo?.type && (
-        <BranchDialog
-          repoType={repo.type}
-          onClose={() => setModal(null)}
-          onChanged={() => {
-            refresh();
-            get.info().then((r) => setInfo(r)).catch(() => {});
-          }}
-        />
-      )}
-      {modal?.type === 'tags' && repo?.type && (
-        <TagDialog
-          repoType={repo.type}
-          onClose={() => setModal(null)}
-          onChanged={() => {
-            refresh();
-            get.info().then((r) => setInfo(r)).catch(() => {});
-          }}
-        />
-      )}
-      {modal?.type === 'stash' && (
-        <StashDialog
-          onClose={() => setModal(null)}
-          onChanged={() => refresh()}
-        />
-      )}
-      {modal?.type === 'clean' && (
-        <CleanDialog
-          onClose={() => setModal(null)}
-          onDone={() => {
-            refresh();
-            setModal(null);
-          }}
-        />
-      )}
-      {modal?.type === 'env' && env && (
-        <EnvInstallModal
-          env={env}
-          onClose={() => setModal(null)}
-          onInstalled={() => location.reload()}
-        />
-      )}
-      {modal?.type === 'conflicts' && (
-        <ConflictResolverModal
-          onClose={() => setModal(null)}
-          onResolved={() => {
-            setModal(null);
-            refresh();
-          }}
-        />
-      )}
-      {modal?.type === 'revert-confirm' && (
-        <RevertModal
-          repoType={repo?.type ?? 'git'}
-          dirLabel={modal.dirLabel}
-          items={modal.items}
-          onClose={() => setModal(null)}
-          onConfirm={(sel) => {
-            setModal(null);
-            void runOp('revert', sel);
-          }}
-        />
-      )}
-      {modal?.type === 'remote-conflicts' && (
-        <RemoteConflictModal riskFiles={modal.files} onClose={() => setModal(null)} />
-      )}
-      {/* 主题气泡：点侧边栏「…」按钮在按钮下方展开（全部主题 / 自定义配色 / 我的主题） */}
-      {themePop && (
-        <ThemePopover
-          x={themePop.x}
-          y={themePop.y}
-          theme={theme}
-          onPick={setTheme}
-          onClose={() => setThemePop(null)}
-          myThemes={myThemes}
-          onSave={saveMyTheme}
-          onDelete={deleteMyTheme}
-          onPreview={previewTheme}
-        />
-      )}
-      {modal?.type === 'git-info' && <GitInfoModal onClose={() => setModal(null)} onToast={setToast} />}
-      {pushAuth && (
-        <GitPushAuthModal
-          type={pushAuth.type}
-          error={translateVcsError(pushAuth.error ?? '')}
-          onClose={() => setPushAuth(null)}
-          onToast={setToast}
-          onSaved={() => {
-            setPushAuth(null);
-            void pushNow(); // 保存凭据后自动重试推送（已过确认窗，直接执行；后端用 GIT_ASKPASS 携带凭据）
-          }}
-        />
-      )}
-      {modal?.type === 'push-confirm' && (
-        <PushConfirmModal
-          onCancel={() => setModal(null)}
-          onConfirm={() => {
-            setModal(null);
-            void pushNow();
-          }}
-          onReset={() => refresh()}
-          onDiff={(path, rev) => {
-            // 双击变更文件 → 查看该提交中的差异（左=提交前，右=提交）；返回时恢复本弹窗
-            setDiffReturnModal({ type: 'push-confirm' });
-            setModal(null);
-            gotoDiff(path, `${rev}^`, rev);
-          }}
-        />
-      )}
-      {modal?.type === 'create-repo' && (
-        <CreateRepoDialog
-          home={info?.home}
-          onClose={() => setModal(null)}
-          onCreated={(dir) => {
-            setModal(null);
-            // 打开新创建的仓库
-            void post
-              .open(dir)
-              .then(async () => {
-                const r = await get.info();
-                if (r.type) {
-                  setInfo(r);
-                  refresh();
-                  loadHistory();
-                  setView('browse'); // 新仓库直接进入文件浏览视图（创建时可能停在历史/差异视图）
-                  setOnboard(onboardText(r));
-                  setToastErr(false);
-                  setToast(`已打开仓库: ${r.root}`);
-                }
-              })
-              .catch((e: Error) => setToast(`创建完成，但打开失败: ${(e as Error).message}`));
-          }}
-        />
-      )}
-
-      {modal?.type === 'get-repo' && (
-        <GetRepoDialog
-          home={info?.home}
-          onClose={() => setModal(null)}
-          onCreated={(dir) => {
-            setModal(null);
-            // 打开克隆/检出的仓库
-            void post
-              .open(dir)
-              .then(async () => {
-                const r = await get.info();
-                if (r.type) {
-                  setInfo(r);
-                  refresh();
-                  loadHistory();
-                  setView('browse'); // 获取仓库后直接进入文件浏览视图
-                  setToastErr(false);
-                  setToast(`已打开仓库: ${r.root}`);
-                }
-              })
-              .catch((e: Error) => setToast(`获取完成，但打开失败: ${(e as Error).message}`));
-          }}
-        />
-      )}
-
-      {modal?.type === 'commit-select' && (
-        <CommitSelectModal
-          repoType={repo?.type ?? ''}
-          dirLabel={modal.dirLabel}
-          items={modal.items}
-          checked={modal.checked}
-          onClose={() => setModal(null)}
-          onDiff={(path, checked) => {
-            // 双击文件 → 打开差异视图；返回时恢复本弹窗（含勾选状态）
-            setDiffReturnModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked });
-            setModal(null);
-            gotoDiff(path);
-          }}
-          onConfirm={(paths, msg) =>
-            setModal({
-              type: 'confirm',
-              title: (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <IconOk size={16} />
-                  提交确认
-                </span>
-              ),
-              // 宽度自适应最长文件名（与提交弹窗同规则）
-              width: pathAutoWidth(paths.reduce((m, p) => Math.max(m, p.length), 0), 520, 1200),
-              message: (
-                <>
-                  <div className="small" style={{ marginBottom: 8 }}>
-                    确认提交以下 <b>{paths.length}</b> 个文件？
-                  </div>
-                  {/* 文件列表：容器 + mono + 滚动 + 省略号，超长路径可读 */}
-                  <div className="vcs-list" style={{ minHeight: 120 }}>
-                    {paths.map((p) => (
-                      <div key={p} className="vcs-row" style={{ cursor: 'default' }}>
-                        <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p}>
-                          {p}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  {msg && (
-                    <div className="dim small mt8" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                      注释：{msg}
-                    </div>
-                  )}
-                </>
-              ),
-              confirmLabel: '确认提交',
-              secondaryLabel: '返回修改',
-              // 返回修改：回到「提交修改的文件」弹窗（保留原目录、列表与勾选）
-              secondaryAction: () => setModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked: paths }),
-              action: () => void doCommitSelected(paths, msg),
-            })
-          }
-        />
-      )}
-      {modal?.type === 'rename' && (
-        <RenameModal
-          repoType={repo?.type ?? 'git'}
-          from={modal.from}
-          fsMode={modal.fsMode}
-          onCancel={() => setModal(null)}
-          onConfirm={(to) => {
-            const mode = modal.fsMode ? 'fs-move' : 'move';
-            const from = modal.from;
-            setModal(null);
-            void runOp(mode, [from, to]);
-          }}
-        />
-      )}
-      {modal?.type === 'confirm' && (
-        <ConfirmModal
-          title={modal.title}
-          message={modal.message}
-          danger={modal.danger}
-          confirmLabel={modal.confirmLabel}
-          secondaryLabel={modal.secondaryLabel}
-          confirmCmd={modal.confirmCmd}
-          secondaryCmd={modal.secondaryCmd}
-          width={modal.width}
-          onConfirm={() => {
-            const a = modal.action;
-            setModal(null);
-            a();
-          }}
-          onCancel={() => setModal(null)}
-          onSecondary={
-            modal.secondaryAction
-              ? () => {
-                  const a = modal.secondaryAction!;
-                  setModal(null);
-                  a();
-                }
-              : undefined
-          }
-        />
-      )}
+      {/* 全部弹窗 + 「推送中/更新中」遮罩：集中在 modal-host.tsx（原先 21 个分支平铺在本文件 JSX 里，约 340 行） */}
+      <ModalHost
+        state={{ modal, pushAuth, updateResult, themePop, pushing, updating, updateElapsed, configUser }}
+        set={{
+          setModal,
+          setPushAuth,
+          setUpdateResult,
+          setThemePop,
+          setConfigUser,
+          setInfo,
+          setOnboard,
+          setView,
+          setToast,
+          setToastErr,
+          setDiffReturnModal,
+        }}
+        ctx={{ repo, env, info }}
+        appearance={{ fontSize, setFontSize, uiFont, setUiFont, codeFont, setCodeFont }}
+        theme={{ current: theme, myThemes, setTheme, previewTheme, saveMyTheme, deleteMyTheme }}
+        actions={{ doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelPush, cancelUpdate }}
+      />
     </div>
   );
 }

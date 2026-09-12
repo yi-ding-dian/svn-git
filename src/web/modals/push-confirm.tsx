@@ -1,11 +1,11 @@
 /** 推送确认弹窗：未推送提交列表（含变更文件）+ 推送条件（远程落后/冲突风险）；未推送提交可右键修改注释/撤销 */
 import React, { useEffect, useState } from 'react';
-import { get, post, type LogEntry } from './api.js';
-import { cmdOf } from './cmd-preview.js';
+import { get, post, type LogEntry } from '../api.js';
+import { cmdOf } from '../cmd-preview.js';
 import { ResizableModal } from './modal-shell.js';
-import { ContextMenu } from './context-menu.js';
+import { ContextMenu } from '../ui/context-menu.js';
 import { ConfirmModal, InfoModal } from './modals.js';
-import { ClickTip } from './ui.js';
+import { ClickTip } from '../ui/ui.js';
 
 /** 二进制/图片等不支持差异查看的文件扩展名（双击查看差异前过滤） */
 const BINARY_EXT = new Set([

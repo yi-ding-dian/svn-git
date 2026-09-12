@@ -1,7 +1,7 @@
 /** 忽略设置弹窗：查看/删除/添加忽略规则（svn:ignore / .gitignore） */
 import React, { useCallback, useEffect, useState } from 'react';
-import { cmdOfRepo } from './cmd-preview.js';
-import { get, post } from './api.js';
+import { cmdOfRepo } from '../cmd-preview.js';
+import { get, post } from '../api.js';
 import { ModalShell } from './modal-shell.js';
 
 export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged: () => void; onToast: (m: string) => void }) {
