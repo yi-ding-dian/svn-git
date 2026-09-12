@@ -415,7 +415,9 @@ export function HistoryView(props: Props) {
               <span className="dim">{sel.author} · {sel.date}</span>
               <span className="grow" />
             </div>
-            <div className="dim" style={{ marginBottom: 10, whiteSpace: 'pre-wrap' }}>{sel.msg}</div>
+            {/* 提交说明：优先用完整说明（%B，保留换行/分段），未拉到前回退列表里的 %s 标题。
+                列表行仍只显示 %s（一行紧凑），这里是要读全文的地方 */}
+            <div className="dim" style={{ marginBottom: 10, whiteSpace: 'pre-wrap' }}>{fullMsgs[sel.rev] ?? sel.msg}</div>
             <div className="small dim" style={{ marginBottom: 6 }}>变更文件（点击查看 diff）：</div>
             <div className="changed" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
               {sel.changed.map((c) => (
@@ -524,7 +526,7 @@ export function HistoryView(props: Props) {
                 className="mono"
                 rows={8}
                 title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
-                style={{ width: '100%' }}
+                style={{ width: '100%', flex: 1, minHeight: 120 }}
                 value={amendMsg}
                 onChange={(e) => setAmendMsg(e.target.value)}
                 autoFocus

@@ -283,7 +283,7 @@ export function PushConfirmModal(props: {
                 className="mono"
                 rows={8}
                 title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
-                style={{ width: '100%' }}
+                style={{ width: '100%', flex: 1, minHeight: 120 }}
                 value={amendMsg}
                 onChange={(e) => setAmendMsg(e.target.value)}
                 autoFocus

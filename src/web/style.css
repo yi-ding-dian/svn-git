@@ -844,7 +844,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 textarea, input[type=text], input[type=password] {
   width: 100%; background: var(--panel2); color: var(--text);
-  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 14px;
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+  font-size: var(--font-size, 14px); /* 跟随界面字号设置（此前写死 14px，调大字号时输入框不跟） */
 }
 textarea:focus, input:focus { outline: none; border-color: var(--accent); }
 textarea { resize: vertical; font-family: inherit; }
