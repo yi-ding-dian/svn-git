@@ -30,7 +30,7 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
       )
       .catch((e: Error) => setMsg(e.message));
   }, [props.dir]);
-  useEffect(load, [load]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(load, [load]);
 
   const remove = (rule: string) => {
     setBusy(true);

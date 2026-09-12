@@ -151,7 +151,7 @@ export function ThemePopover(props: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }); // eslint-disable-line react-hooks/exhaustive-deps（每次渲染重绑，close 依赖最新 draft 无关，开销可忽略）
+  });
 
   const light = useMemo(() => THEMES.filter((t) => t.group === 'light'), []);
   const dark = useMemo(() => THEMES.filter((t) => t.group === 'dark'), []);

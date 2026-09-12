@@ -189,8 +189,8 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
         items.push({ icon: <IconRevert />, label: `${revertName(t.code, '目录').label}`, title: revertName(t.code, '').title || undefined, cmd: cmdOfRepo(s.repoType, 'revert', { paths: t.rel }), action: () => s.onAction('revert', [t.rel]) });
       }
       items.push({ sep: true });
-      {t.code !== 'A' && items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(s.repoType, 'view_history', { path: t.rel }), action: () => s.viewHistory(t.rel, ev) })}
-      {renameableCode(t.code) && items.push(renameItem(t.code, s.repoType, t.rel, true, s.onAction))}
+      if (t.code !== 'A') items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(s.repoType, 'view_history', { path: t.rel }), action: () => s.viewHistory(t.rel, ev) });
+      if (renameableCode(t.code)) items.push(renameItem(t.code, s.repoType, t.rel, true, s.onAction));
       items.push({ icon: <IconIgnore />, label: '忽略设置…', cmd: cmdOfRepo(s.repoType, 'ignore_add', { path: t.rel, pattern: '…' }), action: () => s.setIgnoreModal({ dir: t.rel }) });
       // 常用文件夹（仅 svn：git 加载快无需预加载）：自身已加入显示移除；父目录已加入则不再显示；其余显示加入
       if (s.repoType === 'svn') {
@@ -270,10 +270,10 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
       }
       items.push({ sep: true });
       // M/C（已修改/冲突）文件的「查看内容」与「查看差异」同路（openFile 对有状态文件直接进 diff），不重复显示
-      {t.code !== 'M' && t.code !== 'C' && items.push({ icon: <IconFile />, label: '查看内容', action: () => void s.openFile(t.name, t.code, t.rel) })}
+      if (t.code !== 'M' && t.code !== 'C') items.push({ icon: <IconFile />, label: '查看内容', action: () => void s.openFile(t.name, t.code, t.rel) });
       // 未版本化(?) 与已添加(A,尚未提交过) 的文件没有历史记录 → 不显示"查看历史"
       if (t.code !== '?' && t.code !== 'A') items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(s.repoType, 'view_history', { path: t.rel }), action: () => s.viewHistory(t.rel, ev) });
-      {renameableCode(t.code) && items.push(renameItem(t.code, s.repoType, t.rel, false, s.onAction))}
+      if (renameableCode(t.code)) items.push(renameItem(t.code, s.repoType, t.rel, false, s.onAction));
       if (s.repoType === 'svn' && t.code !== '?' && t.code !== 'A') {
         items.push({ sep: true });
         items.push({ icon: <IconLock />, label: '锁定', action: () => s.svnLock(t.rel, 'lock') });

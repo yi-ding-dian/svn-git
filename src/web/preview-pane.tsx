@@ -79,7 +79,7 @@ export function PreviewPane(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [target]); // eslint-disable-line react-hooks/exhaustive-deps（target 每次打开都是新对象，必须整引用重置）
+  }, [target]); // eslint-disable-line react-hooks/exhaustive-deps -- target 每次打开都是新对象，必须整引用重置
 
   /** md-render 容器点击：目标是图片则放大查看 */
   const onMdRenderClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -123,7 +123,7 @@ export function PreviewPane(props: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [props.active]); // eslint-disable-line react-hooks/exhaustive-deps（回调 setter 均稳定，无需重复绑定）
+  }, [props.active]); // eslint-disable-line react-hooks/exhaustive-deps -- 回调 setter 均稳定，无需重复绑定
 
   // ---------- 原文预览搜索 ----------
   const previewLines = useMemo(() => (text ?? '').split('\n'), [text]);
