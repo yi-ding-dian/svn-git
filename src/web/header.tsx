@@ -9,14 +9,31 @@ import { ContextMenu } from './context-menu.js';
 import { AboutModal } from './dialogs/about.js';
 
 /** 主题列表（浅色系，色块按钮） */
+/** 内置主题清单。group 供主题气泡分组展示；color 是预览色块（取该主题的面板色）。
+ *  前 5 套固定为侧边栏快捷圆点，其余全部在气泡里（见 sidebar.tsx 的 slice）。 */
 export const THEMES = [
-  { key: 'light', name: '浅白', color: '#f6f8fa' },
-  { key: 'warm', name: '暖白', color: '#f3ede1' },
-  { key: 'cool', name: '冷白', color: '#e8eef5' },
-  { key: 'lavender', name: '淡紫', color: '#e8e2f7' },
-  { key: 'mint', name: '薄荷', color: '#dcefe4' },
-  { key: 'rose', name: '玫瑰', color: '#f6e2e6' },
-];
+  // 浅色
+  { key: 'light', name: '浅白', color: '#f6f8fa', group: 'light' },
+  { key: 'warm', name: '暖白', color: '#f3ede1', group: 'light' },
+  { key: 'cool', name: '冷白', color: '#e8eef5', group: 'light' },
+  { key: 'lavender', name: '淡紫', color: '#e8e2f7', group: 'light' },
+  { key: 'mint', name: '薄荷', color: '#dcefe4', group: 'light' },
+  { key: 'rose', name: '玫瑰', color: '#f6e2e6', group: 'light' },
+  { key: 'cream', name: '米黄', color: '#f5edd8', group: 'light' },
+  { key: 'sky', name: '天青', color: '#e1eefc', group: 'light' },
+  { key: 'matcha', name: '抹茶', color: '#e6efdc', group: 'light' },
+  { key: 'lotus', name: '藕荷', color: '#f9e4ea', group: 'light' },
+  { key: 'mist', name: '雾灰', color: '#e8ecf0', group: 'light' },
+  // 深色
+  { key: 'night', name: '暗夜', color: '#1f2228', group: 'dark' },
+  { key: 'deepsea', name: '深海', color: '#161b22', group: 'dark' },
+  { key: 'forest', name: '墨林', color: '#17241d', group: 'dark' },
+  { key: 'violet', name: '夜紫', color: '#231f33', group: 'dark' },
+  { key: 'charcoal', name: '炭棕', color: '#25201b', group: 'dark' },
+] as const;
+
+/** 侧边栏快捷圆点数量（其余主题在「…」气泡里选） */
+export const THEME_PINNED = 5;
 
 /**
  * 远程网络状态灯：30s 检测一次（get /api/net-check，只握手不取数据）。

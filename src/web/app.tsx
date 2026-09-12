@@ -11,6 +11,7 @@ import { PushConfirmModal } from './push-confirm.js';
 import { ConflictResolverModal } from './conflicts.js';
 import { RemoteConflictModal } from './remote-conflicts.js';
 import { AppHeader, THEMES } from './header.js';
+import { ThemePopover, deriveThemeVars, THEME_VAR_KEYS, type MyTheme } from './theme-popover.js';
 import { Sidebar, type View } from './sidebar.js';
 import { FontModal, FONT_MIN, FONT_MAX } from './font-modal.js';
 import { IconOk, IconErr } from './icons.js';
@@ -70,12 +71,22 @@ export function App() {
   const [env, setEnv] = useState<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } } | null>(null);
   const [theme, setTheme] = useState(() => {
     try {
-      const t = localStorage.getItem('svngit-theme');
-      return THEMES.some((x) => x.key === t) ? t! : 'light';
+      return localStorage.getItem('svngit-theme') ?? 'light'; // 内置 key 或 my-xxx，有效性在下方 effect 校验
     } catch {
       return 'light';
     }
   });
+  /** 「我的主题」：自定义配色（6 色 + 名称），持久化 localStorage */
+  const [myThemes, setMyThemes] = useState<MyTheme[]>(() => {
+    try {
+      const arr = JSON.parse(localStorage.getItem('svngit-my-themes') ?? '[]');
+      return Array.isArray(arr) ? (arr.filter((t) => t && typeof t.key === 'string' && typeof t.bg === 'string') as MyTheme[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  /** 主题气泡位置（null = 未打开） */
+  const [themePop, setThemePop] = useState<{ x: number; y: number } | null>(null);
   const [fontSize, setFontSize] = useState(() => {
     try {
       const n = Number(localStorage.getItem('svngit-fontsize'));
@@ -100,15 +111,72 @@ export function App() {
     }
   });
 
-  // 应用主题
+  // 应用主题：内置主题靠 CSS 的 body[data-theme=xxx] 提供变量；自定义主题（my-xxx）由 6 色推导后
+  // 写到 body 的 inline 变量上。inline 优先级最高会盖住 CSS，所以切回内置主题时必须逐个清掉。
   useEffect(() => {
-    document.body.dataset.theme = theme;
+    const my = myThemes.find((t) => t.key === theme);
+    // 主题已失效（"我的主题"被删 / 换了浏览器 / 旧 key）：回退默认浅白
+    if (!my && !THEMES.some((t) => t.key === theme)) {
+      setTheme('light');
+      return;
+    }
+    document.body.dataset.theme = my ? '' : theme;
+    if (my) {
+      for (const [k, v] of Object.entries(deriveThemeVars(my))) document.body.style.setProperty(k, v);
+    } else {
+      for (const k of THEME_VAR_KEYS) document.body.style.removeProperty(k);
+    }
     try {
       localStorage.setItem('svngit-theme', theme);
     } catch {
       /* ignore */
     }
-  }, [theme]);
+  }, [theme, myThemes]);
+
+  /** 自定义配色的实时预览：临时写变量（不落库）；传 null 时恢复正式主题的变量 */
+  const previewTheme = useCallback(
+    (t: Omit<MyTheme, 'key' | 'name'> | null) => {
+      if (t) {
+        for (const [k, v] of Object.entries(deriveThemeVars(t))) document.body.style.setProperty(k, v);
+        return;
+      }
+      const my = myThemes.find((x) => x.key === theme);
+      if (my) {
+        for (const [k, v] of Object.entries(deriveThemeVars(my))) document.body.style.setProperty(k, v);
+      } else {
+        for (const k of THEME_VAR_KEYS) document.body.style.removeProperty(k);
+      }
+    },
+    [myThemes, theme],
+  );
+
+  /** 保存「我的主题」并立即应用 */
+  const saveMyTheme = useCallback((t: MyTheme) => {
+    setMyThemes((prev) => {
+      const next = [...prev, t];
+      try {
+        localStorage.setItem('svngit-my-themes', JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    setTheme(t.key);
+  }, []);
+
+  /** 删除「我的主题」；删的若是当前主题则回退浅白 */
+  const deleteMyTheme = useCallback((key: string) => {
+    setMyThemes((prev) => {
+      const next = prev.filter((t) => t.key !== key);
+      try {
+        localStorage.setItem('svngit-my-themes', JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+    setTheme((cur) => (cur === key ? 'light' : cur));
+  }, []);
 
   // 应用字号
   useEffect(() => {
@@ -969,6 +1037,8 @@ export function App() {
               onSetFav={setFav}
               theme={theme}
               setTheme={setTheme}
+              onOpenThemePop={(x, y) => setThemePop({ x, y })}
+              themePopOpen={Boolean(themePop)}
             />
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
@@ -1198,6 +1268,20 @@ export function App() {
       )}
       {modal?.type === 'remote-conflicts' && (
         <RemoteConflictModal riskFiles={modal.files} onClose={() => setModal(null)} />
+      )}
+      {/* 主题气泡：点侧边栏「…」按钮在按钮下方展开（全部主题 / 自定义配色 / 我的主题） */}
+      {themePop && (
+        <ThemePopover
+          x={themePop.x}
+          y={themePop.y}
+          theme={theme}
+          onPick={setTheme}
+          onClose={() => setThemePop(null)}
+          myThemes={myThemes}
+          onSave={saveMyTheme}
+          onDelete={deleteMyTheme}
+          onPreview={previewTheme}
+        />
       )}
       {modal?.type === 'git-info' && <GitInfoModal onClose={() => setModal(null)} onToast={setToast} />}
       {pushAuth && (

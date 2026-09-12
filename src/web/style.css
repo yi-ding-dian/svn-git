@@ -3,6 +3,16 @@
 :root {
   --ui-font: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --code-font: "JetBrains Mono", Consolas, "Courier New", monospace;
+  /* 代码高亮配色（浅色默认值；深色主题在主题区覆盖） */
+  --hl-keyword: #cf222e;
+  --hl-string: #0a3069;
+  --hl-comment: #6e7781;
+  --hl-number: #0550ae;
+  --hl-title: #8250df;
+  --hl-type: #953800;
+  --hl-attr: #0550ae;
+  --hl-meta: #1a7f37;
+  --hl-section: #8250df;
 }
 :root, body[data-theme="light"] {
   --bg: #ffffff;
@@ -109,6 +119,204 @@ body[data-theme="rose"] {
   --purple: #a371f7;
   --svn: #8a2be2;
   --git: #e85d26;
+}
+
+/* ============ 深色主题（5 套）============ */
+
+/* 暗夜：中性深灰 */
+body[data-theme="night"] {
+  --bg: #16181d;
+  --panel: #1f2228;
+  --panel2: #272b32;
+  --border: #363b44;
+  --border2: #2d323a;
+  --accent: #4a9eff;
+  --text: #e6e8eb;
+  --dim: #9aa3ae;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --err: #f85149;
+  --purple: #a371f7;
+  --svn: #a371f7;
+  --git: #ff8c5a;
+}
+
+/* 深海：冷蓝深色 */
+body[data-theme="deepsea"] {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel2: #21262d;
+  --border: #30363d;
+  --border2: #262c34;
+  --accent: #58a6ff;
+  --text: #c9d1d9;
+  --dim: #8b949e;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --err: #f85149;
+  --purple: #bc8cff;
+  --svn: #bc8cff;
+  --git: #ff8c5a;
+}
+
+/* 墨林：深墨绿 */
+body[data-theme="forest"] {
+  --bg: #101a15;
+  --panel: #17241d;
+  --panel2: #1f2f26;
+  --border: #2d4437;
+  --border2: #253a2e;
+  --accent: #3fb950;
+  --text: #d4e5df;
+  --dim: #8aa89c;
+  --ok: #3fb950;
+  --warn: #d4a72c;
+  --err: #f85149;
+  --purple: #a371f7;
+  --svn: #a371f7;
+  --git: #ff8c5a;
+}
+
+/* 夜紫：深紫 */
+body[data-theme="violet"] {
+  --bg: #1a1726;
+  --panel: #231f33;
+  --panel2: #2d2840;
+  --border: #3f3856;
+  --border2: #352f49;
+  --accent: #bd93f9;
+  --text: #e0def4;
+  --dim: #9a93b8;
+  --ok: #50fa7b;
+  --warn: #f1fa8c;
+  --err: #ff5555;
+  --purple: #bd93f9;
+  --svn: #bd93f9;
+  --git: #ffb86c;
+}
+
+/* 炭棕：暖调深棕 */
+body[data-theme="charcoal"] {
+  --bg: #1b1815;
+  --panel: #25201b;
+  --panel2: #2f2822;
+  --border: #43392f;
+  --border2: #383027;
+  --accent: #d4a373;
+  --text: #e8e0d5;
+  --dim: #a89a8a;
+  --ok: #7fb069;
+  --warn: #e0a458;
+  --err: #e06c5a;
+  --purple: #b48ead;
+  --svn: #b48ead;
+  --git: #e07a5f;
+}
+
+/* ============ 浅色主题（5 套）============ */
+
+/* 米黄 */
+body[data-theme="cream"] {
+  --bg: #fdf6e3;
+  --panel: #f5edd8;
+  --panel2: #ece2c8;
+  --border: #ddceac;
+  --border2: #e5d8ba;
+  --accent: #b58900;
+  --text: #4a4436;
+  --dim: #8b8270;
+  --ok: #5a8a3c;
+  --warn: #a8771f;
+  --err: #c0463d;
+  --purple: #8250df;
+  --svn: #8a2be2;
+  --git: #e85d26;
+}
+
+/* 天青 */
+body[data-theme="sky"] {
+  --bg: #f0f7ff;
+  --panel: #e1eefc;
+  --panel2: #d2e5f8;
+  --border: #b8d3ec;
+  --border2: #c8def2;
+  --accent: #0969da;
+  --text: #1f2d3d;
+  --dim: #66808f;
+  --ok: #2e8b57;
+  --warn: #9a7a1f;
+  --err: #c0463d;
+  --purple: #7a5fd0;
+  --svn: #8a2be2;
+  --git: #e85d26;
+}
+
+/* 抹茶 */
+body[data-theme="matcha"] {
+  --bg: #f2f7ec;
+  --panel: #e6efdc;
+  --panel2: #d9e7ca;
+  --border: #c2d6a8;
+  --border2: #cde0b8;
+  --accent: #4a7c2f;
+  --text: #2b3a26;
+  --dim: #6f8465;
+  --ok: #4a7c2f;
+  --warn: #9a7a1f;
+  --err: #c0463d;
+  --purple: #7a5fd0;
+  --svn: #8a2be2;
+  --git: #e85d26;
+}
+
+/* 藕荷 */
+body[data-theme="lotus"] {
+  --bg: #fdf2f5;
+  --panel: #f9e4ea;
+  --panel2: #f2d6de;
+  --border: #e4bcc8;
+  --border2: #eccad4;
+  --accent: #d6336c;
+  --text: #3d2830;
+  --dim: #97787f;
+  --ok: #2e8b57;
+  --warn: #9a7a1f;
+  --err: #c0463d;
+  --purple: #a371f7;
+  --svn: #8a2be2;
+  --git: #e85d26;
+}
+
+/* 雾灰 */
+body[data-theme="mist"] {
+  --bg: #f4f6f8;
+  --panel: #e8ecf0;
+  --panel2: #dce2e9;
+  --border: #c3ccd6;
+  --border2: #d0d8e0;
+  --accent: #5b7c99;
+  --text: #2b3138;
+  --dim: #6f7a85;
+  --ok: #2e8b57;
+  --warn: #9a7a1f;
+  --err: #c0463d;
+  --purple: #7a5fd0;
+  --svn: #8a2be2;
+  --git: #e85d26;
+}
+
+/* 深色主题共用代码高亮配色：浅色底用的深色高亮在暗底上几乎不可见，统一换成亮色版 */
+body[data-theme="night"], body[data-theme="deepsea"], body[data-theme="forest"],
+body[data-theme="violet"], body[data-theme="charcoal"] {
+  --hl-keyword: #ff7b72;
+  --hl-string: #a5d6ff;
+  --hl-comment: #8b949e;
+  --hl-number: #79c0ff;
+  --hl-title: #d2a8ff;
+  --hl-type: #ffa657;
+  --hl-attr: #79c0ff;
+  --hl-meta: #7ee787;
+  --hl-section: #d2a8ff;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -459,15 +667,15 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .sb-code { flex: 1; white-space: pre-wrap; word-break: break-all; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
 
 /* 语法高亮（浅色主题适配） */
-.hljs-keyword, .hljs-literal, .hljs-selector-tag { color: #cf222e; }
-.hljs-string, .hljs-regexp, .hljs-char.escape_ { color: #0a3069; }
-.hljs-comment, .hljs-quote { color: #6e7781; font-style: italic; }
-.hljs-number, .hljs-symbol { color: #0550ae; }
-.hljs-title, .hljs-title.function_, .hljs-title.class_ { color: #8250df; }
-.hljs-type, .hljs-built_in, .hljs-builtin-name { color: #953800; }
-.hljs-attr, .hljs-attribute, .hljs-name, .hljs-tag { color: #0550ae; }
-.hljs-meta, .hljs-meta .hljs-keyword { color: #1a7f37; }
-.hljs-section, .hljs-bullet { color: #8250df; }
+.hljs-keyword, .hljs-literal, .hljs-selector-tag { color: var(--hl-keyword); }
+.hljs-string, .hljs-regexp, .hljs-char.escape_ { color: var(--hl-string); }
+.hljs-comment, .hljs-quote { color: var(--hl-comment); font-style: italic; }
+.hljs-number, .hljs-symbol { color: var(--hl-number); }
+.hljs-title, .hljs-title.function_, .hljs-title.class_ { color: var(--hl-title); }
+.hljs-type, .hljs-built_in, .hljs-builtin-name { color: var(--hl-type); }
+.hljs-attr, .hljs-attribute, .hljs-name, .hljs-tag { color: var(--hl-attr); }
+.hljs-meta, .hljs-meta .hljs-keyword { color: var(--hl-meta); }
+.hljs-section, .hljs-bullet { color: var(--hl-section); }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 700; }
 
@@ -530,6 +738,41 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .theme-btn:hover { transform: scale(1.15); }
 .theme-btn.active { border-color: var(--text); }
+/* 「…」更多主题入口：与圆点同尺寸 */
+.theme-more {
+  width: 22px; height: 22px; border-radius: 50%; padding: 0; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1; font-weight: 700;
+  background: var(--panel2); color: var(--dim); border: 1px solid var(--border); cursor: pointer;
+}
+.theme-more:hover { color: var(--text); border-color: var(--dim); }
+.theme-more.active { border-color: var(--accent); color: var(--accent); }
+
+/* ---------- 主题气泡（点「…」在点击处弹出） ---------- */
+.theme-pop { width: 236px; max-height: 76vh; overflow: auto; }
+.theme-pop-group { font-size: 0.8em; color: var(--dim); padding: 6px 8px 4px; }
+.theme-pop-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; padding: 0 4px; }
+.theme-chip {
+  display: flex; align-items: center; gap: 5px; padding: 4px 5px; border-radius: 5px;
+  background: transparent; border: 1px solid transparent; color: var(--text);
+  font-size: 0.84em; cursor: pointer; text-align: left; min-width: 0;
+}
+.theme-chip:hover { background: var(--panel); border-color: var(--border); }
+.theme-chip.active { border-color: var(--accent); background: var(--panel); }
+.theme-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-dot { width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--border); flex-shrink: 0; }
+.theme-custom-toggle {
+  display: block; width: 100%; text-align: left; padding: 7px 10px; border-radius: 6px;
+  background: transparent; border: none; color: var(--text); font-size: 0.9em; cursor: pointer;
+}
+.theme-custom-toggle:hover { background: var(--panel); }
+.theme-custom { padding: 2px 10px 8px; }
+.theme-color-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 0.85em; cursor: pointer; }
+.theme-color-row input[type="color"] {
+  width: 28px; height: 20px; padding: 0; border: 1px solid var(--border);
+  border-radius: 4px; background: none; cursor: pointer; flex-shrink: 0;
+}
+.theme-color-row > span:first-of-type { flex: 1; }
 
 /* ---------- 列表/表格 ---------- */
 .list { display: flex; flex-direction: column; gap: 2px; }

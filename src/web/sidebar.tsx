@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { IconClock, IconFolder } from './icons.js';
 // import { IconDiff } from './icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from './context-menu.js';
-import { THEMES } from './header.js';
+import { THEMES, THEME_PINNED } from './header.js';
 import type { HistoryItem } from './api.js';
 
 /** 主视图类型（侧边栏导航目标） */
@@ -23,6 +23,10 @@ export function Sidebar(props: {
   /** 外观区：主题色块（位于最近项目上方；字体设置在顶栏 ⋯ 菜单） */
   theme: string;
   setTheme: (t: string) => void;
+  /** 打开主题气泡（参数为「…」按钮的屏幕坐标，气泡贴其下方展开） */
+  onOpenThemePop: (x: number, y: number) => void;
+  /** 主题气泡是否打开（「…」按钮高亮态） */
+  themePopOpen: boolean;
 }) {
   // 最近项目右键菜单（设常用 / 删除 / 取消）
   const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean } | null>(null);
@@ -47,9 +51,9 @@ export function Sidebar(props: {
         </div>
       ))}
       <div style={{ flex: 1 }} />
-      {/* 外观区：主题色块（无标题，简洁一排；字体设置在顶栏 ⋯ 菜单） */}
-      <div className="row small dim nowrap" style={{ gap: 5, padding: '2px 20px 4px' }} title="切换主题">
-        {THEMES.map((t) => (
+      {/* 外观区：前 5 套主题为快捷圆点，其余全部在「…」气泡里（含自定义配色/我的主题） */}
+      <div className="row small dim nowrap" style={{ gap: 5, padding: '2px 20px 4px' }}>
+        {THEMES.slice(0, THEME_PINNED).map((t) => (
           <button
             key={t.key}
             className={`theme-btn ${props.theme === t.key ? 'active' : ''}`}
@@ -58,6 +62,16 @@ export function Sidebar(props: {
             onClick={() => props.setTheme(t.key)}
           />
         ))}
+        <button
+          className={`theme-more ${props.themePopOpen ? 'active' : ''}`}
+          title="更多主题 · 自定义配色"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            props.onOpenThemePop(r.left, r.bottom + 6);
+          }}
+        >
+          ⋯
+        </button>
       </div>
       {/* 最近项目：底部区域（版本号上方） */}
       {props.history.length > 0 && (
