@@ -96,7 +96,8 @@ export interface Vcs {
   diff(a?: string, b?: string, pathRel?: string): Promise<DiffResult>;
   ls(dir: string): Promise<{ name: string; isDir: boolean }[]>;
   add(relPaths: string[]): Promise<VcsResult>;
-  commit(relPaths: string[], msg: string): Promise<VcsResult>;
+  /** 提交。stagedOnly：已在 hunk 弹窗里部分暂存过的文件，提交时跳过整文件 add（否则会覆盖用户选中的块） */
+  commit(relPaths: string[], msg: string, stagedOnly?: string[]): Promise<VcsResult>;
   restoreMissing(): Promise<string[]>;
   revert(relPaths: string[]): Promise<VcsResult>;
   /** 还原到指定历史版本：git checkout REV -- path；svn cat -r REV 写回工作区（文件级，二进制拒绝） */
@@ -147,6 +148,12 @@ export interface Vcs {
   unpushedLog?(): Promise<LogEntry[]>;
   /** 读取提交完整说明（标题+正文，%B）：「修改注释」弹窗回显完整内容（列表接口只带 %s 标题） */
   commitMessage?(rev: string): Promise<string>;
+  /** 已在暂存区里的文件（提交弹窗恢复「部分暂存」标记用） */
+  stagedFiles?(): Promise<string[]>;
+  /** 读取文件的逐块差异（-U1）：hunk 级部分提交用 */
+  diffHunks?(pathRel: string): Promise<import('./hunks.js').ParsedDiff>;
+  /** 把选中的块应用到暂存区（expectBlob：弹窗打开时的内容指纹，不一致则拒绝） */
+  stageHunks?(pathRel: string, hunkIndices: number[], expectBlob?: string): Promise<VcsResult>;
   /** 批量读取提交完整说明（rev 前 7 位 → 说明）：提交列表悬浮提示用 */
   commitMessages?(revs: string[]): Promise<Record<string, string>>;
   amend?(message: string): Promise<VcsResult>;

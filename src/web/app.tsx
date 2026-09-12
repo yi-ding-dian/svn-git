@@ -622,9 +622,11 @@ export function App() {
             : '当前目录下没有变更文件');
           return;
         }
-        setModal({ type: 'commit-select', dir, dirLabel, items });
+        // 从 index 恢复「已部分暂存」的文件：弹窗关掉再打开也认得（否则重开后会整文件 add，把未选的块也提交）
+        const stagedOnly = await get.stagedFiles().then((r) => r.files).catch(() => []);
+        setModal({ type: 'commit-select', dir, dirLabel, items, stagedOnly });
         // 与"提交此文件"一致的提交前安全：行冲突/远程检查后台并行（用户勾选期间完成，关窗则丢弃）
-        checkCommitBackground(items.map((i) => i.path), { type: 'commit-select', dir, dirLabel, items });
+        checkCommitBackground(items.map((i) => i.path), { type: 'commit-select', dir, dirLabel, items, stagedOnly });
       } catch (e) {
         setToastErr(true);
         setToast(`读取变更失败: ${(e as Error).message}`);
@@ -635,7 +637,7 @@ export function App() {
 
   // 勾选提交：二次确认后执行（svn 未版本化文件先 add）
   const doCommitSelected = useCallback(
-    async (paths: string[], message: string) => {
+    async (paths: string[], message: string, stagedOnly: string[] = []) => {
       setModal(null);
       try {
         if (repo?.type === 'svn') {
@@ -643,7 +645,7 @@ export function App() {
           const needAdd = paths.filter((p) => st.items.some((i) => i.path === p && i.code === '?'));
           if (needAdd.length > 0) await post.add(needAdd);
         }
-        const r = await post.commit(paths, message);
+        const r = await post.commit(paths, message, stagedOnly);
         if (r.ok) {
           setToastErr(false);
           setToast(r.message);

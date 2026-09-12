@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { statSync } from 'node:fs';
 import { run } from './exec.js';
+import { parseDiff, buildPatch, blobOf, type ParsedDiff } from './hunks.js';
+import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.js';
 import { loadConfig } from '../config.js';
 import type { FileStatus, LogEntry, RepoInfo, VcsResult } from './types.js';
 
@@ -249,7 +251,11 @@ export class GitVcs {
     args.push('--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--name-status');
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args);
-    if (res.code !== 0) throw new Error(`git log 失败: ${res.stderr.trim()}`);
+    // 刚 git init 的空仓库（尚无任何提交）：git log 直接失败，返回空列表即可，不该让上游 500
+    if (res.code !== 0) {
+      if (/尚无任何提交|does not have any commits|unknown revision|bad default revision/i.test(res.stderr)) return [];
+      throw new Error(`git log 失败: ${res.stderr.trim()}`);
+    }
     return parseGitLog(res.stdout);
   }
 
@@ -286,7 +292,13 @@ export class GitVcs {
    */
   async unpushed(): Promise<string[]> {
     const range = await this.unpushedRange();
-    if (!range) return [];
+    if (!range) {
+      // 纯本地仓库（既无上游也无 origin 缓存）：没有「已推送」的概念，全部提交都可改注释/撤销，
+      // 否则历史视图里所有提交都没有右键菜单（实测过）。
+      const res = await this.exec(['log', '--format=%H']);
+      if (res.code !== 0) return [];
+      return res.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+    }
     const up = await this.exec(['rev-list', `${range}..HEAD`]);
     if (up.code === 0) {
       return up.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -414,11 +426,56 @@ export class GitVcs {
     }
   }
 
+  /** 已 hunk 级部分暂存的文件：提交弹窗据此显示「✂ 部分」，提交时跳过整文件 add（重开弹窗也不丢）。
+   *  只认登记（见 stage-registry.ts）——从 index/工作区状态反推会误伤：
+   *  「普通暂存 + 工作区后续修改」与「hunk 部分暂存」的 diff 状态完全同构。
+   *  这里做一次自愈：登记的文件若在 index 里已无暂存（被 reset/drop 清掉了），就地移除，
+   *  否则会跳过 add 导致 git 拒绝空提交、该文件从此无法提交。 */
+  async stagedFiles(): Promise<string[]> {
+    const tracked = hunkStagedOf(this.repo.root);
+    if (tracked.length === 0) return [];
+    const res = await this.exec(['-c', 'core.quotepath=false', 'diff', '--cached', '--name-only']);
+    if (res.code !== 0) return tracked;
+    const inIndex = new Set(res.stdout.split('\n').map((s) => s.trim()).filter(Boolean));
+    const stale = tracked.filter((p) => !inIndex.has(p));
+    if (stale.length) clearHunkStaged(this.repo.root, stale);
+    return tracked.filter((p) => inIndex.has(p));
+  }
+
+  /** 读取文件的逐块差异（-U1：默认 -U3 会把相距较近的改动并成一块，-U1 分得更细且仍有 1 行上下文够 apply 用）。
+   *  解析逻辑在 hunks.ts 的纯函数里，这里只负责取 diff 文本。 */
+  async diffHunks(pathRel: string): Promise<ParsedDiff> {
+    const res = await this.exec(['-c', 'core.quotepath=false', 'diff', '-U1', '--no-color', '--', pathRel]);
+    if (res.code !== 0) throw new Error(`读取差异失败: ${res.stderr.trim()}`);
+    return parseDiff(res.stdout);
+  }
+
+  /** 把选中的块应用到暂存区（hunk 级部分提交的基础）。
+   *  patch 经 stdin 传入，避免长 diff 触发命令行长度限制；--whitespace=nowarn 避免空白警告刷屏。 */
+  async stageHunks(pathRel: string, hunkIndices: number[], expectBlob?: string): Promise<VcsResult> {
+    const parsed = await this.diffHunks(pathRel);
+    if (parsed.hunks.length === 0) return { ok: false, message: '该文件没有可暂存的改动' };
+    // 弹窗打开后文件被外部改过：块的位置会错位，按旧索引暂存会暂存到界面上没显示过的块——直接拒绝
+    if (expectBlob && blobOf(parsed.fileHeader) !== expectBlob) {
+      return { ok: false, message: '文件在弹窗打开后已被改动，请关闭后重新打开再选' };
+    }
+    const picked = hunkIndices.filter((i) => i >= 0 && i < parsed.hunks.length);
+    if (picked.length === 0) return { ok: false, message: '未选择任何改动' };
+    const patch = buildPatch(parsed, picked);
+    const res = await this.exec(['apply', '--cached', '--whitespace=nowarn', '-'], { stdinData: patch });
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '暂存失败' };
+    markHunkStaged(this.repo.root, pathRel); // 登记：提交时该文件要跳过整文件 add
+    return { ok: true, message: `已暂存 ${picked.length} 处改动` };
+  }
+
   /** 撤销最近一次提交（--soft 保留工作区修改，可重新勾选提交） */
   async resetSoft(): Promise<VcsResult> {
     const res = await this.exec(['reset', '--soft', 'HEAD~']);
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '撤销提交失败' };
-    return { ok: true, message: '已撤销最近一次提交（修改保留在工作区，可重新提交）' };
+    // 撤销后 index 里是那次提交的完整内容，不再代表「hunk 级部分暂存」——
+    // 不清登记的话，「撤销 → 继续改 → 提交」会被误判成部分暂存而跳过 add，提交出旧内容（实测过）
+    clearHunkStaged(this.repo.root);
+    return { ok: true, message: '已撤销最近一次提交（改动回到暂存区，可重新提交）' };
   }
 
   /** git diff：工作区/暂存区，或版本间；可限定路径 */
@@ -491,7 +548,7 @@ export class GitVcs {
   }
 
   /** git add -A + commit */
-  async commit(relPaths: string[], msg: string): Promise<VcsResult> {
+  async commit(relPaths: string[], msg: string, stagedOnly: string[] = []): Promise<VcsResult> {
     // 合并进行中（MERGE_HEAD 存在）：git 禁止部分提交（cannot do a partial commit during a merge）。
     // 冲突解决器 resolve 时已 add 好文件，这里忽略勾选、提交整个合并即可（部分提交在合并态无意义）
     const merging = await this.exec(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']);
@@ -505,11 +562,39 @@ export class GitVcs {
     }
     if (relPaths.length) {
       // 磁盘存在的文件(修改/新增/未跟踪):add 暂存；已删除(D)文件磁盘不存在无法 add，由 commit -- 直接提交其 index 状态
-      const exist = relPaths.filter((p) => fs.existsSync(path.join(this.repo.root, p)));
+      // stagedOnly：已在 hunk 弹窗里部分暂存过的文件——跳过 add，否则会把未选中的块一并暂存，覆盖用户的选择
+      const stagedSet = new Set(stagedOnly);
+      const exist = relPaths.filter((p) => !stagedSet.has(p) && fs.existsSync(path.join(this.repo.root, p)));
       const deleted = relPaths.filter((p) => !fs.existsSync(path.join(this.repo.root, p)));
       if (exist.length) {
         const addRes = await this.exec(['add', '-A', '--', ...exist]);
         if (addRes.code !== 0) return { ok: false, message: `暂存失败: ${addRes.stderr.trim()}` };
+      }
+      if (stagedSet.size > 0) {
+        // 有 hunk 级部分暂存的文件时，**不能用 pathspec 形式的 commit**：
+        // `git commit -- <paths>` 的语义是「忽略 index，直接记录这些路径工作区的内容」，
+        // 会把用户在 hunk 弹窗里没勾选的块一并提交，index 里构造好的部分暂存形同虚设（已实测）。
+        // 改为：把其余要提交的文件也 add 进 index（部分暂存的文件已就位），再不带路径提交。
+        const toAdd = relPaths.filter((p) => !stagedSet.has(p));
+        if (toAdd.length) {
+          const addRes = await this.exec(['add', '-A', '--', ...toAdd]);
+          if (addRes.code !== 0) return { ok: false, message: `暂存失败: ${addRes.stderr.trim()}` };
+        }
+        // 不带路径的 commit 会提交 index 里的全部内容——把"不在本次勾选范围"的文件从 index 剔除
+        // （用户在弹窗里取消了勾选、或之前手工暂存过的），否则会把它们一并提交。reset 只动 index，不碰工作区。
+        const stagedNow = await this.stagedFiles();
+        const drop = stagedNow.filter((p) => !relPaths.includes(p));
+        if (drop.length) {
+          const resetRes = await this.exec(['reset', '-q', 'HEAD', '--', ...drop]);
+          if (resetRes.code !== 0) return { ok: false, message: `暂存区清理失败: ${resetRes.stderr.trim()}` };
+          // 同步清登记：index 已被清空，登记若留着，该文件下次提交会跳过 add → git 拒绝空提交（死锁）
+          clearHunkStaged(this.repo.root, drop);
+        }
+        const res = await this.exec(['commit', '-m', msg], { timeoutMs: 120_000 });
+        if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git commit 失败' };
+        clearHunkStaged(this.repo.root, relPaths); // 已提交，登记失效
+        const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
+        return { ok: true, message: m ? `提交成功 ${m[1]} ${m[2]?.slice(0, 7)}` : '提交成功' };
       }
       // 指定路径提交：已删除文件也在 paths 里（提交其 index 删除记录）
       const res = await this.exec(['commit', '-m', msg, '--', ...relPaths], { timeoutMs: 120_000 });

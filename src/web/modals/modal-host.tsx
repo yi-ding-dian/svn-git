@@ -105,7 +105,7 @@ export interface ModalHostProps {
   /** 动作 */
   actions: {
     doCommit: (paths: string[], msg: string) => Promise<unknown>;
-    doCommitSelected: (paths: string[], msg: string) => Promise<unknown>;
+    doCommitSelected: (paths: string[], msg: string, stagedOnly?: string[]) => Promise<unknown>;
     runOp: (op: Op, paths: string[]) => void;
     refresh: () => void;
     loadHistory: () => void;
@@ -383,14 +383,15 @@ export function ModalHost(props: ModalHostProps) {
           dirLabel={modal.dirLabel}
           items={modal.items}
           checked={modal.checked}
+          stagedOnly={modal.stagedOnly}
           onClose={() => setModal(null)}
-          onDiff={(path, checked) => {
-            // 双击文件 → 打开差异视图；返回时恢复本弹窗（含勾选状态）
-            setDiffReturnModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked });
+          onDiff={(path, checked, stagedOnly) => {
+            // 双击文件 → 打开差异视图；返回时恢复本弹窗（含勾选状态与已部分暂存列表）
+            setDiffReturnModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked, stagedOnly });
             setModal(null);
             gotoDiff(path);
           }}
-          onConfirm={(paths, msg) =>
+          onConfirm={(paths, msg, stagedOnly) =>
             setModal({
               type: 'confirm',
               title: (
@@ -405,6 +406,12 @@ export function ModalHost(props: ModalHostProps) {
                 <>
                   <div className="small" style={{ marginBottom: 8 }}>
                     确认提交以下 <b>{paths.length}</b> 个文件？
+                    {stagedOnly.filter((p) => paths.includes(p)).length > 0 && (
+                      <span style={{ color: 'var(--accent)' }}>
+                        {' '}
+                        其中 {stagedOnly.filter((p) => paths.includes(p)).length} 个只提交选中的部分改动
+                      </span>
+                    )}
                   </div>
                   {/* 文件列表：容器 + mono + 滚动 + 省略号，超长路径可读 */}
                   <div className="vcs-list" style={{ minHeight: 120 }}>
@@ -426,8 +433,8 @@ export function ModalHost(props: ModalHostProps) {
               confirmLabel: '确认提交',
               secondaryLabel: '返回修改',
               // 返回修改：回到「提交修改的文件」弹窗（保留原目录、列表与勾选）
-              secondaryAction: () => setModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked: paths }),
-              action: () => void doCommitSelected(paths, msg),
+              secondaryAction: () => setModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked: paths, stagedOnly }),
+              action: () => void doCommitSelected(paths, msg, stagedOnly),
             })
           }
         />

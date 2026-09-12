@@ -6,11 +6,12 @@ import { HelpNote, FormRow } from '../ui/ui.js';
 import { IconOk, IconErr, IconWarn } from '../ui/icons.js';
 import { pathAutoWidth, useCheckedSet } from '../utils.js';
 import { cmdOfRepo } from '../cmd-preview.js';
+import { StageHunksModal } from './stage-hunks.js';
 
 /** 全局弹窗状态（App 根组件 / 顶部工具栏共用） */
 export type Modal =
   | { type: 'commit'; paths: string[] }
-  | { type: 'commit-select'; dir: string; dirLabel: string; items: { path: string; code: string; isDir: boolean }[]; checked?: string[] }
+  | { type: 'commit-select'; dir: string; dirLabel: string; items: { path: string; code: string; isDir: boolean }[]; checked?: string[]; stagedOnly?: string[] }
   | { type: 'login' }
   | { type: 'open' }
   | { type: 'branches' }
@@ -428,14 +429,21 @@ export function CommitSelectModal(props: {
   items: { path: string; code: string; isDir: boolean }[];
   /** 恢复勾选（从差异视图/提交确认返回时保留）；缺省全选 */
   checked?: string[];
-  /** 双击文件查看差异（path, 当前勾选快照） */
-  onDiff?: (path: string, checked: string[]) => void;
+  /** 已部分暂存（hunk 级）的文件：提交时跳过整文件 add，只提交已选中的块 */
+  stagedOnly?: string[];
+  /** 双击文件查看差异（path, 当前勾选快照, 已部分暂存列表） */
+  onDiff?: (path: string, checked: string[], stagedOnly: string[]) => void;
   onClose: () => void;
-  onConfirm: (paths: string[], message: string) => void;
+  onConfirm: (paths: string[], message: string, stagedOnly: string[]) => void;
 }) {
+  const stagedSet = new Set(props.stagedOnly ?? []);
   const { checked, setChecked, toggle } = useCheckedSet(props.checked ?? props.items.map((i) => i.path));
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
+  /** 已部分暂存（hunk 级）的文件；先在本地维护，随 onConfirm 一并交出去，App 再持久到弹窗状态里 */
+  const [stagedLocal, setStagedLocal] = useState<string[]>(props.stagedOnly ?? []);
+  /** 正在「选择部分改动」的文件（null = 未打开那个弹窗） */
+  const [stagePath, setStagePath] = useState<string | null>(null);
 
   // 状态过滤：仅当列表存在 A(添加)/D(删除) 文件时才显示对应过滤开关
   const hasA = props.items.some((i) => i.code === 'A');
@@ -479,7 +487,7 @@ export function CommitSelectModal(props: {
       setErr('请填写提交信息');
       return;
     }
-    props.onConfirm([...checked], msg.trim());
+    props.onConfirm([...checked], msg.trim(), stagedLocal);
   };
 
   // 弹窗宽度自适应最长文件名（公式见 utils.pathAutoWidth）
@@ -537,10 +545,14 @@ export function CommitSelectModal(props: {
                 key={it.path}
                 className="changed-row"
                 style={{ cursor: 'pointer' }}
-                title={props.onDiff && !it.isDir ? `${it.path}\n双击查看差异` : it.path}
+                title={props.onDiff && !it.isDir ? `${it.path}\n双击查看差异 · 右键选择部分改动` : it.path}
                 onDoubleClick={(ev) => {
                   ev.preventDefault();
-                  if (props.onDiff && !it.isDir) props.onDiff(it.path, [...checked]);
+                  if (props.onDiff && !it.isDir) props.onDiff(it.path, [...checked], stagedLocal);
+                }}
+                onContextMenu={(ev) => {
+                  ev.preventDefault();
+                  if (!it.isDir) setStagePath(it.path);
                 }}
               >
                 <input type="checkbox" checked={checked.has(it.path)} onChange={() => toggle(it.path)} style={{ flexShrink: 0 }} />
@@ -549,6 +561,11 @@ export function CommitSelectModal(props: {
                 <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {it.path}{it.isDir ? '/' : ''}
                 </span>
+                {stagedLocal.includes(it.path) && (
+                  <span className="small" style={{ flexShrink: 0, color: 'var(--accent)' }} title="已部分暂存：提交时只提交选中的改动，未选中的留在工作区">
+                    ✂ 部分
+                  </span>
+                )}
               </label>
             ))}
             {props.items.length === 0 && <div className="dim" style={{ padding: '8px 4px' }}>当前目录下没有变更文件</div>}
@@ -580,6 +597,18 @@ export function CommitSelectModal(props: {
           </button>
         </div>
       </ResizableModal>
+      {/* hunk 级部分提交：右键文件打开，选中的块暂存后该文件标记为「部分」 */}
+      {stagePath && (
+        <StageHunksModal
+          path={stagePath}
+          onClose={() => setStagePath(null)}
+          onStaged={() => {
+            const p = stagePath;
+            setStagedLocal((prev) => (prev.includes(p) ? prev : [...prev, p]));
+          }}
+          onToast={(m) => setErr(m)}
+        />
+      )}
     </div>
   );
 }

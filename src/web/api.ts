@@ -2,6 +2,8 @@
 
 // 状态码中文说明：单一事实源在 src/shared/types.ts（含 ' ' 无变化 键），此处 re-export 保持 web 侧既有导入路径不变
 export { CODE_DESC } from '../shared/types.js';
+import type { ParsedDiff } from '../shared/types.js';
+export type { ParsedDiff };
 
 export interface RepoCheck {
   /** 目标完整路径（dir/name） */
@@ -239,6 +241,10 @@ export const get = {
   commitMessage: (rev: string) => api<{ message: string }>(`/api/commit-message?rev=${encodeURIComponent(rev)}`),
   gitUnpushedCount: () => api<{ count: number }>('/api/git-unpushed-count'),
   gitUnpushed: () => api<{ count: number; unpushed: LogEntry[] }>('/api/git-unpushed'),
+  /** 单文件的逐块差异（hunk 级部分提交用） */
+  diffHunks: (path: string) => api<ParsedDiff>(`/api/diff-hunks?path=${encodeURIComponent(path)}`),
+  /** 已在暂存区里的文件（提交弹窗恢复「部分暂存」标记用） */
+  stagedFiles: () => api<{ files: string[] }>('/api/staged-files'),
 };
 
 export interface FilterTreeNode {
@@ -283,7 +289,8 @@ export const post = {
   moduleIndexClear: (dir: string) => api<{ ok: boolean }>('/api/module-index/clear', json({ dir })),
   history: (path: string, type: 'svn' | 'git') => api<{ ok: boolean }>('/api/history', json({ path, type })),
   add: (paths: string[]) => api<VcsResult>('/api/add', json({ paths })),
-  commit: (paths: string[], message: string) => api<VcsResult>('/api/commit', json({ paths, message })),
+  commit: (paths: string[], message: string, stagedOnly: string[] = []) =>
+    api<VcsResult>('/api/commit', json({ paths, message, stagedOnly })),
   update: (path?: string, signal?: AbortSignal) =>
     api<VcsResult & { path?: string; files?: { path: string; status: string; code?: string }[] }>('/api/update', json({ path }, signal)),
   revert: (paths: string[]) => api<VcsResult>('/api/revert', json({ paths })),
@@ -329,6 +336,8 @@ export const post = {
   gitAmend: (message: string) => api<VcsResult>('/api/git-amend', json({ message })),
   /** 批量提交完整说明（rev → 标题+正文）：提交列表悬浮提示用 */
   commitMessages: (revs: string[]) => api<{ messages: Record<string, string> }>('/api/commit-messages', json({ revs })),
+  /** 把选中的块应用到暂存区（hunk 级部分提交） */
+  stageHunks: (path: string, hunks: number[], expectBlob?: string) => api<VcsResult>('/api/stage-hunks', json({ path, hunks, expectBlob })),
   gitReword: (hash: string, message: string) => api<VcsResult>('/api/git-reword', json({ hash, message })),
   gitReset: () => api<VcsResult>('/api/git-reset', json({})),
   shutdown: () => api<{ ok: boolean }>('/api/shutdown', json({})),

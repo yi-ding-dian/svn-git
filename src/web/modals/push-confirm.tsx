@@ -308,8 +308,8 @@ export function PushConfirmModal(props: {
           title="↩ 撤销最近一次提交"
           message={
             <>
-              将撤销最近一次提交 <span className="mono">{unpushed[0]!.rev}</span>,工作区的修改会保留,
-              可以重新勾选文件再次提交。确认撤销?
+              将撤销最近一次提交 <span className="mono">{unpushed[0]!.rev}</span>。这次提交的改动会回到
+              <b>暂存区</b>（提交之后新改的内容不受影响），可以重新勾选文件再次提交。确认撤销?
             </>
           }
           confirmLabel="撤销"

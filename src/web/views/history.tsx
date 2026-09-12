@@ -69,6 +69,10 @@ export function HistoryView(props: Props) {
   const [amendMsg, setAmendMsg] = useState('');
   /** 撤销提交二次确认 */
   const [resetCfm, setResetCfm] = useState(false);
+  /** 详情面板「变更文件」行的右键菜单（未推送提交时提供撤销提交；带该文件路径供"查看差异"） */
+  const [fileMenu, setFileMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  /** 详情面板提交说明是否展开（长说明默认折叠，避免占满面板挤掉变更文件列表） */
+  const [msgExpanded, setMsgExpanded] = useState(false);
   /** 提交完整说明缓存（rev → 标题+正文）：悬浮提示用（列表接口只带 %s 标题） */
   const [fullMsgs, setFullMsgs] = useState<Record<string, string>>({});
   /** 已请求过完整说明的 rev：翻页/重载时只拉新增，避免重复请求 */
@@ -198,6 +202,15 @@ export function HistoryView(props: Props) {
   /** 未推送 hash 集合（短 7 位比对）+ 第一条未推送（HEAD）下标 */
   const unpushedSet = new Set(unpushed.map((h) => h.slice(0, 7)));
   const headIdx = logs ? logs.findIndex((l) => unpushedSet.has(l.rev)) : -1;
+
+  // 详情面板的提交说明：长说明默认折叠（超过 6 行），点击展开/收起。切到别的提交时回到折叠态
+  const detailMsg = sel ? (fullMsgs[sel.rev] ?? sel.msg) : '';
+  const detailMsgLines = detailMsg ? detailMsg.split('\n').length : 0;
+  const detailMsgLong = detailMsgLines > 6;
+  const detailMsgOpen = msgExpanded || !detailMsgLong;
+  useEffect(() => {
+    setMsgExpanded(false);
+  }, [sel?.rev]);
 
   /** 修改注释确认（HEAD 用 amend；其余未推送提交用 reword 重写注释，代码内容不变） */
   const doAmend = async (x: number, y: number) => {
@@ -416,12 +429,39 @@ export function HistoryView(props: Props) {
               <span className="grow" />
             </div>
             {/* 提交说明：优先用完整说明（%B，保留换行/分段），未拉到前回退列表里的 %s 标题。
-                列表行仍只显示 %s（一行紧凑），这里是要读全文的地方 */}
-            <div className="dim" style={{ marginBottom: 10, whiteSpace: 'pre-wrap' }}>{fullMsgs[sel.rev] ?? sel.msg}</div>
+                长说明默认只显示一行（全文常有几十行，展开会挤掉下面的变更文件列表），点击或按钮展开 */}
+            <div style={{ marginBottom: 10 }}>
+              <div
+                className="dim"
+                onClick={() => detailMsgLong && setMsgExpanded((v) => !v)}
+                title={detailMsgLong ? (detailMsgOpen ? '点击收起' : '点击展开全文') : undefined}
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  maxHeight: detailMsgOpen ? undefined : '1.5em',
+                  overflow: 'hidden',
+                  cursor: detailMsgLong ? 'pointer' : undefined,
+                }}
+              >
+                {detailMsg}
+              </div>
+              {detailMsgLong && (
+                <button className="mini" style={{ marginTop: 4 }} onClick={() => setMsgExpanded((v) => !v)}>
+                  {detailMsgOpen ? '收起 ▲' : `展开全文（共 ${detailMsgLines} 行）▼`}
+                </button>
+              )}
+            </div>
             <div className="small dim" style={{ marginBottom: 6 }}>变更文件（点击查看 diff）：</div>
             <div className="changed" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
               {sel.changed.map((c) => (
-                <div key={c.path} className="changed-row" onClick={() => void showDiff(sel.rev, undefined, c.path)}>
+                <div
+                  key={c.path}
+                  className="changed-row"
+                  onClick={() => void showDiff(sel.rev, undefined, c.path)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setFileMenu({ x: e.clientX, y: e.clientY, path: c.path });
+                  }}
+                >
                   <span className={`act ${c.action}`}>{c.action}</span>
                   <span className="mono" style={{ cursor: 'pointer' }}>{c.path}</span>
                 </div>
@@ -513,6 +553,45 @@ export function HistoryView(props: Props) {
           onClose={() => setMenu(null)}
         />
       )}
+      {/* 详情面板「变更文件」右键：未推送的提交才提供「撤销提交」（含命令预览与二次确认，与提交行右键同一套） */}
+      {fileMenu && sel && (
+        <ContextMenu
+          x={fileMenu.x}
+          y={fileMenu.y}
+          mask
+          items={[
+            {
+              icon: '🔍',
+              label: '查看此文件差异',
+              cmd: cmdOfRepo('git', 'diff_versions', { a: `${sel.rev}^`, b: sel.rev, path: fileMenu.path }),
+              action: () => {
+                const p = fileMenu.path;
+                setFileMenu(null);
+                void showDiff(sel.rev, undefined, p);
+              },
+            },
+            ...(unpushedSet.has(sel.rev)
+              ? [
+                  { sep: true },
+                  {
+                    icon: '↩',
+                    label: '撤销提交',
+                    danger: true,
+                    cmd: cmdOfRepo('git', 'reset_soft'),
+                    title: '撤销这次提交，改动保留在工作区（可重新勾选提交）；仅未推送的提交可撤销',
+                    action: () => {
+                      const rev = sel.rev;
+                      setFileMenu(null);
+                      if (rev === logs?.[headIdx]?.rev) setResetCfm(true);
+                      else setInfoTip('仅支持撤销最近一次提交（HEAD）。这次提交之前还有更新的提交，需先逐一撤销它们。');
+                    },
+                  },
+                ]
+              : []),
+          ]}
+          onClose={() => setFileMenu(null)}
+        />
+      )}
       {/* 修改注释弹窗 */}
       {amendOf && (
         <div className="modal-mask">
@@ -552,8 +631,8 @@ export function HistoryView(props: Props) {
           title="↩ 撤销最近一次提交"
           message={
             <>
-              将撤销最近一次提交 <span className="mono">{logs[headIdx]!.rev}</span>,工作区的修改会保留,
-              可以重新勾选文件再次提交。确认撤销?
+              将撤销最近一次提交 <span className="mono">{logs[headIdx]!.rev}</span>。这次提交的改动会回到
+              <b>暂存区</b>（提交之后新改的内容不受影响），可以重新勾选文件再次提交。确认撤销?
             </>
           }
           confirmLabel="撤销"

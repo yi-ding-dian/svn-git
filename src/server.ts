@@ -9,6 +9,7 @@ import { isSafeOrigin, sendJson, readBody, isAuthError, type Ctx } from './route
 import { handle as handleConflicts } from './routes/conflicts.js';
 import { handle as handleBranch } from './routes/branch.js';
 import { handle as handleOps } from './routes/ops.js';
+import { handle as handleStage } from './routes/stage.js';
 import { handle as handleMisc } from './routes/misc.js';
 import { handle as handleConfig } from './routes/config.js';
 import { handle as handleModuleIndex } from './routes/module-index.js';
@@ -54,6 +55,7 @@ export function startServer(): Promise<ServerHandle> {
         if (await handleConflicts(ctx)) return;
         if (await handleBranch(ctx)) return;
         if (await handleOps(ctx)) return;
+        if (await handleStage(ctx)) return;
         if (await handleMisc(ctx)) return;
         if (await handleConfig(ctx)) return;
         if (await handleModuleIndex(ctx)) return;

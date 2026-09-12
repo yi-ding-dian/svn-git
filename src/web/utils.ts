@@ -1,5 +1,6 @@
 /** 前端公共工具：纯函数 + 通用 hook */
 import { useCallback, useState } from 'react';
+import type { Hunk } from '../shared/types.js';
 
 // 二进制文件扩展名集合：单一事实源在 src/shared/types.ts（server 与前端共用，避免双份维护）
 import { BINARY_EXTS } from '../shared/types.js';
@@ -88,4 +89,11 @@ export function useCheckedSet(initial: string[]) {
     });
   }, []);
   return { checked, setChecked, toggle };
+}
+
+/** 变更块的摘要（hunk 勾选弹窗里每块的标题，如「第 12 行 · +3 −1」） */
+export function hunkSummaryLabel(h: Hunk): string {
+  const add = h.lines.filter((l) => l.type === 'add').length;
+  const del = h.lines.filter((l) => l.type === 'del').length;
+  return `第 ${h.oldStart} 行 · +${add} −${del}`;
 }

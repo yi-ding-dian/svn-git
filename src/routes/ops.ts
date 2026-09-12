@@ -72,7 +72,16 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         let result: { ok: boolean; message: string };
         if (p === '/api/add') result = await vcs.add(paths);
-        else if (p === '/api/commit') result = await vcs.commit(paths, msg);
+        else if (p === '/api/commit') {
+          // stagedOnly：在 hunk 弹窗里部分暂存过的文件，提交时跳过整文件 add（加校验，同样不能越界）
+          const stagedOnly = Array.isArray(body.stagedOnly) ? (body.stagedOnly as unknown[]).map(String) : [];
+          const badStaged = stagedOnly.find((sp) => !inRepoRoot(repo.root, path.resolve(repo.root, sp)));
+          if (badStaged) {
+            sendJson(res, 400, { error: `路径超出工作副本范围: ${badStaged}` });
+            return true;
+          }
+          result = await vcs.commit(paths, msg, stagedOnly);
+        }
         else if (p === '/api/update') {
           const dir = String(body.path ?? '');
           // update 的 dir 同样校验（空串 = 仓库根，通过）
