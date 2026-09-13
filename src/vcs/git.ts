@@ -385,7 +385,16 @@ export class GitVcs {
     if (remoteContains.code === 0 && remoteContains.stdout.trim()) {
       return { ok: false, message: '该提交已推送，修改注释需重写远程历史（force push），已禁止' };
     }
-    // 3. 确定 rebase 基点与目标在 todo 中的行号（todo 里 hash 是短 hash，须按行号定位）：
+    // 3. 工作区必须干净：rebase 的硬性要求（否则 git 直接拒绝，返回的是 "不能 rebase: 您有未暂存的变更"
+    //    这种原文，界面上看起来像"点了没反应"）。未跟踪文件不影响 rebase，只看已跟踪文件的改动。
+    const dirty = await this.exec(['status', '--porcelain']);
+    if (dirty.code === 0) {
+      const trackedDirty = dirty.stdout.split('\n').filter((l) => l.trim() && !l.startsWith('??'));
+      if (trackedDirty.length > 0) {
+        return { ok: false, message: '修改较早提交的注释需要工作区干净：请先提交或贮藏当前改动（新增的未跟踪文件不影响）' };
+      }
+    }
+    // 4. 确定 rebase 基点与目标在 todo 中的行号（todo 里 hash 是短 hash，须按行号定位）：
     //    普通提交 → 基点为父提交，行号 = base..h 深度；根提交（无父）→ 基点 --root，行号 = rev-list --count h
     const parents = await this.exec(['rev-list', '--parents', '-n', '1', h]);
     const isRoot = parents.code !== 0 || parents.stdout.trim().split(/\s+/).filter(Boolean).length <= 1;
@@ -402,7 +411,7 @@ export class GitVcs {
       const depth = await this.exec(['rev-list', '--count', `${base}..${h}`]);
       lineNo = Number(depth.stdout.trim()) || 1;
     }
-    // 4. 生成临时脚本：序列编辑器（第 lineNo 行 pick→reword）+ 消息编辑器（写新注释）
+    // 5. 生成临时脚本：序列编辑器（第 lineNo 行 pick→reword）+ 消息编辑器（写新注释）
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svngit-reword-'));
     const seq = path.join(dir, 'seq.sh');
     fs.writeFileSync(seq, `#!/bin/sh\nsed -i "${lineNo}s/^pick /reword /" "$1"\n`, { mode: 0o700 });

@@ -1,7 +1,7 @@
 /** 历史视图：提交列表 + 变更文件详情，点击查看 diff；未推送提交显示绿灯可修改注释/撤销 */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, type LogEntry } from '../api.js';
-import { isBinaryFile } from '../utils.js';
+import { isBinaryFile, autoSizeForText } from '../utils.js';
 import { DiffRender } from '../ui/diff-render.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { ConfirmModal, InfoModal } from '../modals/modals.js';
@@ -67,6 +67,8 @@ export function HistoryView(props: Props) {
   /** 修改注释弹窗：当前提交 */
   const [amendOf, setAmendOf] = useState<LogEntry | null>(null);
   const [amendMsg, setAmendMsg] = useState('');
+  /** 修改注释弹窗自己的错误提示：父级 notice 在弹窗外的列表区，点确认失败时会以为"没反应" */
+  const [amendNotice, setAmendNotice] = useState('');
   /** 撤销提交二次确认 */
   const [resetCfm, setResetCfm] = useState(false);
   /** 详情面板「变更文件」行的右键菜单（未推送提交时提供撤销提交；带该文件路径供"查看差异"） */
@@ -231,6 +233,7 @@ export function HistoryView(props: Props) {
       } else {
         setNoticeErr(true);
         setNotice(r.message); // 失败信息显示在标题栏下方
+        setAmendNotice(r.message); // 同时显示在注释弹窗内，不让用户以为"点了没反应"
       }
     } catch (e) {
       setNoticeErr(true);
@@ -530,6 +533,7 @@ export function HistoryView(props: Props) {
                       const it = logs[menu.index]!;
                       setAmendOf(it);
                       setAmendMsg(it.msg); // 先回显标题（列表只带标题），完整说明异步补上，避免此前只编辑标题导致正文被覆盖丢失
+                      setAmendNotice('');
                       void get
                         .commitMessage(it.rev)
                         .then((r) => setAmendMsg(r.message))
@@ -595,7 +599,8 @@ export function HistoryView(props: Props) {
       {/* 修改注释弹窗 */}
       {amendOf && (
         <div className="modal-mask">
-          <ResizableModal width={480} minWidth={420}>
+          {/* 尺寸按注释长度自适应：长说明不再被固定 480px 宽 + 8 行高挤到只能滚动看 */}
+          <ResizableModal width={autoSizeForText(amendMsg).width} minWidth={420}>
             <h3>✏️ 修改提交注释</h3>
             <div className="body">
               <div className="dim small" style={{ marginBottom: 6 }}>
@@ -603,16 +608,22 @@ export function HistoryView(props: Props) {
               </div>
               <textarea
                 className="mono"
-                rows={8}
+                rows={autoSizeForText(amendMsg).rows}
                 title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
                 style={{ width: '100%', flex: 1, minHeight: 120 }}
                 value={amendMsg}
                 onChange={(e) => setAmendMsg(e.target.value)}
                 autoFocus
               />
+              {amendNotice && (
+                <div className="error small" style={{ marginTop: 6, wordBreak: 'break-all' }}>
+                  {amendNotice}
+                </div>
+              )}
             </div>
             <div className="foot">
-              <button onClick={() => setAmendOf(null)} disabled={busy}>取消</button>
+              {/* 取消时一并清掉错误提示：否则会让用户以为操作失败了却不知道原因 */}
+              <button onClick={() => { setAmendOf(null); setNotice(''); setNoticeErr(false); }} disabled={busy}>取消</button>
               <button
                 className="primary"
                 disabled={busy || !amendMsg.trim()}

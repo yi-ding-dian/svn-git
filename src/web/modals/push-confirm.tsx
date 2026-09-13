@@ -6,6 +6,7 @@ import { ResizableModal } from './modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { ConfirmModal, InfoModal } from './modals.js';
 import { ClickTip } from '../ui/ui.js';
+import { autoSizeForText } from '../utils.js';
 
 /** 二进制/图片等不支持差异查看的文件扩展名（双击查看差异前过滤） */
 const BINARY_EXT = new Set([
@@ -45,6 +46,8 @@ export function PushConfirmModal(props: {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [noticeErr, setNoticeErr] = useState(false);
+  /** 修改注释弹窗自己的错误提示：父级的 notice 在弹窗下层，会被盖住看不见（表现为"点了确认没反应"） */
+  const [amendNotice, setAmendNotice] = useState('');
   /** 非 HEAD 提交右键操作的说明弹窗 */
   const [infoTip, setInfoTip] = useState('');
   /** 跟随鼠标提示（修改注释成功显示在点击处） */
@@ -91,6 +94,7 @@ export function PushConfirmModal(props: {
       } else {
         setNotice(r.message);
         setNoticeErr(true);
+        setAmendNotice(r.message); // 同时显示在注释弹窗内，不让用户以为"点了没反应"
       }
     } catch (e) {
       setNotice((e as Error).message);
@@ -250,6 +254,7 @@ export function PushConfirmModal(props: {
                 const it = unpushed[menu.index]!;
                 setAmendOf(it);
                 setAmendMsg(it.msg); // 先回显标题（列表只带标题），完整说明异步补上，避免此前只编辑标题导致正文被覆盖丢失
+                setAmendNotice('');
                 void get
                   .commitMessage(it.rev)
                   .then((r) => setAmendMsg(r.message))
@@ -273,7 +278,7 @@ export function PushConfirmModal(props: {
       {/* 修改注释弹窗 */}
       {amendOf && (
         <div className="modal-mask">
-          <ResizableModal width={480} minWidth={420}>
+          <ResizableModal width={autoSizeForText(amendMsg).width} minWidth={420}>
             <h3>✏️ 修改提交注释</h3>
             <div className="body">
               <div className="dim small" style={{ marginBottom: 6 }}>
@@ -281,16 +286,22 @@ export function PushConfirmModal(props: {
               </div>
               <textarea
                 className="mono"
-                rows={8}
+                rows={autoSizeForText(amendMsg).rows}
                 title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
                 style={{ width: '100%', flex: 1, minHeight: 120 }}
                 value={amendMsg}
                 onChange={(e) => setAmendMsg(e.target.value)}
                 autoFocus
               />
+              {amendNotice && (
+                <div className="error small" style={{ marginTop: 6, wordBreak: 'break-all' }}>
+                  {amendNotice}
+                </div>
+              )}
             </div>
             <div className="foot">
-              <button onClick={() => setAmendOf(null)} disabled={busy}>取消</button>
+              {/* 取消时一并清掉错误提示：否则会残留在下方，看起来像又是新报的错 */}
+              <button onClick={() => { setAmendOf(null); setNotice(''); setNoticeErr(false); }} disabled={busy}>取消</button>
               <button
                 className="primary"
                 disabled={busy || !amendMsg.trim()}

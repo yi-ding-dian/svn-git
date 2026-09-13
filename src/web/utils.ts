@@ -97,3 +97,19 @@ export function hunkSummaryLabel(h: Hunk): string {
   const del = h.lines.filter((l) => l.type === 'del').length;
   return `第 ${h.oldStart} 行 · +${add} −${del}`;
 }
+
+/** 按文本内容估算编辑弹窗尺寸：宽按最长行、高度按行数（都钳制在合理范围）。
+ *  用于「修改提交注释」这类内容长度不定的弹窗——固定尺寸会让长说明只能滚动看。
+ *  maxRows 给得较宽（40）：长行会折行，按逻辑行数算出来的高度往往仍不够，留足余量；
+ *  真正超高时由弹窗的 maxHeight 兜底、textarea 内部滚动。 */
+export function autoSizeForText(
+  text: string,
+  opts?: { minW?: number; maxW?: number; minRows?: number; maxRows?: number },
+): { width: number; rows: number } {
+  const lines = text ? text.split('\n') : [];
+  const maxLen = lines.reduce((m, l) => Math.max(m, l.length), 0);
+  return {
+    width: pathAutoWidth(maxLen, opts?.minW ?? 620, opts?.maxW ?? 1400),
+    rows: Math.min(Math.max(lines.length + 1, opts?.minRows ?? 8), opts?.maxRows ?? 40),
+  };
+}
