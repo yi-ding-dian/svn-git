@@ -659,6 +659,18 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   min-height: 1.5em; box-shadow: inset 3px 0 0 var(--ok);
 }
 .sb-ph .sb-no { color: transparent; } /* 占位行不显示行号 */
+/* 纯删除块在右栏的定位角标：右栏没有该块的行（内容已被删除），用角标代替行高亮 */
+.sb-del-anchor { position: relative; box-shadow: inset 3px 0 0 var(--err); }
+.sb-del-hint {
+  position: absolute; right: 12px; top: 2px; z-index: 3; pointer-events: none;
+  background: var(--err); color: #fff; font-size: 11px; line-height: 1.6;
+  padding: 0 7px; border-radius: 4px; white-space: nowrap;
+  animation: sb-del-hint-in .15s ease-out;
+}
+@keyframes sb-del-hint-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
 .sb-no {
   width: 44px; text-align: right; padding-right: 8px;
   color: var(--dim); user-select: none; flex-shrink: 0; font-size: 12px;
