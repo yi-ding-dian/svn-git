@@ -14,6 +14,6 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/main.tsx", "src/server.ts", "src/config.ts", "src/vcs"]
+  "include": ["src/main.tsx", "src/server.ts", "src/config.ts", "src/vcs", "src/shared"]
 }
 

@@ -86,6 +86,15 @@ export function useRepoStatus(opts: { repoType?: string | null; repoRoot?: strin
       .catch(() => {});
   }, []);
 
+  // 切换仓库：立即清掉上一个仓库的远程提示（remoteHint 是上一个仓库的检查结果）。
+  // 必须显式清：下面的监控 effect 虽然依赖 repoRoot，但首次检查有 6s 延迟，这期间提示会
+  // 挂着上一个仓库的内容；若新仓库那次检查失败（无远程/网络不通）catch 静默，旧提示更会
+  // 永久残留——用户会以为新仓库有远程新提交。
+  useEffect(() => {
+    setRemoteHint(null);
+    setRiskFiles([]);
+  }, [repoRoot]);
+
   useEffect(() => {
     // 首次延迟 6s 再检查远程：网络不通时 fetch 慢，立即并发会占住浏览器连接槽、阻塞目录加载
     const first = setTimeout(checkRemote, 6_000);

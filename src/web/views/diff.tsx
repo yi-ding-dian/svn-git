@@ -6,6 +6,7 @@ import { langOf, highlightLine } from '../highlight.js';
 import { renderMarkdown } from '../markdown.js';
 import { IconCopy } from '../ui/icons.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
+import { parseUnifiedDiff, lineMarksOf, type DiffLine } from '../../shared/diff-parse.js';
 
 export interface DiffTarget {
   path?: string;
@@ -23,114 +24,22 @@ interface Props {
   onToast?: (msg: string) => void;
 }
 
-/** unified diff 解析出的行 */
-export interface DiffLine {
-  text: string;
-  type: 'ctx' | 'del' | 'add';
-  leftNo: number;
-  rightNo: number;
-  block: number;
-}
-
-/**
- * 判定每个变更块的标记类型（新增/删除/修改）：
- * - 删除块后紧跟新增块（成对，编号连续）→ 修改（mod，显示 M）
- * - 孤立的新增块 → 新增（add，显示 +）
- * - 孤立的删除块 → 删除（del，显示 -）
- */
-export function markTypesOf(lines: DiffLine[]): Map<number, 'mod' | 'add' | 'del'> {
-  const blocks = new Map<number, { hasDel: boolean; hasAdd: boolean }>();
-  for (const l of lines) {
-    if (l.type === 'add') {
-      const b = blocks.get(l.block) ?? { hasDel: false, hasAdd: false };
-      b.hasAdd = true;
-      blocks.set(l.block, b);
-    } else if (l.type === 'del') {
-      const b = blocks.get(l.block) ?? { hasDel: false, hasAdd: false };
-      b.hasDel = true;
-      blocks.set(l.block, b);
-    }
-  }
-  const ids = [...blocks.keys()].sort((a, b) => a - b);
-  const out = new Map<number, 'mod' | 'add' | 'del'>();
-  for (let i = 0; i < ids.length; i++) {
-    const id = ids[i]!;
-    const b = blocks.get(id)!;
-    const nextId = ids[i + 1];
-    const next = nextId !== undefined ? blocks.get(nextId) : undefined;
-    if (b.hasDel && !b.hasAdd && next && !next.hasDel && next.hasAdd && nextId === id + 1) {
-      // 删除段紧跟新增段（成对）→ 这段替换是"修改"
-      out.set(id, 'mod');
-      out.set(nextId, 'mod');
-      i++;
-    } else if (b.hasAdd && !b.hasDel) {
-      out.set(id, 'add');
-    } else if (b.hasDel && !b.hasAdd) {
-      out.set(id, 'del');
-    } else {
-      out.set(id, 'mod'); // 同一块内混合（少见）按修改处理
-    }
-  }
-  return out;
-}
-
-export function parseUnifiedDiff(text: string): DiffLine[] {
-  const out: DiffLine[] = [];
-  let leftNo = 0;
-  let rightNo = 0;
-  let block = 0;
-  let blockOpen = false;
-  let inHunk = false;
-  for (const raw of text.split('\n')) {
-    const hunk = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)/);
-    if (hunk && hunk[1] && hunk[2]) {
-      leftNo = Number(hunk[1]);
-      rightNo = Number(hunk[2]);
-      inHunk = true;
-      blockOpen = false;
-      continue;
-    }
-    if (!inHunk) continue;
-    const ch = raw[0];
-    if (ch === ' ') {
-      out.push({ text: raw.slice(1), type: 'ctx', leftNo: leftNo++, rightNo: rightNo++, block: -1 });
-      blockOpen = false;
-    } else if (ch === '-') {
-      if (!blockOpen) {
-        block += 1;
-        blockOpen = true;
-      }
-      out.push({ text: raw.slice(1), type: 'del', leftNo: leftNo++, rightNo: 0, block });
-    } else if (ch === '+') {
-      if (!blockOpen) {
-        block += 1;
-        blockOpen = true;
-      }
-      out.push({ text: raw.slice(1), type: 'add', leftNo: 0, rightNo: rightNo++, block });
-    } else if (ch === '\\') {
-      /* 无换行符提示，忽略 */
-    } else {
-      inHunk = false;
-    }
-  }
-  return out;
-}
-
 export function DiffView(props: Props) {
   const [versions, setVersions] = useState<{ left: string; right: string; leftLabel: string; rightLabel: string } | null>(null);
   const [diffLines, setDiffLines] = useState<DiffLine[]>([]);
-  // 变更块标记类型（新增 + / 删除 - / 修改 M）
-  const markTypes = useMemo(() => markTypesOf(diffLines), [diffLines]);
-  // 纯删除块在右栏的锚点：右栏**没有**该块的行（被删内容不存在于当前版本），无法靠 block 匹配定位，
-  // 只能落到「删除点之后的第一行」——右栏该处显示的正是被删内容后面的内容；删除块位于文件末尾
-  // （后面无行可挂）时退化为删除点之前的最后一个上下文行。供点击/导航定位 + 角标说明。
+  // 行级变更标记（新增 + / 删除 - / 修改 M）：同一块内可混合，以 DiffLine 为键
+  const lineMarks = useMemo(() => lineMarksOf(diffLines), [diffLines]);
+  // 未配对删除行在右栏的锚点：这些行在右栏**没有**对应内容（被删的东西不存在于当前版本），
+  // 无法靠 block 匹配定位，只能落到「删除点之后的第一行」——右栏该处显示的正是被删内容后面的内容；
+  // 删除段位于文件末尾（后面无行可挂）时退化为删除点之前的最后一个上下文行。
+  // 同一块内的多行删除聚合成一个角标。供点击/导航定位 + 角标说明。
   const delAnchorRight = useMemo(() => {
     const m = new Map<number, { rightNo: number; count: number }>();
     let pending: { block: number; count: number }[] = [];
     let lastCtx = 0;
     for (const l of diffLines) {
       if (l.type === 'del') {
-        if (markTypes.get(l.block) !== 'del') continue; // 成对块（修改）在右栏有对应行，不需要兜底
+        if (lineMarks.get(l) === 'mod') continue; // 配成"修改"的删除行在右栏有对应行，不需要兜底
         const p = pending.find((x) => x.block === l.block);
         if (p) p.count++;
         else pending.push({ block: l.block, count: 1 });
@@ -142,7 +51,7 @@ export function DiffView(props: Props) {
     }
     for (const p of pending) if (lastCtx) m.set(p.block, { rightNo: lastCtx, count: p.count });
     return m;
-  }, [diffLines, markTypes]);
+  }, [diffLines, lineMarks]);
   // 经 ref 读取：locateDel 要放进 goBlock（依赖稳定的 useCallback），直接闭包会捕获过期表
   const delAnchorRef = useRef(delAnchorRight);
   delAnchorRef.current = delAnchorRight;
@@ -385,26 +294,26 @@ export function DiffView(props: Props) {
   // 左栏在"新增"处插入空占位行（带背景标记），左右视觉对齐、定位直观
   const leftRows = useMemo(() => {
     if (!versions) return [];
-    const rows: { no: number; text: string; change: boolean; block: number; ph?: boolean }[] = [];
+    const rows: { no: number; text: string; change: boolean; block: number; line?: DiffLine; ph?: boolean }[] = [];
     for (const l of diffLines) {
       if (l.type === 'ctx') rows.push({ no: l.leftNo, text: l.text, change: false, block: -1 });
-      else if (l.type === 'del') rows.push({ no: l.leftNo, text: l.text, change: true, block: l.block });
-      else if (l.type === 'add') rows.push({ no: -l.block, text: '', change: true, block: l.block, ph: true }); // 占位行
+      else if (l.type === 'del') rows.push({ no: l.leftNo, text: l.text, change: true, block: l.block, line: l });
+      else if (l.type === 'add') rows.push({ no: -l.block, text: '', change: true, block: l.block, line: l, ph: true }); // 占位行
     }
     return rows;
   }, [versions, diffLines]);
 
   const rightRows = useMemo(() => {
     if (!versions) return [];
-    const rightMap = new Map<number, { text: string; block: number }>();
+    const rightMap = new Map<number, { text: string; block: number; line: DiffLine }>();
     for (const l of diffLines) {
-      if (l.type === 'add') rightMap.set(l.rightNo, { text: l.text, block: l.block });
+      if (l.type === 'add') rightMap.set(l.rightNo, { text: l.text, block: l.block, line: l });
     }
-    const out: { no: number; text: string; change: boolean; block: number }[] = [];
+    const out: { no: number; text: string; change: boolean; block: number; line?: DiffLine }[] = [];
     versions.right.split('\n').forEach((t, i) => {
       const no = i + 1;
       const m = rightMap.get(no);
-      if (m) out.push({ no, text: m.text, change: true, block: m.block });
+      if (m) out.push({ no, text: m.text, change: true, block: m.block, line: m.line });
       else out.push({ no, text: t, change: false, block: -1 });
     });
     return out;
@@ -743,8 +652,8 @@ export function DiffView(props: Props) {
                   title={r.ph ? '右栏此处有新增（点击右侧定位）' : r.change ? '修改处（点击右侧定位）' : ''}
                 >
                   <span className="sb-no">{r.ph ? '' : r.no}</span>
-                  <span className="sb-marker" style={{ color: r.ph ? 'var(--ok)' : r.change && markTypes.get(r.block) === 'del' ? 'var(--err)' : undefined }}>
-                    {r.ph ? '+' : r.change ? (markTypes.get(r.block) === 'mod' ? 'M' : '-') : ''}
+                  <span className="sb-marker" style={{ color: r.ph ? 'var(--ok)' : r.line && lineMarks.get(r.line) === 'del' ? 'var(--err)' : undefined }}>
+                    {r.ph ? '+' : r.change ? (r.line && lineMarks.get(r.line) === 'mod' ? 'M' : '-') : ''}
                   </span>
                   <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
                 </div>
@@ -784,8 +693,8 @@ export function DiffView(props: Props) {
                     title={r.change ? '修改处（点击左侧定位）' : ''}
                   >
                     <span className="sb-no">{r.no}</span>
-                    <span className="sb-marker" style={{ color: r.change && markTypes.get(r.block) === 'add' ? 'var(--ok)' : undefined }}>
-                      {r.change ? (markTypes.get(r.block) === 'mod' ? 'M' : '+') : ''}
+                    <span className="sb-marker" style={{ color: r.line && lineMarks.get(r.line) === 'add' ? 'var(--ok)' : undefined }}>
+                      {r.change ? (r.line && lineMarks.get(r.line) === 'mod' ? 'M' : '+') : ''}
                     </span>
                     <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
                     {isDelAnchor && delHint && (

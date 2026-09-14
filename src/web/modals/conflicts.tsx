@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from '../api.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 import { highlightLine, langOf } from '../highlight.js';
-import { parseUnifiedDiff, markTypesOf, type DiffLine } from '../views/diff.js';
+import { parseUnifiedDiff, lineMarksOf, type DiffLine } from '../../shared/diff-parse.js';
 import { IconFolder, IconOk } from '../ui/icons.js';
 import { ConfirmModal } from './modals.js';
 import { ResizableModal } from './modal-shell.js';
@@ -85,17 +85,17 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
 
   // 双栏行映射：diff 的 - 行 = 本地（ours），+ 行 = 对方（theirs）
   const vsLines: DiffLine[] = parseUnifiedDiff(vsDiff);
-  // 变更块标记类型（新增 + / 删除 - / 修改 M）
-  const vsMarkTypes = useMemo(() => markTypesOf(vsLines), [vsLines]);
-  type VsRow = { no: number; text: string; change: boolean; block: number; ph?: boolean };
+  // 行级变更标记（新增 + / 删除 - / 修改 M）：同一块内可混合，以 DiffLine 为键
+  const vsLineMarks = useMemo(() => lineMarksOf(vsLines), [vsLines]);
+  type VsRow = { no: number; text: string; change: boolean; block: number; line?: DiffLine; ph?: boolean };
   const theirsRows = useMemo<VsRow[]>(() => {
     if (!cur) return [];
     // diff 的 - 行 = 本地有、对方无 → 对方栏插入占位；+ 行 = 对方内容
     const rows: VsRow[] = [];
     for (const l of vsLines) {
       if (l.type === 'ctx') rows.push({ no: l.rightNo, text: l.text, change: false, block: -1 });
-      else if (l.type === 'add') rows.push({ no: l.rightNo, text: l.text, change: true, block: l.block });
-      else if (l.type === 'del') rows.push({ no: -l.block, text: '', change: true, block: l.block, ph: true });
+      else if (l.type === 'add') rows.push({ no: l.rightNo, text: l.text, change: true, block: l.block, line: l });
+      else if (l.type === 'del') rows.push({ no: -l.block, text: '', change: true, block: l.block, line: l, ph: true });
     }
     return rows;
   }, [cur, vsLines]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -105,8 +105,8 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
     const rows: VsRow[] = [];
     for (const l of vsLines) {
       if (l.type === 'ctx') rows.push({ no: l.leftNo, text: l.text, change: false, block: -1 });
-      else if (l.type === 'del') rows.push({ no: l.leftNo, text: l.text, change: true, block: l.block });
-      else if (l.type === 'add') rows.push({ no: -l.block, text: '', change: true, block: l.block, ph: true });
+      else if (l.type === 'del') rows.push({ no: l.leftNo, text: l.text, change: true, block: l.block, line: l });
+      else if (l.type === 'add') rows.push({ no: -l.block, text: '', change: true, block: l.block, line: l, ph: true });
     }
     return rows;
   }, [cur, vsLines]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -348,8 +348,8 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                       className={`sb-line ${r.ph ? 'sb-ph' : r.change ? 'sb-add' : ''}`}
                     >
                       <span className="sb-no">{r.ph ? '' : r.no}</span>
-                      <span className="sb-marker" style={{ color: r.ph ? 'var(--ok)' : r.change && vsMarkTypes.get(r.block) === 'add' ? 'var(--ok)' : undefined }}>
-                        {r.ph ? '+' : r.change ? (vsMarkTypes.get(r.block) === 'mod' ? 'M' : '+') : ''}
+                      <span className="sb-marker" style={{ color: r.ph ? 'var(--ok)' : r.line && vsLineMarks.get(r.line) === 'add' ? 'var(--ok)' : undefined }}>
+                        {r.ph ? '+' : r.change ? (r.line && vsLineMarks.get(r.line) === 'mod' ? 'M' : '+') : ''}
                       </span>
                       <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
                     </div>
@@ -366,8 +366,8 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                       className={`sb-line ${r.ph ? 'sb-ph' : r.change ? 'sb-del' : ''}`}
                     >
                       <span className="sb-no">{r.ph ? '' : r.no}</span>
-                      <span className="sb-marker" style={{ color: r.ph ? 'var(--ok)' : r.change && vsMarkTypes.get(r.block) === 'del' ? 'var(--err)' : undefined }}>
-                        {r.ph ? '+' : r.change ? (vsMarkTypes.get(r.block) === 'mod' ? 'M' : '-') : ''}
+                      <span className="sb-marker" style={{ color: r.ph ? 'var(--ok)' : r.line && vsLineMarks.get(r.line) === 'del' ? 'var(--err)' : undefined }}>
+                        {r.ph ? '+' : r.change ? (r.line && vsLineMarks.get(r.line) === 'mod' ? 'M' : '-') : ''}
                       </span>
                       <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
                     </div>
