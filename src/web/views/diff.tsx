@@ -29,17 +29,18 @@ export function DiffView(props: Props) {
   const [diffLines, setDiffLines] = useState<DiffLine[]>([]);
   // 行级变更标记（新增 + / 删除 - / 修改 M）：同一块内可混合，以 DiffLine 为键
   const lineMarks = useMemo(() => lineMarksOf(diffLines), [diffLines]);
-  // 未配对删除行在右栏的锚点：这些行在右栏**没有**对应内容（被删的东西不存在于当前版本），
-  // 无法靠 block 匹配定位，只能落到「删除点之后的第一行」——右栏该处显示的正是被删内容后面的内容；
-  // 删除段位于文件末尾（后面无行可挂）时退化为删除点之前的最后一个上下文行。
-  // 同一块内的多行删除聚合成一个角标。供点击/导航定位 + 角标说明。
+  // 未配对删除行在右栏的落点：这些行在右栏**没有**对应内容（被删的东西不存在于当前版本），
+  // 无法靠 block 匹配定位。rightRows 据此在右栏插入一行**占位行**（红色 - 空行 + 提示文字）。
+  // 落点取「删除点之后的第一行」——右栏该处显示的正是被删内容后面的内容；删除段位于文件末尾
+  // （后面无行可挂）时退化为最后一个上下文行，此时占位行插在它**之后**（after=true）。
+  // 同一块内的多行删除聚合成一行占位（count = 行数）。供点击/导航定位。
   const delAnchorRight = useMemo(() => {
-    const m = new Map<number, { rightNo: number; count: number }>();
+    const m = new Map<number, { rightNo: number; count: number; after?: boolean }>();
     let pending: { block: number; count: number }[] = [];
     let lastCtx = 0;
     for (const l of diffLines) {
       if (l.type === 'del') {
-        if (lineMarks.get(l) === 'mod') continue; // 配成"修改"的删除行在右栏有对应行，不需要兜底
+        if (lineMarks.get(l) === 'mod') continue; // 配成"修改"的删除行在右栏有对应行，不需要占位
         const p = pending.find((x) => x.block === l.block);
         if (p) p.count++;
         else pending.push({ block: l.block, count: 1 });
@@ -49,7 +50,7 @@ export function DiffView(props: Props) {
       pending = [];
       if (l.type === 'ctx') lastCtx = l.rightNo;
     }
-    for (const p of pending) if (lastCtx) m.set(p.block, { rightNo: lastCtx, count: p.count });
+    for (const p of pending) if (lastCtx) m.set(p.block, { rightNo: lastCtx, count: p.count, after: true });
     return m;
   }, [diffLines, lineMarks]);
   // 经 ref 读取：locateDel 要放进 goBlock（依赖稳定的 useCallback），直接闭包会捕获过期表
@@ -175,21 +176,10 @@ export function DiffView(props: Props) {
     targetTimer.current = setTimeout(() => setTargetBlock(null), 1500);
   }, []);
 
-  /** 纯删除块在右栏的定位角标：右栏没有该块的行 → 行高亮无处可落，"只滚不亮"像没反应。
-   *  改为滚到删除点后在锚点行挂一枚角标「← 左栏此处删除了 N 行」，比无声滚动可读。 */
-  const [delHint, setDelHint] = useState<{ rightNo: number; count: number } | null>(null);
-  const delHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** 定位纯删除块：返回右栏锚点行号并挂角标；非删除块返回 undefined（调用方走默认定位） */
+  /** 定位纯删除块：返回右栏**占位行**的行号（-block，由 rightRows 插入并注册进 rightRefs）；
+   *  非删除块返回 undefined（调用方走默认定位）。占位行常驻，无需临时角标与定时清除。 */
   const locateDel = useCallback((block: number): number | undefined => {
-    const hit = delAnchorRef.current.get(block);
-    if (!hit) {
-      setDelHint(null); // 换到别的块：清掉角标
-      return undefined;
-    }
-    setDelHint({ rightNo: hit.rightNo, count: hit.count });
-    if (delHintTimer.current) clearTimeout(delHintTimer.current);
-    delHintTimer.current = setTimeout(() => setDelHint(null), 2500);
-    return hit.rightNo;
+    return delAnchorRef.current.has(block) ? -block : undefined;
   }, []);
 
   // 跳转到差异块：左右两栏都滚动到块首行
@@ -305,19 +295,33 @@ export function DiffView(props: Props) {
 
   const rightRows = useMemo(() => {
     if (!versions) return [];
+    // 未配对删除行的占位行：按落点行号分桶（after=true 表示插在该行之后——删除段在文件末尾）
+    const before = new Map<number, { block: number; count: number }[]>();
+    const after = new Map<number, { block: number; count: number }[]>();
+    for (const [block, a] of delAnchorRight) {
+      const bucket = a.after ? after : before;
+      const list = bucket.get(a.rightNo);
+      if (list) list.push({ block, count: a.count });
+      else bucket.set(a.rightNo, [{ block, count: a.count }]);
+    }
     const rightMap = new Map<number, { text: string; block: number; line: DiffLine }>();
     for (const l of diffLines) {
       if (l.type === 'add') rightMap.set(l.rightNo, { text: l.text, block: l.block, line: l });
     }
-    const out: { no: number; text: string; change: boolean; block: number; line?: DiffLine }[] = [];
+    const out: { no: number; text: string; change: boolean; block: number; line?: DiffLine; delPh?: number }[] = [];
+    // 占位行行号取 -block（负数，不显示行号）：与真实行号不冲突，且可直接作 rightRefs 的 key 供定位
+    const pushPh = (a: { block: number; count: number }) =>
+      out.push({ no: -a.block, text: '', change: true, block: a.block, delPh: a.count });
     versions.right.split('\n').forEach((t, i) => {
       const no = i + 1;
+      for (const a of before.get(no) ?? []) pushPh(a);
       const m = rightMap.get(no);
       if (m) out.push({ no, text: m.text, change: true, block: m.block, line: m.line });
       else out.push({ no, text: t, change: false, block: -1 });
+      for (const a of after.get(no) ?? []) pushPh(a);
     });
     return out;
-  }, [versions, diffLines]);
+  }, [versions, diffLines, delAnchorRight]);
 
   // diff 搜索匹配（右栏 = 当前内容）
   const dMatches = useMemo(() => {
@@ -463,14 +467,13 @@ export function DiffView(props: Props) {
   };
   // 点击右侧修改行 → 左侧滚动到对应修改块首行（新增块滚到左栏占位行）并高亮该块
   const jumpLeft = (block: number) => {
-    setDelHint(null); // 换到别的块：清掉删除角标
     const no = blockFirstLeft.get(block);
     if (no === undefined) return;
     flashTarget(block);
     if (no < 0) scrollToLine(leftPane.current, leftPhRefs.current.get(-no));
     else scrollToLine(leftPane.current, leftRefs.current.get(no));
   };
-  // 点击左侧修改行 → 右侧滚动 + 同块高亮（纯删除块右栏无对应行 → 滚到删除点并挂角标）
+  // 点击左侧修改行 → 右侧滚动 + 同块高亮（纯删除块右栏无对应行 → 滚到插入的删除占位行）
   const jumpRight = (block: number) => {
     const no = locateDel(block) ?? blockFirstRight.get(block);
     if (no === undefined) return;
@@ -677,28 +680,29 @@ export function DiffView(props: Props) {
               <>
               {rightRows.length === 0 && <div className="dim" style={{ padding: 20 }}>（当前为空 — 文件已删除）</div>}
               {rightRows.map((r) => {
-                const isHit = dSearchActive && dMatches.includes(r.no);
+                const isDelPh = r.delPh !== undefined; // 删除占位行：左栏此处有 N 行被删，右栏无对应内容
+                const isHit = !isDelPh && dSearchActive && dMatches.includes(r.no);
                 const isCur = isHit && r.no === dMatches[dMatchIdx % Math.max(1, dMatches.length)];
-                const isDelAnchor = !!delHint && r.no === delHint.rightNo;
                 return (
                   <div
                     key={`r${r.no}`}
                     ref={(el) => {
                       if (el) rightRefs.current.set(r.no, el);
                     }}
-                    className={`sb-line ${r.change ? 'sb-add' : ''} ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''} ${r.change && r.block === targetBlock ? 'sb-target' : ''} ${isDelAnchor ? 'sb-del-anchor' : ''}`}
+                    className={`sb-line ${isDelPh ? 'sb-ph-del' : r.change ? 'sb-add' : ''} ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''} ${r.change && r.block === targetBlock ? 'sb-target' : ''}`}
                     onClick={() => r.change && jumpLeft(r.block)}
                     onContextMenu={(e) => openLineMenu(e, r.text, 'right')}
                     onMouseDown={(e) => { if (e.button === 2) selRef.current = (window.getSelection()?.toString() ?? '').trim(); }}
-                    title={r.change ? '修改处（点击左侧定位）' : ''}
+                    title={isDelPh ? `左栏此处删除了 ${r.delPh} 行（点击定位）` : r.change ? '修改处（点击左侧定位）' : ''}
                   >
-                    <span className="sb-no">{r.no}</span>
-                    <span className="sb-marker" style={{ color: r.line && lineMarks.get(r.line) === 'add' ? 'var(--ok)' : undefined }}>
-                      {r.change ? (r.line && lineMarks.get(r.line) === 'mod' ? 'M' : '+') : ''}
+                    <span className="sb-no">{isDelPh ? '' : r.no}</span>
+                    <span className="sb-marker" style={{ color: isDelPh ? 'var(--err)' : r.line && lineMarks.get(r.line) === 'add' ? 'var(--ok)' : undefined }}>
+                      {isDelPh ? '-' : r.change ? (r.line && lineMarks.get(r.line) === 'mod' ? 'M' : '+') : ''}
                     </span>
-                    <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
-                    {isDelAnchor && delHint && (
-                      <span className="sb-del-hint">← 左栏此处删除了 {delHint.count} 行</span>
+                    {isDelPh ? (
+                      <span className="sb-ph-hint">← 左栏此处删除了 {r.delPh} 行</span>
+                    ) : (
+                      <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
                     )}
                   </div>
                 );
