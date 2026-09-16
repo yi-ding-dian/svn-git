@@ -292,9 +292,18 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
     }
   }
   items.push({ sep: true });
-  // 打开方式：所有文件都提供（异步检测系统程序后替换子菜单）
+  // 打开方式：所有文件都提供（办公文档/图片/文本/代码……二进制按扩展映射表匹配，文本类型回退 text/plain）
   {
     const ext = t.name.split('.').pop()!.toLowerCase();
+    // 先 push 占位项，程序列表异步取回后按 owIdx 回填它的 submenu。
+    // 不能省这一步：组件端要校验 items[owIdx].label === '打开方式…' 才回填，没有占位项就整个静默丢弃
+    // （历史上抽出 fileSystem/ 时漏掉过，导致菜单里根本没有这一项）
+    items.push({
+      icon: <IconExternal />,
+      label: '打开方式…',
+      submenu: [{ label: '正在检测系统程序…', action: () => {} }],
+    });
+    const owIdx = items.length - 1;
     void get
       .appsFor(ext)
       .then((r) => {
@@ -325,9 +334,12 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
             : []),
         ];
         // 菜单可能已被关闭（用户快速点走）：由组件端安全补丁
-        s.menuPatchItems(items.length - 1, subs.length ? subs : [{ label: '无', action: () => {} }]);
+        s.menuPatchItems(owIdx, subs.length ? subs : [{ label: '无', action: () => {} }]);
       })
-      .catch(() => {});
+      .catch(() => {
+        // 取程序列表失败（接口异常/超时）：别让它永远停在「正在检测系统程序…」
+        s.menuPatchItems(owIdx, [{ label: '无', action: () => {} }]);
+      });
   }
   items.push({
     icon: <IconCopy />,
