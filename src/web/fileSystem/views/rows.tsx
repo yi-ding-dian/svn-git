@@ -1,7 +1,7 @@
 /** 文件系统视图 · 树形行渲染（fs 拆分批次 3）：列表/树/过滤树三模式共用的行组件（状态徽标/名称描述/行按钮） */
 import React from 'react';
 import { fmtSize, statusColor } from '../../utils.js';
-import { CodeBadge, DirBadge } from '../../ui/badges.js';
+import { CodeBadge, DirBadge, TreeConflictBadge } from '../../ui/badges.js';
 import { IconLock } from '../../ui/icons.js';
 import type { VisibleRow } from '../utils.js';
 
@@ -22,6 +22,8 @@ export function TreeRow(props: {
   onContextMenu: (ev: React.MouseEvent, row: VisibleRow, i: number) => void;
   onMouseEnterRow: (ev: React.MouseEvent, row: VisibleRow) => void;
   onMouseLeaveRow: () => void;
+  /** 点击角标定位（状态字母与树冲突 ⚠ 共用；code 为 'TC' 时表示树冲突定位） */
+  locateBadge?: (rel: string, code: string) => void;
   /** 拖拽悬停在本行（仅目录可投放）：高亮提示落点 */
   dropHover?: boolean;
 }) {
@@ -42,7 +44,20 @@ export function TreeRow(props: {
       onDoubleClick={() => props.onDoubleClick(row)}
       onContextMenu={(ev) => props.onContextMenu(ev, row, props.i)}
     >
-      {row.isDir ? <DirBadge codes={row.codes} /> : <CodeBadge code={row.code} />}
+      {/* 有树冲突就只显示 ⚠：字母（多半是子项聚合来的）与变更数让位，明细在悬浮/右键里。
+          ⚠ 可点击：像 M/A 角标一样带用户去定位（自身冲突→它自己；内部冲突→跳进去逐个找） */}
+      {row.tc ? (
+        <TreeConflictBadge
+          state={row.tc.state}
+          inner={row.tc.inner}
+          innerCount={row.tc.innerCount}
+          onClick={() => props.locateBadge?.(row.rel, 'TC')}
+        />
+      ) : row.isDir ? (
+        <DirBadge codes={row.codes} onBadgeClick={props.locateBadge ? (c) => props.locateBadge!(row.rel, c) : undefined} />
+      ) : (
+        <CodeBadge code={row.code} />
+      )}
       <span className="arrow">{row.isDir ? (row.open ? '▾' : '▸') : ''}</span>
       {row.locked && <IconLock size={13} />}
       <span className={`name ${row.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(row.isDir ? row.codes?.[0] : row.code) }}>

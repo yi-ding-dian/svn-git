@@ -842,7 +842,8 @@ export function RenameModal(props: {
 export function RevertModal(props: {
   repoType: 'svn' | 'git';
   dirLabel: string;
-  items: { path: string; code: string }[];
+  /** treeConflicted：树冲突项（本地已添加/修改，服务器同路径已删除或移动）——从「放弃本地添加」进来时要标出来 */
+  items: { path: string; code: string; treeConflicted?: boolean }[];
   onConfirm: (paths: string[]) => void;
   onClose: () => void;
 }) {
@@ -865,8 +866,20 @@ export function RevertModal(props: {
   const allD = props.items.length > 0 && props.items.every((i) => i.code === 'D');
   // 含 M/C：真丢弃本地修改（红色警告）；仅 A/D/R 等调度撤销 → 不丢数据，中性提示
   const hasMod = props.items.some((i) => i.code === 'M' || i.code === 'C');
+  // 树冲突项：弹窗只显示 code 的话会是一排干巴巴的 A，看不出"这几项提交会被拒、得先定夺"
+  const tcItems = props.items.filter((i) => i.treeConflicted);
+  const allTc = tcItems.length > 0 && tcItems.length === props.items.length;
+  // 勾选项的同一判断：用户可能只勾了一部分，按钮文案要跟着勾选走
+  const selItems = props.items.filter((i) => checked.has(i.path));
+  const selAllTc = selItems.length > 0 && selItems.every((i) => i.treeConflicted);
   const actionName = allA ? '取消添加' : allD ? '撤销删除' : '还原';
-  const titleName = allA ? '取消添加确认' : allD ? '撤销删除确认' : '还原确认';
+  const titleName = allA
+    ? allTc
+      ? '接受服务器的删除（解决树冲突）'
+      : '取消添加确认'
+    : allD
+      ? '撤销删除确认'
+      : '还原确认';
   return (
     <div className="modal-mask">
       <ResizableModal width={autoWidth}>
@@ -890,35 +903,69 @@ export function RevertModal(props: {
               <label key={it.path} className="changed-row" style={{ cursor: 'pointer' }} title={it.path}>
                 <input type="checkbox" checked={checked.has(it.path)} onChange={() => toggle(it.path)} style={{ flexShrink: 0 }} />
                 <span className={`act ${it.code}`}>{it.code}</span>
+                {/* 树冲突项标一个中性 ⚠：弹窗里拿不到服务器状态（那要另查），只说"这项是冲突" */}
+                {it.treeConflicted && (
+                  <span className="code tc unknown" style={{ width: 18, height: 15, fontSize: 10 }} title="树冲突：本地与服务器对同一路径的操作冲突">
+                    ⚠
+                  </span>
+                )}
                 <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {it.path}
                 </span>
               </label>
             ))}
           </div>
-          <div className="small" style={{ color: hasMod ? 'var(--err)' : 'var(--ok)', marginBottom: 10, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-            {hasMod ? <IconWarn size={13} /> : <IconOk size={13} />}
-            <span>
-              {hasMod
-                ? '还原会放弃这些文件的本地修改（不可恢复）。未版本化（?）与忽略/外部文件不在列表中。'
-                : '仅撤销版本库调度（取消添加 / 撤销删除），磁盘文件保留，不丢失任何数据。未版本化（?）与忽略/外部文件不在列表中。'}
-            </span>
-          </div>
+          {/* 树冲突说明：放在通用提示上方——这几项是"提交必被拒"的根因，比"丢不丢数据"更该先说。
+              措辞要点：放弃本地添加**会连本地文件一起删**（接受服务器那个删除），不是"只取消登记" */}
+          {tcItems.length > 0 && (
+            <div className="small" style={{ color: 'var(--err)', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+              <IconWarn size={13} />
+              <span>
+                其中 <b>{tcItems.length}</b> 项是<b>树冲突</b>：服务器上同路径已删除或移动。
+                {allA
+                  ? '取消添加＝接受服务器的删除，本地文件会一并删除（与服务器保持一致，不可恢复），之后即可正常提交。'
+                  : '还原后本地会与服务器保持一致（本地改动不可恢复），随后更新即可同步服务器的删除。'}
+              </span>
+            </div>
+          )}
+          {/* 通用说明：**有树冲突项时不显示**——这条说"磁盘文件保留、不丢失任何数据"，而冲突项那条
+              （上面的红条）说的是"本地文件会一并删除"，两条并列自相矛盾（用户实报）。
+              冲突场景下用户最需要知道的"会不会删文件"由红条说清了 */}
+          {tcItems.length === 0 && (
+            <div className="small" style={{ color: hasMod ? 'var(--err)' : 'var(--ok)', marginBottom: 10, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {hasMod ? <IconWarn size={13} /> : <IconOk size={13} />}
+              <span>
+                {hasMod
+                  ? '还原会放弃这些文件的本地修改（不可恢复）。未版本化（?）与忽略/外部文件不在列表中。'
+                  : '仅撤销版本库调度（取消添加 / 撤销删除），磁盘文件保留，不丢失任何数据。未版本化（?）与忽略/外部文件不在列表中。'}
+              </span>
+            </div>
+          )}
         </div>
         <div className="foot">
           <button onClick={props.onClose}>取消</button>
           <button
             className="danger"
             disabled={checked.size === 0}
-            onClick={() =>
+            onClick={() => {
+              // 二次确认要说准：树冲突项会被**连本地文件一起删**（接受服务器的删除），
+              // 跟普通 A"只取消登记、文件保留"是两码事——实测复现过，别混用同一句
+              const selTc = selItems.filter((i) => i.treeConflicted).length;
               setCfm({
-                msg: hasMod
-                  ? `将放弃已勾选的 ${checked.size} 个文件的本地修改，不可恢复（A 文件变为未版本化，M/C 改动丢失）。确认${actionName}？`
-                  : `将撤销已勾选的 ${checked.size} 项版本库调度（${allA ? '文件变回未版本化 ?，内容保留' : '文件从版本库找回，内容保留'}），不丢失任何数据。确认${actionName}？`,
-              })
-            }
+                msg:
+                  selTc > 0
+                    ? selTc === selItems.length
+                      ? `服务器上这些路径已删除或移动，将连同这 ${checked.size} 项本地文件一起删除（与服务器保持一致，不可恢复）。确认？`
+                      : `其中 ${selTc} 项在服务器上已删除或移动，会连同本地文件一起删除（不可恢复）；其余勾选项按一般还原处理。确认？`
+                    : hasMod
+                      ? `将放弃已勾选的 ${checked.size} 个文件的本地修改，不可恢复（A 文件变为未版本化，M/C 改动丢失）。确认${actionName}？`
+                      : `将撤销已勾选的 ${checked.size} 项版本库调度（${allA ? '文件变回未版本化 ?，内容保留' : '文件从版本库找回，内容保留'}），不丢失任何数据。确认${actionName}？`,
+              });
+            }}
           >
-            ↩ {actionName}勾选的 {checked.size} 项
+            {/* 按钮文案跟菜单入口一致：用户是从「接受服务器的删除」点进来的，
+                这里却说"取消添加"就是同一操作两个名字；底层确实是 svn revert，但用户视角的动作是删本地副本 */}
+            ↩ {selAllTc ? `接受服务器的删除（${checked.size} 项）` : `${actionName}勾选的 ${checked.size} 项`}
           </button>
         </div>
       </ResizableModal>
@@ -933,7 +980,7 @@ export function RevertModal(props: {
           }
           message={cfm.msg}
           danger
-          confirmLabel={`确认${actionName}`}
+          confirmLabel={selAllTc ? '确认删除本地文件' : `确认${actionName}`}
           onConfirm={() => {
             const sel = [...checked];
             setCfm(null);

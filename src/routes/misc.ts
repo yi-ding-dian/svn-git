@@ -521,8 +521,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 403, { error: MSG_OUT_OF_SCOPE });
           return true;
         }
-        const items = (await getStatusCached(repo, force, rel)) as { path: string; code: string; isDir: boolean }[];
-        const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; count?: number; codes?: string[]; unversionedCount?: number; miss?: boolean }[] = [];
+        const items = (await getStatusCached(repo, force, rel)) as { path: string; code: string; isDir: boolean; treeConflicted?: boolean }[];
+        const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; count?: number; codes?: string[]; unversionedCount?: number; miss?: boolean; treeConflicted?: boolean; innerTreeConflict?: boolean }[] = [];
         // 目录多状态徽标显示顺序：修改 / 添加 / 删除 / 冲突 / 替换 / 缺失 / 更新 / 类型变更
         const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
         let names: string[];
@@ -714,8 +714,29 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           if (code === '?' && !codes) codes = ['?'];
           // 目录自身是外部引用（svn:externals 拉取的内容）：自身显示链环标识（父目录不显示）
           if (code === 'X' && !codes?.includes('X')) codes = codes ? [...codes, 'X'] : ['X'];
+          // 树冲突（本地已添加 vs 服务器同路径已删除/移动）：status 的 item 是 added，
+          // 状态列上看不出冲突，界面显示成普通的 A（用户实报"标着 A 点进去却不对"）→ 单独带出去给角标用。
+          // 分两种，渲染时语义不同：
+          //   treeConflicted    —— 本目录自身就是冲突项（self 条目带 tree-conflicted）
+          //   innerTreeConflict —— 目录**内部**有冲突（不管多深，含直接子项）
+          // 内部这条**不排除直接子项**：角标本来就是"内部状态聚合"（子项有 M 父目录就显示 M），
+          // 冲突同理——否则站在 src 层看 VW-PlatForm_Solution 只是个普通 A，完全看不出里面有问题（用户实报）
+          // 只在全量扫描（非超大工作副本）时有数据：浅扫描的 items 只有直接子项，sub 恒为空
+          const selfConflict = self?.treeConflicted === true;
+          const innerConflict = sub.some((s) => s.treeConflicted);
           // 目录在磁盘上存在就总是显示（svn/git status 对干净目录无条目，不 push 会丢失目录）
-          entries.push({ name: d, isDir: true, size: 0, mtime: '', code, count, codes, unversionedCount: unversionedCount || undefined });
+          entries.push({
+            name: d,
+            isDir: true,
+            size: 0,
+            mtime: '',
+            code,
+            count,
+            codes,
+            unversionedCount: unversionedCount || undefined,
+            treeConflicted: selfConflict || undefined,
+            innerTreeConflict: innerConflict || undefined,
+          });
         }
         for (const f of files) {
           const p = path.join(abs, f);
@@ -744,6 +765,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             size: st.size,
             mtime: fmtMtime(st.mtimeMs),
             code,
+            // 文件同样可能带树冲突（本地改/加 vs 服务器删除）——角标与目录共用一套渲染
+            treeConflicted: it?.treeConflicted || undefined,
           });
         }
         // 合并 status 中磁盘已删除的条目：磁盘不存在但版本库有记录 → 显示缺失/删除标识（虚拟行）
@@ -758,7 +781,17 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           if (it.code !== 'D' && it.code !== 'R' && it.code !== '!') continue;
           if (fs.existsSync(path.join(abs, name))) continue; // 磁盘存在已由 dirs/files 处理
           // 目录缺失（svn kind=dir 的 '!'）：磁盘已不在，仍显示目录条目（进入拦截在渲染侧）
-          entries.push({ name, isDir: it.isDir, size: 0, mtime: '', code: it.code, miss: it.code === '!' });
+          entries.push({
+            name,
+            isDir: it.isDir,
+            size: 0,
+            mtime: '',
+            code: it.code,
+            miss: it.code === '!',
+            // 磁盘已不在但仍是树冲突（实报的 DXJFingerHelper/LibDbHelper：本地目录被删 + 服务器也要删）：
+            // 这类不显示成 A 而显示成虚化的 !，同样要能看出"这里是冲突，得先定夺"
+            treeConflicted: it.treeConflicted || undefined,
+          });
         }
         // SVN：自己锁定的文件列表（显示锁图标）
         let selfLocked: string[] = [];

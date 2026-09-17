@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterTreeNode } from '../api.js';
 import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconDownload, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon } from '../ui/icons.js';
-import { CodeBadge, DirBadge } from '../ui/badges.js';
+import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { multiRevertName, renameableCode, removableFromRepo, renameItem, joinPaths, fsSortRank, filterEntries, revertName, type Filter, type Mode, type VisibleRow } from './utils.js';
 import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } from './menus.js';
@@ -14,6 +14,7 @@ import { GridItem, FileTipCard } from './views/grid.js';
 import { flashBreadcrumbs } from '../ui/motion.js';
 import { useDirPreload } from './use-dir-preload.js';
 import { WcNotice } from './wc-notice.js';
+import { useWcConflicts, useConflictLookup, tcState, conflictPaths } from './use-wc-conflicts.js';
 import { useDropUpload, type ConflictMode } from './use-drop-upload.js';
 import { UploadConflictModal } from '../modals/upload-conflict.js';
 import { ModuleIndexDialog } from '../dialogs/module-index.js';
@@ -83,6 +84,7 @@ export function FsView(props: Props) {
   const [showHidden, setShowHidden] = useState(false);
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [mode, setMode] = useState<Mode>('browse');
+  // 树冲突诊断的声明在下面 nodeData 之后：诊断基准要按模式区分（树模式的行 rel 相对仓库根）
   // 过滤激活时记住原视图（取消过滤恢复）
   const prevModeRef = useRef<Mode>(mode);
   type CtxItem = CtxMenuItem; // 右键菜单项（公共类型见 context-menu.tsx）
@@ -119,11 +121,11 @@ export function FsView(props: Props) {
   };
   const [focusIndex, setFocusIndex] = useState(0);
   // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
-  const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean } | null>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean; tc?: { state: 'missing' | 'present' | 'unknown'; inner?: boolean; innerCount?: number }; tcItem?: { fromRev?: string; fromAuthor?: string; fromDate?: string } } | null>(null);
   // 文件搜索（工具栏）：防抖查询 + 结果下拉状态收于 useFileSearch
   const search = useFileSearch(data?.dir ?? '');
   // only：显式指定选中集合（拖入上传用）——跳过"按 code 同状态全选"，只选中真正落盘的那几个
-  const [pendingLocate, setPendingLocate] = useState<{ rel: string; at: number; code?: string; only?: string[] } | null>(null);
+  const [pendingLocate, setPendingLocate] = useState<{ rel: string; at: number; code?: string; only?: string[]; tc?: boolean } | null>(null);
   // 定位目标行/卡片脉冲："就是它"提示（渲染期挂 .file-pulse class，1500ms 后清除；同状态文件全选后全闪）
   const [pulseRels, setPulseRels] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -136,16 +138,25 @@ export function FsView(props: Props) {
   const locateMissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const breadcrumbRef = useRef<HTMLDivElement | null>(null);
 
-  /** 角标定位：点击文件夹状态徽标 → 跳转到其中"最近修改"的该状态文件（连续点击轮转；面包屑点亮 + 卡片脉冲动画） */
+  /** 角标定位：点击文件夹状态徽标 → 跳转到其中"最近修改"的该状态文件（连续点击轮转；面包屑点亮 + 卡片脉冲动画）。
+   *  code='TC' 是树冲突角标：目标不是"某状态的文件"，而是这批冲突项本身（含条目自身与它内部的），
+   *  数据来自内存里的诊断清单，不必问服务器。 */
   const locateBadge = async (dirRel: string, code: string) => {
     const token = ++locateTokenRef.current;
     let files: { path: string; mtime: number }[];
-    try {
-      const r = await get.locate(dirRel, code);
-      files = r.files;
-    } catch {
-      // 定位失败即忽略（接口异常/目录不存在时不打扰用户，角标下次点击可重试）
-      return;
+    if (code === 'TC') {
+      // 基准同诊断（viewDir）：树模式的行 rel 相对仓库根，列表/网格相对 dir
+      files = conflictPaths(diag, viewDir)
+        .filter((p) => p === dirRel || p.startsWith(dirRel + '/'))
+        .map((path) => ({ path, mtime: 0 }));
+    } else {
+      try {
+        const r = await get.locate(dirRel, code);
+        files = r.files;
+      } catch {
+        // 定位失败即忽略（接口异常/目录不存在时不打扰用户，角标下次点击可重试）
+        return;
+      }
     }
     if (token !== locateTokenRef.current || files.length === 0) return;
     const key = `${dirRel}::${code}`;
@@ -164,12 +175,22 @@ export function FsView(props: Props) {
     }
     void flashBreadcrumbs(breadcrumbRef.current, chain);
     // 统一走 pendingLocate：树=展开父链+高亮；列表/网格=进目录+选中（数据就绪后的滚动/脉冲在 pendingLocate effect 内）
-    setPendingLocate({ rel: target, at: 0, code });
+    // tc 标记让 effect 按"是否树冲突"去选同目录的兄弟项（而不是按状态码，冲突项的 code 是 A/M，按码选会误伤）
+    setPendingLocate({ rel: target, at: 0, code: code === 'TC' ? undefined : code, tc: code === 'TC' });
   };
 
   // 树模式状态：展开集合 + 各目录数据
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [nodeData, setNodeData] = useState<Map<string, FsData>>(new Map());
+
+  // 树冲突诊断（需要时才联网问服务器）：横幅与条目角标**共用同一份结果**，不再各查一遍。
+  // 条目级 treeConflicted 来自 /api/fs 的 status（本地就知道），这里只负责补"服务器上还在不在"。
+  //
+  // **基准必须跟视图对齐**：树模式从仓库根长起、行 rel 相对仓库根；列表/网格模式的行 rel 相对 dir。
+  // 混用会让树模式拿错目录的清单去匹配（冲突角标退成灰、点 ⚠ 定位落空——实报过）。
+  const viewDir = mode === 'tree' ? '' : dir;
+  const diag = useWcConflicts((mode === 'tree' ? nodeData.get('') : data) ?? undefined, viewDir);
+  const conflictLookup = useConflictLookup(diag, viewDir);
 
   const loadNode = useCallback((d: string, force = false) => {
     return get.fs(d, force).then((r: FsData) => {
@@ -356,13 +377,15 @@ export function FsView(props: Props) {
           open,
           locked: nd.selfLocked?.includes(rel),
           miss: e.miss,
+          tc: tcState(e, rel, conflictLookup),
+          treeConflicted: e.treeConflicted,
         });
         if (e.isDir && open) walk(rel, depth + 1);
       }
     };
     walk('', 0);
     return rows;
-  }, [nodeData, expanded, showHidden, filters, mode]);
+  }, [nodeData, expanded, showHidden, filters, mode, conflictLookup]);
 
   // 树模式：展开/收起目录
   const toggleExpand = useCallback(
@@ -417,6 +440,7 @@ export function FsView(props: Props) {
       dropHover={drop.hoverDir === row.rel}
       desc={descOf(row.rel)}
       buttons={rowButtons(row)}
+      locateBadge={locateBadge}
       rowRef={(el) => {
         if (el) rowRefs.current.set(row.rel, el);
         else rowRefs.current.delete(row.rel); // 行卸载（收起/切换模式）时移除，避免残留导致泄漏
@@ -461,7 +485,7 @@ export function FsView(props: Props) {
           if (!r.isDir) jumpToFile(r.rel);
         } else if (!r.isDir) void openFile(r.name, r.code, r.rel);
       }}
-      onContextMenu={(ev, r, idx) => onRowContext(ev, { isDir: r.isDir, code: r.code, rel: r.rel, name: r.name }, idx)}
+      onContextMenu={(ev, r, idx) => onRowContext(ev, { isDir: r.isDir, code: r.code, rel: r.rel, name: r.name, treeConflicted: r.treeConflicted, codes: r.codes }, idx)}
     />
   );
 
@@ -578,11 +602,16 @@ export function FsView(props: Props) {
           locateMissTimerRef.current = null;
         }
         setFocusIndex(idx);
-        // 同父目录下相同状态的行一并选中+脉冲（角标定位"找的不止一个"）
+        // 同父目录下的同类项一并选中+脉冲（角标定位"找的不止一个"）：
+        //   状态字母（M/A…）→ 同状态码；树冲突（tc）→ 同目录下**其他冲突项**
+        //   （冲突项的 code 是 A/M，跟普通项混在一起，按码选会误伤）
         const tParent = pendingLocate.rel.includes('/') ? pendingLocate.rel.slice(0, pendingLocate.rel.lastIndexOf('/')) : '';
         const pfx = tParent ? `${tParent}/` : '';
+        // 同层 = 目标所在目录的直接子项；根目录时 pfx 为空，此时不含 '/' 的都算同层
+        // （原先 pfx 为空直接判 false，导致根目录下"同状态全选"静默失效）
+        const sameLayer = (rel: string) => (pfx ? rel.startsWith(pfx) && !rel.slice(pfx.length).includes('/') : !rel.includes('/'));
         const same = visibleRows
-          .filter((r) => r.code && r.code === pendingLocate.code && r.rel !== pendingLocate.rel && (pfx ? r.rel.startsWith(pfx) && !r.rel.slice(pfx.length).includes('/') : false))
+          .filter((r) => r.rel !== pendingLocate.rel && sameLayer(r.rel) && (pendingLocate.tc ? r.treeConflicted : Boolean(r.code) && r.code === pendingLocate.code))
           .map((r) => r.rel);
         const sel = pendingLocate.only ? new Set(pendingLocate.only) : new Set([pendingLocate.rel, ...same]);
         setSelected(sel);
@@ -605,8 +634,10 @@ export function FsView(props: Props) {
       if (data?.dir === parent) {
         const idx = listEntries.findIndex((e) => (parent ? `${parent}/${e.name}` : e.name) === pendingLocate.rel);
         if (idx >= 0) {
-          // 同状态文件全选（同目录层）+ 全部脉冲
-          const same = listEntries.filter((e) => pendingLocate.code && e.code === pendingLocate.code).map((e) => relOf(e));
+          // 同状态文件全选（同目录层）+ 全部脉冲；树冲突定位则选同目录下的其他冲突项
+          const same = listEntries
+            .filter((e) => (pendingLocate.tc ? e.treeConflicted : Boolean(pendingLocate.code) && e.code === pendingLocate.code))
+            .map((e) => relOf(e));
           const sel = pendingLocate.only ? new Set(pendingLocate.only) : same.length ? new Set(same) : new Set([pendingLocate.rel]);
           setSelected(sel);
           setFocusIndex(idx);
@@ -867,7 +898,7 @@ export function FsView(props: Props) {
   };
 
   /** 条目右键菜单：按 文件/目录 + 状态 + 仓库类型 动态生成可用操作；右键同时选中该条目并锁定 */
-  const onRowContext = (e: React.MouseEvent, t: { isDir: boolean; code: string; rel: string; name: string }, index: number) => {
+  const onRowContext = (e: React.MouseEvent, t: { isDir: boolean; code: string; rel: string; name: string; treeConflicted?: boolean; codes?: string[] }, index: number) => {
     e.preventDefault();
     e.stopPropagation();
     setTip(null); // 右键即关闭悬浮卡片,避免与右键菜单重叠
@@ -879,17 +910,20 @@ export function FsView(props: Props) {
     const svc = menuSvc();
     // 多选：右键项已在选中集合内 → 菜单作用于整个集合（按状态合并操作，不误伤）
     if (selected.has(t.rel) && selected.size > 1) {
+      // treeConflicted/codes 要带上：多选菜单里树冲突项要单独成组（提交必被拒，得先二选一）
       const rows =
         mode === 'tree'
-          ? (visibleRows as unknown as { rel: string; name: string; isDir: boolean; code: string }[]).map((r) => ({
+          ? (visibleRows as unknown as { rel: string; name: string; isDir: boolean; code: string; treeConflicted?: boolean; codes?: string[] }[]).map((r) => ({
               rel: r.rel,
               isDir: r.isDir,
               code: r.code,
               name: r.name,
+              treeConflicted: r.treeConflicted,
+              codes: r.codes,
             }))
-          : listEntries.map((e) => ({ rel: relOf(e), isDir: e.isDir, code: e.code, name: e.name }));
+          : listEntries.map((e) => ({ rel: relOf(e), isDir: e.isDir, code: e.code, name: e.name, treeConflicted: e.treeConflicted, codes: e.codes }));
       const byRel = new Map(rows.map((r) => [r.rel, r]));
-      const tArr = [...selected].map((rel) => byRel.get(rel)).filter((x): x is { rel: string; isDir: boolean; code: string; name: string } => !!x);
+      const tArr = [...selected].map((rel) => byRel.get(rel)).filter((x): x is (typeof rows)[number] => !!x);
       const items = buildMultiItems(tArr, svc);
       setCtx({ ...ctxPos(e, items.length), items });
       return;
@@ -967,6 +1001,8 @@ export function FsView(props: Props) {
     const multi = selected.has(rel);
     const locked = data?.selfLocked?.includes(rel);
     const isMatch = currentMatchNames.has(e.name);
+    // 树冲突角标（本地已有标记 + 服务器诊断上色）
+    const tc = tcState(e, rel, conflictLookup);
     return (
       <div
         key={rel}
@@ -1004,9 +1040,16 @@ export function FsView(props: Props) {
           }
           if (!e.isDir) void openFile(e.name, e.code, rel);
         }}
-        onContextMenu={(ev) => onRowContext(ev, { isDir: e.isDir, code: e.code, rel, name: e.name }, i)}
+        onContextMenu={(ev) => onRowContext(ev, { isDir: e.isDir, code: e.code, rel, name: e.name, treeConflicted: e.treeConflicted, codes: e.codes }, i)}
       >
-        {e.isDir ? <DirBadge codes={e.codes} /> : <CodeBadge code={e.code} />}
+        {/* 有树冲突就只显示 ⚠（字母与网格的变更数让位，明细见悬浮卡/右键菜单）；⚠ 可点击定位 */}
+        {tc ? (
+          <TreeConflictBadge state={tc.state} inner={tc.inner} innerCount={tc.innerCount} onClick={() => locateBadge(rel, 'TC')} />
+        ) : e.isDir ? (
+          <DirBadge codes={e.codes} />
+        ) : (
+          <CodeBadge code={e.code} />
+        )}
         <span className="arrow">{e.isDir ? '▸' : ''}</span>
         {locked && <IconLock size={13} />}
         <span className={`name ${e.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}>
@@ -1195,8 +1238,9 @@ export function FsView(props: Props) {
           </div>
         )}
         {bigTip && <div className="fs-big-tip">⚠ {bigTip}</div>}
-        {/* 工作副本异常（锁定/不完整/缺失）：提示与修法见 wc-notice.tsx */}
-        <WcNotice flags={data ?? undefined} dir={dir} />
+        {/* 工作副本异常（锁定/不完整/缺失）与树冲突：提示与修法见 wc-notice.tsx，
+            诊断结果（diag）来自上层，与条目角标共用同一份 */}
+        <WcNotice flags={data ?? undefined} diag={diag} />
         {/* 拖入上传：悬停提示落点 / 上传进度 / 同名冲突确认 */}
         {drop.dragging && <div className="fs-drop-hint">松开即复制到 {dir ? `${dir}/` : '仓库根目录'}</div>}
         {drop.progress && (
@@ -1393,6 +1437,7 @@ export function FsView(props: Props) {
                   pulse={pulseRels.includes(rel)}
                   dropHover={drop.hoverDir === rel}
                   locked={data?.selfLocked?.includes(rel) ?? false}
+                  tc={tcState(e, rel, conflictLookup)}
                   rowRef={(el) => {
                     if (el) rowRefs.current.set(rel, el);
                     else rowRefs.current.delete(rel); // 行卸载（切换模式/目录刷新）时移除，避免残留导致泄漏
@@ -1405,6 +1450,8 @@ export function FsView(props: Props) {
                       x: ev.clientX, y: ev.clientY, name: e.name, isDir: e.isDir,
                       size: e.size, mtime: e.mtime, code: e.code, codes: e.codes, count: e.count,
                       miss: e.miss,
+                      tc: tcState(e, rel, conflictLookup),
+                      tcItem: e.treeConflicted ? conflictLookup(rel).item : undefined,
                     });
                   }}
                   onMouseLeave={() => {
@@ -1423,7 +1470,7 @@ export function FsView(props: Props) {
                       setPendingLocate(null); // 双击进入目录：取消残留定位
                     } else void openFile(e.name, e.code, rel);
                   }}
-                  onContextMenu={(ev) => onRowContext(ev, { isDir: e.isDir, code: e.code, rel, name: e.name }, i)}
+                  onContextMenu={(ev) => onRowContext(ev, { isDir: e.isDir, code: e.code, rel, name: e.name, treeConflicted: e.treeConflicted, codes: e.codes }, i)}
                   locateBadge={(relf, code) => void locateBadge(relf, code)}
                 />
               );

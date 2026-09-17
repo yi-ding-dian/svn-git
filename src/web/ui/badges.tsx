@@ -58,4 +58,41 @@ function DirBadge({ codes, onBadgeClick }: { codes?: string[]; onBadgeClick?: (c
   return <CodeBadge code="" />;
 }
 
-export { CodeBadge, DirBadge };
+/** 树冲突角标：本地已添加/修改，服务器同路径已被删除或移动（提交会被拒）。
+ *  与字母徽标**并列**显示，不占字母位——字母说明"本地在干什么"（A/M），⚠ 说明"这事有冲突"。
+ *  同一棵树冲突有两种成因，颜色不同：红=服务器已删除 · 黄=服务器上仍在（本地与服务器各执一词）·
+ *  灰=只知道本地冲突、服务器状态没查到（未诊断/没连上）。 */
+export type TreeConflictState = 'missing' | 'present' | 'unknown';
+
+const TC_TITLE: Record<TreeConflictState, string> = {
+  missing: '树冲突：服务器上该路径已删除，直接提交会被拒绝（右键 → 接受服务器的删除）',
+  present: '树冲突：服务器上该路径仍在，本地与服务器对同一路径各执一词（先 update 或找管理员）',
+  unknown: '树冲突：本地与服务器对同一路径的操作冲突（未查到服务器状态）',
+};
+
+/** 目录**内部**有冲突（不是它自己）：文案要说清"里面"，别让人以为这个目录本身有问题 */
+const TC_TITLE_INNER: Record<TreeConflictState, string> = {
+  missing: '树冲突：目录内部有路径在服务器上已删除，提交会被拒绝 —— 点进去逐条处理',
+  present: '树冲突：目录内部有路径与服务器各执一词 —— 点进去逐条处理',
+  unknown: '树冲突：目录内部有树冲突（未查到服务器状态）',
+};
+
+function TreeConflictBadge({ state, inner, innerCount, onClick }: { state: TreeConflictState; inner?: boolean; innerCount?: number; onClick?: (e: React.MouseEvent) => void }) {
+  const base = inner ? TC_TITLE_INNER[state] : TC_TITLE[state];
+  // 内部冲突带条数（⚠ 2）：与"自身冲突"（只有 ⚠）一眼分开。
+  // 两者颜色相同（都按服务器状态上色），只靠 tooltip 根本分不出——用户报过。
+  // 而且两者的**下一步动作相反**：自身冲突在本目录右键接受删除；内部冲突要点进去、在子项上处理
+  const num = inner && innerCount ? innerCount : null;
+  const title = `${num ? `内部有 ${num} 处。` : ''}${base}${onClick ? '\n（点击定位到该冲突项，连点轮转）' : ''}`;
+  return (
+    <span
+      className={`code tc ${state}${num ? ' with-num' : ''}${onClick ? ' clickable' : ''}`}
+      title={title}
+      onClick={onClick ? (e) => { e.stopPropagation(); onClick(e); } : undefined}
+    >
+      ⚠{num ? <span className="tc-num">{num}</span> : null}
+    </span>
+  );
+}
+
+export { CodeBadge, DirBadge, TreeConflictBadge };

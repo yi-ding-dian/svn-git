@@ -84,4 +84,8 @@ export interface VisibleRow {
   locked?: boolean;
   /** 磁盘上已缺失（svn '!' / git " D"）：虚化渲染 + 右键还原 */
   miss?: boolean;
+  /** 树冲突角标（undefined = 不是冲突）：有冲突就只显示 ⚠，字母/变更数让位（明细在悬浮卡与右键菜单） */
+  tc?: { state: 'missing' | 'present' | 'unknown'; inner?: boolean; innerCount?: number };
+  /** 条目自身就是树冲突（区别于 tc.inner 的"目录内部有冲突"）：右键菜单据此给专门的处理入口 */
+  treeConflicted?: boolean;
 }

@@ -71,16 +71,33 @@ export function buildBlankItems(s: MenuServices): CtxMenuItem[] {
 
 /** 多选菜单（tArr 由 index 按当前视图展开选中集合后传入） */
 export function buildMultiItems(
-  tArr: { rel: string; isDir: boolean; code: string; name: string }[],
+  tArr: { rel: string; isDir: boolean; code: string; name: string; treeConflicted?: boolean; codes?: string[] }[],
   s: MenuServices,
 ): CtxMenuItem[] {
   const items: CtxMenuItem[] = [];
+  // 树冲突项单独拎出来：它们**提交必被拒**，得先二选一（与单选菜单的置顶项同一套处理）。
+  // 从 tMod 里剔除，否则"提交修改"会把它们带上——那是条点了只会报错的路。
+  const tTc = s.repoType === 'svn' ? tArr.filter((x) => x.treeConflicted) : [];
   const tNew = tArr.filter((x) => x.code === '?');
-  const tMod = tArr.filter((x) => ['M', 'A', 'D', 'R', 'C'].includes(x.code));
-  const tMiss = tArr.filter((x) => x.code === '!');
+  const tMod = tArr.filter((x) => ['M', 'A', 'D', 'R', 'C'].includes(x.code) && !x.treeConflicted);
+  const tMiss = tArr.filter((x) => x.code === '!' && !x.treeConflicted);
   const tI = tArr.filter((x) => x.code === 'I');
-  const tVer = tArr.filter((x) => removableFromRepo(x.code));
+  const tVer = tArr.filter((x) => removableFromRepo(x.code) && !x.treeConflicted);
   const tFsDel = s.repoType === 'git' ? [...tNew, ...tI] : tNew;
+  // 全是"本地已添加"（含磁盘已缺失的 '!'，那类在 SVN 记录里同样是 added 调度）才说"放弃本地添加"
+  const tcAllAdd = tTc.length > 0 && tTc.every((x) => x.code === '!' || x.codes?.includes('A') === true);
+  if (tTc.length) {
+    items.push({
+      icon: <IconRevert />,
+      label: `${tcAllAdd ? '接受服务器的删除' : '还原'}（解决树冲突）（${tTc.length} 项）`,
+      title: tcAllAdd
+        ? '服务器上这些路径已删除或移动。接受后本地文件会一并删除（与服务器保持一致，本地未提交的改动不可恢复），之后即可正常提交'
+        : '服务器上这些路径已删除或移动。放弃本地改动＝回到版本库内容（svn revert -R，本地改动不可恢复），随后更新即可同步服务器的删除',
+      cmd: cmdOfRepo(s.repoType, 'revert', { paths: joinPaths(tTc.map((x) => x.rel)) }),
+      action: () => s.onAction('revert', tTc.map((x) => x.rel)),
+    });
+    items.push({ sep: true });
+  }
   if (tNew.length) {
     items.push({ icon: <IconPlus />, label: `添加到版本库（${tNew.length} 项）`, cmd: cmdOfRepo(s.repoType, 'add', { paths: joinPaths(tNew.map((x) => x.rel)) }), action: () => s.onAction('add', tNew.map((x) => x.rel)) });
   }
@@ -102,7 +119,13 @@ export function buildMultiItems(
     });
   }
   if (tMod.length) {
-    items.push({ icon: <IconUpload />, label: `提交修改（${tMod.length} 项）…`, cmd: cmdOfRepo(s.repoType, 'commit', { msg: '…' }), action: () => s.onAction('commit', tMod.map((x) => x.rel)) });
+    items.push({
+      icon: <IconUpload />,
+      label: `提交修改（${tMod.length} 项${tTc.length ? `，已排除 ${tTc.length} 项树冲突` : ''}）…`,
+      title: tTc.length ? `已排除选中的 ${tTc.length} 项树冲突——它们提交会被服务器拒绝，先用上方「放弃本地添加」处理` : undefined,
+      cmd: cmdOfRepo(s.repoType, 'commit', { msg: '…' }),
+      action: () => s.onAction('commit', tMod.map((x) => x.rel)),
+    });
     const rv = multiRevertName(tMod.map((x) => x.code), tMod.length);
     items.push({ icon: <IconRevert />, label: rv.label, title: rv.title, cmd: cmdOfRepo(s.repoType, 'revert', { paths: joinPaths(tMod.map((x) => x.rel)) }), action: () => s.onAction('revert', tMod.map((x) => x.rel)) });
   }
@@ -131,11 +154,39 @@ export function buildMultiItems(
 }
 
 /** 单选行右键菜单（ev 传入以便"查看历史"使用点击坐标提示无记录） */
-export function buildRowItems(t: { isDir: boolean; code: string; rel: string; name: string }, ev: React.MouseEvent, s: MenuServices): CtxMenuItem[] {
+export function buildRowItems(t: { isDir: boolean; code: string; rel: string; name: string; treeConflicted?: boolean; codes?: string[] }, ev: React.MouseEvent, s: MenuServices): CtxMenuItem[] {
   const items: CtxMenuItem[] = [];
+  // 树冲突项走**精简菜单**：常规项对它们要么危险要么无效——
+  //   提交此目录修改：含树冲突的路径提交必被服务器拒绝（死路）
+  //   更新此目录：实测无效（冲突标记原样保留、磁盘文件也不动，什么都解决不了）
+  //   从版本库移除：与"接受服务器的删除"语义重复，且对"已添加"项不适用
+  //   重命名 / 忽略设置 / 加入常用文件夹：冲突状态下没有实际意义
+  // 所以下面那一大块常规分支整个跳过（改成 else if 链），只留解决入口 + 查看历史，
+  // 再落到尾部的公共工具项（打开方式 / 复制完整路径 / 复制文件名）。
+  if (t.treeConflicted && s.repoType === 'svn') {
+    // 本地是 added（含磁盘已缺失的 '!' —— 那类在 SVN 记录里同样是 added 调度）→ 接受的是"服务器的删除"。
+    // 目录的 code 会被子项状态聚合改写（gRPC_src 自身 A、因子项有 M 而显示成 M），
+    // 所以要看 codes 集合里有没有 A，不能只看 code。
+    const localAdd = t.code === '!' || t.codes?.includes('A') === true;
+    items.push({
+      icon: <IconRevert />,
+      label: localAdd ? '接受服务器的删除（解决树冲突）' : '还原（解决树冲突）',
+      title: localAdd
+        ? // **树冲突的"已添加"和普通"已添加"行为不同**（实测复现过）：普通 added 目录 revert 只是取消登记、
+          // 文件留在磁盘；树冲突项还要把服务器那个"删除"落下来，**本地文件会一并被删**（与服务器保持一致）。
+          // 标签叫"接受服务器的删除"而不是"放弃本地添加"——后者字面暗示文件还在，会误导
+          '服务器上该路径已删除或移动。接受后本地文件会一并删除（与服务器保持一致，本地未提交的改动不可恢复），之后即可正常提交'
+        : '服务器上该路径已删除或移动。放弃本地修改＝文件回到版本库内容（svn revert -R，本地改动不可恢复），随后更新即可同步服务器的删除',
+      cmd: cmdOfRepo(s.repoType, 'revert', { paths: t.rel }),
+      action: () => s.onAction('revert', [t.rel]),
+    });
+    items.push({ sep: true });
+    // 查看历史：判断"服务器删得对不对"最直接的依据（谁删的、为什么删）
+    items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(s.repoType, 'view_history', { path: t.rel }), action: () => s.viewHistory(t.rel, ev) });
+    items.push({ sep: true });
+  } else if (t.code === '!') {
   // 缺失条目（'!' = 磁盘已删除但版本库还在）：磁盘无文件——只提供还原/历史/复制路径等有效操作；
   // 查看内容/差异/提交/从版本库移除/打开方式对缺失文件无意义（还原复用现有 revert：svn revert / git checkout HEAD）
-  if (t.code === '!') {
     items.push({
       icon: <IconRevert />,
       label: '还原',
@@ -169,8 +220,7 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
       },
     });
     return items;
-  }
-  if (t.isDir) {
+  } else if (t.isDir) {
     if (t.code === 'I') {
       // 忽略目录：无版本操作（更新/提交/还原/历史均无意义），仅忽略设置/取消忽略/删除(git 可磁盘删)
       items.push({ icon: <IconIgnore />, label: '忽略设置…', action: () => s.setIgnoreModal({ dir: t.rel }) });

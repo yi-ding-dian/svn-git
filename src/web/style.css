@@ -418,6 +418,15 @@ body {
 .code.I { background: var(--dim); }
 .code.U { background: var(--accent); }
 .code.\~ { background: var(--warn); }
+/* 树冲突角标（与 M/A 字母并列，不占字母位）：红=服务器已删除 / 黄=服务器上仍在 / 灰=服务器状态未查。
+   ⚠ 用图形而非字母，与"C 冲突"区分——C 是内容冲突，这个是"整条路径的去留之争" */
+.code.tc { background: var(--dim); color: #fff; font-weight: 400; }
+.code.tc.missing { background: var(--err); }
+.code.tc.present { background: var(--warn); }
+/* 内部冲突的 ⚠ 带条数（⚠ 2）：与"自身冲突"（只有 ⚠）一眼分开——前者要进去逐条处理，后者在本目录右键即可。
+   宽度自适应（.code 默认固定宽 1.6em），数字小一号跟在 ⚠ 后面 */
+.code.tc.with-num { width: auto; padding: 0 4px; gap: 2px; }
+.code.tc .tc-num { font-size: 0.82em; }
 .codes-row { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
 
 /* ---------- 状态树 ---------- */
@@ -495,8 +504,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .recent-pop-title { font-size: 0.8em; color: var(--dim); padding: 4px 8px 6px; }
 .recent-pop .recent-item { padding: 5px 8px; font-size: 0.85em; }
 /* 树冲突清单（wc-notice）：嵌在提示条里，条目多时限高滚动 */
+/* 冲突清单：最多显示 6 行，超出滚动（行高 12px×1.8≈21.6px，6 行 129.6 + 上下 padding 6 ≈ 136px）。
+   不撑高横幅，也不藏内容——滚动条本身就是"还有更多"的提示，条数在横幅首句里已经写明 */
 .wc-conflict-list {
-  margin: 5px 0; padding: 3px 8px; max-height: 132px; overflow: auto;
+  margin: 5px 0; padding: 3px 8px; max-height: 136px; overflow: auto;
   background: rgba(0, 0, 0, .06); border-radius: 4px;
 }
 .wc-conflict-row { display: flex; gap: 8px; align-items: baseline; font-size: 12px; line-height: 1.8; }

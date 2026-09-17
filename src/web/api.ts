@@ -38,6 +38,8 @@ export interface FileStatus {
   porcelain?: string;
   wcCode?: string;
   isDir: boolean;
+  /** 树冲突：本地已添加/修改，服务器同路径已删除或移动（后端 svn status 已带出，前端此前未声明） */
+  treeConflicted?: boolean;
 }
 
 export interface LogEntry {
@@ -96,6 +98,10 @@ export interface FsEntry {
   unversionedCount?: number;
   /** 磁盘上已缺失（svn '!' / git " D"）：磁盘无文件、版本库仍在 → 虚化渲染，右键可还原 */
   miss?: boolean;
+  /** 树冲突：本地已添加/修改，服务器同路径已删除或移动。本地 status 就带，无需联网 */
+  treeConflicted?: boolean;
+  /** 该目录**内部深层**还有树冲突（仅小仓库全量扫描时可能为真；超大工作副本浅扫描拿不到） */
+  innerTreeConflict?: boolean;
 }
 
 export interface FsData {

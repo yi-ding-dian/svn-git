@@ -299,23 +299,24 @@ export function App() {
     try {
       const st = await get.status();
       const items = st.items ?? [];
-      const byPath = new Map(items.map((i) => [i.path, i.code]));
-      let list: { path: string; code: string }[] = [];
+      const byPath = new Map(items.map((i) => [i.path, i]));
+      // treeConflicted 一并带进弹窗：从「放弃本地添加（解决树冲突）」进来时要能说清"这几项是树冲突"
+      let list: { path: string; code: string; treeConflicted?: boolean }[] = [];
       if (paths.length > 1) {
         // 多选文件集合：按传入路径逐个取状态，直接列清单（不再按"目录下"语义），排除 ?/I/X
         list = paths
-          .map((p) => ({ path: p, code: byPath.get(p) ?? '' }))
+          .map((p) => ({ path: p, code: byPath.get(p)?.code ?? '', treeConflicted: byPath.get(p)?.treeConflicted }))
           .filter((i) => i.code !== '?' && i.code !== 'I' && i.code !== 'X');
       } else {
         // 目录还原：仅收集其下（含子目录）的可还原文件，排除 ?(未版本化)/I(忽略)/X(外部)
         for (const it of items) {
           if (it.path === dir || !it.path.startsWith(dir + '/')) continue;
           if (it.code === '?' || it.code === 'I' || it.code === 'X') continue;
-          list.push({ path: it.path, code: it.code });
+          list.push({ path: it.path, code: it.code, treeConflicted: it.treeConflicted });
         }
         // 目录自身也有调度（svn A/D 目录；git porcelain 不列目录故不会命中）→ 一并列入清单，避免取消添加后目录自身残留 A
         const self = items.find((i) => i.path === dir && i.code !== '?' && i.code !== 'I' && i.code !== 'X');
-        if (self) list.unshift({ path: dir, code: self.code });
+        if (self) list.unshift({ path: dir, code: self.code, treeConflicted: self.treeConflicted });
       }
       if (list.length > 0) {
         setModal({ type: 'revert-confirm', dir, dirLabel: paths.length > 1 ? `选择的 ${list.length} 项` : dir, items: list });

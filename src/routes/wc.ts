@@ -71,8 +71,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
   //    注意必须在**该目录内部**跑：从工作副本根跑 status 时，若根节点是 incomplete（上次操作被中断），
   //    SVN 不会递归下来，这里就会一无所获（实测：从 trunk 跑得 0 个，cd 进 src 跑得 15 个）。
   //    同理也不能走 getStatusCached——它另有缓存键与范围语义。
+  //    扫描范围与 /api/fs 保持**同一套判据**（isHugeWc）：超大工作副本只扫直接子项（浅扫描，毫秒级），
+  //    小仓库保持递归（深层冲突一并列出，横幅才是完整清单）。代价：浅扫描下"某目录内部还有冲突"
+  //    在当前层看不出来，要点进那个目录——不递归的必然结果，换来的是大仓库下不会卡住。
   const { run: runRaw } = await import('../vcs/exec.js');
-  const st = await runRaw('svn', ['status', '--xml', '.'], { cwd: abs, timeoutMs: 120_000 });
+  const shallow = vcs.isHugeWc?.() ?? false;
+  const st = await runRaw('svn', ['status', '--xml', ...(shallow ? ['-N'] : []), '.'], { cwd: abs, timeoutMs: 120_000 });
   const hit = st.code === 0 ? parseConflicts(st.stdout) : [];
   if (hit.length === 0) {
     sendJson(res, 200, { conflicts: [] });
