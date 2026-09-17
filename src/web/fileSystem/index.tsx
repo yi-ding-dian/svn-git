@@ -13,6 +13,8 @@ import { TreeRow } from './views/rows.js';
 import { GridItem, FileTipCard } from './views/grid.js';
 import { flashBreadcrumbs } from '../ui/motion.js';
 import { useDirPreload } from './use-dir-preload.js';
+import { useDropUpload, type ConflictMode } from './use-drop-upload.js';
+import { UploadConflictModal } from '../modals/upload-conflict.js';
 import { ModuleIndexDialog } from '../dialogs/module-index.js';
 
 /** 磁盘存在且可改名（renameItem 内部按状态分流：?/I 走磁盘改名，其余走 svn/git move）：
@@ -119,7 +121,8 @@ export function FsView(props: Props) {
   const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean } | null>(null);
   // 文件搜索（工具栏）：防抖查询 + 结果下拉状态收于 useFileSearch
   const search = useFileSearch(data?.dir ?? '');
-  const [pendingLocate, setPendingLocate] = useState<{ rel: string; at: number; code?: string } | null>(null);
+  // only：显式指定选中集合（拖入上传用）——跳过"按 code 同状态全选"，只选中真正落盘的那几个
+  const [pendingLocate, setPendingLocate] = useState<{ rel: string; at: number; code?: string; only?: string[] } | null>(null);
   // 定位目标行/卡片脉冲："就是它"提示（渲染期挂 .file-pulse class，1500ms 后清除；同状态文件全选后全闪）
   const [pulseRels, setPulseRels] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -410,6 +413,7 @@ export function FsView(props: Props) {
       multi={selected.has(row.rel)}
       searchHit={search.searchResults.includes(row.rel)}
       pulse={pulseRels.includes(row.rel)}
+      dropHover={drop.hoverDir === row.rel}
       desc={descOf(row.rel)}
       buttons={rowButtons(row)}
       rowRef={(el) => {
@@ -579,7 +583,7 @@ export function FsView(props: Props) {
         const same = visibleRows
           .filter((r) => r.code && r.code === pendingLocate.code && r.rel !== pendingLocate.rel && (pfx ? r.rel.startsWith(pfx) && !r.rel.slice(pfx.length).includes('/') : false))
           .map((r) => r.rel);
-        const sel = new Set([pendingLocate.rel, ...same]);
+        const sel = pendingLocate.only ? new Set(pendingLocate.only) : new Set([pendingLocate.rel, ...same]);
         setSelected(sel);
         const el = rowRefs.current.get(pendingLocate.rel) ?? null;
         el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -587,12 +591,13 @@ export function FsView(props: Props) {
         setTimeout(() => setPulseRels([]), 1600);
         setPendingLocate(null);
       } else if (!locateMissTimerRef.current) {
-        // 目标行暂不可见（父链还在加载/已被隐藏/已被删除）：兜底 800ms 后仍无 → 静默结束，
-        // 否则悬着的定位会在后续导航的数据变化时反复拽回（用户点哪都被拉回——"一直刷新"现象根因）
+        // 目标行暂不可见（父链还在加载/数据还没刷新到/已被隐藏或删除）：兜底 3s 后仍无 → 静默结束，
+        // 否则悬着的定位会在后续导航的数据变化时反复拽回（用户点哪都被拉回——"一直刷新"现象根因）。
+        // 3s 而非更短：拖入上传后要等目录刷新回来（多文件时可能过秒），太快会白白放弃定位
         locateMissTimerRef.current = setTimeout(() => {
           locateMissTimerRef.current = null;
           setPendingLocate(null);
-        }, 800);
+        }, 3000);
       }
     } else {
       const parent = pendingLocate.rel.includes('/') ? pendingLocate.rel.slice(0, pendingLocate.rel.lastIndexOf('/')) : '';
@@ -601,7 +606,7 @@ export function FsView(props: Props) {
         if (idx >= 0) {
           // 同状态文件全选（同目录层）+ 全部脉冲
           const same = listEntries.filter((e) => pendingLocate.code && e.code === pendingLocate.code).map((e) => relOf(e));
-          const sel = same.length ? new Set(same) : new Set([pendingLocate.rel]);
+          const sel = pendingLocate.only ? new Set(pendingLocate.only) : same.length ? new Set(same) : new Set([pendingLocate.rel]);
           setSelected(sel);
           setFocusIndex(idx);
           const el = rowRefs.current.get(pendingLocate.rel) ?? null;
@@ -917,6 +922,44 @@ export function FsView(props: Props) {
   });
 
   /** 列表/浏览模式共用的条目行渲染 */
+  // 拖入上传：落点 = 文件区（当前目录）或文件夹行/格子（该文件夹）。
+  // 冲突时弹窗问策略：用 promise 把弹窗结果交回给 hook（弹窗状态只服务本视图，不进全局 modal-host）
+  const [conflictAsk, setConflictAsk] = useState<{ conflicts: string[]; resolve: (m: ConflictMode | null) => void } | null>(null);
+  const askConflict = useCallback(
+    (conflicts: string[]) => new Promise<ConflictMode | null>((resolve) => setConflictAsk({ conflicts, resolve })),
+    [],
+  );
+  const drop = useDropUpload({
+    dir,
+    askConflict,
+    onDone: useCallback(
+      async (okCount: number, failed: string[], saved: string[]) => {
+        if (okCount > 0) {
+          // 落地改变了目录内容：重载当前目录（树模式重载根节点）。
+          // 列表/网格必须等刷新完成再定位：否则 pendingLocate 会拿旧列表找行号，找不到就超时放弃
+          if (mode === 'tree') loadNode('', true);
+          else await load(dir, true);
+        }
+        // 只能选中当前目录下的：拖进子文件夹的那些不在本视图里，改用文案告诉用户它们去哪了
+        const parentOf = (r: string) => (r.includes('/') ? r.slice(0, r.lastIndexOf('/')) : '');
+        const here = saved.filter((r) => parentOf(r) === dir);
+        if (here.length > 0) {
+          // 数据就绪后由 pendingLocate effect 完成选中 + 滚动到首个 + 脉冲闪烁
+          setPendingLocate({ rel: here[0]!, at: Date.now(), only: here });
+        }
+        const elsewhere = saved.length - here.length;
+        const picked = here.length > 0 ? '，已选中并定位' : '';
+        const sub = elsewhere > 0 ? `，另有 ${elsewhere} 个在子文件夹里` : '';
+        props.onToast(
+          failed.length
+            ? `已复制 ${okCount} 个${picked}${sub}；${failed.length} 个失败：${failed.slice(0, 3).join('、')}${failed.length > 3 ? ' 等' : ''}`
+            : `已复制 ${okCount} 个文件${picked}${sub}`,
+        );
+      },
+      [mode, dir, load, loadNode], // eslint-disable-line react-hooks/exhaustive-deps
+    ),
+  });
+
   const renderEntryRow = (e: FsEntry, i: number) => {
     const rel = relOf(e);
     const focused = i === focusIndex;
@@ -926,7 +969,8 @@ export function FsView(props: Props) {
     return (
       <div
         key={rel}
-        className={`tree-row ${isMatch ? 'search-hit' : ''}${pulseRels.includes(rel) ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}`}
+        data-dir-rel={e.isDir ? rel : undefined} /* 拖入落点：容器按事件委托读它 */
+        className={`tree-row ${isMatch ? 'search-hit' : ''}${pulseRels.includes(rel) ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}${drop.hoverDir === rel ? ' dir-drop-hover' : ''}`}
         style={{
           background: focused || multi ? 'var(--panel2)' : undefined,
           outline: focused ? '1px solid var(--accent)' : multi ? '1px solid var(--accent)' : undefined,
@@ -1150,6 +1194,26 @@ export function FsView(props: Props) {
           </div>
         )}
         {bigTip && <div className="fs-big-tip">⚠ {bigTip}</div>}
+        {/* 拖入上传：悬停提示落点 / 上传进度 / 同名冲突确认 */}
+        {drop.dragging && <div className="fs-drop-hint">松开即复制到 {dir ? `${dir}/` : '仓库根目录'}</div>}
+        {drop.progress && (
+          <div className="fs-drag-bar">
+            <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
+            <span>
+              正在上传 {drop.progress.done}/{drop.progress.total}…
+            </span>
+          </div>
+        )}
+        {conflictAsk && (
+          <UploadConflictModal
+            conflicts={conflictAsk.conflicts}
+            dir={dir}
+            onChoose={(m) => {
+              conflictAsk.resolve(m);
+              setConflictAsk(null);
+            }}
+          />
+        )}
         {/* 树模式首次加载 */}
         {mode === 'tree' && nodeData.size === 0 && !error && (
           <div className="loading">
@@ -1178,7 +1242,8 @@ export function FsView(props: Props) {
         {/* 树模式扁平化行 */}
         {mode === 'tree' && !preview && (
           <div
-            className="list"
+            {...drop.fileAreaProps}
+            className={`list${drop.dragging ? ' fs-drop-active' : ''}`}
             style={{ overflow: 'auto', flex: 1 }}
             onContextMenu={onBlankContext}
             onClick={(ev) => {
@@ -1206,7 +1271,8 @@ export function FsView(props: Props) {
         {/* 列表模式 */}
         {mode === 'list' && !preview && (
           <div
-            className="list"
+            {...drop.fileAreaProps}
+            className={`list${drop.dragging ? ' fs-drop-active' : ''}`}
             style={{ overflow: 'auto', flex: 1 }}
             onContextMenu={onBlankContext}
             onClick={(ev) => {
@@ -1235,7 +1301,8 @@ export function FsView(props: Props) {
         {/* 浏览模式：文件管理器图标网格 */}
         {mode === 'browse' && !preview && (
           <div
-            className="grid-view"
+            {...drop.fileAreaProps}
+            className={`grid-view${drop.dragging ? ' fs-drop-active' : ''}`}
             onContextMenu={onBlankContext}
             ref={(el) => {
               if (el) gridRef.current = el;
@@ -1321,6 +1388,7 @@ export function FsView(props: Props) {
                   multi={selected.has(rel)}
                   searchHit={currentMatchNames.has(e.name)}
                   pulse={pulseRels.includes(rel)}
+                  dropHover={drop.hoverDir === rel}
                   locked={data?.selfLocked?.includes(rel) ?? false}
                   rowRef={(el) => {
                     if (el) rowRefs.current.set(rel, el);

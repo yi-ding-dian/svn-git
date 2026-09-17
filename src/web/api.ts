@@ -343,7 +343,39 @@ export const post = {
   shutdown: () => api<{ ok: boolean }>('/api/shutdown', json({})),
   /** 用指定系统程序打开仓库内文件 */
   openWith: (path: string, exec: string) => api<{ ok: boolean; message: string }>('/api/open-with', json({ path, exec })),
+  /** 拖入上传：冲突预检（只传相对路径列表，不传文件内容；先探路再决定怎么传） */
+  uploadCheck: (dir: string, paths: string[]) => api<{ conflicts: string[] }>('/api/upload-check', json({ dir, paths })),
+  /** 打包版拖入快路径：源已在磁盘上（Electron 拿到绝对路径），让后端 fs.cp 直接复制。
+   *  不走 HTTP 传内容：大文件零拷贝、目录整树复制，且保留权限位（可执行位）与时间戳 */
+  copyInto: (dir: string, src: string, rel: string, mode: 'overwrite' | 'rename' | 'skip') =>
+    api<{ ok?: boolean; savedAs?: string; skipped?: boolean; message?: string; error?: string }>(
+      '/api/copy-into',
+      json({ dir, src, path: rel, mode }),
+    ),
 };
+
+/** 上传单个文件（拖入用）：body 是原始字节，不能走 json() 封装，故单独一个函数。
+ *  mode：overwrite 覆盖 / rename 自动改名（a.txt → a (1).txt）/ skip 跳过同名 */
+export async function uploadFile(
+  dir: string,
+  rel: string,
+  blob: Blob,
+  mode: 'overwrite' | 'rename' | 'skip',
+): Promise<{ ok?: boolean; savedAs?: string; skipped?: boolean; message?: string; error?: string }> {
+  const qs = `dir=${encodeURIComponent(dir)}&path=${encodeURIComponent(rel)}&mode=${mode}`;
+  const r = await fetch(`/api/upload?${qs}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: blob,
+  });
+  return (await r.json().catch(() => ({}))) as {
+    ok?: boolean;
+    savedAs?: string;
+    skipped?: boolean;
+    message?: string;
+    error?: string;
+  };
+}
 
 function json(body: unknown, signal?: AbortSignal): RequestInit {
   return { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal };

@@ -907,6 +907,24 @@ textarea { resize: vertical; font-family: inherit; }
   color: var(--accent); font-size: 12px; background: rgba(34, 197, 94, .08);
   border-bottom: 1px solid var(--border);
 }
+/* 拖入上传：悬停提示落点 / 上传进度条 */
+.fs-drop-hint {
+  padding: 7px 10px; font-size: 12px; color: var(--accent);
+  background: rgba(88, 166, 255, .10); border-bottom: 1px solid var(--border);
+}
+.fs-drag-bar {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  color: var(--accent); font-size: 12px; background: rgba(88, 166, 255, .10);
+  border-bottom: 1px solid var(--border);
+}
+/* 文件区拖拽悬停（落点 = 当前目录）：虚线描边 */
+.fs-drop-active { outline: 2px dashed var(--accent); outline-offset: -4px; }
+/* 文件夹落点高亮（拖到某个文件夹行/格子上）。!important 是因为行元素用内联 style 表达
+   选中/多选背景，内联优先级最高，不高亮的话拖拽时看不出落在哪个文件夹上 */
+.dir-drop-hover {
+  background: rgba(88, 166, 255, .18) !important;
+  box-shadow: inset 0 0 0 2px var(--accent) !important;
+}
 /* 勾选框统一主题色 */
 input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
 /* 提交弹窗：注释标签 + 注释输入框 */

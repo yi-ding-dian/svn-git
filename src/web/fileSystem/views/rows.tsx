@@ -22,12 +22,15 @@ export function TreeRow(props: {
   onContextMenu: (ev: React.MouseEvent, row: VisibleRow, i: number) => void;
   onMouseEnterRow: (ev: React.MouseEvent, row: VisibleRow) => void;
   onMouseLeaveRow: () => void;
+  /** 拖拽悬停在本行（仅目录可投放）：高亮提示落点 */
+  dropHover?: boolean;
 }) {
   const { row } = props;
   return (
     <div
       ref={props.rowRef}
-      className={`tree-row ${props.searchHit ? 'search-hit' : ''}${props.pulse ? ' file-pulse' : ''}${row.miss ? ' miss' : ''}`}
+      data-dir-rel={row.isDir ? row.rel : undefined} /* 拖入落点：容器按事件委托读它 */
+      className={`tree-row ${props.searchHit ? 'search-hit' : ''}${props.pulse ? ' file-pulse' : ''}${row.miss ? ' miss' : ''}${props.dropHover ? ' dir-drop-hover' : ''}`}
       style={{
         paddingLeft: 8 + row.depth * 18,
         background: props.focused || props.multi ? 'var(--panel2)' : undefined,

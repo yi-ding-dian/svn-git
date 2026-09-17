@@ -21,6 +21,8 @@ export function GridItem(props: {
   onDoubleClick: () => void;
   onContextMenu: (ev: React.MouseEvent) => void;
   locateBadge: (rel: string, code: string) => void;
+  /** 拖拽悬停在本格子（仅目录可投放）：高亮提示落点 */
+  dropHover?: boolean;
 }) {
   const e = props.entry;
   const dirCodes =
@@ -29,7 +31,8 @@ export function GridItem(props: {
       : e.codes;
   return (
     <div
-      className={`grid-item ${props.focused || props.multi ? 'selected' : ''} ${props.searchHit ? 'search-hit' : ''}${props.pulse ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}`}
+      data-dir-rel={e.isDir ? props.rel : undefined} /* 拖入落点：容器按事件委托读它 */
+      className={`grid-item ${props.focused || props.multi ? 'selected' : ''} ${props.searchHit ? 'search-hit' : ''}${props.pulse ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}${props.dropHover ? ' dir-drop-hover' : ''}`}
       ref={props.rowRef}
       onMouseEnter={props.onMouseEnter}
       onMouseLeave={props.onMouseLeave}
