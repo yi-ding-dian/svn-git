@@ -25,6 +25,11 @@ export function setPickDirHandler(fn: () => Promise<string | null>): void {
 const HISTORY_PATH = path.join(os.homedir(), '.config', 'svngit', 'history.json');
 const HISTORY_MAX = 20;
 
+/** 忽略检测（svn status --no-ignore）的输出上限：超过就不解析。
+ *  它只用来把被忽略的条目标成 I，而超大工作副本上这个扫描有 5MB+、解析要秒级——收益不值。
+ *  实测参考：正常仓库几十 KB；某 35 万文件的工作副本 5.6MB / 4.3 万行。 */
+const MAX_IGNORE_SCAN_BYTES = 1024 * 1024;
+
 export interface HistoryItem {
   path: string;
   type: 'svn' | 'git';
@@ -516,7 +521,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 403, { error: MSG_OUT_OF_SCOPE });
           return true;
         }
-        const items = (await getStatusCached(repo, force)) as { path: string; code: string; isDir: boolean }[];
+        const items = (await getStatusCached(repo, force, rel)) as { path: string; code: string; isDir: boolean }[];
         const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; count?: number; codes?: string[]; unversionedCount?: number; miss?: boolean }[] = [];
         // 目录多状态徽标显示顺序：修改 / 添加 / 删除 / 冲突 / 替换 / 缺失 / 更新 / 类型变更
         const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
@@ -575,9 +580,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const getSvnIgnored = async (): Promise<Set<string>> => {
           if (!svnIgnored) {
             svnIgnored = new Set();
+            // 超大工作副本：这个全量命令本身就要 0.8s 扫全库（输出 5MB+），而收益只是把被忽略的
+            // 条目标成 I——连跑都不值。被忽略的条目会显示为未版本化 ?，提交/还原照常。
+            if (vcs.isHugeWc?.()) return svnIgnored;
             try {
               const r = await run('svn', ['status', '--no-ignore'], { cwd: repo.root, timeoutMs: 120_000 });
-              if (r.code === 0) {
+              if (r.code === 0 && r.stdout.length <= MAX_IGNORE_SCAN_BYTES) {
                 for (const line of r.stdout.split('\n')) {
                   // 首列 I = ignored；! 列（missing）非忽略，排除；路径可能与列粘连（非 8 列对齐的版本），用正则取尾段
                   if (line.startsWith('I')) {
@@ -761,7 +769,21 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             /* ignore */
           }
         }
-        sendJson(res, 200, { dir: rel, abs, root: repo.root, entries, selfLocked });
+        // 工作副本异常：SVN 把**当前目录自身**标成 '!'。这种状态下其下条目会被误判为未版本化（满屏 ?），
+        // 用户一头雾水。三种成因修法不同，所以分开告诉前端：
+        //   wcLocked     —— 被锁定：上次 SVN 操作没正常结束（或别的进程正占着），先停其他 SVN 程序再 cleanup
+        //   wcIncomplete —— 工作副本不完整：上次操作中途失败，cleanup 即可修复（item=incomplete，被映射成了 '!'）
+        //   wcBroken     —— 真·缺失：磁盘上确实没有，需 update/重新检出
+        const normPath = (p: string) => (p === '.' ? '' : p.replace(/^\.\//, ''));
+        const selfEntry = items.find((i) => normPath(i.path) === rel) as
+          | { code?: string; locked?: boolean; incomplete?: boolean }
+          | undefined;
+        const wcIncomplete = selfEntry?.incomplete === true;
+        const wcLocked = selfEntry?.locked === true;
+        const wcBroken = selfEntry?.code === '!' && !wcIncomplete;
+        // 树冲突计数（零成本：status 已经带出来了）。>0 时前端再去 /api/wc-conflicts 问服务器
+        const treeConflicts = (items as { treeConflicted?: boolean }[]).filter((i) => i.treeConflicted).length;
+        sendJson(res, 200, { dir: rel, abs, root: repo.root, entries, selfLocked, wcBroken, wcLocked, wcIncomplete, treeConflicts });
         return true;
       }
       if (p === '/api/log') {

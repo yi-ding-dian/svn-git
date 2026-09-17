@@ -13,6 +13,7 @@ import { TreeRow } from './views/rows.js';
 import { GridItem, FileTipCard } from './views/grid.js';
 import { flashBreadcrumbs } from '../ui/motion.js';
 import { useDirPreload } from './use-dir-preload.js';
+import { WcNotice } from './wc-notice.js';
 import { useDropUpload, type ConflictMode } from './use-drop-upload.js';
 import { UploadConflictModal } from '../modals/upload-conflict.js';
 import { ModuleIndexDialog } from '../dialogs/module-index.js';
@@ -1194,6 +1195,8 @@ export function FsView(props: Props) {
           </div>
         )}
         {bigTip && <div className="fs-big-tip">⚠ {bigTip}</div>}
+        {/* 工作副本异常（锁定/不完整/缺失）：提示与修法见 wc-notice.tsx */}
+        <WcNotice flags={data ?? undefined} dir={dir} />
         {/* 拖入上传：悬停提示落点 / 上传进度 / 同名冲突确认 */}
         {drop.dragging && <div className="fs-drop-hint">松开即复制到 {dir ? `${dir}/` : '仓库根目录'}</div>}
         {drop.progress && (

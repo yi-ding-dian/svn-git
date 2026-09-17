@@ -132,13 +132,18 @@ export async function runVcs(ctx: Ctx, op: () => VcsResult | undefined | Promise
   return true;
 }
 
-export async function getStatusCached(repo: RepoInfo, force = false): Promise<unknown[]> {
+export async function getStatusCached(repo: RepoInfo, force = false, rel?: string): Promise<unknown[]> {
   const scope = currentScopes.get(repo.root) ?? '';
-  const key = `${repo.root}::${scope}`;
+  const { vcs } = vcsOf();
+  // 已降级的大仓库：按「当前浏览目录」查（svn status -N 只列直接子项，毫秒级）。
+  // 小仓库不这么做——原来返回整个操作范围的状态，/api/fs 要用它判断"祖先是否未版本化"，
+  // 缩小到单目录会丢掉祖先信息。
+  const huge = vcs.isHugeWc?.() ?? false;
+  const dirRel = huge ? rel : undefined;
+  const key = `${repo.root}::${scope}::${dirRel ?? ''}`;
   const hit = statusCache.get(key);
   if (!force && hit && Date.now() - hit.time < STATUS_TTL) return hit.items;
-  const { vcs } = vcsOf();
-  const items = await vcs.status(scope || undefined);
+  const items = await vcs.status(dirRel !== undefined ? dirRel || undefined : scope || undefined);
   statusCache.set(key, { time: Date.now(), items });
   return items;
 }

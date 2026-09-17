@@ -31,8 +31,21 @@ const ITEM_MAP: Record<string, string> = {
   merged: 'M',
 };
 
+/** 超大工作副本阈值：svn status --xml 输出超过这个字节数就降级为浅扫描。
+ *  判据只用输出大小——耗时上正常仓库(0.35s)与超大仓库(0.96s)分不开，文件数也分不开(4.8万 vs 35万)，
+ *  而 svn status 只输出"有变更"的条目，输出字节数直接等于同步解析的工作量。
+ *  参考实测：正常仓库 30KB / 179 处变更；某超大仓库 11.7MB / 36838 处变更（差 389 倍，中间是空的）。 */
+const MAX_STATUS_BYTES = 1024 * 1024;
+
+/** 已判定为超大工作副本的仓库根。**必须是进程级**：vcsOf() 每次请求都 new 一个 Vcs 实例，
+ *  标记挂在实例上会在下一次请求就丢失，于是每次都重新跑一遍全量命令（实测就是这样：
+ *  加了实例级标记后仍稳定 1.7s = 全量 status 0.83s + --no-ignore 0.79s）。 */
+const HUGE_WCS = new Set<string>();
+
 export class SvnVcs {
   private xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+  /** 本次探测到的过大工作副本（跨请求的持久标记见 HUGE_WCS） */
+  private hugeWc = false;
 
   constructor(private repo: RepoInfo, private cred: SvnCred | null) {}
 
@@ -94,6 +107,10 @@ export class SvnVcs {
 
   /** svn status --xml：工作副本状态 */
   async status(pathRel?: string): Promise<FileStatus[]> {
+    // 已判定为超大工作副本：直接走浅扫描，不再跑会产生十几 MB 输出的全量命令。
+    // 必须用 isHugeWc()（含进程级标记）——只看 this.hugeWc 的话，每个新实例都是 false，
+    // 会为了"重新探测输出大小"白跑一遍全量命令（实测每次 0.8s）
+    if (this.isHugeWc()) return this.statusShallow(pathRel);
     // pathRel:限定扫描范围(大仓库中的子项目),只返回该路径内状态,避免全仓库扫描卡顿
     const args = ['status', '--xml'];
     if (pathRel) args.push(pathRel);
@@ -103,7 +120,42 @@ export class SvnVcs {
       if (auth) throw new Error(auth);
       throw new Error(`svn status 失败: ${res.stderr.trim()}`);
     }
-    const doc = this.xml.parse(res.stdout);
+    // 超大工作副本探测：只看**输出大小**，不看耗时也不看文件数——
+    // 正常仓库(status 输出 30KB / 0.35s)与超大仓库(11.7MB / 0.96s)在耗时上分不开，
+    // 文件数也分不开(4.8万 vs 35万)；而 svn status 只输出"有变更"的条目，输出大小直接等于解析量。
+    // 十几 MB 交给 fast-xml-parser 同步解析会把事件循环占住数秒（整个服务无响应，
+    // 连 /api/info 都排不上队），所以这里宁可降级：跳过解析，改查直接子项。
+    if (!pathRel && res.stdout.length > MAX_STATUS_BYTES) {
+      this.hugeWc = true;
+      HUGE_WCS.add(this.repo.root); // 进程级记住：后续请求（新实例）也直接走浅扫描
+      return this.statusShallow();
+    }
+    return this.parseStatusXml(res.stdout);
+  }
+
+  /** 该工作副本是否已判定为超大（调用方可据此按目录查询、并隐藏聚合角标） */
+  isHugeWc(): boolean {
+    return this.hugeWc || HUGE_WCS.has(this.repo.root);
+  }
+
+  /** 浅扫描：只查目标目录的**直接子项**（svn status -N），毫秒级。
+   *  代价：拿不到子目录内部的变更，目录角标不再显示"内部有 N 处修改"——
+   *  这是对超大工作副本的取舍（详见 MAX_STATUS_BYTES 注释）。 */
+  private async statusShallow(pathRel?: string): Promise<FileStatus[]> {
+    const args = ['status', '--xml', '-N'];
+    if (pathRel) args.push(pathRel);
+    const res = await this.exec(args);
+    if (res.code !== 0) {
+      const auth = this.authError(res);
+      if (auth) throw new Error(auth);
+      throw new Error(`svn status 失败: ${res.stderr.trim()}`);
+    }
+    return this.parseStatusXml(res.stdout);
+  }
+
+  /** svn status --xml 输出 → FileStatus[]（解析逻辑与是否浅扫描无关） */
+  private parseStatusXml(stdout: string): FileStatus[] {
+    const doc = this.xml.parse(stdout);
     const targets = doc?.status?.target ?? [];
     const list: FileStatus[] = [];
     const targetsArr = Array.isArray(targets) ? targets : [targets];
@@ -123,6 +175,21 @@ export class SvnVcs {
           code,
           isDir,
           absPath: path.join(this.repo.root, relPath),
+          // item=incomplete 表示"工作副本不完整"（上次操作被中断），被 ITEM_MAP 映射成 '!'，
+          // 但成因和"文件真的缺失"完全不同——修法是 svn cleanup 而非 checkout，故单独带出来
+          incomplete: item === 'incomplete',
+          locked: String(wc['@_wc-locked'] ?? 'false') === 'true',
+          // 树冲突：本地在添加/修改，服务器那边却把同路径删除/移动了。conflicted 在列上只占一个字母，
+          // 界面容易看漏（用户就遇到"A 标着但点进去是空的"），故单独带出来供上层提示
+          treeConflicted: String(wc['@_tree-conflicted'] ?? 'false') === 'true',
+          // 复制源：status --xml 的 <commit> 节点已带 r/作者/日期，不必另跑 svn log（零成本）
+          copyFrom: String(wc['@_tree-conflicted'] ?? 'false') === 'true'
+            ? {
+                rev: String(wc.commit?.['@_revision'] ?? ''),
+                author: String(wc.commit?.author ?? ''),
+                date: String(wc.commit?.date ?? '').slice(0, 10),
+              }
+            : undefined,
         });
       }
     }

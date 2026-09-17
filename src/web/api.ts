@@ -104,6 +104,25 @@ export interface FsData {
   root: string;
   entries: FsEntry[];
   selfLocked?: string[];
+  /** 当前目录被 SVN 标成「缺失」（磁盘上确实没有） */
+  wcBroken?: boolean;
+  /** 当前目录被锁定：上次 SVN 操作未正常结束，需先停其他 SVN 程序再 cleanup */
+  wcLocked?: boolean;
+  /** 工作副本不完整：上次操作中途失败，cleanup 即可修复 */
+  wcIncomplete?: boolean;
+  /** 树冲突条目数（>0 时前端再去 /api/wc-conflicts 问服务器，确认这些路径还在不在） */
+  treeConflicts?: number;
+}
+
+/** 树冲突诊断结果（/api/wc-conflicts） */
+export interface WcConflictItem {
+  path: string;
+  /** 服务器上该路径已不存在（被删或被移）——树冲突的根源 */
+  serverMissing: boolean;
+  /** 复制源（该目录从哪个版本复制来的） */
+  fromRev?: string;
+  fromAuthor?: string;
+  fromDate?: string;
 }
 
 export class ApiError extends Error {
@@ -179,6 +198,9 @@ export const get = {
   pickDir: () => api<{ path: string | null; unsupported: boolean }>('/api/pick-dir'),
   fs: (dir?: string, force?: boolean) =>
     api<FsData>(`/api/fs?dir=${encodeURIComponent(dir ?? '')}${force ? '&force=1' : ''}`),
+  /** 工作副本树冲突诊断：去服务器核对冲突路径是否还在（只在 /api/fs 报了 treeConflicts 时调用） */
+  wcConflicts: (dir: string) =>
+    api<{ conflicts: WcConflictItem[]; unchecked?: boolean }>(`/api/wc-conflicts?dir=${encodeURIComponent(dir)}`),
   config: () => api<{ username: string; trustServerCert: boolean }>('/api/config'),
   history: () => api<{ items: HistoryItem[] }>('/api/history'),
   search: (query: string, dir = '') =>

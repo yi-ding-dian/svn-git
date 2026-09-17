@@ -24,6 +24,14 @@ export interface FileStatus {
   porcelain?: string;
   /** git: 第二列工作区状态码 */
   wcCode?: string;
+  /** svn: 该条目被工作副本锁定（wc-status@wc-locked）——常见于上次操作被中断 */
+  locked?: boolean;
+  /** svn: 工作副本不完整（item=incomplete）——上次操作中途失败，需 svn cleanup 修复 */
+  incomplete?: boolean;
+  /** svn: 树冲突（tree-conflicted="true"）——本地添加/修改 与 服务器删除/移动 相撞 */
+  treeConflicted?: boolean;
+  /** svn: 树冲突条目的来源（从哪个版本复制来的）——来自 status --xml 的 commit 节点，无需另跑 log */
+  copyFrom?: { rev: string; author: string; date: string };
   isDir: boolean;
   absPath: string;
 }
@@ -88,6 +96,8 @@ export interface BranchListResult {
 /** 统一 VCS 操作接口：公共方法两实现均实现（必选），平台独有能力可选——server 层按 repo.type 分支或 ?. 调用。 */
 export interface Vcs {
   status(pathRel?: string): Promise<FileStatus[]>;
+  /** 是否已判定为超大工作副本（svn 专有：降级为浅扫描后为 true，调用方据此按目录查询、隐藏聚合角标） */
+  isHugeWc?(): boolean;
   /** 分页拉取：offset=跳过前 N 条（git --skip）；afterRev=从该版本之后继续拉（svn -r rev-1:1，0=从头）。limit<=0=全量 */
   log(limit?: number, pathRel?: string, offset?: number, afterRev?: string): Promise<LogEntry[]>;
   /** 提交总数（轻量探测：git rev-list --count 秒级精确；svn 上限 601 条探测——exact=false 表示超过上限未测全）
