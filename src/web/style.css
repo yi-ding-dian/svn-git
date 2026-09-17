@@ -494,6 +494,21 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .recent-pop { width: 340px; max-height: 70vh; overflow: auto; padding: 6px; }
 .recent-pop-title { font-size: 0.8em; color: var(--dim); padding: 4px 8px 6px; }
 .recent-pop .recent-item { padding: 5px 8px; font-size: 0.85em; }
+/* 树冲突清单（wc-notice）：嵌在提示条里，条目多时限高滚动 */
+.wc-conflict-list {
+  margin: 5px 0; padding: 3px 8px; max-height: 132px; overflow: auto;
+  background: rgba(0, 0, 0, .06); border-radius: 4px;
+}
+.wc-conflict-row { display: flex; gap: 8px; align-items: baseline; font-size: 12px; line-height: 1.8; }
+.wc-conflict-row .mono { flex-shrink: 0; }
+/* 打不开的最近项目：名字标红 + 常驻 ×（点过发现目录已删/不是工作副本后才出现） */
+.history-item.invalid .history-path { color: var(--err); }
+.history-remove {
+  flex-shrink: 0; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--err); font-size: 14px; line-height: 1;
+  cursor: pointer; border-radius: 4px;
+}
+.history-remove:hover { background: var(--err); color: #fff; }
 /* 标题栏右上角关闭按钮（ModalShell 的 closeIcon）：替代底部「关闭」 */
 .modal-x {
   position: absolute; top: 50%; right: 14px; transform: translateY(-50%);

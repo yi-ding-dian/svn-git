@@ -63,6 +63,8 @@ export interface ModalHostProps {
     recentMore: { x: number; y: number } | null;
     /** 最近项目全量：面板里显示主列表折叠掉的那批 */
     history: HistoryItem[];
+    /** 点开过但打不开的项目：路径 → 错误消息（列表项上常驻 ×，悬浮时显示同一条） */
+    invalidPaths: Record<string, string>;
     /** 打开某个最近项目（面板里点击时用） */
     openHistoryItem: (h: { path: string }) => void;
     pushing: boolean;
@@ -126,7 +128,7 @@ export interface ModalHostProps {
 
 export function ModalHost(props: ModalHostProps) {
   const { state, set, ctx, appearance, theme, actions } = props;
-  const { modal, pushAuth, updateResult, themePop, recentMore, history, openHistoryItem, pushing, updating, updateElapsed, configUser } = state;
+  const { modal, pushAuth, updateResult, themePop, recentMore, history, invalidPaths, openHistoryItem, pushing, updating, updateElapsed, configUser } = state;
   const { repo, env, info } = ctx;
   const { setModal, setPushAuth, setUpdateResult, setThemePop, setRecentMore, setConfigUser, setInfo, setOnboard, setView, setToast, setToastErr, setDiffReturnModal } = set;
   const { doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelPush, cancelUpdate } = actions;
@@ -159,6 +161,7 @@ export function ModalHost(props: ModalHostProps) {
       {modal?.type === 'open' && (
         <OpenModal
           startDir={info?.home ?? info?.startDir ?? ''}
+          invalidPaths={invalidPaths}
           onOpened={(r) => {
             setInfo(r);
             setOnboard(null);

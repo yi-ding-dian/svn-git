@@ -19,6 +19,8 @@ const RECENT_EXPANDED = 15;
 
 export function OpenBrowser(props: {
   startDir: string;
+  /** 点开过但打不开的项目：路径 → 错误消息（这些项上常驻 ×，悬浮时显示同一条） */
+  invalidPaths?: Record<string, string>;
   onOpened: (repo: RepoInfo) => void;
   onToast: (msg: string) => void;
 }) {
@@ -170,8 +172,12 @@ export function OpenBrowser(props: {
             {(showAllRecent ? history.slice(0, RECENT_EXPANDED) : history.slice(0, RECENT_COLLAPSED)).map((h) => (
               <div
                 key={h.path}
-                className="recent-item"
-                title={`${h.path}\n点击打开 · 右键删除`}
+                className={`recent-item${props.invalidPaths?.[h.path] ? ' invalid' : ''}`}
+                title={
+                  props.invalidPaths?.[h.path]
+                    ? `${h.path}（打不开，目录已删除或不是工作副本）`
+                    : `${h.path}\n点击打开 · 右键删除`
+                }
                 onClick={() => void openPath(h.path)}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -184,7 +190,7 @@ export function OpenBrowser(props: {
                 <span className="recent-path">{h.path}</span>
                 {/* 悬浮显形的移除按钮：单击即移除（stopPropagation 防止触发本行的"点击打开"） */}
                 <button
-                  className="recent-remove"
+                  className={`recent-remove${props.invalidPaths?.[h.path] ? ' always' : ''}`}
                   title="从最近项目中移除（不影响仓库本身）"
                   aria-label={`移除 ${h.path}`}
                   onClick={(e) => {
@@ -216,21 +222,39 @@ export function OpenBrowser(props: {
                 y={rmMenu.y}
                 mask
                 onClose={() => setRmMenu(null)}
-                items={[
-                  {
-                    icon: '🗑',
-                    label: '删除',
-                    danger: true,
-                    action: () => {
-                      const p = rmMenu.path;
-                      void post
-                        .historyRemove(p)
-                        .then((r) => setHistory(r.items))
-                        .catch(() => props.onToast('删除失败'));
-                    },
-                  },
-                  { icon: '✕', label: '取消' },
-                ]}
+                items={
+                  // 失效项（已打不开）：只剩「删除」；正常项保留「取消」作为"什么都不做"的出口
+                  props.invalidPaths?.[rmMenu.path]
+                    ? [
+                        {
+                          icon: '🗑',
+                          label: '删除',
+                          danger: true,
+                          action: () => {
+                            const p = rmMenu.path;
+                            void post
+                              .historyRemove(p)
+                              .then((r) => setHistory(r.items))
+                              .catch(() => props.onToast('删除失败'));
+                          },
+                        },
+                      ]
+                    : [
+                        {
+                          icon: '🗑',
+                          label: '删除',
+                          danger: true,
+                          action: () => {
+                            const p = rmMenu.path;
+                            void post
+                              .historyRemove(p)
+                              .then((r) => setHistory(r.items))
+                              .catch(() => props.onToast('删除失败'));
+                          },
+                        },
+                        { icon: '✕', label: '取消' },
+                      ]
+                }
               />
             )}
           </div>
@@ -389,13 +413,15 @@ export function OpenView(props: {
 /** 打开项目模态框 */
 export function OpenModal(props: {
   startDir: string;
+  /** 点开过但打不开的项目：路径 → 错误消息（这些项上常驻 ×，悬浮时显示同一条） */
+  invalidPaths?: Record<string, string>;
   onOpened: (repo: RepoInfo) => void;
   onToast: (msg: string) => void;
   onClose: () => void;
 }) {
   return (
     <ModalShell title="📂 打开项目" width={600} closeIcon hideFoot onClose={props.onClose}>
-      <OpenBrowser startDir={props.startDir} onOpened={props.onOpened} onToast={props.onToast} />
+      <OpenBrowser startDir={props.startDir} invalidPaths={props.invalidPaths} onOpened={props.onOpened} onToast={props.onToast} />
     </ModalShell>
   );
 }

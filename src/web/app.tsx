@@ -34,6 +34,9 @@ export function App() {
   const [configUser, setConfigUser] = useState('');
   // 侧边栏「最近项目」末尾的「…」：锚点坐标（null = 面板未打开）
   const [recentMore, setRecentMore] = useState<{ x: number; y: number } | null>(null);
+  // 点开过但打不开的项目（目录已删/不是工作副本）：路径 → 错误消息。
+  // 列表项上常驻一个 × 供直接移除；鼠标悬浮该项时用同一条消息做浮层提示
+  const [invalidPaths, setInvalidPaths] = useState<Record<string, string>>({});
   // toast：跟随鼠标位置悬浮提示，1.5 秒后淡出（不用底部固定条）
   const mouseRef = useRef({ x: window.innerWidth / 2, y: 60 });
   useEffect(() => {
@@ -134,6 +137,7 @@ export function App() {
         if (r.type) {
           setInfo(r);
           setOnboard(null); // 切换仓库时清除上次的新建引导条
+          setInvalidPaths((prev) => { const n = { ...prev }; delete n[h.path]; return n; }); // 又能打开了：撤掉失效标记
           refresh();
           loadHistory();
         } else {
@@ -143,6 +147,8 @@ export function App() {
       } catch (e) {
         setToastErr(true);
         setToast((e as Error).message);
+        // 打不开（目录已删 / 不是工作副本）：标为失效 → 该项上常驻一个 ×，悬浮时也用这条消息提示
+        setInvalidPaths((prev) => ({ ...prev, [h.path]: (e as Error).message }));
       }
     },
     [refresh, loadHistory]
@@ -835,6 +841,11 @@ export function App() {
               themePopOpen={Boolean(themePop)}
               onOpenRecentMore={(x, y) => setRecentMore({ x, y })}
               recentMoreOpen={Boolean(recentMore)}
+              invalidPaths={invalidPaths}
+              onShowTip={(msg) => {
+                setToastErr(true);
+                setToast(msg);
+              }}
             />
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
@@ -917,7 +928,7 @@ export function App() {
 
       {/* 全部弹窗 + 「推送中/更新中」遮罩：集中在 modal-host.tsx（原先 21 个分支平铺在本文件 JSX 里，约 340 行） */}
       <ModalHost
-        state={{ modal, pushAuth, updateResult, themePop, recentMore, history, openHistoryItem, pushing, updating, updateElapsed, configUser }}
+        state={{ modal, pushAuth, updateResult, themePop, recentMore, history, invalidPaths, openHistoryItem, pushing, updating, updateElapsed, configUser }}
         set={{
           setModal,
           setPushAuth,

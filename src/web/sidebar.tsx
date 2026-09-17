@@ -34,6 +34,10 @@ export function Sidebar(props: {
   onOpenRecentMore: (x: number, y: number) => void;
   /** 该面板是否打开（「…」按钮高亮态） */
   recentMoreOpen: boolean;
+  /** 点开过但打不开的项目：路径 → 错误消息（这些项上常驻 ×，悬浮时显示同一条消息） */
+  invalidPaths: Record<string, string>;
+  /** 悬浮失效项时显示提示（复用点击后那套浮层） */
+  onShowTip: (msg: string) => void;
 }) {
   // 最近项目右键菜单（设常用 / 删除 / 取消）
   const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean } | null>(null);
@@ -85,24 +89,49 @@ export function Sidebar(props: {
         <>
           <div className="sidebar-title">最近项目</div>
           <div className="history-list">
-            {props.history.slice(0, RECENT_LIMIT).map((h) => (
-              <div
-                key={h.path}
-                className={`history-item ${h.path === props.currentRoot ? 'active' : ''}`}
-                title={`${h.path}${h.path === props.currentRoot ? '\n（当前操作的项目）' : ''}${h.fav ? '\n（常用项目）' : ''}\n点击打开 · 右键删除/设常用`}
-                onClick={() => props.onOpenHistory(h)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setRmMenu({ x: e.clientX, y: e.clientY, path: h.path, fav: Boolean(h.fav) });
-                }}
-              >
-                <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>
-                  {h.type.toUpperCase()}
-                </span>
-                <span className="history-path">{h.path.split('/').filter(Boolean).pop()}</span>
-                {h.fav && <span className="fav-star" title="常用项目（启动时优先打开）">★</span>}
-              </div>
-            ))}
+            {props.history.slice(0, RECENT_LIMIT).map((h) => {
+              const invalidMsg = props.invalidPaths[h.path];
+              const invalid = Boolean(invalidMsg);
+              return (
+                <div
+                  key={h.path}
+                  className={`history-item ${h.path === props.currentRoot ? 'active' : ''}${invalid ? ' invalid' : ''}`}
+                  title={
+                    invalidMsg
+                      ? `${h.path}（打不开，目录已删除或不是工作副本）`
+                      : `${h.path}${h.path === props.currentRoot ? '\n（当前操作的项目）' : ''}${h.fav ? '\n（常用项目）' : ''}\n点击打开 · 右键删除/设常用`
+                  }
+                  onClick={() => props.onOpenHistory(h)}
+                  onMouseEnter={() => {
+                    if (invalidMsg) props.onShowTip(invalidMsg); // 悬浮失效项：提示和点击后完全一致
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setRmMenu({ x: e.clientX, y: e.clientY, path: h.path, fav: Boolean(h.fav) });
+                  }}
+                >
+                  <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>
+                    {h.type.toUpperCase()}
+                  </span>
+                  <span className="history-path">{h.path.split('/').filter(Boolean).pop()}</span>
+                  {h.fav && <span className="fav-star" title="常用项目（启动时优先打开）">★</span>}
+                  {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮） */}
+                  {invalid && (
+                    <button
+                      className="history-remove"
+                      title="该项目已打不开，点击从最近项目中移除"
+                      aria-label={`移除 ${h.path}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        props.onRemoveHistory(h.path);
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              );
+            })}
             {/* 超出上限：末行「…」居中，点击在右侧展开其余项目 */}
             {props.history.length > RECENT_LIMIT && (
               <div
@@ -123,15 +152,20 @@ export function Sidebar(props: {
                 y={rmMenu.y}
                 mask
                 onClose={() => setRmMenu(null)}
-                items={[
-                  {
-                    icon: rmMenu.fav ? '★' : '☆',
-                    label: rmMenu.fav ? '取消常用' : '设为常用',
-                    action: () => props.onSetFav(rmMenu.path, !rmMenu.fav),
-                  },
-                  { icon: '🗑', label: '删除', danger: true, action: () => props.onRemoveHistory(rmMenu.path) },
-                  { icon: '✕', label: '取消' },
-                ]}
+                items={
+                  // 失效项（已打不开）：只留「删除」——设为常用没意义，"取消"项也多余（点外面即可关）
+                  props.invalidPaths[rmMenu.path]
+                    ? [{ icon: '🗑', label: '删除', danger: true, action: () => props.onRemoveHistory(rmMenu.path) }]
+                    : [
+                        {
+                          icon: rmMenu.fav ? '★' : '☆',
+                          label: rmMenu.fav ? '取消常用' : '设为常用',
+                          action: () => props.onSetFav(rmMenu.path, !rmMenu.fav),
+                        },
+                        { icon: '🗑', label: '删除', danger: true, action: () => props.onRemoveHistory(rmMenu.path) },
+                        { icon: '✕', label: '取消' },
+                      ]
+                }
               />
             )}
           </div>
