@@ -422,43 +422,68 @@ export function HistoryView(props: Props) {
             {/* 返回按钮行：与左栏标题栏同一水平线（marginBottom/高度一致，视觉同行）。
                 按钮 lineHeight 固定 16px：中文字体 normal 行高约 20px 会让按钮实高 28px，
                 超出本行 24px 上限→上溢部分被面板 overflow:hidden 裁掉上边框 */}
-            <div className="row" style={{ marginBottom: 8, height: 24, alignItems: 'center' }}>
+            <div className="row" style={{ marginBottom: 8, height: 24, alignItems: 'center', flexShrink: 0 }}>
               <button className="mini" style={{ lineHeight: '16px' }} onClick={props.onBack}>← 返回</button>
               <span className="grow" />
             </div>
-            <div className="row" style={{ marginBottom: 10 }}>
+            <div className="row" style={{ marginBottom: 10, flexShrink: 0 }}>
               <span className="rev" style={{ fontSize: 15 }}>{sel.rev}</span>
               <span className="dim">{sel.author} · {sel.date}</span>
               <span className="grow" />
             </div>
             {/* 提交说明：优先用完整说明（%B，保留换行/分段），未拉到前回退列表里的 %s 标题。
-                长说明默认只显示一行（全文常有几十行，展开会挤掉下面的变更文件列表），点击或按钮展开 */}
-            <div style={{ marginBottom: 10 }}>
+                长说明默认只显示一行（全文常有几十行，展开会挤掉下面的变更文件列表），点击一行或按钮展开。
+                展开时整块封顶面板一半高度（maxHeight 的百分比相对的是本块，能解析是因为外层是确定高度的
+                flex 栏：那个 marginBottom 容器自身是 flex item，包含块 = 面板，故要把 maxHeight 放在
+                这一层；放在里面那层会被当成"包含块高度 auto"而失效），超出部分在说明区内滚动。
+                展开态点击正文**不收起**：正文要滚动、要选中复制，点一下就缩回去太容易误触，收起只认按钮 */}
+            <div
+              style={{
+                marginBottom: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                maxHeight: detailMsgOpen ? '50%' : undefined,
+                flexShrink: 0, // 空间不够时只让下面的变更文件列表收缩，说明块保持自己的封顶高度
+              }}
+            >
               <div
                 className="dim"
-                onClick={() => detailMsgLong && setMsgExpanded((v) => !v)}
-                title={detailMsgLong ? (detailMsgOpen ? '点击收起' : '点击展开全文') : undefined}
+                onClick={() => detailMsgLong && !detailMsgOpen && setMsgExpanded(true)}
+                title={detailMsgLong && !detailMsgOpen ? '点击展开全文' : undefined}
                 style={{
                   whiteSpace: 'pre-wrap',
                   maxHeight: detailMsgOpen ? undefined : '1.5em',
-                  overflow: 'hidden',
-                  cursor: detailMsgLong ? 'pointer' : undefined,
+                  // 展开：超出封顶高度时本区内部滚动；折叠：裁掉 1.5em 以外的行
+                  overflow: detailMsgOpen ? 'auto' : 'hidden',
+                  minHeight: 0, // 允许在 flex 栏里收缩到内容高度以下，滚动条才出得来
+                  cursor: detailMsgLong && !detailMsgOpen ? 'pointer' : undefined,
                 }}
               >
                 {detailMsg}
               </div>
               {detailMsgLong && (
-                <button className="mini" style={{ marginTop: 4 }} onClick={() => setMsgExpanded((v) => !v)}>
+                // alignSelf: flex-start —— 外层是 flex 栏，默认 stretch 会把按钮拉成通栏宽（应是内容宽的小按钮）
+                <button
+                  className="mini"
+                  style={{ marginTop: 4, flexShrink: 0, alignSelf: 'flex-start' }}
+                  onClick={() => setMsgExpanded((v) => !v)}
+                >
                   {detailMsgOpen ? '收起 ▲' : `展开全文（共 ${detailMsgLines} 行）▼`}
                 </button>
               )}
             </div>
-            <div className="small dim" style={{ marginBottom: 6 }}>变更文件（点击查看 diff）：</div>
-            <div className="changed" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
+            <div className="small dim" style={{ marginBottom: 6, flexShrink: 0 }}>变更文件（点击查看 diff）：</div>
+            {/* flex: 0 1 auto（不是 1）—— 列表**不撑满**剩余空间：文件少时高度=内容高度，
+                「查看完整 diff」就跟在列表下面；文件多时它才收缩出滚动条，那行仍钉在面板底部。
+                配套：本节其它兄弟都加 flexShrink:0，让收缩只发生在列表身上 */}
+            <div className="changed" style={{ overflow: 'auto', flex: '0 1 auto', minHeight: 0 }}>
               {sel.changed.map((c) => (
                 <div
                   key={c.path}
                   className="changed-row"
+                  // 整行可点 → 整行手型（原先只有路径文字那个 span 是手型，行内其它地方是箭头，不一致；
+                  // 不能加在 .changed-row 类上：tag/stash 等弹窗复用该类做不可点的静态行）
+                  style={{ cursor: 'pointer' }}
                   onClick={() => void showDiff(sel.rev, undefined, c.path)}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -466,14 +491,20 @@ export function HistoryView(props: Props) {
                   }}
                 >
                   <span className={`act ${c.action}`}>{c.action}</span>
-                  <span className="mono" style={{ cursor: 'pointer' }}>{c.path}</span>
+                  <span className="mono">{c.path}</span>
                 </div>
               ))}
               {sel.changed.length === 0 && <div className="dim">无文件变更</div>}
-              <div className="changed-row" onClick={() => void showDiff(sel.rev, undefined)}>
-                <span className="act" style={{ color: 'var(--accent)' }}>▸</span>
-                <span style={{ color: 'var(--accent)' }}>查看本次提交完整 diff</span>
-              </div>
+            </div>
+            {/* 「查看完整 diff」放在滚动容器**外面**并钉在底部：它曾是列表最后一行，
+                变更文件一多就跟着滚走、滚到一半时点不到（用户截图指出） */}
+            <div
+              className="changed-row"
+              style={{ flexShrink: 0, cursor: 'pointer' }}
+              onClick={() => void showDiff(sel.rev, undefined)}
+            >
+              <span className="act" style={{ color: 'var(--accent)' }}>▸</span>
+              <span style={{ color: 'var(--accent)' }}>查看本次提交完整 diff</span>
             </div>
           </>
         )}
