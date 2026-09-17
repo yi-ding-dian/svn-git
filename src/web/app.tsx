@@ -308,15 +308,23 @@ export function App() {
           .map((p) => ({ path: p, code: byPath.get(p)?.code ?? '', treeConflicted: byPath.get(p)?.treeConflicted }))
           .filter((i) => i.code !== '?' && i.code !== 'I' && i.code !== 'X');
       } else {
-        // 目录还原：仅收集其下（含子目录）的可还原文件，排除 ?(未版本化)/I(忽略)/X(外部)
-        for (const it of items) {
-          if (it.path === dir || !it.path.startsWith(dir + '/')) continue;
-          if (it.code === '?' || it.code === 'I' || it.code === 'X') continue;
-          list.push({ path: it.path, code: it.code, treeConflicted: it.treeConflicted });
-        }
-        // 目录自身也有调度（svn A/D 目录；git porcelain 不列目录故不会命中）→ 一并列入清单，避免取消添加后目录自身残留 A
+        // 目录自身是树冲突（服务器上该路径已删除/移动，本地还在）→ 处置方式只有一个：接受服务器的删除。
+        // svn revert 目录是递归的，服务器上已经没有这个路径，谈不上"挑几个子文件留下"——把子项一项项
+        // 列出来只会让人看不懂为什么要一起勾（用户实报：VWPublic 下面 2 个 collect/*.cpp/.h 被单独列出）。
+        // 只列目录自身：清单里全是树冲突，弹窗标题/按钮自然切成「接受服务器的删除」
         const self = items.find((i) => i.path === dir && i.code !== '?' && i.code !== 'I' && i.code !== 'X');
-        if (self) list.unshift({ path: dir, code: self.code, treeConflicted: self.treeConflicted });
+        if (self?.treeConflicted) {
+          list = [{ path: dir, code: self.code, treeConflicted: true }];
+        } else {
+          // 目录还原：仅收集其下（含子目录）的可还原文件，排除 ?(未版本化)/I(忽略)/X(外部)
+          for (const it of items) {
+            if (it.path === dir || !it.path.startsWith(dir + '/')) continue;
+            if (it.code === '?' || it.code === 'I' || it.code === 'X') continue;
+            list.push({ path: it.path, code: it.code, treeConflicted: it.treeConflicted });
+          }
+          // 目录自身也有调度（svn A/D 目录；git porcelain 不列目录故不会命中）→ 一并列入清单，避免取消添加后目录自身残留 A
+          if (self) list.unshift({ path: dir, code: self.code, treeConflicted: self.treeConflicted });
+        }
       }
       if (list.length > 0) {
         setModal({ type: 'revert-confirm', dir, dirLabel: paths.length > 1 ? `选择的 ${list.length} 项` : dir, items: list });

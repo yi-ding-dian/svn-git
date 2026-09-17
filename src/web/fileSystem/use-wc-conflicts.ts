@@ -40,8 +40,13 @@ export interface EntryConflict {
   count: number;
 }
 
-/** 诊断请求：是否要查 + 清空，逻辑与原 WcNotice 内部一致 */
-export function useWcConflicts(flags: WcFlags | undefined, dir: string): WcDiag {
+/** 诊断请求：是否要查 + 清空，逻辑与原 WcNotice 内部一致。
+ *
+ *  tick 必须进依赖：**只靠 needDiag 判断"要不要查"是不够的**——它是布尔值，
+ *  删掉一个冲突项后 count 从 4 变 2，true→true 不变，effect 不重跑，横幅就还列着
+ *  已经处理掉的路径（用户实报：VWLog/VWPublic 删完了，横幅里仍在）。
+ *  tick 由 refresh() 在写操作后自增，正好是"本地状态可能变了"的信号。 */
+export function useWcConflicts(flags: WcFlags | undefined, dir: string, tick: number): WcDiag {
   // treeConflicts 来自 /api/fs 的状态统计，但**工作副本 incomplete/locked 时 SVN 不递归**，
   // 那个计数会是 0（实报的坑）。所以这两种异常状态下也要去问一次，否则冲突提示根本不出现。
   const needDiag = (flags?.treeConflicts ?? 0) > 0 || Boolean(flags?.wcIncomplete) || Boolean(flags?.wcLocked);
@@ -69,7 +74,7 @@ export function useWcConflicts(flags: WcFlags | undefined, dir: string): WcDiag 
     return () => {
       cancelled = true;
     };
-  }, [needDiag, dir]);
+  }, [needDiag, dir, tick]);
 
   return { list, unchecked };
 }

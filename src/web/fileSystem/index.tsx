@@ -189,7 +189,7 @@ export function FsView(props: Props) {
   // **基准必须跟视图对齐**：树模式从仓库根长起、行 rel 相对仓库根；列表/网格模式的行 rel 相对 dir。
   // 混用会让树模式拿错目录的清单去匹配（冲突角标退成灰、点 ⚠ 定位落空——实报过）。
   const viewDir = mode === 'tree' ? '' : dir;
-  const diag = useWcConflicts((mode === 'tree' ? nodeData.get('') : data) ?? undefined, viewDir);
+  const diag = useWcConflicts((mode === 'tree' ? nodeData.get('') : data) ?? undefined, viewDir, props.tick);
   const conflictLookup = useConflictLookup(diag, viewDir);
 
   const loadNode = useCallback((d: string, force = false) => {
