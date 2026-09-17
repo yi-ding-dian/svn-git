@@ -32,6 +32,8 @@ export function App() {
   const [diffReturnModal, setDiffReturnModal] = useState<Modal>(null);
   const [logPath, setLogPath] = useState<string | undefined>(undefined);
   const [configUser, setConfigUser] = useState('');
+  // 侧边栏「最近项目」末尾的「…」：锚点坐标（null = 面板未打开）
+  const [recentMore, setRecentMore] = useState<{ x: number; y: number } | null>(null);
   // toast：跟随鼠标位置悬浮提示，1.5 秒后淡出（不用底部固定条）
   const mouseRef = useRef({ x: window.innerWidth / 2, y: 60 });
   useEffect(() => {
@@ -831,6 +833,8 @@ export function App() {
               setTheme={setTheme}
               onOpenThemePop={(x, y) => setThemePop({ x, y })}
               themePopOpen={Boolean(themePop)}
+              onOpenRecentMore={(x, y) => setRecentMore({ x, y })}
+              recentMoreOpen={Boolean(recentMore)}
             />
             <div className="content">
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
@@ -913,12 +917,13 @@ export function App() {
 
       {/* 全部弹窗 + 「推送中/更新中」遮罩：集中在 modal-host.tsx（原先 21 个分支平铺在本文件 JSX 里，约 340 行） */}
       <ModalHost
-        state={{ modal, pushAuth, updateResult, themePop, pushing, updating, updateElapsed, configUser }}
+        state={{ modal, pushAuth, updateResult, themePop, recentMore, history, openHistoryItem, pushing, updating, updateElapsed, configUser }}
         set={{
           setModal,
           setPushAuth,
           setUpdateResult,
           setThemePop,
+          setRecentMore,
           setConfigUser,
           setInfo,
           setOnboard,

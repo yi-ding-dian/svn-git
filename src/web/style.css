@@ -468,7 +468,40 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   padding: 7px 10px; border-radius: 6px; cursor: pointer;
 }
 .recent-item:hover { background: var(--panel2); color: var(--accent); }
-.recent-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 移除按钮：悬浮（或键盘聚焦）才显形，单击直接从最近项目里去掉，不弹二次确认——
+   只是从列表里移除，仓库本身不受影响，误删了再打开一次就回来了 */
+.recent-remove {
+  flex-shrink: 0; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--dim); font-size: 15px; line-height: 1;
+  cursor: pointer; border-radius: 4px; opacity: 0; transition: opacity .12s;
+}
+.recent-item:hover .recent-remove, .recent-remove:focus-visible { opacity: 1; }
+.recent-remove:hover { background: var(--err); color: #fff; }
+/* 打开项目弹窗：最近项目展开后限高滚动（默认 10 项一屏放得下，展开 15 项才需要） */
+.recent-list.expanded { max-height: 520px; overflow-y: auto; }
+/* 「…」行：展开剩余项目（整行可点） */
+.recent-more {
+  padding: 7px 10px; text-align: center; font-size: 12px; color: var(--dim);
+  border-radius: 6px; cursor: pointer;
+}
+.recent-more:hover { background: var(--panel2); color: var(--accent); }
+/* 侧边栏最近项目的「…」行（居中）+ 点开的右侧面板 */
+.history-more { justify-content: center; color: var(--dim); }
+.history-more:hover { background: var(--panel2); color: var(--accent); }
+.history-more.active { color: var(--accent); background: var(--panel2); }
+.history-more-dots { font-size: 15px; line-height: 1; letter-spacing: 1px; }
+.recent-pop { width: 340px; max-height: 70vh; overflow: auto; padding: 6px; }
+.recent-pop-title { font-size: 0.8em; color: var(--dim); padding: 4px 8px 6px; }
+.recent-pop .recent-item { padding: 5px 8px; font-size: 0.85em; }
+/* 标题栏右上角关闭按钮（ModalShell 的 closeIcon）：替代底部「关闭」 */
+.modal-x {
+  position: absolute; top: 50%; right: 14px; transform: translateY(-50%);
+  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--dim); font-size: 14px; line-height: 1;
+  cursor: pointer; border-radius: 4px;
+}
+.modal-x:hover { background: var(--panel2); color: var(--text); }
 
 /* ---------- 浏览模式（文件管理器图标网格，整体放大 20%） ---------- */
 .grid-view {

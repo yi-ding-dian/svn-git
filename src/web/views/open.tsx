@@ -13,6 +13,10 @@ function isSvnBareDir(entries: { name: string }[]): boolean {
   return names.has('format') && names.has('db') && names.has('conf');
 }
 
+/** 打开项目弹窗的最近项目：默认列 10 项，点「…」展开到 15 项（再多靠滚动） */
+const RECENT_COLLAPSED = 10;
+const RECENT_EXPANDED = 15;
+
 export function OpenBrowser(props: {
   startDir: string;
   onOpened: (repo: RepoInfo) => void;
@@ -27,6 +31,8 @@ export function OpenBrowser(props: {
   const [history, setHistory] = useState<{ path: string; type: 'svn' | 'git'; lastOpened: number }[]>([]);
   // 最近项目右键菜单（删除）
   const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  // 最近项目默认只列 10 项，点「…」展开到 15 项（再多靠滚动）
+  const [showAllRecent, setShowAllRecent] = useState(false);
   // startDir 由 /api/info 异步返回(home 目录)：首次拿到值才初始化浏览位置(仅一次,后续 info 刷新不重置)
   const dirInitRef = useRef(false);
   useEffect(() => {
@@ -160,8 +166,8 @@ export function OpenBrowser(props: {
       {history.length > 0 && (
         <>
           <div className="dim small" style={{ marginBottom: 6 }}>最近项目（点击打开）</div>
-          <div className="list" style={{ maxWidth: 640, marginBottom: 12 }}>
-            {history.map((h) => (
+          <div className={`list recent-list${showAllRecent ? ' expanded' : ''}`} style={{ maxWidth: 640, marginBottom: 12 }}>
+            {(showAllRecent ? history.slice(0, RECENT_EXPANDED) : history.slice(0, RECENT_COLLAPSED)).map((h) => (
               <div
                 key={h.path}
                 className="recent-item"
@@ -176,8 +182,33 @@ export function OpenBrowser(props: {
                   {h.type.toUpperCase()}
                 </span>
                 <span className="recent-path">{h.path}</span>
+                {/* 悬浮显形的移除按钮：单击即移除（stopPropagation 防止触发本行的"点击打开"） */}
+                <button
+                  className="recent-remove"
+                  title="从最近项目中移除（不影响仓库本身）"
+                  aria-label={`移除 ${h.path}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void post
+                      .historyRemove(h.path)
+                      .then((r) => setHistory(r.items))
+                      .catch(() => props.onToast('移除失败'));
+                  }}
+                >
+                  ×
+                </button>
               </div>
             ))}
+            {/* 超出折叠上限：点「…」展开到 15 项（再多靠滚动；展开后本行消失） */}
+            {!showAllRecent && history.length > RECENT_COLLAPSED && (
+              <div
+                className="recent-more"
+                title={`展开其余 ${history.length - RECENT_COLLAPSED} 个项目`}
+                onClick={() => setShowAllRecent(true)}
+              >
+                …（{history.length - RECENT_COLLAPSED} 条）
+              </div>
+            )}
             {/* 最近项目右键菜单：删除 / 取消 */}
             {rmMenu && (
               <ContextMenu
@@ -363,7 +394,7 @@ export function OpenModal(props: {
   onClose: () => void;
 }) {
   return (
-    <ModalShell title="📂 打开项目" width={600} onClose={props.onClose}>
+    <ModalShell title="📂 打开项目" width={600} closeIcon hideFoot onClose={props.onClose}>
       <OpenBrowser startDir={props.startDir} onOpened={props.onOpened} onToast={props.onToast} />
     </ModalShell>
   );

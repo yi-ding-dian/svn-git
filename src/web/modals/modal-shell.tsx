@@ -9,20 +9,27 @@ export function ModalShell(props: {
   minWidth?: number;
   /** 底部操作区；不传时仅「关闭」按钮 */
   foot?: React.ReactNode;
+  /** 标题栏右上角显示 × 关闭按钮（选择型弹窗用，替代底部「关闭」） */
+  closeIcon?: boolean;
+  /** 不渲染底部操作区（与 closeIcon 搭配：只靠右上角 × 关闭） */
+  hideFoot?: boolean;
   onClose: () => void;
   children: React.ReactNode;
 }) {
   return (
     <div className="modal-mask">
       <ResizableModal width={props.width ?? 560} minWidth={props.minWidth} onEsc={props.onClose}>
-        <h3>
+        <h3 style={{ position: 'relative' }}>
           {props.icon && <span style={{ marginRight: 8 }}>{props.icon}</span>}
           {props.title}
+          {props.closeIcon && (
+            <button className="modal-x" title="关闭" aria-label="关闭" onClick={props.onClose}>
+              ✕
+            </button>
+          )}
         </h3>
         <div className="body">{props.children}</div>
-        <div className="foot">
-          {props.foot ?? <button onClick={props.onClose}>关闭</button>}
-        </div>
+        {!props.hideFoot && <div className="foot">{props.foot ?? <button onClick={props.onClose}>关闭</button>}</div>}
       </ResizableModal>
     </div>
   );

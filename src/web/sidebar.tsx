@@ -9,6 +9,9 @@ import type { HistoryItem } from './api.js';
 /** 主视图类型（侧边栏导航目标） */
 export type View = 'log' | 'diff' | 'browse';
 
+/** 侧边栏最近项目最多列这么多，其余收进「…」面板（项目多时不撑长侧边栏） */
+export const RECENT_LIMIT = 10;
+
 export function Sidebar(props: {
   view: View;
   history: HistoryItem[];
@@ -27,6 +30,10 @@ export function Sidebar(props: {
   onOpenThemePop: (x: number, y: number) => void;
   /** 主题气泡是否打开（「…」按钮高亮态） */
   themePopOpen: boolean;
+  /** 点最近项目末尾的「…」：在按钮右侧展开其余项目（参数为锚点坐标） */
+  onOpenRecentMore: (x: number, y: number) => void;
+  /** 该面板是否打开（「…」按钮高亮态） */
+  recentMoreOpen: boolean;
 }) {
   // 最近项目右键菜单（设常用 / 删除 / 取消）
   const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean } | null>(null);
@@ -78,7 +85,7 @@ export function Sidebar(props: {
         <>
           <div className="sidebar-title">最近项目</div>
           <div className="history-list">
-            {props.history.map((h) => (
+            {props.history.slice(0, RECENT_LIMIT).map((h) => (
               <div
                 key={h.path}
                 className={`history-item ${h.path === props.currentRoot ? 'active' : ''}`}
@@ -96,6 +103,19 @@ export function Sidebar(props: {
                 {h.fav && <span className="fav-star" title="常用项目（启动时优先打开）">★</span>}
               </div>
             ))}
+            {/* 超出上限：末行「…」居中，点击在右侧展开其余项目 */}
+            {props.history.length > RECENT_LIMIT && (
+              <div
+                className={`history-item history-more ${props.recentMoreOpen ? 'active' : ''}`}
+                title={`还有 ${props.history.length - RECENT_LIMIT} 个最近项目`}
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  props.onOpenRecentMore(r.right + 6, r.top);
+                }}
+              >
+                <span className="history-more-dots">…（{props.history.length - RECENT_LIMIT} 条）</span>
+              </div>
+            )}
             {/* 右键菜单：设为常用 / 删除 / 取消 */}
             {rmMenu && (
               <ContextMenu
