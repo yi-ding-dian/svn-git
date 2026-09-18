@@ -8,7 +8,7 @@
  * 二级子菜单定位：悬浮/点击带 submenu 的菜单项时,用该项的真实 DOM 矩形贴其右侧
  * （fixed + 视口坐标,非估算行高）,菜单项高度/分隔线如何变化都能精确对齐。
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 export interface CtxMenuItem {
   icon?: React.ReactNode;
@@ -57,6 +57,21 @@ export function ContextMenu(props: {
     }
   }
   const subRect = openSub ? itemRefs.current[openSub.i]?.getBoundingClientRect() : undefined;
+  // 菜单尺寸量出来之前先按原始 (x,y) 放，量到后夹回视口内（layout effect 在绘制前完成，看不到跳动）。
+  // 原先没有这一步：菜单直接以点击点为左上角向下展开，右键靠近窗口底部的行（如"最近项目"最后几行）
+  // 时后半截会被窗口底边裁掉——「删除」这类项根本点不到（用户实报）。
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const M = 8; // 距视口边缘的留白
+    const left = Math.max(M, Math.min(props.x, window.innerWidth - r.width - M));
+    const top = Math.max(M, Math.min(props.y, window.innerHeight - r.height - M));
+    setPos((p) => (p && p.left === left && p.top === top ? p : { left, top }));
+  }, [props.x, props.y, items]);
+  const at = pos ?? { left: props.x, top: props.y };
   return (
     <>
       {props.mask && (
@@ -70,8 +85,9 @@ export function ContextMenu(props: {
         />
       )}
       <div
+        ref={menuRef}
         className="ctx-menu"
-        style={{ left: props.x, top: props.y }}
+        style={{ left: at.left, top: at.top }}
         onMouseEnter={props.onMouseEnter}
         onMouseLeave={props.onMouseLeave}
       >

@@ -35,8 +35,7 @@ export interface HistoryItem {
   type: 'svn' | 'git';
   lastOpened: number;
   /** 常用项目标记（星号，启动时优先打开） */
-  fav?: boolean;
-}
+  fav?: boolean;}
 
 function loadHistory(): HistoryItem[] {
   try {
@@ -50,10 +49,52 @@ function loadHistory(): HistoryItem[] {
   return [];
 }
 
+/** 历史记录的项目身份键：**按 inode 归一，不能按路径字符串**。
+ *  同一个目录可以有多个路径——bind mount（如 /data/home/x 与 /home/x，实测 inode 完全相同）、
+ *  软链接、结尾斜杠等，按字符串比会当成两个项目，列表里就出现一模一样的条目（用户实报：
+ *  最近项目里两个 svn-git，一个带星一个不带）。realpath 对 bind mount 无效（它只解析软链），
+ *  所以必须看 dev:ino。取不到（目录已删/无权限）时退回字面路径，只归并完全相同的字符串。 */
+function historyKey(p: string): string {
+  try {
+    const st = fs.statSync(p);
+    return `${st.dev}:${st.ino}`;
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+/** 启动时清理历史里的重复项：同一目录只留最近打开的那条路径，常用标记合并上去
+ *  （星号不能因为去重丢了）。返回清理掉的条数，0 = 本来就干净（不写文件）。 */
+export function dedupeHistory(): number {
+  try {
+    const list = loadHistory();
+    const byKey = new Map<string, HistoryItem>();
+    for (const h of list) {
+      const key = historyKey(h.path);
+      const prev = byKey.get(key);
+      if (!prev) {
+        byKey.set(key, h);
+        continue;
+      }
+      const [keep, drop] = (h.lastOpened ?? 0) > (prev.lastOpened ?? 0) ? [h, prev] : [prev, h];
+      byKey.set(key, { ...keep, fav: Boolean(keep.fav || drop.fav) });
+    }
+    if (byKey.size === list.length) return 0;
+    const out = [...byKey.values()].sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
+    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
+    fs.writeFileSync(HISTORY_PATH, JSON.stringify(out, null, 2));
+    fs.chmodSync(HISTORY_PATH, 0o600);
+    return list.length - out.length;
+  } catch {
+    return 0; // 清理失败不影响启动
+  }
+}
+
 function addHistory(entry: { path: string; type: 'svn' | 'git' }): void {
   try {
-    const existed = loadHistory().find((h) => h.path === entry.path);
-    const list = loadHistory().filter((h) => h.path !== entry.path);
+    const key = historyKey(entry.path);
+    const existed = loadHistory().find((h) => historyKey(h.path) === key);
+    const list = loadHistory().filter((h) => historyKey(h.path) !== key); // 同一目录的别名路径一并去掉，不留重复
     list.unshift({ ...entry, lastOpened: Date.now(), fav: existed?.fav }); // 保留常用标记（打开项目不丢星号）
     fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
     fs.writeFileSync(HISTORY_PATH, JSON.stringify(list.slice(0, HISTORY_MAX), null, 2));

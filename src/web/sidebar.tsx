@@ -12,6 +12,26 @@ export type View = 'log' | 'diff' | 'browse';
 /** 侧边栏最近项目最多列这么多，其余收进「…」面板（项目多时不撑长侧边栏） */
 export const RECENT_LIMIT = 10;
 
+/** 最近打开时间（列表第二行的小字）：越近越具体、越远越粗略——侧边栏只有 160px 宽，省着用 */
+function relTime(ts: number): string {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const now = new Date();
+  const mins = Math.floor((now.getTime() - ts) / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins} 分钟前`;
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const dayKey = (x: Date) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
+  if (dayKey(d) === dayKey(now)) return `今天 ${hm}`;
+  const y = new Date(now);
+  y.setDate(now.getDate() - 1);
+  if (dayKey(d) === dayKey(y)) return `昨天 ${hm}`;
+  const days = Math.floor((now.getTime() - ts) / 86400000);
+  if (days < 7) return `${days} 天前`;
+  const mmdd = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return d.getFullYear() === now.getFullYear() ? mmdd : `${d.getFullYear()}-${mmdd}`;
+}
+
 export function Sidebar(props: {
   view: View;
   history: HistoryItem[];
@@ -38,9 +58,14 @@ export function Sidebar(props: {
   invalidPaths: Record<string, string>;
   /** 悬浮失效项时显示提示（复用点击后那套浮层） */
   onShowTip: (msg: string) => void;
+  /** 最近项目下方的「＋ 打开项目」：打开项目选择弹窗（与顶栏 ⋯ 菜单里那个同一入口） */
+  onOpenProject: () => void;
 }) {
   // 最近项目右键菜单（设常用 / 删除 / 取消）
   const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean } | null>(null);
+  // 项目超过一屏（要折叠成「…」）时用**单行紧凑**模式：两行式每项 ~51px，10 项就把侧边栏撑满了，
+  // 时间那行这时只能让位——它是锦上添花，项目名才是要认的
+  const compact = props.history.length > RECENT_LIMIT;
 
   const NAV = [
     { key: 'log' as View, label: '历史', icon: <IconClock size={16} /> },
@@ -113,7 +138,13 @@ export function Sidebar(props: {
                   <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>
                     {h.type.toUpperCase()}
                   </span>
-                  <span className="history-path">{h.path.split('/').filter(Boolean).pop()}</span>
+                  {/* 两行式：名字一行、最近打开时间一行（时间缩进到名字下方，不跟名字抢宽度）。
+                      侧边栏只有 160px，横着并排放时间会把名字压到 2-3 个字；
+                      项目多（compact）时只留名字那一行 */}
+                  <span className="history-main">
+                    <span className="history-path">{h.path.split('/').filter(Boolean).pop()}</span>
+                    {!compact && <span className="history-time">{relTime(h.lastOpened)}</span>}
+                  </span>
                   {h.fav && <span className="fav-star" title="常用项目（启动时优先打开）">★</span>}
                   {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮） */}
                   {invalid && (
@@ -171,6 +202,10 @@ export function Sidebar(props: {
           </div>
         </>
       )}
+      {/* 打开项目：常驻在最近项目下方（没有历史记录时更要有这个入口） */}
+      <button className="history-open" onClick={props.onOpenProject} title="打开其它项目（选择目录）">
+        ＋ 打开项目
+      </button>
     </div>
   );
 }

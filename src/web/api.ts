@@ -307,7 +307,7 @@ export interface StashItem {
 }
 
 export const post = {
-  open: (dir: string) => api<{ ok: boolean }>('/api/open', json({ path: dir })),
+  open: (dir: string) => api<{ ok: boolean; repo?: { root: string; type: 'svn' | 'git' } }>('/api/open', json({ path: dir })),
   /** 安装到系统应用菜单（POST）；卸载走 DELETE */
   appMenuInstall: () => api<{ ok: boolean; message: string }>('/api/app-menu', json({})),
   appMenuUninstall: () => api<{ ok: boolean; message: string }>('/api/app-menu', { method: 'DELETE' }),

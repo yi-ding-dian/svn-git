@@ -48,8 +48,8 @@ export function App() {
   }, []);
   useEffect(() => {
     if (!toast) return;
-    // 成功 1.5s 淡出；失败停留 5 秒（错误可读性,避免一闪而过"没反应"）
-    const t = setTimeout(() => setToast(''), toastErr ? 5000 : 1500);
+    // 成功 1.5s 淡出；失败停留 3 秒（够读完一行报错，又不至于赖着不走）
+    const t = setTimeout(() => setToast(''), toastErr ? 3000 : 1500);
     return () => clearTimeout(t);
   }, [toast, toastErr]);
   const [updateResult, setUpdateResult] = useState<{
@@ -132,14 +132,27 @@ export function App() {
   const openHistoryItem = useCallback(
     async (h: { path: string }) => {
       try {
-        await post.open(h.path);
+        const opened = await post.open(h.path);
         const r = await get.info();
         if (r.type) {
           setInfo(r);
           setOnboard(null); // 切换仓库时清除上次的新建引导条
-          setInvalidPaths((prev) => { const n = { ...prev }; delete n[h.path]; return n; }); // 又能打开了：撤掉失效标记
           refresh();
           loadHistory();
+          // 记录里的路径**不是工作副本**（子目录被删或改名了），服务端向上找到了它所属的仓库。
+          // 这种情况原来完全静默：打开"成功"了，但打开的往往就是当前那个仓库 → 界面毫无变化，
+          // 用户只会觉得"点了没反应、也没有提示"（实报：点 svn-std-wc 切不过去）。
+          // 现在说清楚打开了什么，并给这行打上标记（行尾 × 可移除、悬浮显示原因），去留由用户定
+          const root = opened.repo?.root;
+          const same = root && h.path.replace(/\/+$/, '') === root;
+          if (root && !same) {
+            const msg = `「${h.path}」不是工作副本（目录可能已被删除或改名）。已打开它所属的仓库：${root}`;
+            setToastErr(true);
+            setToast(msg);
+            setInvalidPaths((prev) => ({ ...prev, [h.path]: msg }));
+          } else {
+            setInvalidPaths((prev) => { const n = { ...prev }; delete n[h.path]; return n; }); // 路径有效：撤掉标记
+          }
         } else {
           setToastErr(true);
           setToast('打开失败：未识别为仓库');
@@ -851,6 +864,7 @@ export function App() {
               onOpenRecentMore={(x, y) => setRecentMore({ x, y })}
               recentMoreOpen={Boolean(recentMore)}
               invalidPaths={invalidPaths}
+              onOpenProject={() => setModal({ type: 'open' })} // 与顶栏 ⋯ 菜单里的「打开项目」同一个弹窗
               onShowTip={(msg) => {
                 setToastErr(true);
                 setToast(msg);
@@ -914,16 +928,15 @@ export function App() {
           <span className="loading">⏳</span> {opBusy}
         </div>
       )}
-      {/* 操作结果提示：鼠标位置悬浮，淡出 */}
+      {/* 操作结果提示：鼠标位置悬浮，淡出；错误态停留更久（见 .toast-tip.err） */}
       {toast && (
         <div
-          className="toast-tip"
+          className={`toast-tip${toastErr ? ' err' : ''}`}
           style={{
             left: Math.min(mouseRef.current.x, window.innerWidth - 360),
             top: Math.max(8, mouseRef.current.y - 26),
             color: toastErr ? 'var(--err)' : 'var(--text)',
             maxWidth: 'min(620px, 80vw)',
-            whiteSpace: toastErr ? 'normal' : 'nowrap',
             border: toastErr ? '1px solid var(--err)' : '1px solid var(--border)',
           }}
           title={toast}

@@ -169,6 +169,30 @@ export function IconFolder({ size = 16 }: IconProps) {
   );
 }
 
+/** 调色盘（「自定义配色」入口）：原来用的是 emoji 🎨——没装彩色 emoji 字体的桌面上会渲染成
+ *  灰扑扑的单色（用户实报"能不能改成彩色的"）。自绘 SVG：木色盘身 + 四个彩色颜料点，
+ *  与 folder/plus 那几个图标同一路子，也不依赖系统字体 */
+export function IconPalette({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: '-2px', flexShrink: 0 }}>
+      <defs>
+        <linearGradient id="ic-palette" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#d9b04a" />
+          <stop offset="1" stopColor="#a97c1a" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M12 2.6C6.7 2.6 2.4 6.9 2.4 12.1S6.7 21.6 12 21.6c1.3 0 2.2-1 2.2-2.2 0-.6-.2-1.1-.6-1.5-.3-.4-.5-.9-.5-1.4 0-1.2 1-2.2 2.2-2.2h2.4c2.9 0 5.5-2.4 5.5-5.5 0-3.5-4.9-6.2-11.2-6.2z"
+        fill="url(#ic-palette)"
+      />
+      <circle cx="7.1" cy="11.9" r="1.6" fill="#e5484d" />
+      <circle cx="10.3" cy="7.3" r="1.6" fill="#f5a623" />
+      <circle cx="15.6" cy="7.8" r="1.6" fill="#2f9e44" />
+      <circle cx="17.7" cy="12.7" r="1.6" fill="#3b82f6" />
+    </svg>
+  );
+}
+
 /** 刷新：蓝绿循环箭头 */
 export function IconRefresh({ size = 14 }: IconProps) {
   return (

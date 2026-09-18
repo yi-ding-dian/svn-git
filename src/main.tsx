@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { startServer, setPickDirHandler } from './server.js';
 import { detectRepo } from './vcs/detect.js';
 import { platform } from './platform/index.js';
+import { dedupeHistory } from './routes/misc.js';
 
 const require = createRequire(import.meta.url);
 
@@ -57,6 +58,10 @@ process.on('SIGHUP', () => {
 });
 
 async function boot() {
+  // 启动时清理最近项目里的重复记录（同一目录的别名路径，如 bind mount 的 /data/home/x 与 /home/x）。
+  // 放在最前面：下面"启动目录不是仓库时打开常用项目"要读这份清单
+  const dup = dedupeHistory();
+  if (dup > 0) console.log(`  已清理最近项目中的 ${dup} 条重复记录`);
   // 预检测仓库（仅提示用，界面内可重新选择）
   let repo = detectRepo(START_DIR);
   // 启动目录不是仓库时，优先打开最近使用的常用项目（星号标记）；显式指定目录则尊重指定

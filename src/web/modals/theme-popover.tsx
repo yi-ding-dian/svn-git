@@ -11,6 +11,7 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { THEMES } from '../header.js';
+import { IconPalette } from '../ui/icons.js';
 
 /** 自定义主题：只存 6 个自选色，其余变量由 deriveThemeVars 推导 */
 export interface MyTheme {
@@ -213,7 +214,7 @@ export function ThemePopover(props: Props) {
 
         <div className="ctx-sep" />
         <button className="theme-custom-toggle" onClick={() => setCustomOpen((v) => !v)}>
-          🎨 自定义配色 {customOpen ? '▾' : '▸'}
+          <IconPalette /> 自定义配色 {customOpen ? '▾' : '▸'}
         </button>
         {customOpen && (
           <div className="theme-custom">

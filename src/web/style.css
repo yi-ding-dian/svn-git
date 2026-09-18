@@ -371,8 +371,9 @@ body {
 }
 .history-list { display: flex; flex-direction: column; gap: 3px; padding-top: 2px; }
 .history-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 20px; cursor: pointer; color: var(--text); overflow: hidden;
+  display: flex; align-items: center; gap: 6px;
+  /* 右侧只留 10px：星号要尽量贴行尾（左侧 20px 保持与菜单项/标题对齐，不能动） */
+  padding: 8px 10px 8px 20px; cursor: pointer; color: var(--text); overflow: hidden;
 }
 .history-item:hover { background: var(--panel2); color: var(--accent); }
 /* 当前正在操作的项目：高亮 + 左侧指示条 */
@@ -383,9 +384,28 @@ body {
 .history-path {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.93em;
 }
-/* 常用项目星号标记（项目名后） */
+/* 名字 + 最近打开时间：纵向两行。侧边栏只有 160px，时间并排会把名字压到 2-3 个字；
+   时间缩进到名字下方（左边缘与名字对齐） */
+.history-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.history-time {
+  font-size: 0.76em; color: var(--dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 徽标跟**第一行（项目名）**对齐，不跟着两行内容垂直居中；星号仍整行居中 */
+.history-item .badge { align-self: flex-start; margin-top: 2px; }
+/* 最近项目下方的「＋ 打开项目」：虚线框，像个"新增"入口而不是普通菜单项 */
+.history-open {
+  margin: 8px 10px 0 20px; padding: 7px 10px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1px dashed var(--border); border-radius: 6px; background: transparent;
+  color: var(--dim); font-size: 0.88em; cursor: pointer;
+}
+.history-open:hover { border-color: var(--accent); color: var(--accent); background: var(--panel2); }
+/* 常用项目星号标记：margin-left:auto 把它顶到行尾——名字短时贴右（不再停在名字后面），
+  名字长时没有剩余空间可吸，星号自然紧跟被截断的名字，两种情况都在最右。
+  字号小于正文，少占横向空间、也不抢视线 */
 .fav-star {
-  flex-shrink: 0; color: #f5a623; font-size: 1.05em; line-height: 1;
+  flex-shrink: 0; margin-left: auto; color: #f5a623; font-size: 0.85em; line-height: 1;
 }
 
 .content { flex: 1; padding: 16px; overflow: auto; min-width: 0; }
@@ -762,6 +782,19 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   animation: nohist-fade 1.2s ease forwards;
   pointer-events: none;
   max-width: 50vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 错误提示要留够阅读时间：默认那 0.7s 停留读不完一行报错（用户实报"点了没反应、也没提示"，
+   就是因为提示在鼠标上方闪了不到一秒）。成功提示保持 1.2s 的轻快节奏不受影响。
+   时长与 app.tsx 里的 setTimeout（错误 3000ms）对齐，动画放完正好被移除 */
+.toast-tip.err {
+  animation: toast-fade-err 3s ease forwards;
+  white-space: normal;
+}
+@keyframes toast-fade-err {
+  0% { opacity: 0; }
+  5% { opacity: 1; }
+  88% { opacity: 1; } /* 停留 ≈2.5s */
+  100% { opacity: 0; }
 }
 
 /* ---------- 无历史记录提示 ---------- */
