@@ -35,7 +35,10 @@ export interface HistoryItem {
   type: 'svn' | 'git';
   lastOpened: number;
   /** 常用项目标记（星号，启动时优先打开） */
-  fav?: boolean;}
+  fav?: boolean;
+  /** 用户备注（侧边栏右键「备注」设置）：侧边栏显示在时间前，过长由前端 CSS 截断；空/缺省 = 无备注 */
+  remark?: string;
+}
 
 function loadHistory(): HistoryItem[] {
   try {
@@ -77,7 +80,9 @@ export function dedupeHistory(): number {
         continue;
       }
       const [keep, drop] = (h.lastOpened ?? 0) > (prev.lastOpened ?? 0) ? [h, prev] : [prev, h];
-      byKey.set(key, { ...keep, fav: Boolean(keep.fav || drop.fav) });
+      // fav 做「或」合并、备注取先有的那个：同一目录的两条别名记录，用户只在其中一条上设过星号/备注，
+      // 归并时必须留下，不能因为"保留的那条恰好没有"就并没了
+      byKey.set(key, { ...keep, fav: Boolean(keep.fav || drop.fav), remark: keep.remark ?? drop.remark });
     }
     if (byKey.size === list.length) return 0;
     const out = [...byKey.values()].sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
@@ -95,7 +100,9 @@ function addHistory(entry: { path: string; type: 'svn' | 'git' }): void {
     const key = historyKey(entry.path);
     const existed = loadHistory().find((h) => historyKey(h.path) === key);
     const list = loadHistory().filter((h) => historyKey(h.path) !== key); // 同一目录的别名路径一并去掉，不留重复
-    list.unshift({ ...entry, lastOpened: Date.now(), fav: existed?.fav }); // 保留常用标记（打开项目不丢星号）
+    // 记录被整个重新构造，**用户自己设的两样东西都得显式带过来**，否则打开一次项目就没了：
+    // 常用标记（不丢星号）+ 备注（用户实报：「更新时间后就不见了，备注」）
+    list.unshift({ ...entry, lastOpened: Date.now(), fav: existed?.fav, remark: existed?.remark });
     fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
     fs.writeFileSync(HISTORY_PATH, JSON.stringify(list.slice(0, HISTORY_MAX), null, 2));
     fs.chmodSync(HISTORY_PATH, 0o600); // 与 config 一致，仅本人可读写
@@ -351,6 +358,31 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const fav = Boolean(body.fav);
         if (hp) {
           const list = loadHistory().map((h) => (h.path === hp ? { ...h, fav } : h));
+          try {
+            fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
+            fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));
+            fs.chmodSync(HISTORY_PATH, 0o600);
+          } catch {
+            /* 忽略写失败 */
+          }
+        }
+        sendJson(res, 200, { ok: true, items: loadHistory() });
+        return true;
+      }
+      if (p === '/api/history-remark' && req.method === 'POST') {
+        // 设置/清除最近项目的备注（侧边栏右键菜单）。空串 = 清除：把字段删掉，不留空串
+        const body = await readBody(req);
+        const hp = String(body.path ?? '');
+        // 60 字上限：备注显示在 160px 侧边栏里，再长也只会被截断，别让 history.json 被塞长文本
+        const remark = String(body.remark ?? '').trim().slice(0, 60);
+        if (hp) {
+          const list = loadHistory().map((h) => {
+            if (h.path !== hp) return h;
+            const next: HistoryItem = { ...h };
+            if (remark) next.remark = remark;
+            else delete next.remark;
+            return next;
+          });
           try {
             fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
             fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));

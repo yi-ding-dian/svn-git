@@ -83,6 +83,8 @@ export interface HistoryItem {
   type: 'svn' | 'git';
   lastOpened: number;
   fav?: boolean;
+  /** 用户备注（右键「备注」设置）：显示在时间前，过长由 CSS 截断；空/缺省 = 无备注 */
+  remark?: string;
 }
 
 export interface FsEntry {
@@ -357,6 +359,8 @@ export const post = {
   config: (cfg: { username: string; password: string; trustServerCert: boolean }) => api<{ ok: boolean }>('/api/config', json(cfg)),
   historyRemove: (path: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remove', json({ path })),
   historyFav: (path: string, fav: boolean) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-fav', json({ path, fav })),
+  /** 设置/清除备注（侧边栏右键菜单）：传空串 = 清除 */
+  historyRemark: (path: string, remark: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remark', json({ path, remark })),
   mkdir: (path: string) => api<{ ok: boolean }>('/api/mkdir', json({ path })),
   rename: (from: string, to: string) => api<{ ok: boolean }>('/api/rename', json({ from, to })),
   gitConfig: (remoteUrl: string) => api<VcsResult>('/api/git-config', json({ remoteUrl })),

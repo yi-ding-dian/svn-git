@@ -100,8 +100,8 @@ export function App() {
     void refreshStash();
   }, [refreshUnpushed, refreshStash]);
 
-  // 最近项目列表（加载 / 删除 / 设常用）抽到 useProjectHistory；错误统一走 toast
-  const { history, loadHistory, removeHistory, setFav } = useProjectHistory((msg) => {
+  // 最近项目列表（加载 / 删除 / 设常用 / 备注）抽到 useProjectHistory；错误统一走 toast
+  const { history, loadHistory, removeHistory, setFav, setRemark } = useProjectHistory((msg) => {
     setToastErr(true);
     setToast(msg);
   });
@@ -166,6 +166,23 @@ export function App() {
     },
     [refresh, loadHistory]
   );
+
+  /** 内容区点击 = "还在用这个项目"：刷新它在最近项目里的时间戳（后端按 path 更新 lastOpened）。
+   *  60 秒节流——比"刚刚"的显示粒度（1 分钟）还密没有意义，还免得每点一下都写一次 history.json。
+   *  点文件夹、点文件、点空白都算（事件冒泡到内容区容器），右键不触发（那是 contextmenu 事件） */
+  const lastTouchRef = useRef(0);
+  const touchHistory = useCallback(() => {
+    if (!repo?.root || !repo.type) return;
+    const now = Date.now();
+    if (now - lastTouchRef.current < 60_000) return;
+    lastTouchRef.current = now;
+    void post
+      .history(repo.root, repo.type)
+      .then(() => loadHistory())
+      .catch(() => {
+        /* 只是刷新"最近使用时间"，失败不值得打扰用户 */
+      });
+  }, [repo?.root, repo?.type, loadHistory]);
 
   // 短操作进行中指示（revert/delete/add 无独立进度窗,防"点了没反应"）
   const [opBusy, setOpBusy] = useState<string | null>(null);
@@ -857,6 +874,7 @@ export function App() {
               onOpenHistory={openHistoryItem}
               onRemoveHistory={removeHistory}
               onSetFav={setFav}
+              onSetRemark={setRemark}
               theme={theme}
               setTheme={setTheme}
               onOpenThemePop={(x, y) => setThemePop({ x, y })}
@@ -870,7 +888,8 @@ export function App() {
                 setToast(msg);
               }}
             />
-            <div className="content">
+            {/* 点内容区（文件/空白都行）= 在用这个项目 → 刷新最近项目里的"最近使用时间" */}
+            <div className="content" onClick={touchHistory}>
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
               <div style={{ display: view === 'log' ? undefined : 'none', height: '100%' }}>
                 <HistoryView path={logPath} tick={tick} repoType={repo?.type ?? 'git'} onChanged={refresh} onBack={() => setView('browse')} />

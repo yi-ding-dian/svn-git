@@ -57,7 +57,7 @@ export function RecentMorePopover(props: Props) {
           <div
             key={h.path}
             className={`recent-item ${h.path === props.currentRoot ? 'active' : ''}`}
-            title={h.path}
+            title={h.remark ? `${h.path}\n备注：${h.remark}` : h.path}
             onClick={() => props.onOpen(h.path)}
           >
             <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>

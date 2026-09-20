@@ -33,5 +33,13 @@ export function useProjectHistory(onError: (msg: string) => void) {
       .catch(() => onErrorRef.current(fav ? '设置常用失败' : '取消常用失败'));
   }, []);
 
-  return { history, loadHistory, removeHistory, setFav };
+  /** 设置/清除备注（侧边栏右键菜单）：显示在时间前；传空串 = 清除备注 */
+  const setRemark = useCallback((path: string, remark: string) => {
+    void post
+      .historyRemark(path, remark)
+      .then((r) => setHistory(r.items))
+      .catch(() => onErrorRef.current(remark ? '备注失败' : '清除备注失败'));
+  }, []);
+
+  return { history, loadHistory, removeHistory, setFav, setRemark };
 }

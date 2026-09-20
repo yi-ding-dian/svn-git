@@ -1,8 +1,9 @@
-/** 侧边栏：视图导航 + 最近项目列表（右键删除/设常用）+ 版本号 */
+/** 侧边栏：视图导航 + 最近项目列表（右键设常用/备注/删除）+ 版本号 */
 import React, { useState } from 'react';
-import { IconClock, IconFolder } from './ui/icons.js';
+import { IconClock, IconFolder, IconRename } from './ui/icons.js';
 // import { IconDiff } from './ui/icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from './ui/context-menu.js';
+import { RemarkModal } from './modals/modals.js';
 import { THEMES, THEME_PINNED } from './header.js';
 import type { HistoryItem } from './api.js';
 
@@ -43,6 +44,8 @@ export function Sidebar(props: {
   onRemoveHistory: (path: string) => void;
   /** 设置/取消常用项目（星号标记，启动时优先打开） */
   onSetFav: (path: string, fav: boolean) => void;
+  /** 设置/清除项目备注（显示在第二行、时间前面）；传空串 = 清除备注 */
+  onSetRemark: (path: string, remark: string) => void;
   /** 外观区：主题色块（位于最近项目上方；字体设置在顶栏 ⋯ 菜单） */
   theme: string;
   setTheme: (t: string) => void;
@@ -61,8 +64,10 @@ export function Sidebar(props: {
   /** 最近项目下方的「＋ 打开项目」：打开项目选择弹窗（与顶栏 ⋯ 菜单里那个同一入口） */
   onOpenProject: () => void;
 }) {
-  // 最近项目右键菜单（设常用 / 删除 / 取消）
-  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean } | null>(null);
+  // 最近项目右键菜单（设常用 / 备注 / 删除 / 取消）。remark 一并带出：菜单项要用它预填备注弹窗
+  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean; remark: string } | null>(null);
+  // 备注弹窗（右键「备注」打开）：null = 关闭
+  const [remarkFor, setRemarkFor] = useState<{ path: string; name: string; current: string } | null>(null);
   // 项目超过一屏（要折叠成「…」）时用**单行紧凑**模式：两行式每项 ~51px，10 项就把侧边栏撑满了，
   // 时间那行这时只能让位——它是锦上添花，项目名才是要认的
   const compact = props.history.length > RECENT_LIMIT;
@@ -124,7 +129,7 @@ export function Sidebar(props: {
                   title={
                     invalidMsg
                       ? `${h.path}（打不开，目录已删除或不是工作副本）`
-                      : `${h.path}${h.path === props.currentRoot ? '\n（当前操作的项目）' : ''}${h.fav ? '\n（常用项目）' : ''}\n点击打开 · 右键删除/设常用`
+                      : `${h.path}${h.remark ? `\n备注：${h.remark}` : ''}${h.path === props.currentRoot ? '\n（当前操作的项目）' : ''}${h.fav ? '\n（常用项目）' : ''}\n点击打开 · 右键设常用/备注/删除`
                   }
                   onClick={() => props.onOpenHistory(h)}
                   onMouseEnter={() => {
@@ -132,21 +137,20 @@ export function Sidebar(props: {
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    setRmMenu({ x: e.clientX, y: e.clientY, path: h.path, fav: Boolean(h.fav) });
+                    setRmMenu({ x: e.clientX, y: e.clientY, path: h.path, fav: Boolean(h.fav), remark: h.remark ?? '' });
                   }}
                 >
                   <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>
                     {h.type.toUpperCase()}
                   </span>
-                  {/* 两行式：名字一行、最近打开时间一行（时间缩进到名字下方，不跟名字抢宽度）。
-                      侧边栏只有 160px，横着并排放时间会把名字压到 2-3 个字；
-                      项目多（compact）时只留名字那一行 */}
-                  <span className="history-main">
-                    <span className="history-path">{h.path.split('/').filter(Boolean).pop()}</span>
-                    {!compact && <span className="history-time">{relTime(h.lastOpened)}</span>}
-                  </span>
+                  {/* 两行式：第一行=名字（徽标与星号之间），第二行=备注+时间。
+                      第二行改由 flex-basis:100% 换行、**占满整行**（含徽标下方那块）——原先它缩进在
+                      名字下方，徽标底下那 30 多 px 白空着；160px 的侧边栏里这是很大一块
+                      （用户实报「左边那么多空位」，备注"git仓库"因此被压成 "g…"） */}
+                  <span className="history-path">{h.path.split('/').filter(Boolean).pop()}</span>
                   {h.fav && <span className="fav-star" title="常用项目（启动时优先打开）">★</span>}
-                  {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮） */}
+                  {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮）。
+                      必须排在第二行**之前**——第二行 flex-basis:100% 会换行，× 写在它后面会被挤到第二行 */}
                   {invalid && (
                     <button
                       className="history-remove"
@@ -159,6 +163,14 @@ export function Sidebar(props: {
                     >
                       ×
                     </button>
+                  )}
+                  {/* 第二行 = 备注 + 时间。时间 flex:0 0 auto 钉死不被压缩，备注吃掉剩余宽度、超长截断成
+                      「…」——所以备注写多长都挤不掉时间（用户要求"保证时间正常显示"），全文靠悬浮看 */}
+                  {!compact && (
+                    <span className="history-time">
+                      {h.remark && <span className="history-remark">{h.remark}</span>}
+                      <span className="history-time-text">{relTime(h.lastOpened)}</span>
+                    </span>
                   )}
                 </div>
               );
@@ -193,10 +205,36 @@ export function Sidebar(props: {
                           label: rmMenu.fav ? '取消常用' : '设为常用',
                           action: () => props.onSetFav(rmMenu.path, !rmMenu.fav),
                         },
+                        {
+                          // 铅笔用项目里的 SVG（IconRename），不引 emoji——没装彩色 emoji 字体的桌面会渲染成单色
+                          icon: <IconRename size={14} />,
+                          label: rmMenu.remark ? '编辑备注' : '备注',
+                          action: () => {
+                            // 先收菜单再开弹窗：两者都带全屏遮罩，叠在一起点哪儿都像没反应
+                            setRmMenu(null);
+                            setRemarkFor({
+                              path: rmMenu.path,
+                              name: rmMenu.path.split('/').filter(Boolean).pop() ?? rmMenu.path,
+                              current: rmMenu.remark,
+                            });
+                          },
+                        },
                         { icon: '🗑', label: '删除', danger: true, action: () => props.onRemoveHistory(rmMenu.path) },
                         { icon: '✕', label: '取消' },
                       ]
                 }
+              />
+            )}
+            {/* 备注弹窗（右键「备注」）：确认后写回后端，useProjectHistory 拿新列表刷新 */}
+            {remarkFor && (
+              <RemarkModal
+                projectName={remarkFor.name}
+                current={remarkFor.current}
+                onCancel={() => setRemarkFor(null)}
+                onConfirm={(remark) => {
+                  props.onSetRemark(remarkFor.path, remark);
+                  setRemarkFor(null);
+                }}
               />
             )}
           </div>
