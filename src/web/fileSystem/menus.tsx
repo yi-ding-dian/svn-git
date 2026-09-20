@@ -247,7 +247,7 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
         if (s.favs.some((f) => f.path === t.rel)) {
           items.push({ icon: <IconStar />, label: '已加入常用文件夹（点击移除）', action: () => s.removeFav(t.rel) });
         } else if (!s.favs.some((f) => t.rel.startsWith(f.path + '/'))) {
-          items.push({ icon: <IconStar />, label: '加入常用文件夹（预加载缓存）', action: () => s.addFavDir(t.rel) });
+          items.push({ icon: <IconStar />, label: '加入常用文件夹', action: () => s.addFavDir(t.rel) });
         }
       }
       // 有版本库内容且非调度中（非 '!' 缺失；A 添加/D 删除调度不显示——各自有"取消添加/撤销删除"）
@@ -262,11 +262,14 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
         icon: <IconIgnore />,
         label: '加入忽略…',
         cmd: cmdOfRepo(s.repoType, 'ignore_add', { path: t.rel, pattern: '…' }),
-        submenu: [
+        // svn 的忽略是 svn:ignore 属性（设在目录上、提交后随仓库分发），没有 git 那三档去向；
+        // 摆出来等于把 git 的机制硬塞给 svn（用户实报"svn 有这个功能吗"）——svn 直接进确认弹窗
+        submenu: s.repoType === 'git' ? [
           { icon: <IconIgnore />, label: '.gitignore', cmd: cmdOfRepo(s.repoType, 'ignore_add', { pattern: t.name }), title: '写入仓库 .gitignore——随仓库分发，其他用户拉取后同样被忽略（适合项目通用内容）', action: () => { s.setIgnoreTarget('gitignore'); s.ignoreFile(t); } },
           { icon: <IconIgnore />, label: '~/.gitignore_global', cmd: cmdOfRepo(s.repoType, 'ignore_add_global', { pattern: t.name }), title: '写入全局忽略——仅本机生效、所有仓库统一，绝不随仓库分发（适合 record.md 等私人文件）', action: () => { s.setIgnoreTarget('global'); s.ignoreFile(t); } },
           { icon: <IconIgnore />, label: '.git/info/exclude', cmd: cmdOfRepo(s.repoType, 'ignore_add_exclude', { pattern: t.name }), title: '写入仓库本地 exclude——仅本机、仅本仓库，绝不随仓库分发（适合本地测试数据）', action: () => { s.setIgnoreTarget('exclude'); s.ignoreFile(t); } },
-        ],
+        ] : undefined,
+        action: s.repoType === 'git' ? undefined : () => s.ignoreFile(t),
       });
       items.push(renameItem(t.code, s.repoType, t.rel, true, s.onAction));
       items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该目录，不可恢复（不影响版本库）', action: () => s.onAction('fs-delete', [t.rel]) });
@@ -275,7 +278,7 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
         if (s.favs.some((f) => f.path === t.rel)) {
           items.push({ icon: <IconStar />, label: '已加入常用文件夹（点击移除）', action: () => s.removeFav(t.rel) });
         } else if (!s.favs.some((f) => t.rel.startsWith(f.path + '/'))) {
-          items.push({ icon: <IconStar />, label: '加入常用文件夹（预加载缓存）', action: () => s.addFavDir(t.rel) });
+          items.push({ icon: <IconStar />, label: '加入常用文件夹', action: () => s.addFavDir(t.rel) });
         }
       }
     }
@@ -298,11 +301,13 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
           icon: <IconIgnore />,
           label: '加入忽略…',
           cmd: cmdOfRepo(s.repoType, 'ignore_add', { path: t.rel, pattern: '…' }),
-          submenu: [
+          // svn 只有 svn:ignore 一种写法（同未版本化目录分支，见上）
+          submenu: s.repoType === 'git' ? [
             { icon: <IconIgnore />, label: '.gitignore', cmd: cmdOfRepo(s.repoType, 'ignore_add', { pattern: t.name }), title: '写入仓库 .gitignore——随仓库分发，其他用户拉取后同样被忽略（适合项目通用内容）', action: () => { s.setIgnoreTarget('gitignore'); s.ignoreFile(t); } },
             { icon: <IconIgnore />, label: '~/.gitignore_global', cmd: cmdOfRepo(s.repoType, 'ignore_add_global', { pattern: t.name }), title: '写入全局忽略——仅本机生效、所有仓库统一，绝不随仓库分发（适合 record.md 等私人文件）', action: () => { s.setIgnoreTarget('global'); s.ignoreFile(t); } },
             { icon: <IconIgnore />, label: '.git/info/exclude', cmd: cmdOfRepo(s.repoType, 'ignore_add_exclude', { pattern: t.name }), title: '写入仓库本地 exclude——仅本机、仅本仓库，绝不随仓库分发（适合本地测试数据）', action: () => { s.setIgnoreTarget('exclude'); s.ignoreFile(t); } },
-          ],
+          ] : undefined,
+          action: s.repoType === 'git' ? undefined : () => s.ignoreFile(t),
         });
         items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该文件，不可恢复（不影响版本库）', action: () => s.onAction('fs-delete', [t.rel]) });
       } else {

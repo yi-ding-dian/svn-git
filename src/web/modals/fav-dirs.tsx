@@ -34,7 +34,7 @@ export function FavDirsModal(props: {
       }
     >
       <div className="dim small" style={{ marginBottom: 8, lineHeight: 1.8 }}>
-            右键文件夹 →「加入常用文件夹（预加载缓存）」后，该文件夹下所有子目录会在后台递归预加载并缓存，
+            右键文件夹 →「加入常用文件夹」后，该文件夹下所有子目录会在后台递归预加载并缓存，
             之后点击里面的任何内容都秒开（本机保存，仅当前电脑生效）。
           </div>
           {props.favs.length === 0 && (

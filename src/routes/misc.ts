@@ -766,7 +766,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               if (rk > ({ C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3, '?': 2 }[code] ?? 0)) code = s.code;
             }
             // 变更数只统计已版本化条目（未版本化 '?' 未纳入版本控制，不计数）
-            count = sub.filter((s) => s.code !== '?').length;
+            // 外部引用 'X' 同样不计：它装的是另一个仓库路径的内容，不是本目录的变更。
+            // 它在 status 里**恒常**存在，徽标那边排除了、这里之前没排除 ——
+            // 于是父目录就成了自相矛盾的「✓ + 数字 1」（用户实报"引用产生的数字还在"）
+            count = sub.filter((s) => s.code !== '?' && s.code !== 'X').length;
             // 内部未版本化数量（'?' 不在徽标显示，但筛选"仅新文件"时需要提示新文件在哪）
             unversionedCount = sub.filter((s) => s.code === '?').length;
             // 目录操作集合：同时显示 M/A/D 等全部操作标识；排除未版本化 '?' 与无变更 ' '；

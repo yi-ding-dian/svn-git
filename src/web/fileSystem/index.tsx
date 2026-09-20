@@ -1559,7 +1559,11 @@ export function FsView(props: Props) {
       {/* 加入忽略输入弹窗（替代 window.prompt） */}
       {ignoreAsk && (
         <ModalShell
-          title={`⚠ 加入忽略（写入 ${IGNORE_WHERE_LABEL[ignoreTarget]}）`}
+          title={`⚠ 加入忽略（写入 ${
+            props.repoType === 'git'
+              ? IGNORE_WHERE_LABEL[ignoreTarget]
+              : 'svn:ignore 属性 · 本目录生效，提交后随仓库分发'
+          }）`}
           width={440}
           onClose={() => setIgnoreAsk(null)}
           foot={
