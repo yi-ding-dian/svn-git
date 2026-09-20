@@ -444,6 +444,9 @@ export function CommitSelectModal(props: {
   const [stagedLocal, setStagedLocal] = useState<string[]>(props.stagedOnly ?? []);
   /** 正在「选择部分改动」的文件（null = 未打开那个弹窗） */
   const [stagePath, setStagePath] = useState<string | null>(null);
+  /** hunk 级部分提交（「选择部分改动」）是 **git 独有**的（git add -p），svn 没有对应概念——
+      svn 下这个入口整体不该出现：后端只会回一句"仅 git 仓库支持"，那就成了"点了才知道不行" */
+  const isGit = props.repoType === 'git';
 
   // 状态过滤：仅当列表存在 A(添加)/D(删除) 文件时才显示对应过滤开关
   const hasA = props.items.some((i) => i.code === 'A');
@@ -507,6 +510,13 @@ export function CommitSelectModal(props: {
         <div className="body" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           <div className="dim small" style={{ marginBottom: 8, flexShrink: 0 }}>
             ℹ️ 未版本化文件（?）不在列表中——需先在文件夹视图右键「添加到版本库」，再提交
+            {props.repoType === 'svn' && (
+              <>
+                <br />
+                🔗 外部引用（文件夹视图里带链环图标的目录）也不在列表中——它装的是另一个仓库路径的内容，
+                提交它等于提交那个目录，请直接到那里提交
+              </>
+            )}
           </div>
           {/* 目录信息条：清晰展示提交范围与勾选进度 */}
           <div className="help-note" style={{ alignItems: 'center', marginBottom: 10, padding: '8px 12px', flexShrink: 0 }}>
@@ -545,14 +555,17 @@ export function CommitSelectModal(props: {
                 key={it.path}
                 className="changed-row"
                 style={{ cursor: 'pointer' }}
-                title={props.onDiff && !it.isDir ? `${it.path}\n双击查看差异 · 右键选择部分改动` : it.path}
+                title={props.onDiff && !it.isDir
+                  ? `${it.path}\n双击查看差异${isGit ? ' · 右键选择部分改动' : ''}`
+                  : it.path}
                 onDoubleClick={(ev) => {
                   ev.preventDefault();
                   if (props.onDiff && !it.isDir) props.onDiff(it.path, [...checked], stagedLocal);
                 }}
                 onContextMenu={(ev) => {
                   ev.preventDefault();
-                  if (!it.isDir) setStagePath(it.path);
+                  // svn 下右键**完全没反应**（不弹、不提示）：这功能它根本没有，别让人点了才知道
+                  if (isGit && !it.isDir) setStagePath(it.path);
                 }}
               >
                 <input type="checkbox" checked={checked.has(it.path)} onChange={() => toggle(it.path)} style={{ flexShrink: 0 }} />

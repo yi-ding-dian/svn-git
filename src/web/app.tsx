@@ -653,20 +653,28 @@ export function App() {
       try {
         const st = await get.status();
         const prefix = dir ? dir + '/' : '';
+        const inScope = (p: string) => (prefix ? p.startsWith(prefix) : true);
         const items = st.items
           // 未版本化（?）文件不在提交列表（需先"添加到版本库"）
           .filter((i) => i.code !== '?')
+          // 外部引用（X，svn:externals）也不在：它装的是**另一个仓库路径**的内容，
+          // 勾上提交 svn 会真的递归提交到那个路径（实测外部引用里的改动会被提交走），
+          // 而列表里显示的相对路径与实际提交的路径对不上——要提交请到它自身那个目录去
+          .filter((i) => i.code !== 'X')
           // 指定目录 → 该目录及其子目录；根目录 → 全部修改文件（含子目录）
-          .filter((i) => (prefix ? i.path.startsWith(prefix) : true))
+          .filter((i) => inScope(i.path))
           .map((i) => ({ path: i.path, code: i.code, isDir: i.isDir }));
         if (items.length === 0) {
-          const unversioned = st.items.filter(
-            (i) => i.code === '?' && (prefix ? i.path.startsWith(prefix) : true)
-          ).length;
+          const unversioned = st.items.filter((i) => i.code === '?' && inScope(i.path)).length;
+          const externals = st.items.filter((i) => i.code === 'X' && inScope(i.path)).length;
           setToastErr(false);
-          setToast(unversioned > 0
-            ? `当前目录下没有已版本化的变更；有 ${unversioned} 个未版本化文件（?），需先右键「添加到版本库」才能提交`
-            : '当前目录下没有变更文件');
+          setToast(
+            unversioned > 0
+              ? `当前目录下没有已版本化的变更；有 ${unversioned} 个未版本化文件（?），需先右键「添加到版本库」才能提交`
+              : externals > 0
+                ? `当前目录下只有外部引用（${externals} 个，链环图标）——它里面是另一个仓库路径的内容，请到那个目录提交`
+                : '当前目录下没有变更文件'
+          );
           return;
         }
         // 从 index 恢复「已部分暂存」的文件：弹窗关掉再打开也认得（否则重开后会整文件 add，把未选的块也提交）

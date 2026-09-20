@@ -925,9 +925,13 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ---------- 模态框 ---------- */
 .modal-mask {
-  position: fixed; inset: 0; background: rgba(1,4,9,.7);
+  position: fixed; inset: 0;
+  background: rgba(1,4,9,.5);
   display: flex; align-items: center; justify-content: center; z-index: 100;
 }
+/* 弹窗叠弹窗（如「确认推送」里再开「修改提交注释」）：内层遮罩不再压暗一次。
+   内层仍要 .modal-mask 提供的全屏 flex 居中，只是不要它的底色 */
+.modal-mask .modal-mask { background: transparent; }
 .modal {
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
   width: 520px; max-width: 92vw; max-height: 86vh; display: flex; flex-direction: column;
