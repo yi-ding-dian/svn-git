@@ -1,9 +1,10 @@
-/** 工作区整理弹窗：git 清理未跟踪文件（CleanDialog）+ Stash 暂存区（StashDialog） */
+/** 工作区整理弹窗：git 清理未跟踪文件（CleanDialog）+ Stash 储藏（StashDialog）
+ *  术语：本文件的"储藏"= git stash；"暂存"专指 git index（`git add`，见提交弹窗的「部分暂存」）——
+ *  两套东西此前共用一个词，用户看到「Stash 暂存区」以为文件被收进了索引，故 2026-09-20 拆开 */
 import React, { useEffect, useState } from 'react';
 import { get, post, type StashItem } from '../api.js';
 import { ModalShell } from '../modals/modal-shell.js';
-import { IconErr, IconStash } from '../ui/icons.js';
-import { HelpNote } from '../ui/ui.js';
+import { IconErr, IconHelp, IconStash } from '../ui/icons.js';
 import { ConfirmModal } from '../modals/modals.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 import { ResultLine, runAction } from './common.js';
@@ -72,7 +73,7 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
         </>
       }
     >
-      <div className="dim small" style={{ marginBottom: 8 }}>
+      <div className="dim small" style={{ marginBottom: 8, flexShrink: 0 }}>
         <div>
           以下文件将被永久删除，不可恢复。清理的是工作区里存在、但<strong>没被 git 纳入版本管理</strong>的文件
           （未跟踪文件：新建未提交、编译产物、临时文件、被忽略文件等）：
@@ -81,46 +82,47 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
           ⚠ 特别提醒：如果你有自己新建的、还没想好要不要提交的文件，请先确认好再执行清理！
         </div>
       </div>
-      {files === null && !msgErr && <div className="dim" style={{ padding: '10px 6px' }}>扫描中…</div>}
-      {files && (
-        <div className="changed" style={{ maxHeight: 260, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
-          {files.length === 0 ? (
-            <div className="dim" style={{ padding: '10px 6px' }}>没有未跟踪文件 🎉</div>
-          ) : (
-            <>
-              <label className="row" style={{ cursor: 'pointer', gap: 6, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4, flexShrink: 0 }}>
-                <input
-                  type="checkbox"
-                  checked={checked.size === files.length}
-                  onChange={() => setChecked(checked.size === files.length ? new Set() : new Set(files))}
-                />
-                <span className="dim small">{checked.size === files.length ? '取消全选' : '全选'}</span>
-                <span className="dim small" style={{ marginLeft: 'auto' }}>已勾选 {checked.size}/{files.length}</span>
-              </label>
-              {files.map((f) => (
-                <label key={f} className="changed-row" style={{ cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={checked.has(f)}
-                    onChange={() => {
-                      const nx = new Set(checked);
-                      if (nx.has(f)) nx.delete(f);
-                      else nx.add(f);
-                      setChecked(nx);
-                    }}
-                    style={{ flexShrink: 0 }}
-                  />
-                  <span style={{ color: 'var(--err)', flexShrink: 0, display: 'inline-flex', alignItems: 'center' }}>
-                    <IconErr size={12} />
-                  </span>
-                  <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
-                </label>
-              ))}
-            </>
-          )}
+      {files === null && !msgErr && <div className="dim" style={{ padding: '10px 6px', flexShrink: 0 }}>扫描中…</div>}
+      {/* 空列表不套滚动框：套了的话 flex-basis 会把框撑到 260px 一大块空白（改前 maxHeight 下只一行高） */}
+      {files && files.length === 0 && (
+        <div className="dim" style={{ padding: '10px 6px', flexShrink: 0 }}>没有未跟踪文件 🎉</div>
+      )}
+      {/* 列表是主伸缩区：默认 260px，弹窗拉高时吃掉多余高度；矮窗口下保底 80px（约 3 行） */}
+      {files && files.length > 0 && (
+        <div className="changed" style={{ flex: '1 1 260px', minHeight: 80, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
+          <label className="row" style={{ cursor: 'pointer', gap: 6, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4, flexShrink: 0 }}>
+            <input
+              type="checkbox"
+              checked={checked.size === files.length}
+              onChange={() => setChecked(checked.size === files.length ? new Set() : new Set(files))}
+            />
+            <span className="dim small">{checked.size === files.length ? '取消全选' : '全选'}</span>
+            <span className="dim small" style={{ marginLeft: 'auto' }}>已勾选 {checked.size}/{files.length}</span>
+          </label>
+          {files.map((f) => (
+            <label key={f} className="changed-row" style={{ cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={checked.has(f)}
+                onChange={() => {
+                  const nx = new Set(checked);
+                  if (nx.has(f)) nx.delete(f);
+                  else nx.add(f);
+                  setChecked(nx);
+                }}
+                style={{ flexShrink: 0 }}
+              />
+              <span style={{ color: 'var(--err)', flexShrink: 0, display: 'inline-flex', alignItems: 'center' }}>
+                <IconErr size={12} />
+              </span>
+              <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
+            </label>
+          ))}
         </div>
       )}
-      <ResultLine msg={msg} err={msgErr} />
+      <div style={{ flexShrink: 0 }}>
+        <ResultLine msg={msg} err={msgErr} />
+      </div>
       {cfm && (
         <ConfirmModal
           title={cfm.title}
@@ -142,13 +144,19 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
 
 // ==================== Stash（git） ====================
 
+/** Stash 用法说明：原先是整整一块 HelpNote 摆在这儿（约 100px 高，把下面的文件列表挤得只剩 4 行），
+ *  现收进标题行右侧灯泡的悬浮提示——版面让给列表，说明随时可查（原生 title，与项目其他悬浮说明一致） */
+const STASH_HELP =
+  'Stash 把当前未提交的改动临时收起来（含未跟踪文件），让工作区变干净——适合"先切分支/先做别的，稍后再回来继续"。\n' +
+  '点「保存当前改动」收起（可写说明）；列表中「恢复」= 把改动取回工作区，「丢弃」= 放弃这份改动。';
+
 export function StashDialog(props: { onClose: () => void; onChanged: () => void }) {
   const [items, setItems] = useState<StashItem[]>([]);
   const [message, setMessage] = useState('');
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
-  // 当前工作区改动（可暂存列表）：含未跟踪(?)；冲突(C)不可暂存（先解决），I/X 同理排除
+  // 当前工作区改动（可储藏列表）：含未跟踪(?)；冲突(C)不可储藏（先解决），I/X 同理排除
   const [files, setFiles] = useState<{ path: string; code: string }[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   // 工具风格二次确认
@@ -195,16 +203,21 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
   };
 
   return (
-    <ModalShell icon={<IconStash size={16} />} title={`Stash 暂存区 (GIT)`} onClose={props.onClose} width={580}>
-      <HelpNote>
-        Stash 把当前未提交的改动临时收起来（含未跟踪文件），让工作区变干净——适合"先切分支/先做别的，稍后再回来继续"。用法：点「保存当前改动」收起（可写说明）；列表中「恢复」= 把改动取回工作区，「丢弃」= 放弃这份改动。
-      </HelpNote>
-      {/* 当前工作区改动：可勾选部分暂存（默认全选=全量收走，含未跟踪） */}
-      <div className="small dim" style={{ margin: '12px 0 4px' }}>
-        当前工作区改动（{files.length} 项，默认全选；取消勾选 = 只暂存选中的文件）
+    <ModalShell icon={<IconStash size={16} />} title={`Stash 储藏 (GIT)`} onClose={props.onClose} width={580}>
+      {/* 当前工作区改动：可勾选部分储藏（默认全选=全量收走，含未跟踪）。
+          原 HelpNote 说明块已撤（它占约 100px，把列表挤得只剩 4 行）→ 说明挪到行尾问号的悬浮提示。
+          问号**紧跟在文字右侧**（不是贴到行右缘）：它是这行文字的注解，离得近才看得出注解的是谁。
+          不设 cursor:help——图标本身已是问号，光标再冒一个问号是同一个意思说两遍（用户反馈，2026-09-20） */}
+      <div className="small dim" style={{ margin: '0 0 4px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span>当前工作区改动（{files.length} 项，默认全选；取消勾选 = 只储藏选中的文件）</span>
+        <span style={{ display: 'inline-flex' }} title={STASH_HELP}>
+          <IconHelp size={15} />
+        </span>
       </div>
-      <div className="vcs-list" style={{ maxHeight: 132 }}>
-        {files.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>工作区没有改动可暂存（先修改文件，再回来保存）</div>}
+      {/* 主伸缩区：默认 180px（约 6 行），弹窗拉高时吃掉全部多余高度；
+          矮窗口下可压到 60px（保底 2 行）——再小不如把空间让给「保存说明 + 保存按钮」，列表反正能滚 */}
+      <div className="vcs-list" style={{ flex: '1 1 180px', minHeight: 60 }}>
+        {files.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>工作区没有改动可储藏（先修改文件，再回来保存）</div>}
         {files.map((f) => (
           <div key={f.path} className="vcs-row" style={{ cursor: 'default' }}>
             <input
@@ -222,7 +235,7 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
           </div>
         ))}
       </div>
-      <div className="row" style={{ margin: '12px 0' }}>
+      <div className="row" style={{ margin: '12px 0', flexShrink: 0 }}>
         <input
           type="text"
           placeholder="保存说明（可选）…"
@@ -242,7 +255,8 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
           📦 保存当前改动
         </button>
       </div>
-      <div className="vcs-list" style={{ maxHeight: 260 }}>
+      {/* Stash 列表不参与拉伸（多余高度归上面的工作区列表），仍按内容自适应、上限 260px */}
+      <div className="vcs-list" style={{ flex: '0 1 auto', maxHeight: 260 }}>
         {items.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>暂无 Stash</div>}
         {items.map((it) => (
           <div key={it.index} className="changed-row">
@@ -280,7 +294,9 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
           </div>
         ))}
       </div>
-      <ResultLine msg={msg} err={msgErr} />
+      <div style={{ flexShrink: 0 }}>
+        <ResultLine msg={msg} err={msgErr} />
+      </div>
       {/* 二次确认（工具风格） */}
       {cfm && (
         <ConfirmModal

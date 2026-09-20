@@ -261,10 +261,10 @@ const TOOLS: ToolDef[] = [
         <>Stash<span className={`push-count ${c.stashCount > 0 ? 'on' : ''}`}>{c.stashCount}</span></>
       ) : 'Stash',
       title: c.canStash === false
-        ? '工作区没有改动可暂存（先修改文件，暂存才有东西可收）'
+        ? '工作区没有改动可储藏（先修改文件，储藏才有东西可收）'
         : c.stashCount != null && c.stashCount > 0
-          ? `Stash 暂存区（${c.stashCount} 条）`
-          : 'Stash 暂存区',
+          ? `Stash 储藏（${c.stashCount} 条）`
+          : 'Stash 储藏',
       onClick: () => c.setModal({ type: 'stash' }),
       disabled: c.canStash === false,
     }),

@@ -524,3 +524,17 @@ export function IconInfo({ size = 16 }: IconProps) {
     </svg>
   );
 }
+
+/** 帮助问号（黄）：长说明收进悬浮提示后的入口——不占版面，悬浮出全文。
+ *  固定黄色（不走 currentColor）：在 16 套主题下都能一眼看出"这里可以问"，与文件夹图标同一套黄 */
+export function IconHelp({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      {/* 圆底：浅黄填充 + 深黄描边 */}
+      <circle cx="12" cy="12" r="9.2" fill="#f0c36d" stroke="#e8a13c" strokeWidth="1.6" />
+      {/* 问号：白色（用户指定"黄底 + 白字"，与系统 help 光标同观感） */}
+      <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 17h.01" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" />
+    </svg>
+  );
+}

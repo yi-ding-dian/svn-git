@@ -266,7 +266,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         if (action === 'push') {
           const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean) : undefined;
           result = (await vcs.stashPush?.(String(body.message ?? ''), paths?.length ? paths : undefined)) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
-          // stash 后工作区变干净：失效 30s 缓存，否则弹窗内的可暂存文件列表显示旧状态
+          // stash 后工作区变干净：失效 30s 缓存，否则弹窗内的可储藏文件列表显示旧状态
           if (result.ok) invalidateStatusCache(vcsOf().repo.root);
         }
         else if (action === 'pop') result = (await vcs.stashPop?.(Number(body.index ?? 0))) ?? { ok: false, message: MSG_UNSUPPORTED_OP };

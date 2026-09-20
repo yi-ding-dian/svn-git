@@ -176,14 +176,14 @@ export function BranchDialog(props: {
     } else if (name.includes('/')) {
       const local = name.split('/').slice(1).join('/');
       msg = `确认切换到远程分支 ${name}？将自动创建本地跟踪分支 ${local} 并切换过去。`;
-      if (check) msg += `当前有 ${check.changed} 个文件未提交/未暂存（已跟踪 ${check.tracked} 个、未跟踪 ${check.untracked} 个），建议先提交或暂存。`;
+      if (check) msg += `当前有 ${check.changed} 个文件未提交/未暂存（已跟踪 ${check.tracked} 个、未跟踪 ${check.untracked} 个），建议先提交或储藏。`;
     } else if (check) {
       // git 本地分支：能带过去的 vs 会被拒绝的（目标分支也改过这些文件）
       msg = `当前有 ${check.changed} 个文件未提交/未暂存：已跟踪 ${check.tracked} 个、未跟踪 ${check.untracked} 个。`;
       if (check.conflicts.length > 0) msg += `\n会被拒绝的文件：${check.conflicts.join('、')}（目标分支也改过这些文件）`;
-      msg += `\n\n建议先提交或暂存；仍要切换？`;
+      msg += `\n\n建议先提交或储藏；仍要切换？`;
     } else {
-      msg = `确认切换到分支 ${name}？工作区有未提交修改且会被覆盖时，切换会失败（请先提交或暂存）。`;
+      msg = `确认切换到分支 ${name}？工作区有未提交修改且会被覆盖时，切换会失败（请先提交或储藏）。`;
     }
     setCfm({ title: isTrunk ? '切回主干' : '切换分支', msg, action: () => act('switch', name) });
   };
@@ -221,7 +221,7 @@ export function BranchDialog(props: {
     // L1 拦截：重叠（git）或 WC 落后（svn）→ 不执行合并，说明原因
     if (check && (check.conflicts.length > 0 || Boolean(check.outdated))) {
       lines.push('');
-      if (check.conflicts.length > 0) lines.push('请先提交或暂存这些文件，再重新合并。');
+      if (check.conflicts.length > 0) lines.push('请先提交或储藏这些文件，再重新合并。');
       if (check.outdated) lines.push('请先「更新」工作副本，再重新合并。');
       if (lineConflicts.length > 0) {
         lines.push('');
@@ -298,7 +298,7 @@ export function BranchDialog(props: {
             <>
               分支 = 同一份代码的<strong>平行工作空间</strong>，互不干扰。在分支上改代码不会影响主干。
               <br />· <strong className="help-k ok">➕ 新建</strong>：输入名称回车 = 从当前代码状态开一条新线
-              <br />· <strong className="help-k primary">⇄ 切换</strong>：换到另一个分支工作。未提交的修改能否带过去，取决于目标分支有没有动过那些文件——目标分支没动 → 改动跟着你走；目标分支也改过 → 切换会被拒绝，需先提交或暂存（未跟踪的新文件永远能带过去）
+              <br />· <strong className="help-k primary">⇄ 切换</strong>：换到另一个分支工作。未提交的修改能否带过去，取决于目标分支有没有动过那些文件——目标分支没动 → 改动跟着你走；目标分支也改过 → 切换会被拒绝，需先提交或储藏（未跟踪的新文件永远能带过去）
               <br />· <strong className="help-k accent">🔀 合并</strong>：把别的分支的改动搬进当前分支。<strong>先切到目的地分支，再点来源分支的「合并」</strong>（站在哪，哪就是目的地）
               <br />· <strong className="help-k err">✕ 删除</strong>：已合并的分支可删除（内容已进目标分支，不丢失）。主干（main/master）是团队稳定版本，不能删除
               <br />
