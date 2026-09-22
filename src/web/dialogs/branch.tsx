@@ -13,6 +13,9 @@ export function BranchDialog(props: {
   repoType: 'svn' | 'git';
   onClose: () => void;
   onChanged: () => void;
+  /** 鼠标附近弹的全局提示（err=true 时按错误态显示、停留更久）：操作结果在弹窗里只有底部一行小字，
+   *  点完视线不往那儿去就看不到（用户实报"点了没反应"）——两处都显示 */
+  onToast: (msg: string, err?: boolean) => void;
 }) {
   const [data, setData] = useState<BranchInfo | null>(null);
   const [sel, setSel] = useState('');
@@ -94,8 +97,10 @@ export function BranchDialog(props: {
     void runAction(
       () => post.branch(action, name, force, undefined, base),
       (m, err) => {
-        setMsg(action === 'merge' && err ? `${m} 可在「解决冲突」中用「中止合并」放弃本次合并` : m);
+        const text = action === 'merge' && err ? `${m} 可在「解决冲突」中用「中止合并」放弃本次合并` : m;
+        setMsg(text);
         setMsgErr(Boolean(err));
+        props.onToast(text, Boolean(err)); // 鼠标附近也弹一次（弹窗里那行保留，不替代）
       },
       () => {
         load();

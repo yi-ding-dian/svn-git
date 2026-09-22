@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { detectRepo } from '../vcs/detect.js';
 import { platform } from '../platform/index.js';
-import { isIgnoredByRules, gitIgnoreSources } from '../vcs/ignore.js';
+import { makeGitIgnoreChecker } from '../vcs/ignore.js';
 import { BINARY_EXTS } from '../shared/types.js';
 import { run } from '../vcs/exec.js';
 import {
@@ -523,15 +523,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             arr.push(n);
           }
         };
-        // 忽略规则（与 /api/fs 一致）：未版本化目录展开时,被 .gitignore 匹配的条目不显示为 '?'
-        // 忽略规则（与 /api/fs 一致）：未版本化目录展开时,被 git 忽略（.gitignore/global/exclude 三来源）匹配的条目不显示为 '?'
-        let gitIgnoreRulesAll: string[] | null = null;
-        const loadGitignore = async (): Promise<string[]> => {
-          if (!gitIgnoreRulesAll) {
-            gitIgnoreRulesAll = (await gitIgnoreSources(repo.root)).flatMap((s) => s.rules);
-          }
-          return gitIgnoreRulesAll;
-        };
+        // 忽略判定（与 /api/fs 同一套：直接问 git）
+        const gitIgnore = makeGitIgnoreChecker(repo.root);
         // '?' 目录：递归展开内部全部文件（未版本化目录内的所有内容都是新文件）
         const walkUnversionedDir = async (relDir: string) => {
           let names: string[];
@@ -542,8 +535,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
           for (const n of names) {
             if (n === '.svn' || n === '.git') continue;
-            // 被忽略规则匹配（如 dist/、node_modules/）→ 不视为新文件,跳过
-            if (isIgnoredByRules(await loadGitignore(), n)) continue;
+            // 被忽略（如 dist/、node_modules/）→ 不视为新文件，跳过
+            if (await gitIgnore.isIgnored(relDir, n)) continue;
             const base = relDir.replace(/\/+$/, '');
             const rel = base ? `${base}/${n}` : n;
             const abs = path.join(repo.root, rel);
@@ -637,15 +630,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
         }
 
-        // 忽略规则检测：status 无条目的磁盘文件/目录，若被忽略规则匹配则标记 'I'
-        // （git：.gitignore / global(excludesFile) / .git/info/exclude 三来源；svn：status 权威判定）
-        let gitIgnoreRulesAll: string[] | null = null;
-        const getIgnoreRules = async (dirRel: string): Promise<string[]> => {
-          if (!gitIgnoreRulesAll) {
-            gitIgnoreRulesAll = (await gitIgnoreSources(repo.root)).flatMap((s) => s.rules);
-          }
-          return gitIgnoreRulesAll;
-        };
+        // 忽略规则检测：status 无条目的磁盘文件/目录，若被忽略则标记 'I'
+        // （git：直接问 git —— check-ignore 权威判定，子目录 .gitignore/带路径规则/否定规则全归它算；
+        //   svn：status --no-ignore 权威判定）
+        const gitIgnore = makeGitIgnoreChecker(repo.root);
         // svn 忽略族：`svn status --no-ignore` 单次全量取 ignored 路径集合（规则来源一律权威：
         // svn:ignore 属性 / 客户端 global-ignores / 服务器端——注意 svn status --xml 默认不含
         // ignored 条目，必须用 plain 文本解析；被忽略目录整体标 I，其内部条目由祖先链判定）
@@ -673,13 +661,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
           return svnIgnored;
         };
-        /** 当前仓库忽略判定：svn 用 status 集合（权威）；git 用三来源规则 */
+        /** 当前仓库忽略判定：svn 用 status 集合（权威）；git 用 git check-ignore（同样权威） */
         const isIgnoredEntry = async (dirRel: string, name: string): Promise<boolean> => {
           if (repo.type === 'svn') {
             return (await getSvnIgnored()).has((dirRel === '' || dirRel === '.' ? '' : dirRel + '/') + name);
           }
-          const rules = await getIgnoreRules(dirRel);
-          return rules.length > 0 && isIgnoredByRules(rules, name);
+          return gitIgnore.isIgnored(dirRel, name);
         };
         // 祖先链上有被忽略目录（如 .gitignore 的 node_modules/）→ 内部所有内容都算忽略（I）
         // （被忽略目录不在 status 条目里，需逐级用忽略规则匹配祖先目录名）
@@ -697,22 +684,6 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             }
           }
         }
-        // 目录内所有条目（一层文件/子目录）都被忽略规则命中 → 目录整体视为已忽略
-        // （如 .claude/ 内只有 settings.local.json 被 *.local.json 命中：目录名不匹配规则，
-        //   但目录无任何版本库内容——不显示 I 会被误显示为 √ 干净，误导"已在版本库"）
-        const isDirAllIgnored = (dirRel: string, rules: string[]): boolean => {
-          let names: string[];
-          try {
-            names = fs.readdirSync(path.join(repo.root, dirRel));
-          } catch {
-            return true; // 读取失败：无可忽略内容，视作全体忽略
-          }
-          if (names.length === 0) return false; // 真空目录：无内容可忽略，保持"干净"
-          return names.every((n) => {
-            if (n === '.git' || n === '.svn') return true;
-            return isIgnoredByRules(rules, n);
-          });
-        };
         const prefix = rel ? rel + '/' : '';
         const dirs: string[] = [];
         const files: string[] = [];
@@ -745,11 +716,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             else {
               const parentOf = path.dirname(relDir) === '.' ? '' : path.dirname(relDir);
               if (await isIgnoredEntry(parentOf, d)) code = 'I';
-              // git：目录名未被规则命中,但目录内全部条目都被规则忽略 → 目录整体视作"已忽略"（.claude 场景）
-              else if (repo.type === 'git') {
-                const rules = await getIgnoreRules(parentOf);
-                if (rules.length && isDirAllIgnored(relDir, rules)) code = 'I';
-              }
+              // git：目录名未被规则命中，但目录内全部条目都被忽略 → 目录整体视作"已忽略"（.claude 场景）
+              else if (repo.type === 'git' && (await gitIgnore.allIgnored(relDir))) code = 'I';
             }
           }
           const sub = items.filter((i) => i.path.startsWith(relDir + '/'));

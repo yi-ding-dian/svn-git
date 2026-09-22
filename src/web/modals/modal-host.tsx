@@ -237,6 +237,12 @@ export function ModalHost(props: ModalHostProps) {
         <BranchDialog
           repoType={repo.type}
           onClose={() => setModal(null)}
+          onToast={(m, err) => {
+            // 鼠标附近弹的全局提示：分支操作的结果原本只在弹窗底部一行小绿字，点完视线不往那儿去
+            // 就完全看不到（用户实报"点了没反应"）——两处都保留
+            setToast(m);
+            setToastErr(Boolean(err));
+          }}
           onChanged={() => {
             refresh();
             get

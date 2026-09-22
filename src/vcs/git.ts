@@ -926,13 +926,53 @@ export class GitVcs {
     return { ok: true, message: `已删除分支 ${name}` };
   }
 
-  /** 合并分支到当前分支 */
+  /** 合并分支到当前分支。
+   *  提示一律"说人话"：不带分支名看不出合的是谁，不区分"已是最新"会让人以为合了（其实什么都没发生），
+   *  冲突时只丢一句"可能有冲突"还得自己去翻——下面按 git 的真实输出分情况给结果。 */
   async merge(name: string): Promise<VcsResult> {
+    // 当前分支名（提示里要说清"合并进哪个分支"）。用 rev-parse --abbrev-ref 而不是 branch --show-current：
+    // 后者是 git 2.22+ 才有的，本机 2.20.1 会报 unknown option（实测）。分离头指针时它返回 "HEAD"
+    const curRaw = await this.exec(['rev-parse', '--abbrev-ref', 'HEAD']);
+    const curName = curRaw.stdout.trim();
+    const cur = !curName || curName === 'HEAD' ? '当前分支' : curName;
     const res = await this.exec(['merge', name], { timeoutMs: 120_000 });
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '合并失败（可能有冲突）' };
-    // 中英文兼容：真实合并（Merge made by / 策略合并）vs 快进
-    const m = res.stdout.match(/Merge made by|merge made by|策略合并|合并提交/i);
-    return { ok: true, message: m ? '合并成功' : '合并完成（快进）' };
+    const out = res.stdout;
+    const err = res.stderr;
+
+    if (res.code !== 0) {
+      // 冲突：git 把冲突写进 **stdout**（stderr 常为空），不读它就只剩一句"可能有冲突"
+      const conflicts = [...out.matchAll(/^冲突（内容）[:：].*?于 (.+)$/gm)].map((m) => m[1]!.trim());
+      for (const m of out.matchAll(/^CONFLICT \([^)]*\): .*? in (.+)$/gm)) conflicts.push(m[1]!.trim());
+      if (conflicts.length > 0) {
+        const list = conflicts.slice(0, 5).join('、') + (conflicts.length > 5 ? ` 等 ${conflicts.length} 个` : '');
+        return {
+          ok: false,
+          message: `合并 ${name} 时这些文件冲突了，需要手动解决（${conflicts.length} 个）：${list}\n解决完提交，合并就完成了`,
+        };
+      }
+      if (/不能合并|not something we can merge/i.test(err)) return { ok: false, message: `找不到分支 ${name}` };
+      if (/未合并的文件|you have unmerged files/i.test(err)) {
+        return { ok: false, message: `上次合并的冲突还没处理完，先去「解决冲突」里解决掉` };
+      }
+      if (/本地修改将被合并操作覆盖|local changes to the following files would be overwritten/i.test(err)) {
+        const files = [...err.matchAll(/^\s+(\S.*)$/gm)].map((m) => m[1]!.trim()).filter((s) => !/^(请|Please)/.test(s));
+        const list = files.length > 0 ? `：${files.slice(0, 5).join('、')}` : '';
+        return { ok: false, message: `这些文件你有未提交的改动，合并会覆盖它们，请先提交或贮藏${list}` };
+      }
+      return { ok: false, message: err.trim() || '合并失败' };
+    }
+
+    // 成功也分三种（原先只要没匹配到"真合并"就一律说成快进，"已经是最新的"因此看着像合过了）
+    if (/已经是最新的|Already up to date/i.test(out)) {
+      return { ok: true, message: `不用合并：${name} 的改动 ${cur} 里已经有了` };
+    }
+    if (/Fast-forward|^更新 /m.test(out)) {
+      return { ok: true, message: `${name} 上的改动已经进 ${cur} 了（现在两边内容一样）` };
+    }
+    if (/Merge made by|策略合并|合并提交/i.test(out)) {
+      return { ok: true, message: `已把 ${name} 合并进 ${cur}，生成了一条合并记录` };
+    }
+    return { ok: true, message: `已把 ${name} 合并进 ${cur}` };
   }
 
   /** 合并预检（git）：

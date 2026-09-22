@@ -24,6 +24,81 @@ export function isIgnoredByRules(rules: string[], name: string): boolean {
 
 // ---------- git 忽略三来源（渲染侧检测 / 写入侧定位共用，单一实现） ----------
 
+/**
+ * 批量判定：给定的一组路径里，哪些被 git 忽略 —— **直接问 git 自己**（权威）。
+ * 子目录 .gitignore / 带路径的规则（`docs/x.md`）/ `**` / 否定 `!` / 目录规则 / global /
+ * .git/info/exclude 全由 git 算，与 `git status` 永远一致；已跟踪的路径不会被报告为忽略
+ * （git 语义，默认会查 index）。
+ *
+ * 旧实现是自己读**仓库根**的 .gitignore、再拿**文件名**去比对规则 —— 子目录里的 .gitignore
+ * 一个都不读、带路径的规则也匹配不上，被忽略的文件因此在浏览视图里显示成「✓ 已版本化、干净」
+ * （用户实报：`RAG/.gitignore` 里的 `docs/xxx.md` 命中的文档显示为 ✓，其实它根本不在版本库里）。
+ *
+ * @param relPaths 相对仓库根的路径（`/` 分隔）
+ */
+export async function gitCheckIgnore(repoRoot: string, relPaths: string[]): Promise<Set<string>> {
+  const ignored = new Set<string>();
+  if (relPaths.length === 0) return ignored;
+  // -z：NUL 分隔且不做引号转义，中文/空格路径原样进出
+  const r = await run('git', ['check-ignore', '--stdin', '-z'], {
+    cwd: repoRoot,
+    stdinData: relPaths.join('\0') + '\0',
+    timeoutMs: 30_000,
+  });
+  // 退出码：0=有被忽略的；1=一个都没有（正常结果，不是错误）；>1=出错
+  if (r.code !== 0 && r.code !== 1) return ignored;
+  for (const p of r.stdout.split('\0')) if (p) ignored.add(p);
+  return ignored;
+}
+
+/** 路径归一：'' / '.' 都表示仓库根 */
+const normDir = (d: string): string => (!d || d === '.' ? '' : d.replace(/\/+$/, ''));
+
+/**
+ * 目录级忽略判定器：一个目录只跑一次 `git check-ignore`（批量判该目录下所有条目），之后查内存集合。
+ * 渲染一个目录时会被逐条目问很多次，必须缓存住。
+ */
+export function makeGitIgnoreChecker(repoRoot: string) {
+  const cache = new Map<string, Set<string>>();
+  const load = async (dirRel: string): Promise<Set<string>> => {
+    const key = normDir(dirRel);
+    const hit = cache.get(key);
+    if (hit) return hit;
+    let set = new Set<string>();
+    try {
+      const names = fs.readdirSync(path.join(repoRoot, key || '.'));
+      set = await gitCheckIgnore(
+        repoRoot,
+        names.map((n) => (key ? `${key}/${n}` : n))
+      );
+    } catch {
+      /* 目录读不到：当作没有忽略项（宁可显示 ? / ✓，也不误标 I） */
+    }
+    cache.set(key, set);
+    return set;
+  };
+  return {
+    /** 该目录下的 name 是否被忽略 */
+    isIgnored: async (dirRel: string, name: string): Promise<boolean> => {
+      const key = normDir(dirRel);
+      return (await load(key)).has(key ? `${key}/${name}` : name);
+    },
+    /** 目录内所有条目都被忽略（目录名没被规则命中，但里面没一个是版本库内容，如 .claude/ 只含 *.local.json） */
+    allIgnored: async (dirRel: string): Promise<boolean> => {
+      const key = normDir(dirRel);
+      let names: string[];
+      try {
+        names = fs.readdirSync(path.join(repoRoot, key || '.'));
+      } catch {
+        return true; // 读取失败：无可忽略内容，视作全体忽略
+      }
+      if (names.length === 0) return false; // 真空目录：无内容可忽略，保持"干净"
+      const set = await load(key);
+      return names.every((n) => n === '.git' || n === '.svn' || set.has(key ? `${key}/${n}` : n));
+    },
+  };
+}
+
 /** git 全局忽略文件：core.excludesFile 配置值（未配置 → null） */
 export async function gitGlobalExcludesFile(): Promise<string | null> {
   const r = await run('git', ['config', '--global', 'core.excludesfile']);
