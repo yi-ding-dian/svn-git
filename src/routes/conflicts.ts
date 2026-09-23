@@ -102,11 +102,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           const mine = await vcs.diff(undefined, undefined, path);
           const tL = diffChangedLines(theirs.ok ? theirs.output : '');
           const mL = diffChangedLines(mine.ok ? mine.output : '');
-          // 行冲突 = 删除行交集 ∪ 插入位置交集
-          const clashSet = new Set<number>();
-          for (const l of tL.del) if (mL.del.has(l)) clashSet.add(l);
-          for (const l of tL.ins) if (mL.ins.has(l)) clashSet.add(l);
-          const lines = [...clashSet].sort((a, b) => a - b);
+          // 行冲突 = 删除行交集 ∪ 插入位置交集。
+          // 注意：**改一行**会同时体现为"删了第 N 行"和"在第 N 行之后插入"（插入位置记成 N+1），
+          // 两者是同一处 —— 不去重的话"N 处"会翻倍，插入位置那个行号还会把第 N+1 行误标成冲突。
+          const delClash = new Set<number>();
+          for (const l of tL.del) if (mL.del.has(l)) delClash.add(l);
+          const insClash = new Set<number>();
+          for (const l of tL.ins) if (mL.ins.has(l)) insClash.add(l);
+          for (const l of [...insClash]) if (delClash.has(l - 1)) insClash.delete(l);
+          const lines = [...delClash, ...insClash].sort((a, b) => a - b);
           if (lines.length > 0) clash.push({ path, lines });
         }
         sendJson(res, 200, { ...r, conflictRisk: clash });

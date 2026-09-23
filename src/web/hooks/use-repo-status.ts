@@ -28,7 +28,9 @@ export function useRepoStatus(opts: { repoType?: string | null; repoRoot?: strin
   /** 工作区是否有可 stash 的改动（未跟踪也算，与 stash -u 语义一致） */
   const [canStash, setCanStash] = useState<boolean | null>(null);
   const [remoteHint, setRemoteHint] = useState<RemoteHint | null>(null);
-  const [riskFiles, setRiskFiles] = useState<string[]>([]);
+  /** 有行冲突的文件 + 冲突行号（BASE 坐标）：弹窗据此高亮"撞在哪几行"——
+   *  只传 path 的话，用户还得自己肉眼比对两侧 diff 找冲突处（用户实报过） */
+  const [riskFiles, setRiskFiles] = useState<{ path: string; lines: number[] }[]>([]);
   /** 新建仓库成功后的引导条（一次性，可关闭；session 级） */
   const [onboard, setOnboard] = useState<string | null>(null);
 
@@ -77,7 +79,7 @@ export function useRepoStatus(opts: { repoType?: string | null; repoRoot?: strin
         const risk = r.conflictRisk?.length ?? 0;
         if (r.behind > 0 || (r.lockedByOthers?.length ?? 0) > 0 || risk > 0) {
           setRemoteHint({ behind: r.behind, locked: r.lockedByOthers?.length ?? 0, risk, files: r.updatedFiles ?? [], remoteLogs: r.remoteLogs ?? [] });
-          setRiskFiles((r.conflictRisk ?? []).map((f) => f.path));
+          setRiskFiles(r.conflictRisk ?? []); // 带 lines（冲突行号）一起给弹窗，别再 map 成纯路径
         } else {
           setRemoteHint(null);
           setRiskFiles([]);

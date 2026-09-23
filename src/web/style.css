@@ -917,6 +917,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .diff .hunk { color: var(--accent); }
 .diff .filehead { color: var(--accent); font-weight: 700; }
 .diff .meta { color: var(--dim); }
+/* 双方都改到的同一行（后端按行号交集算出来，经 DiffRender 的 marks 传入）：只在 add/del 底色之上
+   叠一层琥珀背景。别再加左侧竖条之类的装饰（加过一次，用户看了让去掉） */
+.diff .line.mark { background: rgba(210,153,34,.22); }
 
 /* ---------- 空状态 ---------- */
 .empty { color: var(--dim); text-align: center; padding: 60px 0; }

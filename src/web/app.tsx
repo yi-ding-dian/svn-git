@@ -429,7 +429,7 @@ export function App() {
             secondaryLabel: '查看对比',
             action: () => setModal(null),
             secondaryAction: () => {
-              setModal({ type: 'remote-conflicts', files: clash.map((f) => f.path) });
+              setModal({ type: 'remote-conflicts', files: clash }); // 带 lines 一起传，弹窗才能标出冲突行
             },
           });
           return; // 不放行提交
@@ -773,7 +773,7 @@ export function App() {
           <span>
             {remoteHint.risk > 0 ? (
               <>
-                ⚠ <b>你修改的 {remoteHint.risk} 个文件已被他人先提交新版本</b>
+                ⚠ <b>有 {remoteHint.risk} 个文件你和对方改了同一处，更新时会冲突</b>
                 {remoteHint.behind > 0 ? `（远程 ${remoteHint.behind} 个新提交 · 共 ${remoteFileCount} 个文件）` : ''}
               </>
             ) : (

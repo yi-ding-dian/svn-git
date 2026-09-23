@@ -11,7 +11,7 @@ import { StageHunksModal } from './stage-hunks.js';
 /** 全局弹窗状态（App 根组件 / 顶部工具栏共用） */
 export type Modal =
   | { type: 'commit'; paths: string[] }
-  | { type: 'commit-select'; dir: string; dirLabel: string; items: { path: string; code: string; isDir: boolean }[]; checked?: string[]; stagedOnly?: string[] }
+  | { type: 'commit-select'; dir: string; dirLabel: string; items: { path: string; code: string; isDir: boolean }[]; checked?: string[]; stagedOnly?: string[]; msg?: string }
   | { type: 'login' }
   | { type: 'open' }
   | { type: 'branches' }
@@ -26,7 +26,7 @@ export type Modal =
   | { type: 'env' }
   | { type: 'font' }
   | { type: 'conflicts' }
-  | { type: 'remote-conflicts'; files: string[] }
+  | { type: 'remote-conflicts'; files: { path: string; lines: number[] }[] }
   | { type: 'revert-confirm'; dir: string; dirLabel: string; items: { path: string; code: string }[] }
   | { type: 'rename'; from: string; fsMode: boolean }
   | {
@@ -431,14 +431,16 @@ export function CommitSelectModal(props: {
   checked?: string[];
   /** 已部分暂存（hunk 级）的文件：提交时跳过整文件 add，只提交已选中的块 */
   stagedOnly?: string[];
-  /** 双击文件查看差异（path, 当前勾选快照, 已部分暂存列表） */
-  onDiff?: (path: string, checked: string[], stagedOnly: string[]) => void;
+  /** 恢复写好的提交注释：去看差异 / 去提交确认再返回时，注释不能丢（用户实报"返回发现注释清空了"） */
+  msg?: string;
+  /** 双击文件查看差异（path, 当前勾选快照, 已部分暂存列表, 当前注释） */
+  onDiff?: (path: string, checked: string[], stagedOnly: string[], msg: string) => void;
   onClose: () => void;
   onConfirm: (paths: string[], message: string, stagedOnly: string[]) => void;
 }) {
   const stagedSet = new Set(props.stagedOnly ?? []);
   const { checked, setChecked, toggle } = useCheckedSet(props.checked ?? props.items.map((i) => i.path));
-  const [msg, setMsg] = useState('');
+  const [msg, setMsg] = useState(props.msg ?? '');
   const [err, setErr] = useState('');
   /** 已部分暂存（hunk 级）的文件；先在本地维护，随 onConfirm 一并交出去，App 再持久到弹窗状态里 */
   const [stagedLocal, setStagedLocal] = useState<string[]>(props.stagedOnly ?? []);
@@ -560,7 +562,7 @@ export function CommitSelectModal(props: {
                   : it.path}
                 onDoubleClick={(ev) => {
                   ev.preventDefault();
-                  if (props.onDiff && !it.isDir) props.onDiff(it.path, [...checked], stagedLocal);
+                  if (props.onDiff && !it.isDir) props.onDiff(it.path, [...checked], stagedLocal, msg);
                 }}
                 onContextMenu={(ev) => {
                   ev.preventDefault();

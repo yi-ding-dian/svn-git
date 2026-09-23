@@ -415,10 +415,11 @@ export function ModalHost(props: ModalHostProps) {
           items={modal.items}
           checked={modal.checked}
           stagedOnly={modal.stagedOnly}
+          msg={modal.msg}
           onClose={() => setModal(null)}
-          onDiff={(path, checked, stagedOnly) => {
-            // 双击文件 → 打开差异视图；返回时恢复本弹窗（含勾选状态与已部分暂存列表）
-            setDiffReturnModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked, stagedOnly });
+          onDiff={(path, checked, stagedOnly, msg) => {
+            // 双击文件 → 打开差异视图；返回时恢复本弹窗（含勾选、已部分暂存，**以及已写好的提交注释**）
+            setDiffReturnModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked, stagedOnly, msg });
             setModal(null);
             gotoDiff(path);
           }}
@@ -463,8 +464,8 @@ export function ModalHost(props: ModalHostProps) {
               ),
               confirmLabel: '确认提交',
               secondaryLabel: '返回修改',
-              // 返回修改：回到「提交修改的文件」弹窗（保留原目录、列表与勾选）
-              secondaryAction: () => setModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked: paths, stagedOnly }),
+              // 返回修改：回到「提交修改的文件」弹窗（保留原目录、列表、勾选与注释）
+              secondaryAction: () => setModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked: paths, stagedOnly, msg }),
               action: () => void doCommitSelected(paths, msg, stagedOnly),
             })
           }
