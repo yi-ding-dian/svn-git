@@ -983,6 +983,17 @@ textarea { resize: vertical; font-family: inherit; }
 .md-render th, .md-render td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; font-size: 0.95em; }
 .md-render th { background: var(--panel2); font-weight: 600; }
 .md-render tr:nth-child(even) td { background: var(--panel2); }
+/* ---------- 预览「全屏浏览」 ---------- */
+/* 预览面板浮到应用最上层铺满窗口（低于右键/主题气泡 300 与提示 999；图片放大 500 照常压在上面）。
+   只切这个 class、DOM 不重挂 → 进出全屏滚动位置不丢 */
+.pv-full {
+  position: fixed; inset: 0; z-index: 290; background: var(--bg);
+}
+/* 工具栏自带底色压在文档区上方：md 阅读主题可能把文档染成深色，而界面可能是浅色，
+   工具栏跟着文档走会看不见按钮字 */
+.pv-full > .row { padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--border); }
+/* 文档区铺满工具栏以下（去掉卡片边框/圆角）；阅读列最宽 1280px 居中，滚动条仍贴窗口边 */
+.pv-full .diff { border: 0; border-radius: 0; padding: 12px max(14px, calc((100% - 1280px) / 2)); }
 /* 更新中转圈 */
 .spinner {
   width: 36px; height: 36px; border: 3px solid var(--border2); border-top-color: var(--accent);

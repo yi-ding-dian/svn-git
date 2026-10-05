@@ -9,6 +9,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { get } from '../api.js';
 import { langOf, highlightLine } from '../highlight.js';
 import { renderMarkdown } from '../markdown.js';
+import { MdThemePopover, loadMdTheme, saveMdTheme, mdThemeVars, mdThemeName } from './md-theme.js';
 
 /** 预览目标：{文件名, 相对路径, 状态码?, 是否图片?}；文本内容由面板自行加载 */
 export interface PreviewTarget {
@@ -46,14 +47,25 @@ export function PreviewPane(props: Props) {
   const [matchIdx, setMatchIdx] = useState(0);
   /** md/图片预览图片放大查看（点击图片 → 全屏显示原图） */
   const [imgViewer, setImgViewer] = useState<string | null>(null);
+  /** 全屏浏览：面板浮到最上层铺满窗口（长文阅读用）。只切 className，DOM 不重挂 → 滚动位置不丢 */
+  const [full, setFull] = useState(false);
+  /** md 阅读主题（只染文档区，与界面主题无关）；localStorage 持久化，「跟随界面」= 'follow' */
+  const [mdTheme, setMdTheme] = useState(loadMdTheme);
+  /** md 主题气泡位置（null = 未打开） */
+  const [mdThemePop, setMdThemePop] = useState<{ x: number; y: number } | null>(null);
   const previewRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   /** 顶部说明文案（与旧 openFile 打开时生成的 note 一致；img 目标无说明） */
   const note = target.img ? undefined : target.code === '?' ? '未版本化文件（原文）' : '无差异 — 文件原文';
+  const isMd = target.name.toLowerCase().endsWith('.md');
+  /** md 阅读主题的 inline 变量（只打给 md 的预览容器；「跟随界面」为 undefined 不覆盖） */
+  const mdVars = isMd ? mdThemeVars(mdTheme) : undefined;
 
   // 目标变化（FsView 每次打开都写入新对象）→ 重置内部模式并重新读取内容
   useEffect(() => {
     setMdPreview(false); // 重新打开文件回到原文模式
+    setFull(false); // 重新打开文件退出全屏（换文件后满窗弹着会不知道在看哪个）
+    setMdThemePop(null); // 关掉可能开着的 md 主题气泡（主题本身是持久偏好，不重置）
     setBlameMode(false);
     setBlameData([]);
     setSearchActive(false);
@@ -99,13 +111,26 @@ export function PreviewPane(props: Props) {
   // Esc/←/Backspace 返回列表 · 其余键吞掉（预览打开时列表键盘不生效）
   const searchActiveRef = useRef(searchActive);
   searchActiveRef.current = searchActive;
+  const fullRef = useRef(full);
+  fullRef.current = full;
+  const mdPopRef = useRef(mdThemePop);
+  mdPopRef.current = mdThemePop;
   useEffect(() => {
     if (!props.active) return; // 视图隐藏时键盘不响应（防止穿透到其他视图）
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 输入框内不拦截（搜索框自身 onKeyDown 处理 Enter/Esc）
+      if (mdPopRef.current) {
+        if (e.key === 'Escape') setMdThemePop(null); // 气泡开着：Esc 只关气泡，不连预览一起关
+        return;
+      }
       if (searchActiveRef.current) {
         if (e.key === 'Escape') setSearchActive(false);
+        return;
+      }
+      if (fullRef.current && e.key === 'Escape') {
+        e.preventDefault();
+        setFull(false); // 全屏下 Esc 先退全屏（←/Backspace 仍是返回列表）
         return;
       }
       if (e.key === 'Escape' || e.key === 'ArrowLeft' || e.key === 'Backspace') {
@@ -161,8 +186,8 @@ export function PreviewPane(props: Props) {
   }, [blameMode, target.rel, props.onError]);
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <div className="row" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+    <div className={full ? 'pv-full' : undefined} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div className="row" style={{ marginBottom: full ? 0 : 8, flexWrap: 'wrap' }}>
         <span className="dim">{target.name}</span>
         {note && <span className="small" style={{ color: 'var(--accent)' }}>ℹ {note}</span>}
         {searchActive ? (
@@ -202,16 +227,36 @@ export function PreviewPane(props: Props) {
         >
           📜 追溯
         </button>
+        {isMd && (
+          <button
+            className={`mini ${mdTheme !== 'follow' ? 'primary' : ''}`}
+            title="md 阅读主题：只改文档区配色，界面主题不受影响"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setMdThemePop({ x: r.left, y: r.bottom + 4 });
+            }}
+          >
+            🎨 主题{mdTheme === 'follow' ? '' : ` · ${mdThemeName(mdTheme)}`}
+          </button>
+        )}
         <span className="grow" />
-        {target.name.toLowerCase().endsWith('.md') && (
+        <button
+          className={`mini ${full ? 'primary' : ''}`}
+          onClick={() => setFull((v) => !v)}
+          title={full ? '退出全屏（Esc）' : '铺满窗口阅读长文，Esc 退出'}
+        >
+          ⛶ {full ? '退出全屏' : '全屏浏览'}
+        </button>
+        {isMd && (
           <button className="mini" onClick={() => setMdPreview((v) => !v)} title="Markdown 渲染预览">
             {mdPreview ? '📄 查看原文' : '👁 预览'}
           </button>
         )}
-        <span className="dim small">← 键返回列表 · / 搜索</span>
+        <span className="dim small">{full ? 'Esc 退出全屏 · ' : ''}← 键返回列表 · / 搜索</span>
         <button className="mini" onClick={props.onClose}>← 返回列表</button>
       </div>
-      <div className="diff" style={{ flex: 1, overflow: 'auto' }}>
+      {/* md 阅读主题：变量 inline 打在这个滚动容器上，只作用其子树（工具栏/界面不受影响） */}
+      <div className="diff" style={{ flex: 1, overflow: 'auto', ...mdVars }}>
         {/* 图片预览：直接显示图片（点击放大复用 md-render 的放大机制） */}
         {target.img ? (
           <div
@@ -278,6 +323,19 @@ export function PreviewPane(props: Props) {
           })
         )}
       </div>
+      {/* md 阅读主题气泡：选完接着看（不关气泡，可连续试）；Esc / 点遮罩只关气泡，预览留着 */}
+      {mdThemePop && (
+        <MdThemePopover
+          x={mdThemePop.x}
+          y={mdThemePop.y}
+          current={mdTheme}
+          onPick={(k) => {
+            setMdTheme(k);
+            saveMdTheme(k);
+          }}
+          onClose={() => setMdThemePop(null)}
+        />
+      )}
       {/* 图片放大查看：全屏深色遮罩 + 原图自适应，点击遮罩 / ESC 关闭 */}
       {imgViewer && (
         <div
