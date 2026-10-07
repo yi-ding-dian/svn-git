@@ -48,7 +48,7 @@ interface Props {
   onLog: (path: string) => void;
   onCommitSelect: (dir: string, dirLabel: string) => void;
   onUpdateDir: (dir: string) => void;
-  onToast: (msg: string) => void;
+  onToast: (msg: string, err?: boolean) => void;
 }
 
 
@@ -462,7 +462,7 @@ export function FsView(props: Props) {
         onRowClick(r.rel, idx, ev, { name: r.name, isDir: r.isDir, code: r.code, size: r.size, mtime: r.mtime, relPath: r.rel } as FsEntry);
         if (r.isDir && r.miss) {
           // 缺失目录（树/过滤树共用）：磁盘已不存在，展开/折叠会加载空数据——拦截并提示还原
-          props.onToast('目录已在磁盘上缺失，请右键「还原」恢复');
+          props.onToast('目录已在磁盘上缺失，请右键「还原」恢复', true);
           return;
         }
         if (r.isDir && !ev.ctrlKey && !ev.shiftKey) {
@@ -482,7 +482,7 @@ export function FsView(props: Props) {
       onDoubleClick={(r) => {
         setTip(null); // 双击即关闭悬浮卡片
         if (r.miss) {
-          props.onToast('文件已在磁盘上缺失，请右键「还原」恢复');
+          props.onToast('文件已在磁盘上缺失，请右键「还原」恢复', true);
           return;
         }
         if (filtered) {
@@ -519,7 +519,7 @@ export function FsView(props: Props) {
       }
       // 办公文档/压缩包等二进制：双击不打开（diff 无意义、原文会乱码、大文件拖死界面），提示走「打开方式…」
       if (isBinaryFile(rel)) {
-        props.onToast('二进制文档：右键「打开方式…」用系统程序打开');
+        props.onToast('二进制文档：右键「打开方式…」用系统程序打开', true);
         return;
       }
       if (code && code !== '?' && code !== 'I') {
@@ -832,7 +832,7 @@ export function FsView(props: Props) {
     void post
       .reveal(rel)
       .then(() => props.onToast('已打开文件管理器'))
-      .catch((err: Error) => props.onToast(`打开失败: ${err.message}`));
+      .catch((err: Error) => props.onToast(`打开失败: ${err.message}`, true));
   };
 
   // 右键菜单服务：菜单项动作所需数据/回调（menus.tsx 纯构建 items,不直接碰组件状态）
@@ -993,6 +993,7 @@ export function FsView(props: Props) {
           failed.length
             ? `已复制 ${okCount} 个${picked}${sub}；${failed.length} 个失败：${failed.slice(0, 3).join('、')}${failed.length > 3 ? ' 等' : ''}`
             : `已复制 ${okCount} 个文件${picked}${sub}`,
+          failed.length > 0, // 有失败项就按错误态显示（停留久一点，也提醒去处理）
         );
       },
       [mode, dir, load, loadNode], // eslint-disable-line react-hooks/exhaustive-deps
@@ -1028,7 +1029,7 @@ export function FsView(props: Props) {
           onRowClick(rel, i, ev, e);
           // 缺失目录：磁盘已不存在，进入会 ENOENT——拦截并提示还原
           if (e.isDir && e.miss) {
-            props.onToast('目录已在磁盘上缺失，请右键「还原」恢复');
+            props.onToast('目录已在磁盘上缺失，请右键「还原」恢复', true);
             return;
           }
           if (e.isDir && !ev.ctrlKey && !ev.shiftKey) {
@@ -1039,7 +1040,7 @@ export function FsView(props: Props) {
         onDoubleClick={() => {
           setTip(null); // 双击即关闭悬浮卡片
           if (e.miss) {
-            props.onToast('文件已在磁盘上缺失，请右键「还原」恢复');
+            props.onToast('文件已在磁盘上缺失，请右键「还原」恢复', true);
             return;
           }
           if (!e.isDir) void openFile(e.name, e.code, rel);
@@ -1092,8 +1093,8 @@ export function FsView(props: Props) {
   const svnLock = (rel: string, action: 'lock' | 'unlock') => {
     void post
       .svnLock(action, rel)
-      .then((r) => props.onToast(r.message))
-      .catch((err: Error) => props.onToast((err as Error).message));
+      .then((r) => props.onToast(r.message, !r.ok))
+      .catch((err: Error) => props.onToast((err as Error).message, true));
   };
 
   const rowButtons = (e: { code: string; isDir: boolean; rel: string; name: string; miss?: boolean }) => (
@@ -1477,7 +1478,7 @@ export function FsView(props: Props) {
                   onDoubleClick={() => {
                     setTip(null); // 双击即关闭悬浮卡片
                     if (e.miss) {
-                      props.onToast(e.isDir ? '目录已在磁盘上缺失，请右键「还原」恢复' : '文件已在磁盘上缺失，请右键「还原」恢复');
+                      props.onToast(e.isDir ? '目录已在磁盘上缺失，请右键「还原」恢复' : '文件已在磁盘上缺失，请右键「还原」恢复', true);
                       return;
                     }
                     if (e.isDir) {

@@ -144,7 +144,7 @@ function RemoteList() {
 // ==================== Git 信息与配置 ====================
 
 /** Git 信息弹窗：分支 / 远程 / 上游 / 最近提交，可修改远程地址 */
-export function GitInfoModal(props: { onClose: () => void; onToast: (m: string) => void }) {
+export function GitInfoModal(props: { onClose: () => void; onToast: (m: string, err?: boolean) => void }) {
   const [info, setInfo] = useState<{
     branch: string;
     remote: string;
@@ -161,23 +161,23 @@ export function GitInfoModal(props: { onClose: () => void; onToast: (m: string) 
         setInfo(r);
         setUrl(r.remote);
       })
-      .catch((e: Error) => props.onToast((e as Error).message));
+      .catch((e: Error) => props.onToast((e as Error).message, true));
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = () => {
     if (!url.trim()) {
-      props.onToast('远程地址不能为空');
+      props.onToast('远程地址不能为空', true);
       return;
     }
     setBusy(true);
     void post
       .gitConfig(url.trim())
       .then((r) => {
-        props.onToast(r.message);
+        props.onToast(r.message, !r.ok);
         if (r.ok) load();
       })
-      .catch((e: Error) => props.onToast(`配置失败: ${(e as Error).message}`))
+      .catch((e: Error) => props.onToast(`配置失败: ${(e as Error).message}`, true))
       .finally(() => setBusy(false));
   };
 
@@ -246,7 +246,7 @@ export function GitPushAuthModal(props: {
   error?: string;
   onClose: () => void;
   onSaved: () => void;
-  onToast: (m: string) => void;
+  onToast: (m: string, err?: boolean) => void;
 }) {
   const [username, setUsername] = useState(props.username ?? '');
   const [password, setPassword] = useState('');
@@ -264,17 +264,17 @@ export function GitPushAuthModal(props: {
 
   const save = () => {
     if (!username.trim() || !password) {
-      props.onToast('请填写用户名和密码');
+      props.onToast('请填写用户名和密码', true);
       return;
     }
     setBusy(true);
     void post
       .gitAuthSave(username.trim(), password)
       .then((r) => {
-        props.onToast(r.message);
+        props.onToast(r.message, !r.ok);
         if (r.ok) props.onSaved();
       })
-      .catch((e: Error) => props.onToast(`保存失败: ${(e as Error).message}`))
+      .catch((e: Error) => props.onToast(`保存失败: ${(e as Error).message}`, true))
       .finally(() => setBusy(false));
   };
 

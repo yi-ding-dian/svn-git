@@ -83,8 +83,8 @@ export interface ModalHostProps {
     setInfo: (r: RepoInfo) => void;
     setOnboard: (v: string | null) => void;
     setView: (v: View) => void;
-    setToast: (m: string) => void;
-    setToastErr: (v: boolean) => void;
+    /** 统一提示入口：默认成功样式，失败显式传 true（见 app.tsx showToast） */
+    showToast: (m: string, err?: boolean) => void;
     setDiffReturnModal: (m: Modal) => void;
   };
   /** 当前仓库与只读上下文 */
@@ -130,7 +130,7 @@ export function ModalHost(props: ModalHostProps) {
   const { state, set, ctx, appearance, theme, actions } = props;
   const { modal, pushAuth, updateResult, themePop, recentMore, history, invalidPaths, openHistoryItem, pushing, updating, updateElapsed, configUser } = state;
   const { repo, env, info } = ctx;
-  const { setModal, setPushAuth, setUpdateResult, setThemePop, setRecentMore, setConfigUser, setInfo, setOnboard, setView, setToast, setToastErr, setDiffReturnModal } = set;
+  const { setModal, setPushAuth, setUpdateResult, setThemePop, setRecentMore, setConfigUser, setInfo, setOnboard, setView, showToast, setDiffReturnModal } = set;
   const { doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelPush, cancelUpdate } = actions;
 
   return (
@@ -155,7 +155,7 @@ export function ModalHost(props: ModalHostProps) {
               .catch(() => {});
             refresh();
           }}
-          onToast={setToast}
+          onToast={showToast}
         />
       )}
       {modal?.type === 'open' && (
@@ -169,7 +169,7 @@ export function ModalHost(props: ModalHostProps) {
             setModal(null);
             loadHistory();
           }}
-          onToast={setToast}
+          onToast={showToast}
           onClose={() => setModal(null)}
         />
       )}
@@ -240,8 +240,7 @@ export function ModalHost(props: ModalHostProps) {
           onToast={(m, err) => {
             // 鼠标附近弹的全局提示：分支操作的结果原本只在弹窗底部一行小绿字，点完视线不往那儿去
             // 就完全看不到（用户实报"点了没反应"）——两处都保留
-            setToast(m);
-            setToastErr(Boolean(err));
+            showToast(m, Boolean(err));
           }}
           onChanged={() => {
             refresh();
@@ -328,13 +327,13 @@ export function ModalHost(props: ModalHostProps) {
           onClose={() => setRecentMore(null)}
         />
       )}
-      {modal?.type === 'git-info' && <GitInfoModal onClose={() => setModal(null)} onToast={setToast} />}
+      {modal?.type === 'git-info' && <GitInfoModal onClose={() => setModal(null)} onToast={showToast} />}
       {pushAuth && (
         <GitPushAuthModal
           type={pushAuth.type}
           error={translateVcsError(pushAuth.error ?? '')}
           onClose={() => setPushAuth(null)}
-          onToast={setToast}
+          onToast={showToast}
           onSaved={() => {
             setPushAuth(null);
             void pushNow(); // 保存凭据后自动重试推送（已过确认窗，直接执行；后端用 GIT_ASKPASS 携带凭据）
@@ -374,11 +373,10 @@ export function ModalHost(props: ModalHostProps) {
                   loadHistory();
                   setView('browse'); // 新仓库直接进入文件浏览视图（创建时可能停在历史/差异视图）
                   setOnboard(onboardText(r));
-                  setToastErr(false);
-                  setToast(`已打开仓库: ${r.root}`);
+                  showToast(`已打开仓库: ${r.root}`);
                 }
               })
-              .catch((e: Error) => setToast(`创建完成，但打开失败: ${(e as Error).message}`));
+              .catch((e: Error) => showToast(`创建完成，但打开失败: ${(e as Error).message}`, true));
           }}
         />
       )}
@@ -399,11 +397,10 @@ export function ModalHost(props: ModalHostProps) {
                   refresh();
                   loadHistory();
                   setView('browse'); // 获取仓库后直接进入文件浏览视图
-                  setToastErr(false);
-                  setToast(`已打开仓库: ${r.root}`);
+                  showToast(`已打开仓库: ${r.root}`);
                 }
               })
-              .catch((e: Error) => setToast(`获取完成，但打开失败: ${(e as Error).message}`));
+              .catch((e: Error) => showToast(`获取完成，但打开失败: ${(e as Error).message}`, true));
           }}
         />
       )}

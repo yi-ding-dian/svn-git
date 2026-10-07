@@ -22,7 +22,7 @@ export function OpenBrowser(props: {
   /** 点开过但打不开的项目：路径 → 错误消息（这些项上常驻 ×，悬浮时显示同一条） */
   invalidPaths?: Record<string, string>;
   onOpened: (repo: RepoInfo) => void;
-  onToast: (msg: string) => void;
+  onToast: (msg: string, err?: boolean) => void;
 }) {
   const [data, setData] = useState<BrowseResult | null>(null);
   const [dir, setDir] = useState(props.startDir);
@@ -79,9 +79,9 @@ export function OpenBrowser(props: {
       await post.open(data.repo.root ?? dir);
       const info = await get.info();
       if (info.type) props.onOpened(info);
-      else props.onToast('打开失败');
+      else props.onToast('打开失败', true);
     } catch (e) {
-      props.onToast((e as Error).message);
+      props.onToast((e as Error).message, true);
     }
   };
 
@@ -105,7 +105,7 @@ export function OpenBrowser(props: {
         await post.open(r.repo.root ?? t);
         const info = await get.info();
         if (info.type) props.onOpened(info);
-        else props.onToast('打开失败');
+        else props.onToast('打开失败', true);
         return;
       }
       // 目录：切换到浏览，并明确提示未识别到仓库（引导从下方文件列表继续找）
@@ -198,7 +198,7 @@ export function OpenBrowser(props: {
                     void post
                       .historyRemove(h.path)
                       .then((r) => setHistory(r.items))
-                      .catch(() => props.onToast('移除失败'));
+                      .catch(() => props.onToast('移除失败', true));
                   }}
                 >
                   ×
@@ -235,7 +235,7 @@ export function OpenBrowser(props: {
                             void post
                               .historyRemove(p)
                               .then((r) => setHistory(r.items))
-                              .catch(() => props.onToast('删除失败'));
+                              .catch(() => props.onToast('删除失败', true));
                           },
                         },
                       ]
@@ -249,7 +249,7 @@ export function OpenBrowser(props: {
                             void post
                               .historyRemove(p)
                               .then((r) => setHistory(r.items))
-                              .catch(() => props.onToast('删除失败'));
+                              .catch(() => props.onToast('删除失败', true));
                           },
                         },
                         { icon: '✕', label: '取消' },
@@ -347,7 +347,7 @@ export function OpenBrowser(props: {
 export function OpenView(props: {
   startDir: string;
   onOpened: (repo: RepoInfo) => void;
-  onToast: (msg: string) => void;
+  onToast: (msg: string, err?: boolean) => void;
   /** 新建仓库并成功打开后通知（引导条等） */
   onCreatedRepo?: (repo: RepoInfo) => void;
 }) {
@@ -364,9 +364,9 @@ export function OpenView(props: {
           props.onOpened(r);
           if (notifyCreated) props.onCreatedRepo?.(r);
           else props.onToast(`已打开仓库: ${r.root}`);
-        } else props.onToast('打开失败');
+        } else props.onToast('打开失败', true);
       })
-      .catch((e: Error) => props.onToast(`打开失败: ${(e as Error).message}`));
+      .catch((e: Error) => props.onToast(`打开失败: ${(e as Error).message}`, true));
   };
 
   // 新建仓库成功后：自动打开（git=仓库目录；svn=xxx-wc 工作副本，由服务端返回）
@@ -416,7 +416,7 @@ export function OpenModal(props: {
   /** 点开过但打不开的项目：路径 → 错误消息（这些项上常驻 ×，悬浮时显示同一条） */
   invalidPaths?: Record<string, string>;
   onOpened: (repo: RepoInfo) => void;
-  onToast: (msg: string) => void;
+  onToast: (msg: string, err?: boolean) => void;
   onClose: () => void;
 }) {
   return (

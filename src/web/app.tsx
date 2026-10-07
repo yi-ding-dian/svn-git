@@ -94,6 +94,15 @@ export function App() {
     refreshStash,
   } = useRepoStatus({ repoType: repo?.type, repoRoot: info?.root, tick });
 
+  /** 统一提示入口：默认按「成功」显示，是错误必须由调用方显式传 err=true。
+   *  旧写法把裸 setToast 当 onToast 往下传，而 toastErr 只在错误分支被置 true、成功分支没人复位，
+   *  于是一次失败之后所有普通提示都红着显示（实报：右键「复制完整路径」弹红 ✗）——
+   *  红不红与那次操作毫无关系，只取决于这次会话之前有没有出过错。此处默认复位，由调用方声明错误。 */
+  const showToast = useCallback((msg: string, err = false) => {
+    setToastErr(err);
+    setToast(msg);
+  }, []);
+
   const refresh = useCallback(() => {
     setTick((t) => t + 1);
     void refreshUnpushed();
@@ -102,8 +111,7 @@ export function App() {
 
   // 最近项目列表（加载 / 删除 / 设常用 / 备注）抽到 useProjectHistory；错误统一走 toast
   const { history, loadHistory, removeHistory, setFav, setRemark } = useProjectHistory((msg) => {
-    setToastErr(true);
-    setToast(msg);
+    showToast(msg, true);
   });
 
   useEffect(() => {
@@ -147,24 +155,21 @@ export function App() {
           const same = root && h.path.replace(/\/+$/, '') === root;
           if (root && !same) {
             const msg = `「${h.path}」不是工作副本（目录可能已被删除或改名）。已打开它所属的仓库：${root}`;
-            setToastErr(true);
-            setToast(msg);
+            showToast(msg, true);
             setInvalidPaths((prev) => ({ ...prev, [h.path]: msg }));
           } else {
             setInvalidPaths((prev) => { const n = { ...prev }; delete n[h.path]; return n; }); // 路径有效：撤掉标记
           }
         } else {
-          setToastErr(true);
-          setToast('打开失败：未识别为仓库');
+          showToast('打开失败：未识别为仓库', true);
         }
       } catch (e) {
-        setToastErr(true);
-        setToast((e as Error).message);
+        showToast((e as Error).message, true);
         // 打不开（目录已删 / 不是工作副本）：标为失效 → 该项上常驻一个 ×，悬浮时也用这条消息提示
         setInvalidPaths((prev) => ({ ...prev, [h.path]: (e as Error).message }));
       }
     },
-    [refresh, loadHistory]
+    [refresh, loadHistory, showToast]
   );
 
   /** 内容区点击 = "还在用这个项目"：刷新它在最近项目里的时间戳（后端按 path 更新 lastOpened）。
@@ -216,15 +221,12 @@ export function App() {
       } catch (e) {
         // 网络失败等异常:给用户可见反馈,避免 unhandled rejection 后"点了没反应"
         const msg = (e as Error).message || '操作失败';
-        setToastErr(true);
-        setToast(msg);
+        showToast(msg, true);
         setOpBusy(null);
         return { ok: false, message: msg };
       }
       setOpBusy(null);
-      setToastErr(!r.ok);
-      setToastErr(!r.ok);
-      setToast(r.message);
+      showToast(r.message, !r.ok);
       if (r.ok) {
         refresh();
         // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]），与分支/标签弹窗 onChanged 一致
@@ -233,7 +235,7 @@ export function App() {
       if (r.authError) setModal({ type: 'login' });
       return r;
     },
-    [refresh] // setOpBusy/OP_BUSY_TEXT 为稳定 setter/常量,无需入依赖
+    [refresh, showToast] // setOpBusy/OP_BUSY_TEXT 为稳定 setter/常量,无需入依赖
   );
 
   // 推送：进度窗口(转圈可取消) + 认证引导（GitHub token / 服务器密码）；定义在 handleAction 之前供其依赖
@@ -248,8 +250,7 @@ export function App() {
     try {
       const r = await post.push(ac.signal);
       if (r.ok) {
-        setToastErr(false);
-        setToast(r.message);
+        showToast(r.message);
         refresh();
       } else if (r.authType) {
         // 认证失败 → 弹认证引导（带上失败原因，避免用户不明所以）
@@ -274,13 +275,14 @@ export function App() {
         });
       }
     } catch (e) {
-      setToastErr((e as Error).message !== '已取消');
-      setToast((e as Error).message === '已取消' ? '已取消推送' : `推送失败: ${(e as Error).message}`);
+      const msg = (e as Error).message;
+      // 「已取消」是用户主动中止，不算失败——不标红
+      showToast(msg === '已取消' ? '已取消推送' : `推送失败: ${msg}`, msg !== '已取消');
     } finally {
       setPushing(false);
       pushAbortRef.current = null;
     }
-  }, [refresh]);
+  }, [refresh, showToast]);
   const cancelPush = () => pushAbortRef.current?.abort();
   // 推送入口：弹出「确认推送」窗口（未推送提交列表 + 推送条件），确认后执行
   const doPush = useCallback(() => {
@@ -293,7 +295,8 @@ export function App() {
     (path?: string, a?: string, b?: string) => {
       // 二进制文件（Word/PDF/图片等）：不支持文本对比，提示而不进入差异视图
       if (path && isBinaryFile(path)) {
-        setToast('二进制文件，不支持文本对比');
+        // 用户要的操作没做成——按错误态显示（停留久一点，别一闪而过）
+        showToast('二进制文件，不支持文本对比', true);
         return;
       }
       setDiffFrom(view);
@@ -301,7 +304,7 @@ export function App() {
       if (path) setLogPath(path); // 历史视图联动记住当前文件
       setView('diff');
     },
-    [view]
+    [view, showToast]
   );
 
   // 操作请求分派
@@ -555,14 +558,14 @@ export function App() {
         }
         if (r.authError) setModal({ type: 'login' });
       } catch (e) {
-        setToastErr((e as Error).message !== '已取消');
-        setToast((e as Error).message === '已取消' ? '已取消更新' : `更新失败: ${(e as Error).message}`);
+        const msg = (e as Error).message;
+        showToast(msg === '已取消' ? '已取消更新' : `更新失败: ${msg}`, msg !== '已取消');
       } finally {
         setUpdating(false);
         updateAbortRef.current = null;
       }
     },
-    [refresh, checkRemote]
+    [refresh, checkRemote, showToast]
   );
 
   // 提交失败弹窗：所有提交失败统一弹窗确认（不再 5 秒 toast 一闪而过）；
@@ -635,8 +638,7 @@ export function App() {
     async (paths: string[], message: string) => {
       const r = await post.commit(paths, message);
       if (r.ok) {
-        setToastErr(false);
-        setToast(r.message);
+        showToast(r.message);
         refresh();
       } else {
         showCommitFail(r.message, paths);
@@ -644,7 +646,7 @@ export function App() {
       if (r.authError) setModal({ type: 'login' });
       setModal(null);
     },
-    [refresh, showCommitFail]
+    [refresh, showCommitFail, showToast]
   );
 
   // 打开勾选式提交弹窗（收集当前目录变更）
@@ -667,8 +669,7 @@ export function App() {
         if (items.length === 0) {
           const unversioned = st.items.filter((i) => i.code === '?' && inScope(i.path)).length;
           const externals = st.items.filter((i) => i.code === 'X' && inScope(i.path)).length;
-          setToastErr(false);
-          setToast(
+          showToast(
             unversioned > 0
               ? `当前目录下没有已版本化的变更；有 ${unversioned} 个未版本化文件（?），需先右键「添加到版本库」才能提交`
               : externals > 0
@@ -683,11 +684,10 @@ export function App() {
         // 与"提交此文件"一致的提交前安全：行冲突/远程检查后台并行（用户勾选期间完成，关窗则丢弃）
         checkCommitBackground(items.map((i) => i.path), { type: 'commit-select', dir, dirLabel, items, stagedOnly });
       } catch (e) {
-        setToastErr(true);
-        setToast(`读取变更失败: ${(e as Error).message}`);
+        showToast(`读取变更失败: ${(e as Error).message}`, true);
       }
     },
-    []
+    [showToast]
   );
 
   // 勾选提交：二次确认后执行（svn 未版本化文件先 add）
@@ -702,8 +702,7 @@ export function App() {
         }
         const r = await post.commit(paths, message, stagedOnly);
         if (r.ok) {
-          setToastErr(false);
-          setToast(r.message);
+          showToast(r.message);
           refresh();
         } else {
           showCommitFail(r.message, paths);
@@ -713,7 +712,7 @@ export function App() {
         showCommitFail(`提交失败: ${(e as Error).message}`, paths);
       }
     },
-    [refresh, repo?.type, showCommitFail]
+    [refresh, repo?.type, showCommitFail, showToast]
   );
 
   const cancelUpdate = () => updateAbortRef.current?.abort();
@@ -742,7 +741,7 @@ export function App() {
         configUser={configUser}
         onRefresh={refresh}
         setModal={setModal}
-        onToast={setToast}
+        onToast={showToast}
         onPush={doPush}
         onUpdate={() => void doUpdateDir('')}
         unpushedCount={unpushedCount}
@@ -892,8 +891,7 @@ export function App() {
               invalidPaths={invalidPaths}
               onOpenProject={() => setModal({ type: 'open' })} // 与顶栏 ⋯ 菜单里的「打开项目」同一个弹窗
               onShowTip={(msg) => {
-                setToastErr(true);
-                setToast(msg);
+                showToast(msg, true); // 失效项目的原因说明（打不开/已删除）：按错误态显示
               }}
             />
             {/* 点内容区（文件/空白都行）= 在用这个项目 → 刷新最近项目里的"最近使用时间" */}
@@ -907,7 +905,7 @@ export function App() {
                   target={diffTarget}
                   tick={tick}
                   active={view === 'diff'}
-                  onToast={setToast}
+                  onToast={showToast}
                   onBack={() => {
                     setView(diffFrom);
                     // 从「提交修改的文件」弹窗双击进入差异：返回时恢复该弹窗
@@ -930,7 +928,7 @@ export function App() {
                   onLog={(p) => showLog(p)}
                   onCommitSelect={openCommitSelect}
                   onUpdateDir={doUpdateDir}
-                  onToast={setToast}
+                  onToast={showToast}
                 />
               </div>
             </div>
@@ -941,7 +939,7 @@ export function App() {
               startDir={info?.home ?? info?.startDir ?? ''}
               onOpened={(r) => { setInfo(r); setOnboard(null); refresh(); loadHistory(); }}
               onCreatedRepo={(r) => setOnboard(onboardText(r))}
-              onToast={setToast}
+              onToast={showToast}
             />
           </div>
         )}
@@ -988,8 +986,7 @@ export function App() {
           setInfo,
           setOnboard,
           setView,
-          setToast,
-          setToastErr,
+          showToast,
           setDiffReturnModal,
         }}
         ctx={{ repo, env, info }}

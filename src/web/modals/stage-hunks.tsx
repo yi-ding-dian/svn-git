@@ -18,7 +18,7 @@ export function StageHunksModal(props: {
   onClose: () => void;
   /** 暂存成功（父级把该文件记为 stagedOnly） */
   onStaged: () => void;
-  onToast: (m: string) => void;
+  onToast: (m: string, err?: boolean) => void;
 }) {
   const [parsed, setParsed] = useState<ParsedDiff | null>(null);
   const [error, setError] = useState('');
@@ -60,13 +60,13 @@ export function StageHunksModal(props: {
       // 带上打开弹窗时的内容指纹：文件若被外部改过，后端会拒绝而不是按旧索引暂存到别的块
       const blob = parsed?.fileHeader.match(/^index [0-9a-f]+\.\.([0-9a-f]+)/m)?.[1];
       const r = await post.stageHunks(props.path, [...checked], blob);
-      props.onToast(r.message);
+      props.onToast(r.message, !r.ok);
       if (r.ok) {
         props.onStaged();
         props.onClose();
       }
     } catch (e) {
-      props.onToast(`暂存失败: ${(e as Error).message}`);
+      props.onToast(`暂存失败: ${(e as Error).message}`, true);
     } finally {
       setBusy(false);
     }

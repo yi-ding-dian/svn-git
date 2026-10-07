@@ -176,7 +176,7 @@ type ToolCtx = {
   configUser: string;
   onRefresh: () => void;
   setModal: (m: Modal) => void;
-  onToast: (m: string) => void;
+  onToast: (m: string, err?: boolean) => void;
   onPush: () => void;
   onUpdate: () => void;
   onExit: () => void;
@@ -297,8 +297,8 @@ const TOOLS: ToolDef[] = [
               action: () => {
                 void post
                   .svnExtra('cleanup')
-                  .then((r) => c.onToast(r.message))
-                  .catch((e: Error) => c.onToast((e as Error).message));
+                  .then((r) => c.onToast(r.message, !r.ok))
+                  .catch((e: Error) => c.onToast((e as Error).message, true));
               },
             }),
         }
@@ -416,7 +416,7 @@ export function AppHeader(props: {
   configUser: string;
   onRefresh: () => void;
   setModal: (m: Modal) => void;
-  onToast: (m: string) => void;
+  onToast: (m: string, err?: boolean) => void;
   /** 推送（含进度窗口与认证引导） */
   onPush: () => void;
   /** 更新/拉取（git=pull, svn=update, 含进度窗口可取消） */
@@ -515,7 +515,7 @@ export function AppHeader(props: {
               '</div>';
             window.close();
           })
-          .catch((e: Error) => props.onToast(`退出失败: ${e.message}`));
+          .catch((e: Error) => props.onToast(`退出失败: ${e.message}`, true));
       },
     });
   };
@@ -776,8 +776,8 @@ export function AppHeader(props: {
                   action: () => {
                     setMoreMenu(null);
                     void (appMenuState.installed ? post.appMenuUninstall() : post.appMenuInstall())
-                      .then((r) => props.onToast(r.message))
-                      .catch((e: Error) => props.onToast(e.message))
+                      .then((r) => props.onToast(r.message, !r.ok))
+                      .catch((e: Error) => props.onToast(e.message, true))
                       .finally(() => {
                         get.appMenu().then((r) => setAppMenuState({ appImage: r.appImage, installed: r.installed })).catch(() => {});
                       });

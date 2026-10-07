@@ -42,7 +42,7 @@ export interface MenuServices {
   onLog: (p: string) => void;
   onUpdateDir: (dir: string) => void;
   onCommitSelect: (dir: string, label: string) => void;
-  onToast: (m: string) => void;
+  onToast: (m: string, err?: boolean) => void;
   openInFm: (dir: string) => void;
   removeFav: (rel: string) => void;
   addFavDir: (rel: string) => void;
@@ -369,8 +369,8 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
             action: () => {
               void post
                 .openWith(t.rel, a.exec)
-                .then((x) => s.onToast(x.message ?? '已打开'))
-                .catch((er: Error) => s.onToast(`打开失败: ${er.message}`));
+                .then((x) => s.onToast(x.message ?? '已打开', !x.ok))
+                .catch((er: Error) => s.onToast(`打开失败: ${er.message}`, true));
             },
           })),
           ...(r.chooseOpen
@@ -381,8 +381,8 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
                   action: () => {
                     void post
                       .openWith(t.rel, r.chooseOpen!)
-                      .then((x) => s.onToast(x.message ?? '已打开'))
-                      .catch((er: Error) => s.onToast(`打开失败: ${er.message}`));
+                      .then((x) => s.onToast(x.message ?? '已打开', !x.ok))
+                      .catch((er: Error) => s.onToast(`打开失败: ${er.message}`, true));
                   },
                 },
               ]
