@@ -1,7 +1,7 @@
 /** 文件夹浏览视图：列表/树/浏览(网格)三模式，支持键盘导航（↑↓ 选择、→/Enter 进入、← 返回） */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterTreeNode } from '../api.js';
-import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconDownload, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon } from '../ui/icons.js';
+import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconDownload, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon, MiniIcon } from '../ui/icons.js';
 import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { multiRevertName, renameableCode, removableFromRepo, renameItem, joinPaths, fsSortRank, filterEntries, revertName, type Filter, type Mode, type VisibleRow } from './utils.js';
@@ -11,6 +11,7 @@ import { useFilterTree } from './filter-tree.js';
 import { useIgnoreFlow } from './use-ignore-flow.js';
 import { TreeRow } from './views/rows.js';
 import { GridItem, FileTipCard } from './views/grid.js';
+import { ThumbIcon } from './views/thumb.js';
 import { flashBreadcrumbs } from '../ui/motion.js';
 import { useDirPreload } from './use-dir-preload.js';
 import { WcNotice } from './wc-notice.js';
@@ -25,7 +26,7 @@ import { ModuleIndexDialog } from '../dialogs/module-index.js';
 /** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
 import { IgnoreModal } from '../modals/ignore-modal.js';
 import { FavDirsModal } from '../modals/fav-dirs.js';
-import { fmtSize, statusColor, translateVcsError, isBinaryFile } from '../utils.js';
+import { fmtSize, statusColor, translateVcsError, isBinaryFile, isImageFile } from '../utils.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 /** 命令预览: 多路径缩写（前 3 个 + …） */
 import { ModalShell } from '../modals/modal-shell.js';
@@ -427,9 +428,12 @@ export function FsView(props: Props) {
     setMode(prevModeRef.current);
   };
 
-  /** 树行渲染（树列表与过滤树共用；filtered=true 时目录点击折叠、双击文件跳转） */
+  /** 树行渲染（树列表与过滤树共用；filtered=true 时目录点击折叠、双击文件跳转）。
+   *  key 必须是 rel：不写 key 时 React 按下标复用行实例，折叠/展开/换过滤后行内组件状态
+   *  （如图片缩略图的"加载失败"标记）会串到别的文件上——顺带修掉的既有隐患 */
   const renderTreeRow = (row: VisibleRow, i: number, filtered: boolean) => (
     <TreeRow
+      key={row.rel}
       row={row}
       i={i}
       filtered={filtered}
@@ -509,7 +513,7 @@ export function FsView(props: Props) {
     (name: string, code: string, rel: string) => {
       setTip(null); // 双击打开时关闭悬浮卡片（视图切换后不会再触发 mouseleave,需主动清）
       // 图片文件：双击直接看图（不读文本/diff,避免二进制乱码与"不支持文本对比"提示）
-      if (/.(png|jpe?g|gif|svg|webp|bmp|ico)$/i.test(rel)) {
+      if (isImageFile(rel)) {
         setPreview({ name, rel, img: true });
         return;
       }
@@ -1052,6 +1056,17 @@ export function FsView(props: Props) {
         )}
         <span className="arrow">{e.isDir ? '▸' : ''}</span>
         {locked && <IconLock size={13} />}
+        {/* 图标位：图片=该图自己的缩略图，其余=类型小图标（与树模式 TreeRow 保持逐像素一致） */}
+        <ThumbIcon
+          rel={rel}
+          name={e.name}
+          size={e.size}
+          mtime={e.mtime}
+          isDir={e.isDir}
+          miss={e.miss}
+          box="1.15em"
+          fallback={<MiniIcon isDir={e.isDir} name={e.name} />}
+        />
         <span className={`name ${e.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}>
           {e.name}
           {e.count ? <span className="count"> （{e.count} 项）</span> : null}

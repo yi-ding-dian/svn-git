@@ -479,6 +479,14 @@ body {
 .folder-ico { width: 14px; text-align: center; color: var(--accent); flex-shrink: 0; }
 .file-ico { width: 14px; text-align: center; color: var(--dim); flex-shrink: 0; }
 
+/* ---------- 视图图标位（列表/树行 = 缩略图或类型小图标，浏览网格 = 缩略图） ----------
+   尺寸由调用处 inline 给（行内 1.15em 随界面字号缩放、网格固定 40px 与 GridIcon 一致），
+   这里只管居中与"子元素填满"。flex-shrink:0 必要：行是 flex，长文件名会把图标压扁 */
+.fs-ico { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.fs-ico > svg, .fs-ico > img { width: 100%; height: 100%; }
+/* 缩略图：整图等比缩进图标位（contain 不裁切——缩略图的用处就是认图，裁掉边角就认不出了） */
+img.fs-thumb { object-fit: contain; border-radius: 3px; }
+
 /* ---------- 按钮 ---------- */
 button {
   background: var(--panel2); color: var(--text); border: 1px solid var(--border);

@@ -5,6 +5,23 @@ interface IconProps {
   size?: number;
 }
 
+/** 文件类型配色（按扩展名）：代码蓝 / 文本绿 / 配置黄 / 图片紫 / 脚本红 / 办公文档品牌色。
+ *  GridIcon（大）与 MiniIcon（行内小）共用同一张表——同一文件在网格与列表里颜色一致 */
+export function extColor(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (/^(c|cpp|h|hpp|cc|js|mjs|cjs|ts|tsx|jsx|py|java|go|rs|cs|vue|svelte)$/.test(ext)) return '#58a6ff';
+  if (/^(txt|md|log|rst)$/.test(ext)) return '#3fb950';
+  if (/^(json|xml|yml|yaml|ini|conf|cfg)$/.test(ext)) return '#e0b25c';
+  if (/^(png|jpg|jpeg|gif|svg|bmp|ico)$/.test(ext)) return '#a371f7';
+  if (/^(sh|bat|cmd)$/.test(ext)) return '#f85149';
+  // 办公文档品牌色（SVG 内不依赖系统字体,跨平台一致）: 蓝=Word 绿=Excel 橙=PPT 红=PDF
+  if (/^(doc|docx|odt)$/.test(ext)) return '#2b579a';
+  if (/^(xls|xlsx|csv|ods)$/.test(ext)) return '#217346';
+  if (/^(ppt|pptx|odp)$/.test(ext)) return '#d24726';
+  if (/^pdf$/.test(ext)) return '#e5484d';
+  return '#8b949e';
+}
+
 /** 大图标（文件浏览器风格）：文件夹彩色 / 文件按类型配色（打开项目/浏览模式共用） */
 export function GridIcon(props: { isDir: boolean; name: string; size?: number }) {
   const s = props.size ?? 40;
@@ -21,19 +38,8 @@ export function GridIcon(props: { isDir: boolean; name: string; size?: number })
       </svg>
     );
   }
-  // 文件类型配色
   const ext = props.name.split('.').pop()?.toLowerCase() ?? '';
-  let color = '#8b949e';
-  if (/^(c|cpp|h|hpp|cc|js|mjs|cjs|ts|tsx|jsx|py|java|go|rs|cs|vue|svelte)$/.test(ext)) color = '#58a6ff';
-  else if (/^(txt|md|log|rst)$/.test(ext)) color = '#3fb950';
-  else if (/^(json|xml|yml|yaml|ini|conf|cfg)$/.test(ext)) color = '#e0b25c';
-  else if (/^(png|jpg|jpeg|gif|svg|bmp|ico)$/.test(ext)) color = '#a371f7';
-  else if (/^(sh|bat|cmd)$/.test(ext)) color = '#f85149';
-  // 办公文档品牌色（SVG 内不依赖系统字体,跨平台一致）: 蓝=Word 绿=Excel 橙=PPT 红=PDF
-  else if (/^(doc|docx|odt)$/.test(ext)) color = '#2b579a';
-  else if (/^(xls|xlsx|csv|ods)$/.test(ext)) color = '#217346';
-  else if (/^(ppt|pptx|odp)$/.test(ext)) color = '#d24726';
-  else if (/^pdf$/.test(ext)) color = '#e5484d';
+  const color = extColor(props.name);
   // 办公文档角标字母: PDF 用三字母,其余单字母,加强辨识度
   const BADGE = /^pdf$/.test(ext) ? 'PDF' : /^(doc|docx|odt)$/.test(ext) ? 'W' : /^(xls|xlsx|csv|ods)$/.test(ext) ? 'X' : /^(ppt|pptx|odp)$/.test(ext) ? 'P' : null;
   const id = `gi-${ext || 'file'}`;
@@ -54,6 +60,41 @@ export function GridIcon(props: { isDir: boolean; name: string; size?: number })
           {BADGE}
         </text>
       )}
+    </svg>
+  );
+}
+
+/** 行内小图标（列表/树模式每行图标位，默认 16px）：只画轮廓、不画内部横线与角标字母——
+ *  GridIcon 那套细节缩到 16px 会糊成一团。配色与 GridIcon 同源（extColor），
+ *  所以同一文件在网格视图与列表视图颜色一致；图片行的真实缩略图加载不了时也回退到它 */
+export function MiniIcon(props: { isDir: boolean; name: string; size?: number }) {
+  const s = props.size ?? 16;
+  if (props.isDir) {
+    return (
+      <svg width={s} height={s} viewBox="0 0 48 48" style={{ flexShrink: 0 }}>
+        <defs>
+          <linearGradient id="mi-folder" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#f0c36d" />
+            <stop offset="1" stopColor="#e8a13c" />
+          </linearGradient>
+        </defs>
+        <path d="M6 14a4 4 0 0 1 4-4h10l4 5h14a4 4 0 0 1 4 4v15a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4z" fill="url(#mi-folder)" />
+      </svg>
+    );
+  }
+  const ext = props.name.split('.').pop()?.toLowerCase() ?? '';
+  const color = extColor(props.name);
+  const id = `mi-${ext || 'file'}`;
+  return (
+    <svg width={s} height={s} viewBox="0 0 48 48" style={{ flexShrink: 0 }}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor={color} />
+          <stop offset="1" stopColor={color} stopOpacity="0.72" />
+        </linearGradient>
+      </defs>
+      <path d="M10 4h20l8 8v30a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill={`url(#${id})`} />
+      <path d="M30 4l8 8h-8z" fill="#ffffff" fillOpacity="0.55" />
     </svg>
   );
 }

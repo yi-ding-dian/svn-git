@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import type { Hunk } from '../shared/types.js';
 
 // 二进制文件扩展名集合：单一事实源在 src/shared/types.ts（server 与前端共用，避免双份维护）
-import { BINARY_EXTS } from '../shared/types.js';
+import { BINARY_EXTS, IMAGE_EXTS } from '../shared/types.js';
 
 /** 弹窗宽度自适应最长文件名（mono 13px 约 7.6px/字符 + 勾选框/徽标/间距余量），钳制在 [minW, maxW] 防过窄/超宽 */
 export function pathAutoWidth(maxPathLen: number, minW = 620, maxW = 1400): number {
@@ -22,6 +22,15 @@ export function isBinaryFile(path: string): boolean {
   const name = path.split('/').pop() ?? '';
   const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
   return BINARY_EXTS.has(ext);
+}
+
+/** 是否为可直接显示的图片（双击进图片预览 / 视图里显示缩略图）。
+ *  支持集单一事实源在 src/shared/types.ts 的 IMAGE_EXTS。
+ *  注：不能写成 `/.(png|…)$/`——首个点不转义会误判 `apng`、`xsvg` 之类（旧代码的既有小 bug）。 */
+export function isImageFile(path: string): boolean {
+  const name = path.split('/').pop() ?? '';
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
+  return IMAGE_EXTS.has(ext);
 }
 
 /** 文件名状态染色：按状态码返回文字色（M 橙黄/A 绿/D 红/C 红/? 灰），无状态返回 undefined（默认色）。

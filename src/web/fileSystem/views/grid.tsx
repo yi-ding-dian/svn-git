@@ -4,6 +4,7 @@ import { CODE_DESC, codeRank, type FsEntry } from '../../api.js';
 import { fmtSize } from '../../utils.js';
 import { CodeBadge, DirBadge, TreeConflictBadge, type TreeConflictState } from '../../ui/badges.js';
 import { GridIcon, IconLock } from '../../ui/icons.js';
+import { ThumbIcon } from './thumb.js';
 
 /** 网格卡片（图标+状态角标+名称+大小；目录状态字母最多显示 2 个） */
 export function GridItem(props: {
@@ -45,7 +46,18 @@ export function GridItem(props: {
       onContextMenu={props.onContextMenu}
     >
       <span className="grid-icon-wrap">
-        <GridIcon isDir={e.isDir} name={e.name} />
+        {/* 图片格：原地换成该图自己的缩略图（仍是 40px，角标定位与整格节奏不变）；
+            非图片/缺失/过大/加载失败 → 还是原来那个类型大图标 */}
+        <ThumbIcon
+          rel={props.rel}
+          name={e.name}
+          size={e.size}
+          mtime={e.mtime}
+          isDir={e.isDir}
+          miss={e.miss}
+          box="40px"
+          fallback={<GridIcon isDir={e.isDir} name={e.name} />}
+        />
         <span className="grid-badge">
           {props.tc ? (
             <TreeConflictBadge

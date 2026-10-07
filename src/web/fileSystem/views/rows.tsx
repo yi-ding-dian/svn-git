@@ -2,7 +2,8 @@
 import React from 'react';
 import { fmtSize, statusColor } from '../../utils.js';
 import { CodeBadge, DirBadge, TreeConflictBadge } from '../../ui/badges.js';
-import { IconLock } from '../../ui/icons.js';
+import { IconLock, MiniIcon } from '../../ui/icons.js';
+import { ThumbIcon } from './thumb.js';
 import type { VisibleRow } from '../utils.js';
 
 /** 树形行：视觉与交互完全由 props 驱动（回调回 index/Hook 上下文） */
@@ -60,6 +61,18 @@ export function TreeRow(props: {
       )}
       <span className="arrow">{row.isDir ? (row.open ? '▾' : '▸') : ''}</span>
       {row.locked && <IconLock size={13} />}
+      {/* 图标位：图片=该图自己的缩略图，其余=类型小图标。放 .arrow 之后（.arrow 对文件行是空占位，
+          图标搁它前面会离名字 22px 显得掉队）；目录也有文件夹图标，否则目录行名字会比文件行少缩进一截 */}
+      <ThumbIcon
+        rel={row.rel}
+        name={row.name}
+        size={row.size}
+        mtime={row.mtime}
+        isDir={row.isDir}
+        miss={row.miss}
+        box="1.15em"
+        fallback={<MiniIcon isDir={row.isDir} name={row.name} />}
+      />
       <span className={`name ${row.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(row.isDir ? row.codes?.[0] : row.code) }}>
         {row.name}
         {row.count ? <span className="count"> （{row.count} 项）</span> : null}
