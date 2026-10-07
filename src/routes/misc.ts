@@ -6,7 +6,7 @@ import path from 'node:path';
 import { detectRepo } from '../vcs/detect.js';
 import { platform } from '../platform/index.js';
 import { makeGitIgnoreChecker } from '../vcs/ignore.js';
-import { BINARY_EXTS } from '../shared/types.js';
+import { BINARY_EXTS, compareName } from '../shared/types.js';
 import { run } from '../vcs/exec.js';
 import {
   isBinaryFile, inRepoRoot, sendJson, readBody, getStatusCached, readTextFile,
@@ -135,8 +135,8 @@ function browseDirs(dir: string): { entries: { name: string; isDir: boolean }[];
     if (isDir) dirs.push(n);
     else files.push(n);
   }
-  dirs.sort((a, b) => a.localeCompare(b));
-  files.sort((a, b) => a.localeCompare(b));
+  dirs.sort(compareName);
+  files.sort(compareName);
   for (const d of dirs) out.push({ name: d, isDir: true });
   for (const f of files) out.push({ name: f, isDir: false });
   return { entries: out, repo: detectRepo(cur) };
@@ -470,7 +470,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           if (it.isDir) walkDir(it.path);
           else files.push({ path: it.path });
         }
-        files.sort((a, b) => a.path.localeCompare(b.path));
+        files.sort((a, b) => compareName(a.path, b.path));
         sendJson(res, 200, { files });
         return true;
       }
@@ -570,7 +570,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         // 排序：目录在前，名称排序
         const sortTree = (nodes: TNode[]) => {
-          nodes.sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name));
+          nodes.sort((a, b) => Number(b.isDir) - Number(a.isDir) || compareName(a.name, b.name));
           for (const n of nodes) sortTree(n.children);
         };
         sortTree(root);
@@ -697,8 +697,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
           (st.isDirectory() ? dirs : files).push(n);
         }
-        dirs.sort((a, b) => a.localeCompare(b));
-        files.sort((a, b) => a.localeCompare(b));
+        dirs.sort(compareName);
+        files.sort(compareName);
         for (const d of dirs) {
           const relDir = prefix + d;
           let code = dirSelf ? '?' : '';

@@ -26,6 +26,13 @@ export const BINARY_EXTS = new Set([
  *  前端三处共用：双击打开预览 / 列表与网格的缩略图。注意 svg 不在 BINARY_EXTS 里（它是文本） */
 export const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg']);
 
+/** 文件/目录名比较（自然排序）：数字段按**数值**比，不是逐字符比。
+ *  不写 numeric 时 localeCompare 会把 "v1.10" 排到 "v1.9" 前、"img10.png" 排到 "img2.png" 前（实报）。
+ *  中英文的拼音/字母规则不受影响（仍跟随系统语言）。前后端共用：文件列表/树/过滤树/目录浏览都走它 */
+export function compareName(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true });
+}
+
 /** ---------- diff 分块（hunk）：hunk 级部分提交用，前后端共享 ---------- */
 
 /** hunk 内的一行。meta = diff 的 `\ No newline at end of file` 这类标记行（原样保留，不参与行数计数） */

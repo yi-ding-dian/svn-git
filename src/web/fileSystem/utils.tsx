@@ -1,6 +1,5 @@
 /** 文件系统视图纯工具：状态判断/菜单项组装/排序过滤/树扁平化（fs 拆分批次 1，原 fileSystem/index.tsx 模块级 helper） */
 import React from 'react';
-import { codeRank } from '../api.js';
 import { IconRename } from '../ui/icons.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
@@ -49,9 +48,6 @@ export function renameItem(code: string, repoType: 'svn' | 'git', rel: string, i
 
 /** 命令预览: 多路径缩写（前 3 个 + …） */
 export const joinPaths = (arr: string[]) => arr.slice(0, 3).join(' ') + (arr.length > 3 ? ' …' : '');
-
-/** fs 列表排序优先级：与旧版本地 CODE_RANK 严格一致（X 外部引用视为无状态，不与干净条目区分优先级） */
-export const fsSortRank = (c: string): number => (c === 'X' ? 0 : codeRank(c));
 
 /** 过滤（多选）：changed=仅修改，new=仅新文件；同时选 = 并集；空 = 全部 */
 export function filterEntries<T extends { code: string }>(list: T[], filters: Set<Filter>): T[] {

@@ -4,7 +4,7 @@ import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterT
 import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconDownload, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon, MiniIcon } from '../ui/icons.js';
 import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
-import { multiRevertName, renameableCode, removableFromRepo, renameItem, joinPaths, fsSortRank, filterEntries, revertName, type Filter, type Mode, type VisibleRow } from './utils.js';
+import { multiRevertName, renameableCode, removableFromRepo, renameItem, joinPaths, filterEntries, revertName, type Filter, type Mode, type VisibleRow } from './utils.js';
 import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } from './menus.js';
 import { useFileSearch, FsSearchBox } from './search.js';
 import { useFilterTree } from './filter-tree.js';
@@ -13,6 +13,7 @@ import { TreeRow } from './views/rows.js';
 import { GridItem, FileTipCard } from './views/grid.js';
 import { ThumbIcon } from './views/thumb.js';
 import { flashBreadcrumbs } from '../ui/motion.js';
+import { compareName } from '../../shared/types.js';
 import { useDirPreload } from './use-dir-preload.js';
 import { WcNotice } from './wc-notice.js';
 import { useWcConflicts, useConflictLookup, tcState, conflictPaths } from './use-wc-conflicts.js';
@@ -361,7 +362,7 @@ export function FsView(props: Props) {
       let list = filterEntries(nd.entries.filter((e) => showHidden || !e.name.startsWith('.')), filters);
       list = list
         .slice()
-        .sort((a, b) => Number(b.isDir) - Number(a.isDir) || fsSortRank(b.code) - fsSortRank(a.code) || a.name.localeCompare(b.name));
+        .sort((a, b) => Number(b.isDir) - Number(a.isDir) || codeRank(b.code) - codeRank(a.code) || compareName(a.name, b.name));
       for (const e of list) {
         const rel = d ? `${d}/${e.name}` : e.name;
         const open = e.isDir && expanded.has(rel);
@@ -411,7 +412,7 @@ export function FsView(props: Props) {
     let list = filterEntries(data.entries.filter((e) => showHidden || !e.name.startsWith('.')), filters);
     return list
       .slice()
-      .sort((a, b) => Number(b.isDir) - Number(a.isDir) || fsSortRank(b.code) - fsSortRank(a.code) || a.name.localeCompare(b.name));
+      .sort((a, b) => Number(b.isDir) - Number(a.isDir) || codeRank(b.code) - codeRank(a.code) || compareName(a.name, b.name));
   }, [data, showHidden, filters]);
 
   // 过滤树（仅修改/仅新文件/仅删除）：拉取+折叠+扁平行由 useFilterTree 管理
