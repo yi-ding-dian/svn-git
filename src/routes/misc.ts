@@ -256,23 +256,33 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const LIMIT = 100;
         const walk = (dir: string, depth: number) => {
           if (depth > 12 || out.length >= LIMIT) return;
-          let entries: string[];
+          let entries: fs.Dirent[];
           try {
-            entries = fs.readdirSync(dir);
+            // withFileTypes：目录类型直接由 Dirent 给出，省掉"每个条目一次 statSync"——
+            // 一次搜索要遍历上万个文件，Windows 上每个 stat 都要过杀软实时扫描，是慢的主因
+            entries = fs.readdirSync(dir, { withFileTypes: true });
           } catch {
             return;
           }
-          for (const n of entries) {
+          for (const e of entries) {
+            if (out.length >= LIMIT) return; // 命中上限就早停（原先只挡递归，本目录仍全扫）
+            const n = e.name;
             if (n === '.svn' || n === '.git' || n.startsWith('.')) continue;
             const p = path.join(dir, n);
-            let st: fs.Stats;
-            try {
-              st = fs.statSync(p);
-            } catch {
-              continue;
+            // 软链单独 stat：Dirent.isDirectory() **不跟随符号链接**，直接用它会让"软链指向的目录"
+            // 搜不到（Linux 上并不罕见）；普通条目走 Dirent 免 stat
+            let isDir = e.isDirectory();
+            if (e.isSymbolicLink()) {
+              try {
+                isDir = fs.statSync(p).isDirectory();
+              } catch {
+                continue; // 断链：与改动前一致，直接跳过
+              }
             }
-            if (n.toLowerCase().includes(q)) out.push(path.relative(repo.root, p));
-            if (st.isDirectory() && out.length < LIMIT) walk(p, depth + 1);
+            // 统一成 '/'：全应用（git 输出的路径、前端取父目录/匹配）都用 '/'，
+            // Windows 上 path.relative 给的是 ''，前端 lastIndexOf('/') 取不到父目录 → 点了跳不过去
+            if (n.toLowerCase().includes(q)) out.push(path.relative(repo.root, p).split(path.sep).join('/'));
+            if (isDir) walk(p, depth + 1);
           }
         };
         walk(start, 0);

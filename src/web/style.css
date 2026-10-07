@@ -698,6 +698,20 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   color: var(--dim); font-size: 16px; line-height: 1; cursor: pointer; border-radius: 50%;
 }
 .search-clear:hover { background: var(--border); color: var(--text); }
+/* 搜索中的转圈：复用 .spinner 的 spin 关键帧。
+   注意关键帧里是 transform: rotate(...)，会覆盖静态 transform，
+   所以绝对定位那档用 margin-top 抵消半高，不能用 translateY(-50%) */
+.search-spin {
+  display: inline-block; width: 13px; height: 13px; flex-shrink: 0;
+  border: 2px solid var(--border2); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .8s linear infinite;
+}
+.search-box-spin { position: absolute; right: 6px; top: 50%; margin-top: -7px; }
+/* 结果里命中的片段：用主题强调色而不是 <mark> 默认的黄底，深浅色主题都协调 */
+.search-mark { background: transparent; color: var(--accent); font-weight: 700; }
+/* 选中/悬浮的行是"强调色底 + 白字"：高亮片段必须跟着变成白字，
+   否则强调色的字压在强调色底上=看不见（实报：选中行里的命中片段整段消失） */
+.search-item:hover .search-mark, .search-item.active .search-mark { color: inherit; }
 .search-drop {
   position: absolute; top: 100%; left: 0; z-index: 120;
   background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
