@@ -8,6 +8,7 @@ import {
 } from './util.js';
 import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile } from '../vcs/ignore.js';
 import type { Ctx } from './util.js';
+import { detectTextEncoding, decodeText, encodeText, type TextEncoding } from '../shared/text.js';
 
 /** git 忽略三处去向（展示名与写入目标）——仓库 .gitignore / 全局 excludesFile / .git/info/exclude */
 const GIT_IGNORE_WHERE = {
@@ -32,15 +33,27 @@ async function gitIgnoreFiles(repoRoot: string, forWriteGlobal = false): Promise
  * 同文件已有其取反行 !pattern（规则被「取消忽略」废止）时：清掉 pattern/取反两行、重写干净 pattern——
  * 保证"加入忽略"必然生效（否则重复 忽略→取消→忽略 会卡在"规则已存在"而 git 实际未忽略）。
  * pattern 以 ! 开头（取消忽略的否定行）不做取反清理，仅行去重（避免!!!叠加）。 */
+/* 忽略规则文件的读与写都按**原编码**走：这几处是"整读 → 过滤 → 整写"，
+   若文件是 GBK（老项目的中文注释很常见），按 UTF-8 读会把已有行解成替换符、写回就固化了。
+   极小概率的"GBK 表示不了所写内容"宁可抛错让请求失败，也不静默转码。 */
+function readIgnoreLines(file: string): { lines: string[]; enc: TextEncoding } {
+  const buf = fs.readFileSync(file);
+  const enc = detectTextEncoding(buf);
+  return { lines: decodeText(buf, enc).split('\n'), enc };
+}
+function writeIgnoreLines(file: string, lines: string[], enc: TextEncoding): void {
+  fs.writeFileSync(file, encodeText(lines.join('\n') + '\n', enc));
+}
+
 function appendIgnoreLine(file: string, pattern: string): boolean {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n') : [];
+  const { lines, enc } = fs.existsSync(file) ? readIgnoreLines(file) : { lines: [] as string[], enc: 'utf-8' as TextEncoding };
   if (!pattern.startsWith('!') && lines.some((l) => l.trim() === '!' + pattern)) {
-    fs.writeFileSync(file, [...lines.filter((l) => { const t = l.trim(); return t !== pattern && t !== '!' + pattern; }), pattern].join('\n') + '\n');
+    writeIgnoreLines(file, [...lines.filter((l) => { const t = l.trim(); return t !== pattern && t !== '!' + pattern; }), pattern], enc);
     return true;
   }
   if (lines.some((l) => l.trim() === pattern)) return false;
-  fs.writeFileSync(file, [...lines.filter((l) => l.trim()), pattern].join('\n') + '\n');
+  writeIgnoreLines(file, [...lines.filter((l) => l.trim()), pattern], enc);
   return true;
 }
 
@@ -48,9 +61,9 @@ function appendIgnoreLine(file: string, pattern: string): boolean {
  * 加入忽略=用户意图"文件必被忽略"，写入前清全部档位取反，避免跨档覆盖导致看似写入实则未忽略 */
 function removeNegationLine(file: string, pattern: string): void {
   if (pattern.startsWith('!') || !fs.existsSync(file)) return;
-  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  const { lines, enc } = readIgnoreLines(file);
   if (lines.some((l) => l.trim() === '!' + pattern)) {
-    fs.writeFileSync(file, lines.filter((l) => { const t = l.trim(); return t && t !== '!' + pattern; }).join('\n') + '\n');
+    writeIgnoreLines(file, lines.filter((l) => { const t = l.trim(); return t && t !== '!' + pattern; }), enc);
   }
 }
 
@@ -357,10 +370,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           let removedAt = '';
           for (const { where, file } of files) {
             if (!fs.existsSync(file)) continue;
-            const lines = fs.readFileSync(file, 'utf8').split('\n');
+            const { lines, enc } = readIgnoreLines(file);
             const left = lines.filter((l) => l.trim() !== pattern);
             if (left.length !== lines.length) {
-              fs.writeFileSync(file, left.filter((l) => l.trim()).join('\n') + '\n');
+              writeIgnoreLines(file, left.filter((l) => l.trim()), enc);
               removedAt = GIT_IGNORE_WHERE[where];
               break;
             }

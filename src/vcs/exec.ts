@@ -1,5 +1,6 @@
 /** 子进程执行封装：支持 stdin 传参（svn --password-from-stdin）、超时、输出上限 */
 import { spawn } from 'node:child_process';
+import { decodeMixedText } from '../shared/text.js';
 
 export interface RunOptions {
   cwd?: string;
@@ -12,12 +13,24 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** 额外环境变量（合并到 process.env，如 GIT_ASKPASS） */
   env?: Record<string, string>;
+  /** 输出解码方式：
+   *  - 'utf8'（默认，与改动前完全一致）：一律按 UTF-8 解。
+   *    **凡是带路径的机器输出都必须保持这个**（status / log --name-status / ls-tree / --xml …）——
+   *    路径是"字节身份"，猜编码解出来的字符串在 Linux 上永远匹配不上 fs 里的真实文件名；
+   *    Windows 上 git 本来就用 UTF-8 输出路径，猜只会引入误判。
+   *  - 'auto'：先按 UTF-8 试，不是合法 UTF-8 再按 GB18030（见 shared/text.ts）。
+   *    **只给"内容型"调用点用**：cat / show / diff / blame / diffHunks 等，以及 stderr（本地化报错消息）。 */
+  decode?: 'utf8' | 'auto';
+  /** 原样保留 stdout 字节（在结果里给 stdoutBuf）：二进制搬运专用（svn cat 写回工作区），不经字符串往返 */
+  raw?: boolean;
 }
 
 export interface RunResult {
   code: number;
   stdout: string;
   stderr: string;
+  /** raw 模式下的原始 stdout 字节 */
+  stdoutBuf?: Buffer;
   /** 超时被杀 */
   timedOut?: boolean;
   /** 被取消（signal abort） */
@@ -34,6 +47,14 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
     });
 
+    // 输出解码：默认 utf8（与改动前一致）；'auto' 走探测（UTF-8 → GB18030），只给内容型调用点用
+    const dec = (b: Buffer) => (opts.decode === 'auto' ? decodeMixedText(b) : b.toString('utf8'));
+    const finish = (code: number, extra: Partial<RunResult> = {}): RunResult => {
+      const out = Buffer.concat(stdout);
+      const err = Buffer.concat(stderr);
+      return { code, stdout: dec(out), stderr: dec(err), ...(opts.raw ? { stdoutBuf: out } : {}), ...extra };
+    };
+
     const maxBuffer = opts.maxBuffer ?? 64 * 1024 * 1024;
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -45,7 +66,7 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       ? setTimeout(() => {
           if (!done) {
             child.kill('SIGKILL');
-            resolve({ code: -1, stdout: Buffer.concat(stdout).toString(), stderr: Buffer.concat(stderr).toString(), timedOut: true });
+            resolve(finish(-1, { timedOut: true }));
           }
         }, opts.timeoutMs)
       : null;
@@ -54,7 +75,7 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     const onAbort = () => {
       if (!done) {
         child.kill('SIGKILL');
-        resolve({ code: -1, stdout: Buffer.concat(stdout).toString(), stderr: Buffer.concat(stderr).toString(), aborted: true });
+        resolve(finish(-1, { aborted: true }));
       }
     };
     if (opts.signal) {
@@ -89,7 +110,7 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
 
     child.on('close', (code) => {
       finalize();
-      resolve({ code: code ?? -1, stdout: Buffer.concat(stdout).toString(), stderr: Buffer.concat(stderr).toString() });
+      resolve(finish(code ?? -1));
     });
 
     if (opts.stdinData !== undefined) {

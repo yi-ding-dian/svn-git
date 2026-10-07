@@ -201,7 +201,7 @@ export const get = {
     return api<DiffResult>(`/api/show?${q}`);
   },
   ls: (dir?: string) => api<LsResult>(`/api/ls?dir=${encodeURIComponent(dir ?? '')}`),
-  cat: (pathRel: string) => api<DiffResult>(`/api/cat?path=${encodeURIComponent(pathRel)}`),
+  cat: (pathRel: string) => api<DiffResult & { encoding?: string }>(`/api/cat?path=${encodeURIComponent(pathRel)}`),
   browse: (dir?: string) => api<BrowseResult>(`/api/browse?path=${encodeURIComponent(dir ?? '')}`),
   pickDir: () => api<{ path: string | null; unsupported: boolean }>('/api/pick-dir'),
   fs: (dir?: string, force?: boolean) =>

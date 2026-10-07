@@ -6,7 +6,38 @@ import { run } from '../vcs/exec.js';
 import { platform } from '../platform/index.js';
 import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, runVcs, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE } from './util.js';
 import { diffChangedLines } from '../vcs/diff-lines.js';
+import { detectTextEncoding, decodeText, encodeText } from '../shared/text.js';
 import type { Ctx } from './util.js';
+
+/** 把"手动编辑"的结果写回工作区文件，**按目标文件原编码写**（GBK 文件写回去还是 GBK）。
+ *  为什么不能直接 writeFileSync(abs, content)：那是按 UTF-8 落盘——GBK 文件一旦这么写，
+ *  全文件中文变成替换符、编码被静默改掉（全文件 diff，svn 的 resolve 还会把损坏固化）。
+ *  两道守卫，宁可不写也不写坏：
+ *   - 内容含替换符 U+FFFD（读侧解码时字节已丢）→ 拒写，写下去等于把丢失固化；
+ *     但原文件本来就含替换符时不拦（那文件早已损坏，用户改它不该被永久卡住）。
+ *   - 内容含该编码表示不了的字符（如 GBK 表示不了 emoji）→ 拒写并报出是哪个字符。
+ *  返回 { ok: false } 时调用方**必须早返回**：后续的 git add / svn resolve 会把
+ *  "没写成"当成"已解决"，那才是真的丢数据。 */
+function writeTextKeepEncoding(abs: string, content: string): { ok: true } | { ok: false; message: string } {
+  let original = '';
+  let enc = detectTextEncoding(Buffer.alloc(0));
+  try {
+    const buf = fs.readFileSync(abs);
+    enc = detectTextEncoding(buf);
+    original = decodeText(buf, enc);
+  } catch {
+    // 文件不存在（如"对方删除、本地修改"的冲突）：按 UTF-8 新建，与改动前行为一致
+  }
+  if (content.includes('�') && !original.includes('�')) {
+    return { ok: false, message: '内容含无法解码的替换字符（�）——写入会把乱码固化进文件，已拒绝保存。请先「还原」该文件再重试' };
+  }
+  try {
+    fs.writeFileSync(abs, encodeText(content, enc));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: `该文件编码为 ${enc}，保存内容含其无法表示的字符（${(e as Error).message}），已拒绝写入` };
+  }
+}
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
@@ -150,8 +181,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
-      if (p === '/api/resolve-conflict' && req.method === 'POST') {
-        const { vcs, repo } = vcsOf();
+      if (p === '/api/resolve-conflict' && req.method === 'POST') {        const { vcs, repo } = vcsOf();
         const body = await readBody(req);
         const rel = String(body.path ?? '');
         const mode = String(body.mode ?? 'ours');
@@ -172,7 +202,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         if (repo.type === 'git') {
           if (mode === 'manual') {
-            fs.writeFileSync(abs, content);
+            const w = writeTextKeepEncoding(abs, content);
+            if (!w.ok) {
+              sendJson(res, 200, { ok: false, message: w.message });
+              return true;
+            }
           } else {
             const side = mode === 'ours' ? '--ours' : '--theirs';
             const co = await run('git', ['checkout', side, rel], { cwd: repo.root, timeoutMs: 30_000 });
@@ -185,7 +219,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           // git add 为纯本地操作（无网络认证），authErrorOf 恒 false——与原固定 authError:false 等价
           return runVcs(ctx, () => (added.ok ? { ok: true, message: `已解决: ${rel}（${mode === 'ours' ? '采用本地' : mode === 'theirs' ? '采用对方' : '手动编辑'}）` } : added));
         }
-        if (mode === 'manual') fs.writeFileSync(abs, content);
+        if (mode === 'manual') {
+          const w = writeTextKeepEncoding(abs, content);
+          if (!w.ok) {
+            sendJson(res, 200, { ok: false, message: w.message });
+            return true;
+          }
+        }
         const accept = mode === 'ours' ? 'mine-full' : mode === 'theirs' ? 'theirs-full' : 'working';
         // svn resolve 为纯本地操作，authErrorOf 恒 false——与原固定 authError:false 等价；"不支持"兜底由 runVcs 统一
         return runVcs(ctx, () => vcs.resolve?.(rel, accept));

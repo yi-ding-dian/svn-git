@@ -7,6 +7,7 @@ import { detectRepo } from '../vcs/detect.js';
 import { createVcs, type RepoInfo, type VcsResult } from '../vcs/index.js';
 import { loadConfig } from '../config.js';
 import { BINARY_EXTS } from '../shared/types.js';
+import { decodeText } from '../shared/text.js';
 import type { SvnCred } from '../vcs/svn.js';
 
 /** 路由上下文：req/res 与解析后的 URL 按需传递 */
@@ -172,11 +173,13 @@ export function  inRepoRoot(root: string, abs: string): boolean {
 /** 文本读取上限：超过则 statSync 预检后跳过全量读（防超大日志/数据文件 OOM 服务进程） */
 export const  MAX_READ_BYTES = 5 * 1024 * 1024;
 
-/** 读取文本文件：>MAX_READ_BYTES 时读前拦截,返回占位提示,不整读入内存 */
+/** 读取文本文件：>MAX_READ_BYTES 时读前拦截,返回占位提示,不整读入内存。
+ *  编码：先按 UTF-8，不是合法 UTF-8 再按 GB18030（中文项目里的 .bat/老代码常见），
+ *  否则按 UTF-8 读会满屏 `�`（实报：运行.bat）。探测细节见 src/shared/text.ts。 */
 export function  readTextFile(abs: string): string {
   try {
     if (fs.statSync(abs).size > MAX_READ_BYTES) return '（文件过大，未读取全文）';
-    return fs.readFileSync(abs, 'utf8');
+    return decodeText(fs.readFileSync(abs));
   } catch {
     return '';
   }

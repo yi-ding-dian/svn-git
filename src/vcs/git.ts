@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { statSync } from 'node:fs';
 import { run } from './exec.js';
+import { decodeText, detectTextEncoding } from '../shared/text.js';
 import { parseDiff, buildPatch, blobOf, type ParsedDiff } from './hunks.js';
 import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.js';
 import { loadConfig } from '../config.js';
@@ -144,10 +145,11 @@ function parseMergeTreeConflicts(out: string): string[] {
 export class GitVcs {
   constructor(private repo: RepoInfo) {}
 
-  private exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; env?: Record<string, string> } = {}) {
+  private exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; env?: Record<string, string>; decode?: 'utf8' | 'auto' } = {}) {
     return run('git', args, {
       cwd: this.repo.root,
       timeoutMs: extra.timeoutMs ?? 120_000,
+      decode: extra.decode,
       signal: extra.signal,
       stdinData: extra.stdinData, // 透传：此前声明了但漏传，导致 -F - 读到空说明
       // GIT_TERMINAL_PROMPT=0：禁用终端交互提示（否则 git 检测到启动终端会卡在 "Username for..." 等输入，
@@ -335,7 +337,7 @@ export class GitVcs {
   /** 读取指定提交的完整说明（标题 + 正文，%B）：「修改注释」弹窗回显用。
    *  列表接口的 format 只有 %s（parseGitLog 按行扫描，含换行的 %B 会破坏解析），故完整说明按需单独拉取。 */
   async commitMessage(rev: string): Promise<string> {
-    const res = await this.exec(['-c', 'core.quotepath=false', 'log', '-1', '--format=%B', rev]);
+    const res = await this.exec(['-c', 'core.quotepath=false', 'log', '-1', '--format=%B', rev], { decode: 'auto' });
     if (res.code !== 0) throw new Error(`读取提交说明失败: ${res.stderr.trim() || '提交不存在'}`);
     return res.stdout.replace(/\n+$/, '');
   }
@@ -344,7 +346,7 @@ export class GitVcs {
    *  --no-walk 只取指定提交、不遍历祖先；结果按 %x1e 切分而非按行（%B 含换行，按行扫描会串行）。 */
   async commitMessages(revs: string[]): Promise<Record<string, string>> {
     if (revs.length === 0) return {};
-    const res = await this.exec(['-c', 'core.quotepath=false', 'log', '--no-walk', '--format=%H%x1f%B%x1e', ...revs]);
+    const res = await this.exec(['-c', 'core.quotepath=false', 'log', '--no-walk', '--format=%H%x1f%B%x1e', ...revs], { decode: 'auto' });
     if (res.code !== 0) throw new Error(`读取提交说明失败: ${res.stderr.trim()}`);
     const out: Record<string, string> = {};
     for (const chunk of res.stdout.split('\x1e')) {
@@ -454,7 +456,7 @@ export class GitVcs {
   /** 读取文件的逐块差异（-U1：默认 -U3 会把相距较近的改动并成一块，-U1 分得更细且仍有 1 行上下文够 apply 用）。
    *  解析逻辑在 hunks.ts 的纯函数里，这里只负责取 diff 文本。 */
   async diffHunks(pathRel: string): Promise<ParsedDiff> {
-    const res = await this.exec(['-c', 'core.quotepath=false', 'diff', '-U1', '--no-color', '--', pathRel]);
+    const res = await this.exec(['-c', 'core.quotepath=false', 'diff', '-U1', '--no-color', '--', pathRel], { decode: 'auto' });
     if (res.code !== 0) throw new Error(`读取差异失败: ${res.stderr.trim()}`);
     return parseDiff(res.stdout);
   }
@@ -462,6 +464,17 @@ export class GitVcs {
   /** 把选中的块应用到暂存区（hunk 级部分提交的基础）。
    *  patch 经 stdin 传入，避免长 diff 触发命令行长度限制；--whitespace=nowarn 避免空白警告刷屏。 */
   async stageHunks(pathRel: string, hunkIndices: number[], expectBlob?: string): Promise<VcsResult> {
+    // 非 UTF-8 文本（GBK 等）暂不支持行级暂存：patch 要经"字符串拼接 → stdin 写回"往返，
+    // 而 git apply 是拿 patch 里的字节与 index 里的原始字节比对——编码一旦对不上，
+    // 轻则上下文对不上报错，重则（上下文恰好是纯 ASCII 的块）**静默把 UTF-8 内容写进 index**，
+    // 提交后仓库里就是坏的，工作区还显示"已修改"。宁可明确拒绝，也不能写坏。
+    try {
+      if (detectTextEncoding(fs.readFileSync(path.resolve(this.repo.root, pathRel))) !== 'utf-8') {
+        return { ok: false, message: '该文件不是 UTF-8 编码（如 GBK），行级暂存暂不支持——请整文件暂存，或用其它工具处理' };
+      }
+    } catch {
+      /* 读不到（已删除等）交给下面的 diff 逻辑去报错 */
+    }
     const parsed = await this.diffHunks(pathRel);
     if (parsed.hunks.length === 0) return { ok: false, message: '该文件没有可暂存的改动' };
     // 弹窗打开后文件被外部改过：块的位置会错位，按旧索引暂存会暂存到界面上没显示过的块——直接拒绝
@@ -494,7 +507,7 @@ export class GitVcs {
     if (a && b) args.push(a, b);
     else if (a) args.push(a);
     if (pathRel) args.push('--', pathRel);
-    const res = await this.exec(args, { timeoutMs: 120_000 });
+    const res = await this.exec(args, { timeoutMs: 120_000, decode: 'auto' });
     return {
       ok: res.code === 0,
       output: res.stdout,
@@ -507,7 +520,7 @@ export class GitVcs {
     // -c core.quotepath=false：diff 头部路径行中文不做八进制转义
     const args = ['-c', 'core.quotepath=false', 'show', rev];
     if (pathRel) args.push('--', pathRel);
-    const res = await this.exec(args, { timeoutMs: 120_000 });
+    const res = await this.exec(args, { timeoutMs: 120_000, decode: 'auto' });
     return {
       ok: res.code === 0,
       output: res.stdout,
@@ -517,7 +530,7 @@ export class GitVcs {
 
   /** git show HEAD:path：查看版本库内文件内容；未跟踪文件（不在 HEAD）回退直接读磁盘 */
   async cat(pathRel: string): Promise<{ ok: boolean; output: string; error?: string }> {
-    const res = await this.exec(['show', `HEAD:${pathRel}`], { timeoutMs: 120_000 });
+    const res = await this.exec(['show', `HEAD:${pathRel}`], { timeoutMs: 120_000, decode: 'auto' });
     if (res.code === 0) return { ok: true, output: res.stdout };
     // 未跟踪/新增文件不在 HEAD：直接读磁盘（存在才读）。
     // 双保险：readpath 解析后必须仍在仓库根内（path.join 会归一化 ..，../ 可出界读取任意文件）
@@ -532,7 +545,7 @@ export class GitVcs {
       } catch {
         ok = false;
       }
-      if (ok) return { ok: true, output: fs.readFileSync(abs, 'utf8') };
+      if (ok) return { ok: true, output: decodeText(fs.readFileSync(abs)) };
     }
     return { ok: false, output: '', error: res.stderr.trim() };
   }
@@ -541,7 +554,7 @@ export class GitVcs {
   async diffStaged(pathRel?: string): Promise<{ ok: boolean; output: string; error?: string }> {
     const args = ['diff', '--cached'];
     if (pathRel) args.push('--', pathRel);
-    const res = await this.exec(args, { timeoutMs: 120_000 });
+    const res = await this.exec(args, { timeoutMs: 120_000, decode: 'auto' });
     return {
       ok: res.code === 0,
       output: res.stdout,
@@ -1208,7 +1221,7 @@ export class GitVcs {
 
   /** git blame --porcelain：逐行标注提交/作者 */
   async blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]> {
-    const res = await this.exec(['blame', '--porcelain', pathRel], { timeoutMs: 60_000 });
+    const res = await this.exec(['blame', '--porcelain', pathRel], { timeoutMs: 60_000, decode: 'auto' });
     if (res.code !== 0) throw new Error(`git blame 失败: ${res.stderr.trim()}`);
     const out: { rev: string; author: string; date: string; line: number; text: string }[] = [];
     const lines = res.stdout.split('\n');

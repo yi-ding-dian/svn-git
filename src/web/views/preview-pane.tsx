@@ -57,6 +57,8 @@ export function PreviewPane(props: Props) {
 
   /** 顶部说明文案（与旧 openFile 打开时生成的 note 一致；img 目标无说明） */
   const note = target.img ? undefined : target.code === '?' ? '未版本化文件（原文）' : '无差异 — 文件原文';
+  /** 非 UTF-8 文件（GBK 等）的编码提示：不提示的话，用户会以为文件本来就是 UTF-8 */
+  const [fileEnc, setFileEnc] = useState('');
   const isMd = target.name.toLowerCase().endsWith('.md');
   /** md 阅读主题的 inline 变量（只打给 md 的预览容器；「跟随界面」为 undefined 不覆盖） */
   const mdVars = isMd ? mdThemeVars(mdTheme) : undefined;
@@ -78,11 +80,13 @@ export function PreviewPane(props: Props) {
     }
     let cancelled = false;
     setText(null); // 进入加载态
+    setFileEnc('');
     get
       .cat(target.rel)
       .then((r) => {
         if (cancelled) return;
         if (!r.ok) throw new Error(r.error ?? '读取失败');
+        setFileEnc(r.encoding ?? '');
         setText(r.output);
       })
       .catch((err: Error) => {
@@ -190,6 +194,11 @@ export function PreviewPane(props: Props) {
       <div className="row" style={{ marginBottom: full ? 0 : 8, flexWrap: 'wrap' }}>
         <span className="dim">{target.name}</span>
         {note && <span className="small" style={{ color: 'var(--accent)' }}>ℹ {note}</span>}
+        {fileEnc && (
+          <span className="small dim" title="该文件不是 UTF-8 编码，预览按此编码解码显示；保存时会按原编码写回">
+            🈚 按 {fileEnc.toUpperCase()} 解码
+          </span>
+        )}
         {searchActive ? (
           <span className="row" style={{ gap: 6 }}>
             <input

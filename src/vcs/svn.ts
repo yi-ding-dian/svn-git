@@ -3,7 +3,6 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { XMLParser } from 'fast-xml-parser';
 import { run } from './exec.js';
-import { BINARY_EXTS } from '../shared/types.js';
 import type { FileStatus, LogEntry, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
 export interface SvnCred {
@@ -63,13 +62,15 @@ export class SvnVcs {
     return args;
   }
 
-  private exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal } = {}) {
+  private exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; decode?: 'utf8' | 'auto'; raw?: boolean } = {}) {
     const stdinData = extra.stdinData ?? (this.cred?.username ? this.cred.password + '\n' : undefined);
     return run('svn', this.baseArgs().concat(args), {
       cwd: this.repo.root,
       stdinData,
       timeoutMs: extra.timeoutMs ?? 120_000,
       signal: extra.signal,
+      decode: extra.decode,
+      raw: extra.raw,
     });
   }
 
@@ -259,7 +260,7 @@ export class SvnVcs {
     if (a && b) args.push('-r', `${a}:${b}`);
     else if (a) args.push('-r', a);
     if (pathRel) args.push(pathRel);
-    const res = await this.exec(args, { timeoutMs: 120_000 });
+    const res = await this.exec(args, { timeoutMs: 120_000, decode: 'auto' });
     return {
       ok: res.code === 0,
       output: res.stdout,
@@ -469,7 +470,7 @@ export class SvnVcs {
 
   /** svn cat -r REV：指定版本内容 */
   async catRev(rev: string, pathRel: string): Promise<{ ok: boolean; output: string; error?: string }> {
-    const res = await this.exec(['cat', '-r', rev, pathRel], { timeoutMs: 60_000 });
+    const res = await this.exec(['cat', '-r', rev, pathRel], { timeoutMs: 60_000, decode: 'auto' });
     return {
       ok: res.code === 0,
       output: res.stdout,
@@ -477,23 +478,22 @@ export class SvnVcs {
     };
   }
 
-  /** 还原到指定历史版本：svn cat -r REV 内容写回工作区（仅文件级；二进制/目录拒绝——cat 文本经 UTF-8 写回会损坏） */
+  /** 还原到指定历史版本：svn cat -r REV 的**原始字节**直接写回工作区。
+   *  走字节搬运（raw）而不是"解成字符串再写回"：文本编码猜错会把 GBK 文件改成 UTF-8、
+   *  二进制文件更是直接损坏——原先只靠扩展名挡住二进制，GBK 文本是挡不住的（代码注释自认过）。
+   *  字节搬运后这两类都天然安全，二进制也能还原。 */
   async restoreToRev(relPath: string, rev: string): Promise<VcsResult> {
-    const ext = relPath.split('.').pop()?.toLowerCase() ?? '';
-    if (BINARY_EXTS.has(ext)) {
-      return { ok: false, message: `二进制文件（${ext}）不支持还原到指定版本（svn cat 文本输出会损坏内容），请在版本库侧处理` };
-    }
     const abs = path.join(this.repo.root, relPath);
-    const cat = await this.catRev(rev, relPath);
-    if (!cat.ok) return { ok: false, message: cat.error ?? `svn cat -r ${rev} 失败` };
+    const res = await this.exec(['cat', '-r', rev, relPath], { timeoutMs: 60_000, raw: true });
+    if (res.code !== 0 || !res.stdoutBuf) return { ok: false, message: res.stderr.trim() || `svn cat -r ${rev} 失败` };
     fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, cat.output);
+    fs.writeFileSync(abs, res.stdoutBuf);
     return { ok: true, message: `已将 ${relPath} 还原到 r${rev} 版本（工作区修改，可提交）` };
   }
 
   /** svn cat：查看版本库内文件内容 */
   async cat(url: string): Promise<{ ok: boolean; output: string; error?: string }> {
-    const res = await this.exec(['cat', url], { timeoutMs: 60_000 });
+    const res = await this.exec(['cat', url], { timeoutMs: 60_000, decode: 'auto' });
     return {
       ok: res.code === 0,
       output: res.stdout,
@@ -874,7 +874,7 @@ export class SvnVcs {
 
   /** svn blame：逐行标注版本/作者 */
   async blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]> {
-    const res = await this.exec(['blame', pathRel], { timeoutMs: 60_000 });
+    const res = await this.exec(['blame', pathRel], { timeoutMs: 60_000, decode: 'auto' });
     if (res.code !== 0) throw new Error(`svn blame 失败: ${res.stderr.trim()}`);
     const out: { rev: string; author: string; date: string; line: number; text: string }[] = [];
     for (const line of res.stdout.split('\n')) {

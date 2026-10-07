@@ -7,9 +7,10 @@ import { detectRepo } from '../vcs/detect.js';
 import { platform } from '../platform/index.js';
 import { makeGitIgnoreChecker } from '../vcs/ignore.js';
 import { BINARY_EXTS, compareName } from '../shared/types.js';
+import { detectTextEncoding } from '../shared/text.js';
 import { run } from '../vcs/exec.js';
 import {
-  isBinaryFile, inRepoRoot, sendJson, readBody, getStatusCached, readTextFile,
+  isBinaryFile, inRepoRoot, sendJson, readBody, getStatusCached, readTextFile, MAX_READ_BYTES,
   currentScopes, vcsOf, repoInfo, START_DIR, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE,
   type Ctx,
 } from './util.js';
@@ -1109,7 +1110,19 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
           out = { ok: true, output: readTextFile(abs) };
         }
-        sendJson(res, 200, out);
+        // 编码提示：工作区文件不是 UTF-8（如 GBK）时告诉前端一声——用户才知道看到的是按什么编码解出来的，
+        // 否则"不乱了"反而让人以为文件本来就是 UTF-8。探测看磁盘那份（预览的对象就是它）。
+        let encoding: string | undefined;
+        try {
+          const absFile = path.resolve(repo.root, rel);
+          if (inRepoRoot(repo.root, absFile) && fs.statSync(absFile).size <= MAX_READ_BYTES) {
+            const enc = detectTextEncoding(fs.readFileSync(absFile));
+            if (enc !== 'utf-8') encoding = enc;
+          }
+        } catch {
+          /* 读不到（已删除等）：不提示 */
+        }
+        sendJson(res, 200, encoding ? { ...out, encoding } : out);
         return true;
       }
       if (p === '/api/file') {

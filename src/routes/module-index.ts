@@ -3,6 +3,7 @@
  * 解析 md 的"目录树与文件说明"代码块（'路径 ← 描述'）与 md 表格（'| 路径 | 描述 |'）两种格式。
  * 作用域 = 注入时选定的仓库相对目录（前端默认当前浏览目录），只对该目录及子树生效。 */
 import fs from 'node:fs';
+import { decodeText } from '../shared/text.js';
 import os from 'node:os';
 import path from 'node:path';
 import { sendJson, readBody, repoInfo, type Ctx } from './util.js';
@@ -106,7 +107,7 @@ function parseRepoMd(repoRoot: string, mdRel: string): IndexEntry[] | null {
   if (!mdAbs.startsWith(repoRoot + path.sep)) return null;
   let text: string;
   try {
-    text = fs.readFileSync(mdAbs, 'utf8');
+    text = decodeText(fs.readFileSync(mdAbs)); // 仓库内的 md 也可能是 GBK（老项目）
   } catch {
     return null;
   }
