@@ -385,8 +385,11 @@ body {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .history-path {
-  /* 占满第一行（徽标与星号之间）的剩余宽度 */
-  flex: 1 1 auto; min-width: 0;
+  /* 占满第一行（徽标与星号之间）的剩余宽度。
+     flex-basis 必须是 0 而不是 auto：外层是 flex-wrap:wrap，换行判定看的是**内容原始宽度**——
+     auto 时名字一长就被判定"这一行放不下"，整个挤到第二行（实报：GIT 徽标独占一行、名字另起一行），
+     下面的 nowrap/ellipsis 根本没机会生效。basis 0 让它老老实实留在第一行内收缩，超长才截成「…」 */
+  flex: 1 1 0%; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.93em;
 }
 /* 名字 + 备注时间两行：早先是 .history-main 竖排包裹（第二行缩进在名字下方），
