@@ -1,6 +1,6 @@
 /** 打开项目：目录浏览选择仓库（启动页 / 打开项目模态框共用） */
 import React, { useEffect, useRef, useState } from 'react';
-import { translateVcsError } from '../utils.js';
+import { translateVcsError, baseName } from '../utils.js';
 import { get, post, type BrowseResult, type RepoInfo } from '../api.js';
 import { ModalShell } from '../modals/modal-shell.js';
 import { GridIcon } from '../ui/icons.js';
@@ -291,14 +291,14 @@ export function OpenBrowser(props: {
         <div className="repo-enter" style={{ marginBottom: 10 }}>
           <span className="badge svn">SVN</span>
           <span className="info" style={{ flex: 1 }}>
-            <b>{svnBare.replace(/\/+$/, '').split('/').pop()}</b> 是 SVN 版本库存储目录（服务器数据，不能直接编辑）。
+            <b>{baseName(svnBare)}</b> 是 SVN 版本库存储目录（服务器数据，不能直接编辑）。
             {' '}请打开它的工作副本进行日常操作：
           </span>
           <button
             className="primary"
             onClick={() => void openPath(`${svnBare.replace(/\/+$/, '')}-wc`)}
           >
-            进入工作副本 {svnBare.replace(/\/+$/, '').split('/').pop()}-wc →
+            进入工作副本 {baseName(svnBare)}-wc →
           </button>
         </div>
       )}

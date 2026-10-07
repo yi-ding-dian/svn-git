@@ -6,6 +6,7 @@ import { ContextMenu } from './ui/context-menu.js';
 import { RemarkModal } from './modals/modals.js';
 import { THEMES, THEME_PINNED } from './header.js';
 import type { HistoryItem } from './api.js';
+import { baseName } from './utils.js';
 
 /** 主视图类型（侧边栏导航目标） */
 export type View = 'log' | 'diff' | 'browse';
@@ -147,7 +148,7 @@ export function Sidebar(props: {
                       第二行改由 flex-basis:100% 换行、**占满整行**（含徽标下方那块）——原先它缩进在
                       名字下方，徽标底下那 30 多 px 白空着；160px 的侧边栏里这是很大一块
                       （用户实报「左边那么多空位」，备注"git仓库"因此被压成 "g…"） */}
-                  <span className="history-path">{h.path.split('/').filter(Boolean).pop()}</span>
+                  <span className="history-path">{baseName(h.path)}</span>
                   {h.fav && <span className="fav-star" title="常用项目（启动时优先打开）">★</span>}
                   {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮）。
                       必须排在第二行**之前**——第二行 flex-basis:100% 会换行，× 写在它后面会被挤到第二行 */}
@@ -214,7 +215,7 @@ export function Sidebar(props: {
                             setRmMenu(null);
                             setRemarkFor({
                               path: rmMenu.path,
-                              name: rmMenu.path.split('/').filter(Boolean).pop() ?? rmMenu.path,
+                              name: baseName(rmMenu.path),
                               current: rmMenu.remark,
                             });
                           },

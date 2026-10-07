@@ -17,6 +17,17 @@ export function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/** 取路径最后一段当显示名（最近项目、SVN 版本库目录等）。
+ *  **两种分隔符都要认**：Windows 的 `D:\x\proj` 里一个 `/` 都没有，只按 `/` 切会把整条路径
+ *  当名字显示出来（实报：Windows 侧边栏「最近项目」显示成 `D:\svn-git`，Linux 上正常）。
+ *  只在路径确为 Windows 形式（盘符 `C:\`/`C:/` 或 UNC `\\server`）时才把 `\` 当分隔符——
+ *  Linux 上 `\` 是合法文件名字符，不能无条件当分隔符（否则会切坏 Linux 的文件名）。 */
+export function baseName(p: string): string {
+  const isWin = /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\');
+  const segs = p.split(isWin ? /[/\\]/ : '/').filter(Boolean);
+  return segs.pop() ?? p;
+}
+
 /** 是否为二进制文件（不支持文本对比） */
 export function isBinaryFile(path: string): boolean {
   const name = path.split('/').pop() ?? '';
