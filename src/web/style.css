@@ -1072,6 +1072,22 @@ textarea { resize: vertical; font-family: inherit; }
   padding: 7px 10px; font-size: 12px; color: var(--accent);
   background: rgba(88, 166, 255, .10); border-bottom: 1px solid var(--border);
 }
+/* 就地新建的条目（列表行 / 网格卡片）：名字就地编辑——回车或点空白处确认，Esc 取消 */
+.new-entry { opacity: .95; }
+.inline-edit-input {
+  font: inherit;
+  min-width: 0;
+  flex: 1; /* 列表行：占满图标右侧的剩余宽度 */
+  padding: 1px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+/* 网格卡片是竖排（图标在上、名字在下），输入框宽度跟着卡片走 */
+.grid-item.new-entry .inline-edit-input { flex: none; width: 100%; font-size: 13px; }
+/* 网格下的就地重命名：输入框占住名字那一格 */
+.grid-name .inline-edit-input { width: 100%; font-size: 13px; }
 .fs-drag-bar {
   display: flex; align-items: center; gap: 8px; padding: 7px 10px;
   color: var(--accent); font-size: 12px; background: rgba(88, 166, 255, .10);

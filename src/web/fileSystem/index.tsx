@@ -447,6 +447,7 @@ export function FsView(props: Props) {
       dropHover={drop.hoverDir === row.rel}
       onDragStart={(ev) => onRowDragStart(ev, row.rel, row.name, row.isDir, row.code)}
       onDragEnd={onRowDragEnd}
+      renaming={inline?.kind === 'rename' && inline.rel === row.rel ? inlineInput('left', row.name) : undefined}
       desc={descOf(row.rel)}
       buttons={rowButtons(row)}
       locateBadge={locateBadge}
@@ -870,6 +871,19 @@ export function FsView(props: Props) {
     copyItems: (items) => clipFlow.take('copy', items),
     cutItems: (items) => clipFlow.take('cut', items),
     pasteInto: (dest) => void clipFlow.paste(dest),
+    mode,
+    startCreate: (type) => {
+      setSelected(new Set()); // 焦点已转到即将生成的条目上，清掉旧选中免得看着像"还选着上一个"
+      setInlineText('');
+      cancelInlineRef.current = false;
+      setInline({ kind: 'new', type });
+    },
+    startRename: (rel) => {
+      setSelected(new Set([rel])); // 就地改名时保持该条目选中（一看就知道在改哪个）
+      setInlineText(rel.split('/').pop() ?? '');
+      cancelInlineRef.current = false;
+      setInline({ kind: 'rename', rel });
+    },
   });
   /** 「打开方式」异步取到程序列表后替换菜单第 owIdx 项的子菜单（菜单已关闭则安全跳过） */
   const menuPatchItems = (owIdx: number, subs: CtxMenuItem[]) => {
@@ -1128,6 +1142,93 @@ export function FsView(props: Props) {
     dragGhostRef.current = null;
   };
 
+  /** 「新建文件夹」输入栏：null = 未开启；字符串 = 正在输入的名字（列表/网格上方的一条，回车创建） */
+  /** 就地编辑：新建（列表/网格里"长"出一个条目）或重命名（把某个条目的名字换成输入框）。
+   *  重命名只对**未版本化**条目走这条路——那只是纯磁盘改名（fs-move），没有版本库交互，
+   *  弹窗纯属多余；已版本化的改名是 svn move / git mv，仍走确认弹窗。 */
+  const [inline, setInline] = useState<{ kind: 'new'; type: 'dir' | 'file' } | { kind: 'rename'; rel: string } | null>(null);
+  const [inlineText, setInlineText] = useState('');
+  /** Esc 取消时置位：onBlur 也会触发，避免"取消"又被当成确认 */
+  const cancelInlineRef = useRef(false);
+
+  const cancelInline = () => {
+    cancelInlineRef.current = true;
+    setInline(null);
+    setInlineText('');
+  };
+
+  /** 确认就地编辑：回车或点击别处（失焦）时调用；**名字留空 = 悄悄取消**（不当错误提示） */
+  const commitInline = async () => {
+    const cur = inline;
+    const text = inlineText.trim();
+    setInline(null);
+    setInlineText('');
+    if (!cur || !text) return;
+    if (/[/\\]/.test(text)) {
+      props.onToast('名字不能包含 / 或 \\', true);
+      return;
+    }
+    const isRename = cur.kind === 'rename';
+    const oldRel = isRename ? cur.rel : '';
+    const oldName = isRename ? (oldRel.split('/').pop() ?? '') : '';
+    if (isRename && text === oldName) return; // 名字没动：安静收场，不必跑一趟
+    const parent = isRename ? (oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : '') : dir;
+    const rel = parent ? `${parent}/${text}` : text;
+    try {
+      let r: { ok?: boolean; message?: string };
+      if (isRename) r = await post.fsMove(oldRel, rel);
+      else if (cur.type === 'dir') r = await post.newDir(rel);
+      else r = await post.newFile(rel);
+      setNodeData(new Map()); // 改动了当前目录 → 清缓存再刷（与其他写操作一致）
+      await load(dir, true);
+      setPendingLocate({ rel, at: Date.now() }); // 选中并定位到刚落地的条目
+      if (isRename) {
+        props.onToast(`已重命名为 ${text}`);
+      } else {
+        // git 不跟踪目录本身：空文件夹不会出现在提交里，不提醒的话用户会以为建失败了
+        // （空**文件**没这问题，git 会照常显示为未跟踪）
+        props.onToast(
+          cur.type === 'dir' && props.repoType === 'git'
+            ? `${r.message ?? `已新建 ${rel}`}（空目录不会被 Git 提交，放个文件进去才会出现在变更里）`
+            : (r.message ?? `已新建 ${rel}`),
+        );
+      }
+    } catch (e) {
+      props.onToast(`${isRename ? '重命名' : '新建'}失败：${(e as Error).message}`, true); // 同名已存在等原样带出来
+    }
+  };
+
+  /** 就地编辑的输入框（新建条目与重命名共用同一份行为）：
+   *  回车确认 / 失焦（点空白处）确认 / Esc 取消 —— 三者都不能打架 */
+  const inlineInput = (align: 'left' | 'center', placeholder: string) => (
+    <input
+      className="inline-edit-input"
+      // 输入框自身禁止拖拽：行的 draggable 会把它上面的"拖选文字"变成"拖拽条目"（HTML5 拖拽优先于文本选择）
+      draggable={false}
+      autoFocus
+      value={inlineText}
+      placeholder={placeholder}
+      style={{ textAlign: align }}
+      onChange={(e) => setInlineText(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void commitInline();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          cancelInline();
+        }
+      }}
+      onBlur={() => {
+        if (cancelInlineRef.current) {
+          cancelInlineRef.current = false; // Esc 取消触发的失焦：什么都不做
+          return;
+        }
+        void commitInline();
+      }}
+    />
+  );
+
   const renderEntryRow = (e: FsEntry, i: number) => {
     const rel = relOf(e);
     const focused = i === focusIndex;
@@ -1141,7 +1242,7 @@ export function FsView(props: Props) {
         key={rel}
         data-dir-rel={e.isDir ? rel : undefined} /* 拖入落点：容器按事件委托读它 */
         className={`tree-row ${isMatch ? 'search-hit' : ''}${pulseRels.includes(rel) ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}${drop.hoverDir === rel ? ' dir-drop-hover' : ''}${cutRels.has(rel) ? ' clip-cut' : ''}${dragRels.has(rel) ? ' drag-src' : ''}`}
-        draggable
+        draggable={!(inline?.kind === 'rename' && inline.rel === rel)} /* 正在就地改名时不拖：否则没法用鼠标选名字里的字 */
         onDragStart={(ev) => onRowDragStart(ev, rel, e.name, e.isDir, e.code)}
         onDragEnd={onRowDragEnd}
         style={{
@@ -1200,7 +1301,7 @@ export function FsView(props: Props) {
           fallback={<MiniIcon isDir={e.isDir} name={e.name} />}
         />
         <span className={`name ${e.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}>
-          {e.name}
+          {inline?.kind === 'rename' && inline.rel === rel ? inlineInput('left', e.name) : e.name}
           {e.count ? <span className="count"> （{e.count} 项）</span> : null}
           {descOf(rel) && (
             <span className="dim small" style={{ marginLeft: 10, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1489,6 +1590,14 @@ export function FsView(props: Props) {
                   : '空文件夹（← 返回上级 · 空白处右键菜单）'}
               </div>
             )}
+            {inline?.kind === 'new' && (
+              /* 就地新建的行同样给"选中"样式（与 TreeRow 被选中时一致）：编辑中的就是它 */
+              <div className="tree-row new-entry" style={{ background: 'var(--panel2)', outline: '1px solid var(--accent)' }}>
+                <span className="arrow" />
+                <MiniIcon isDir={inline.type === 'dir'} name="" />
+                {inlineInput('left', inline.type === 'dir' ? '文件夹名' : '文件名')}
+              </div>
+            )}
             {listEntries.map((e, i) => renderEntryRow(e, i))}
           </div>
         )}
@@ -1571,6 +1680,15 @@ export function FsView(props: Props) {
                   : '空文件夹（← 返回上级 · 空白处右键菜单）'}
               </div>
             )}
+            {/* 就地新建的卡片：图标在上、名字输入框在下（与网格条目同构） */}
+            {inline?.kind === 'new' && (
+              <div className="grid-item new-entry selected">
+                <span className="grid-icon-wrap">
+                  <GridIcon isDir={inline.type === 'dir'} name="" />
+                </span>
+                {inlineInput('center', inline.type === 'dir' ? '文件夹名' : '文件名')}
+              </div>
+            )}
             {listEntries.map((e, i) => {
               const rel = relOf(e);
               return (
@@ -1587,6 +1705,7 @@ export function FsView(props: Props) {
                   dropHover={drop.hoverDir === rel}
                   onDragStart={(ev) => onRowDragStart(ev, rel, e.name, e.isDir, e.code)}
                   onDragEnd={onRowDragEnd}
+                  renaming={inline?.kind === 'rename' && inline.rel === rel ? inlineInput('center', e.name) : undefined}
                   locked={data?.selfLocked?.includes(rel) ?? false}
                   tc={tcState(e, rel, conflictLookup)}
                   rowRef={(el) => {

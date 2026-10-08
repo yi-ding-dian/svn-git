@@ -240,6 +240,48 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if ((p === '/api/new-dir' || p === '/api/new-file') && req.method === 'POST') {
+        // 仓库内新建（文件浏览视图用）：path 相对仓库根，**单级**（名字里不许带路径分隔符）。
+        // 与目录选择器那个系统级 /api/mkdir 分开：那个是"选仓库位置"用的、路径可以不在任何仓库内、
+        // 因而不校验边界也不递归；仓库内的新建必须挡越界，且只建一级（用户要的语义）。
+        const { repo } = vcsOf();
+        const body = await readBody(req);
+        const rel = String(body.path ?? '').trim().replace(/\/+$/, '');
+        const isDir = p === '/api/new-dir';
+        const what = isDir ? '文件夹' : '文件';
+        if (!rel) {
+          sendJson(res, 400, { error: `${what}名为空` });
+          return true;
+        }
+        const name = rel.slice(rel.lastIndexOf('/') + 1);
+        if (name === '.' || name === '..' || /[/\\]/.test(name)) {
+          sendJson(res, 400, { error: `${what}名不能含路径分隔符` });
+          return true;
+        }
+        const abs = path.resolve(repo.root, rel);
+        if (!inRepoRoot(repo.root, abs)) {
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          return true;
+        }
+        // 已存在就直接说清楚：recursive 模式下 mkdir 对已存在的目录**不报错**，
+        // 不先查一下的话，输入一个已有名字会得到"已新建"的成功提示（误导）
+        if (fs.existsSync(abs)) {
+          sendJson(res, 400, { error: `已存在同名文件或文件夹：${name}` });
+          return true;
+        }
+        try {
+          // 文件用 wx（已存在即失败）：与上面那道存在性检查双保险，绝不覆盖已有内容
+          if (isDir) fs.mkdirSync(abs);
+          else fs.writeFileSync(abs, '', { flag: 'wx' });
+          invalidateStatusCache(repo.root); // 新建条目状态是 '?'，缓存要失效
+          sendJson(res, 200, { ok: true, message: `已新建${what}: ${rel}` });
+        } catch (e) {
+          // EEXIST / EACCES 等原样回给用户，比"新建失败"有用
+          sendJson(res, 500, { error: (e as Error).message });
+        }
+        return true;
+      }
+
       if (p === '/api/move' && req.method === 'POST') {
         // 版本化文件/目录重命名/移动（svn move / git mv：本地调度，提交后生效）
         const { vcs, repo } = vcsOf();

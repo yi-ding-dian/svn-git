@@ -34,15 +34,25 @@ export function removableFromRepo(code: string): boolean {
 }
 
 /** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
-export function renameItem(code: string, repoType: 'svn' | 'git', rel: string, isDir: boolean, onAction: (op: 'move' | 'fs-move', paths: string[]) => void): CtxMenuItem {
+export function renameItem(
+  code: string,
+  repoType: 'svn' | 'git',
+  rel: string,
+  isDir: boolean,
+  onAction: (op: 'move' | 'fs-move', paths: string[]) => void,
+  onInlineRename: (rel: string) => void,
+): CtxMenuItem {
   const fsOnly = code === '?' || code === 'I';
   return {
     icon: <IconRename />,
     label: '重命名',
-    title: fsOnly ? '从磁盘直接改名，不影响版本库' : `重命名此${isDir ? '文件夹' : '文件'}（本地改名，提交后生效）`,
+    // 未版本化的改名只是纯磁盘动作（fs-move），没有版本库交互，弹窗纯属多余 → 名字就地改
+    title: fsOnly
+      ? '就地改名（不在版本库，纯磁盘操作；回车或点空白处确认，Esc 取消）'
+      : `重命名此${isDir ? '文件夹' : '文件'}（本地改名，提交后生效）`,
     // 命令预览只显示文件名（完整路径在弹窗确认按钮上）
     cmd: fsOnly ? undefined : cmdOfRepo(repoType, 'move', { from: rel.split('/').pop() ?? '', to: '…' }),
-    action: () => onAction(fsOnly ? 'fs-move' : 'move', [rel]),
+    action: () => (fsOnly ? onInlineRename(rel) : onAction('move', [rel])),
   };
 }
 

@@ -21,6 +21,8 @@ export function GridItem(props: {
   /** 拖起本格（应用内移动）：拖哪些条目由上层决定（选中一批或就它自己） */
   onDragStart?: (ev: React.DragEvent) => void;
   onDragEnd?: () => void;
+  /** 就地重命名中：名字位置换成这个输入框（节点与行为由上层给） */
+  renaming?: React.ReactNode;
   locked: boolean;
   rowRef: (el: HTMLDivElement | null) => void;
   onMouseEnter: (ev: React.MouseEvent) => void;
@@ -44,7 +46,7 @@ export function GridItem(props: {
   return (
     <div
       data-dir-rel={e.isDir ? props.rel : undefined} /* 拖入落点：容器按事件委托读它 */
-      draggable
+      draggable={!props.renaming} /* 就地改名时不可拖：否则输入框里没法用鼠标选中文字 */
       onDragStart={props.onDragStart}
       onDragEnd={props.onDragEnd}
       className={`grid-item ${props.focused || props.multi ? 'selected' : ''} ${props.searchHit ? 'search-hit' : ''}${props.pulse ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}${props.dropHover ? ' dir-drop-hover' : ''}${props.clipCut ? ' clip-cut' : ''}${props.dragSrc ? ' drag-src' : ''}`}
@@ -85,7 +87,7 @@ export function GridItem(props: {
           {props.locked && <IconLock size={13} />}
         </span>
       </span>
-      <span className={`grid-name ${e.isDir ? 'dir' : ''}`}>{e.name}</span>
+      <span className={`grid-name ${e.isDir ? 'dir' : ''}`}>{props.renaming ?? e.name}</span>
       {!e.isDir && <span className="dim small nowrap">{fmtSize(e.size)}</span>}
     </div>
   );

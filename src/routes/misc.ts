@@ -729,6 +729,17 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               if (await isIgnoredEntry(parentOf, d)) code = 'I';
               // git：目录名未被规则命中，但目录内全部条目都被忽略 → 目录整体视作"已忽略"（.claude 场景）
               else if (repo.type === 'git' && (await gitIgnore.allIgnored(relDir))) code = 'I';
+              // git 不跟踪目录：**空目录根本不会出现在 status 里**，走到这儿 code 还是空 → 渲染成"干净 ✓"，
+              // 可它其实完全不在版本库里（用户实报"新建的文件夹是打√的"）。
+              // 磁盘上有、status 无、又没被忽略 → 就是未版本化的空目录，标 '?'。
+              // （SVN 会正常报告 `? 空目录`，不需要这一手；空**文件** git 也会照常报 ??，同理不需要）
+              else if (repo.type === 'git') {
+                try {
+                  if (fs.readdirSync(path.join(repo.root, relDir)).length === 0) code = '?';
+                } catch {
+                  /* 读不到：不标，维持原样 */
+                }
+              }
             }
           }
           const sub = items.filter((i) => i.path.startsWith(relDir + '/'));

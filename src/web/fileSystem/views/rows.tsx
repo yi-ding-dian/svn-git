@@ -34,13 +34,15 @@ export function TreeRow(props: {
   /** 拖起本行（应用内移动）：拖哪些条目由上层决定（选中一批或就它自己） */
   onDragStart?: (ev: React.DragEvent) => void;
   onDragEnd?: () => void;
+  /** 就地重命名中：名字位置换成这个输入框（节点与行为由上层给） */
+  renaming?: React.ReactNode;
 }) {
   const { row } = props;
   return (
     <div
       ref={props.rowRef}
       data-dir-rel={row.isDir ? row.rel : undefined} /* 拖入落点：容器按事件委托读它 */
-      draggable
+      draggable={!props.renaming} /* 就地改名时不可拖：否则输入框里没法用鼠标选中文字 */
       onDragStart={props.onDragStart}
       onDragEnd={props.onDragEnd}
       className={`tree-row ${props.searchHit ? 'search-hit' : ''}${props.pulse ? ' file-pulse' : ''}${row.miss ? ' miss' : ''}${props.dropHover ? ' dir-drop-hover' : ''}${props.clipCut ? ' clip-cut' : ''}${props.dragSrc ? ' drag-src' : ''}`}
@@ -84,7 +86,7 @@ export function TreeRow(props: {
         fallback={<MiniIcon isDir={row.isDir} name={row.name} />}
       />
       <span className={`name ${row.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(row.isDir ? row.codes?.[0] : row.code) }}>
-        {row.name}
+        {props.renaming ?? row.name}
         {row.count ? <span className="count"> （{row.count} 项）</span> : null}
         {props.desc && (
           <span className="dim small" style={{ marginLeft: 10, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

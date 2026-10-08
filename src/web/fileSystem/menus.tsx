@@ -28,6 +28,12 @@ function AppIcon({ icon }: { icon: string }) {
 export interface MenuServices {
   repoType: 'svn' | 'git';
   dir: string;
+  /** 当前视图模式：树模式不提供新建（就地生成的条目没处安放，树视图本来也是看全貌用的） */
+  mode: Mode;
+  /** 在当前目录就地新建一个条目（kind 决定文件还是文件夹），名字就地编辑 */
+  startCreate: (kind: 'dir' | 'file') => void;
+  /** 就地重命名（只给未版本化条目用：纯磁盘改名，不值得弹窗） */
+  startRename: (rel: string) => void;
   root?: string;
   favs: { path: string }[];
   setIgnoreTarget: (t: 'gitignore' | 'global' | 'exclude') => void;
@@ -101,6 +107,22 @@ export function buildBlankItems(s: MenuServices): CtxMenuItem[] {
     },
     { icon: <IconFolder />, label: '打开文件管理器', action: () => s.openInFm(s.dir) },
   ];
+  // 新建：树模式不给（就地生成的条目在树里没处安放）
+  if (s.mode !== 'tree') {
+    items.push({ sep: true });
+    items.push({
+      icon: <IconFolder />,
+      label: '新建文件夹…',
+      title: '在当前目录新建一个文件夹，名字就地输入（回车或点空白处确认，Esc 取消）',
+      action: () => s.startCreate('dir'),
+    });
+    items.push({
+      icon: <IconFile />,
+      label: '新建文件…',
+      title: '在当前目录新建一个空文件，名字就地输入（回车或点空白处确认，Esc 取消）',
+      action: () => s.startCreate('file'),
+    });
+  }
   return items;
 }
 
@@ -261,7 +283,7 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
       // 忽略目录：无版本操作（更新/提交/还原/历史均无意义），仅忽略设置/取消忽略/删除(git 可磁盘删)
       items.push({ icon: <IconIgnore />, label: '忽略设置…', action: () => s.setIgnoreModal({ dir: t.rel }) });
       items.push({ icon: <IconEyeOff />, label: '取消忽略', action: () => s.setUnignoreAsk({ rel: t.rel, name: t.name, isDir: true }) });
-      items.push(renameItem(t.code, s.repoType, t.rel, true, s.onAction));
+      items.push(renameItem(t.code, s.repoType, t.rel, true, s.onAction, s.startRename));
       if (s.repoType === 'git') {
         items.push({ sep: true });
         items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该目录，不可恢复（不影响版本库）', action: () => s.onAction('fs-delete', [t.rel]) });
@@ -276,7 +298,7 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
       }
       items.push({ sep: true });
       if (t.code !== 'A') items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(s.repoType, 'view_history', { path: t.rel }), action: () => s.viewHistory(t.rel, ev) });
-      if (renameableCode(t.code)) items.push(renameItem(t.code, s.repoType, t.rel, true, s.onAction));
+      if (renameableCode(t.code)) items.push(renameItem(t.code, s.repoType, t.rel, true, s.onAction, s.startRename));
       items.push({ icon: <IconIgnore />, label: '忽略设置…', cmd: cmdOfRepo(s.repoType, 'ignore_add', { path: t.rel, pattern: '…' }), action: () => s.setIgnoreModal({ dir: t.rel }) });
       // 常用文件夹（仅 svn：git 加载快无需预加载）：自身已加入显示移除；父目录已加入则不再显示；其余显示加入
       if (s.repoType === 'svn') {
@@ -307,7 +329,7 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
         ] : undefined,
         action: s.repoType === 'git' ? undefined : () => s.ignoreFile(t),
       });
-      items.push(renameItem(t.code, s.repoType, t.rel, true, s.onAction));
+      items.push(renameItem(t.code, s.repoType, t.rel, true, s.onAction, s.startRename));
       items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该目录，不可恢复（不影响版本库）', action: () => s.onAction('fs-delete', [t.rel]) });
       // 常用文件夹（仅 svn：git 加载快无需预加载）
       if (s.repoType === 'svn') {
@@ -322,7 +344,7 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
     // 文件
     if (t.code === 'I') {
       items.push({ icon: <IconEyeOff />, label: '取消忽略', action: () => s.setUnignoreAsk({ rel: t.rel, name: t.name, isDir: false }) });
-      items.push(renameItem(t.code, s.repoType, t.rel, false, s.onAction));
+      items.push(renameItem(t.code, s.repoType, t.rel, false, s.onAction, s.startRename));
       if (s.repoType === 'git') {
         items.push({ sep: true });
         items.push({ icon: <IconClean />, label: '删除磁盘文件', danger: true, title: '从磁盘永久删除该文件，不可恢复（不影响版本库）', action: () => s.onAction('fs-delete', [t.rel]) });
@@ -364,7 +386,7 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
       if (t.code !== 'M' && t.code !== 'C') items.push({ icon: <IconFile />, label: '查看内容', action: () => void s.openFile(t.name, t.code, t.rel) });
       // 未版本化(?) 与已添加(A,尚未提交过) 的文件没有历史记录 → 不显示"查看历史"
       if (t.code !== '?' && t.code !== 'A') items.push({ icon: <IconHistory />, label: '查看历史', cmd: cmdOfRepo(s.repoType, 'view_history', { path: t.rel }), action: () => s.viewHistory(t.rel, ev) });
-      if (renameableCode(t.code)) items.push(renameItem(t.code, s.repoType, t.rel, false, s.onAction));
+      if (renameableCode(t.code)) items.push(renameItem(t.code, s.repoType, t.rel, false, s.onAction, s.startRename));
       if (s.repoType === 'svn' && t.code !== '?' && t.code !== 'A') {
         items.push({ sep: true });
         items.push({ icon: <IconLock />, label: '锁定', action: () => s.svnLock(t.rel, 'lock') });

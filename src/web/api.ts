@@ -368,6 +368,10 @@ export const post = {
   /** 设置/清除备注（侧边栏右键菜单）：传空串 = 清除 */
   historyRemark: (path: string, remark: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remark', json({ path, remark })),
   mkdir: (path: string) => api<{ ok: boolean }>('/api/mkdir', json({ path })),
+  /** 仓库内新建文件夹（path 相对仓库根，单级）——与上面那个系统级的 mkdir 是两回事 */
+  newDir: (path: string) => api<{ ok: boolean; message?: string }>('/api/new-dir', json({ path })),
+  /** 仓库内新建空文件（同 newDir，单级；已存在即失败，不覆盖） */
+  newFile: (path: string) => api<{ ok: boolean; message?: string }>('/api/new-file', json({ path })),
   rename: (from: string, to: string) => api<{ ok: boolean }>('/api/rename', json({ from, to })),
   gitConfig: (remoteUrl: string) => api<VcsResult>('/api/git-config', json({ remoteUrl })),
   gitAuthSave: (username: string, password: string) => api<VcsResult>('/api/git-auth', json({ username, password })),
