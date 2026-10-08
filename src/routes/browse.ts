@@ -388,9 +388,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               // 子项全部删除调度（D）时不把目录自身升级为 D：目录自身仍版本化（可右键「从版本库移除」），
               // D 只进角标集合；目录自身 D 调度（self D）仍走 D 分支（撤销删除）
               if (s.code === 'D' && !self) continue;
-              // svn：子项未版本化(?)不升级目录为 ?——目录本体已版本化（无 self），
-              // 子 ? 由 unversionedCount 角标提示；只有目录自身就是 ?（未添加）才显示 ? 菜单。git 目录无本体，保持原聚合
-              if (repo.type === 'svn' && s.code === '?' && !(self && self.code === '?')) continue;
+              // 子项未版本化(?)不升级目录为 ?——目录本体已版本化（无 self）时，子 ? 交给 unversionedCount
+              // 角标提示；只有目录自身就是 ?（未添加/未跟踪）才显示 ? 菜单。
+              // **git 也必须这样**：git status 对"已跟踪目录里混了未跟踪文件"只报子项 ??、不报目录，
+              // 一旦让子 ? 升级，scripts/ 这种目录会被当成整个未版本化 —— 右键菜单退化成"添加/忽略/删除"，
+              // 连「查看历史」都没有（用户实报："scripts 显示 √，但右键没有查看历史"）。
+              // 未跟踪目录不受影响：git 会给出 `?? dir/` 聚合条目（self.code === '?'），照样是 ? 菜单
+              if (s.code === '?' && !(self && self.code === '?')) continue;
               if (rk > ({ C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3, '?': 2 }[code] ?? 0)) code = s.code;
             }
             // 变更数只统计已版本化条目（未版本化 '?' 未纳入版本控制，不计数）
@@ -402,7 +406,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             unversionedCount = sub.filter((s) => s.code === '?').length;
             // 目录操作集合：同时显示 M/A/D 等全部操作标识；排除未版本化 '?' 与无变更 ' '；
             // 外部引用 'X' 不进父目录集合（只显示在引用目录自身，避免 src/trunk 等全带标识）
-            codes = [...new Set(sub.map((s) => s.code).filter((c) => c && c !== '?' && c !== ' ' && c !== 'none' && c !== 'X'))];
+            const opCodes = [...new Set(sub.map((s) => s.code).filter((c) => c && c !== '?' && c !== ' ' && c !== 'none' && c !== 'X'))];
+            codes = opCodes.length ? opCodes : undefined; // 空数组别留着：[] 是 truthy，!codes 之类的兜底会失效
           }
           // 目录自身调度（svn D/A 目录本体，如"已删除"）并入角标集合——位于子项块之外：
           // svn delete 目录后 status 只输出目录自身行（子项不单列），sub 为空时也要能显示 D
@@ -411,11 +416,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
           if (codes) codes.sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b));
           // 目录自身被忽略(I)：子级无操作时徽标也应显示 I（避免被误显示为干净的 √）
-          if (code === 'I' && !codes) codes = ['I'];
+          if (code === 'I' && !codes?.length) codes = ['I'];
           // 删除调度（目录自身或祖先）同样兜底——避免 DirBadge 无徽标时显示 √
-          if (code === 'D' && !codes) codes = ['D'];
+          if (code === 'D' && !codes?.length) codes = ['D'];
           // 目录自身未版本化（整个目录不在版本库）：徽标显示 '?'（与文件一致，避免误显干净的 √）
-          if (code === '?' && !codes) codes = ['?'];
+          if (code === '?' && !codes?.length) codes = ['?'];
           // 目录自身是外部引用（svn:externals 拉取的内容）：自身显示链环标识（父目录不显示）
           if (code === 'X' && !codes?.includes('X')) codes = codes ? [...codes, 'X'] : ['X'];
           // 树冲突（本地已添加 vs 服务器同路径已删除/移动）：status 的 item 是 added，

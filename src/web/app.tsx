@@ -31,6 +31,9 @@ export function App() {
   // 从「提交修改的文件」弹窗进入差异视图时记录，返回时恢复该弹窗
   const [diffReturnModal, setDiffReturnModal] = useState<Modal>(null);
   const [logPath, setLogPath] = useState<string | undefined>(undefined);
+  /** 文件夹视图当前浏览的相对目录：侧边栏切「历史」时按它过滤。
+   *  不带它的话，历史视图用的是**上一次查看过的路径**（或整仓库）——用户实报"点击历史不是当前目录的历史"。 */
+  const browseDirRef = useRef('');
   const [configUser, setConfigUser] = useState('');
   // 侧边栏「最近项目」末尾的「…」：锚点坐标（null = 面板未打开）
   const [recentMore, setRecentMore] = useState<{ x: number; y: number } | null>(null);
@@ -877,7 +880,11 @@ export function App() {
               history={history}
               version={info?.version}
               currentRoot={repo?.root}
-              onNav={setView}
+              onNav={(v) => {
+                // 点「历史」带上当前浏览目录（'' = 仓库根 → 传 undefined 看全仓库）
+                if (v === 'log') showLog(browseDirRef.current || undefined);
+                else setView(v);
+              }}
               onOpenHistory={openHistoryItem}
               onRemoveHistory={removeHistory}
               onSetFav={setFav}
@@ -926,6 +933,9 @@ export function App() {
                   onAction={handleAction}
                   onDiff={(p) => gotoDiff(p)}
                   onLog={(p) => showLog(p)}
+                  onDirChange={(d) => {
+                    browseDirRef.current = d;
+                  }}
                   onCommitSelect={openCommitSelect}
                   onUpdateDir={doUpdateDir}
                   onToast={showToast}

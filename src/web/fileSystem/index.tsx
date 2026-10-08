@@ -50,6 +50,8 @@ interface Props {
   onCommitSelect: (dir: string, dirLabel: string) => void;
   onUpdateDir: (dir: string) => void;
   onToast: (msg: string, err?: boolean) => void;
+  /** 当前浏览目录变化时上报（App 记住"文件夹视图停在哪"，切「历史」时按它过滤） */
+  onDirChange?: (dir: string) => void;
 }
 
 
@@ -1141,6 +1143,13 @@ export function FsView(props: Props) {
     dragGhostRef.current?.remove();
     dragGhostRef.current = null;
   };
+
+  // 上报当前目录：切「历史」视图时按它过滤
+  const onDirChangeRef = useRef(props.onDirChange);
+  onDirChangeRef.current = props.onDirChange;
+  useEffect(() => {
+    onDirChangeRef.current?.(dir);
+  }, [dir]);
 
   /** 「新建文件夹」输入栏：null = 未开启；字符串 = 正在输入的名字（列表/网格上方的一条，回车创建） */
   /** 就地编辑：新建（列表/网格里"长"出一个条目）或重命名（把某个条目的名字换成输入框）。
