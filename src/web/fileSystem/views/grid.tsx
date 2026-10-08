@@ -14,6 +14,13 @@ export function GridItem(props: {
   multi: boolean;
   searchHit: boolean;
   pulse: boolean;
+  /** 该条目正在剪贴板里等待剪切粘贴：半透明显示，提示它随时会从这儿消失 */
+  clipCut?: boolean;
+  /** 该条目正在被拖动（多选拖动时整批都为真）：同样淡化，让"拖着的是一整批"可见 */
+  dragSrc?: boolean;
+  /** 拖起本格（应用内移动）：拖哪些条目由上层决定（选中一批或就它自己） */
+  onDragStart?: (ev: React.DragEvent) => void;
+  onDragEnd?: () => void;
   locked: boolean;
   rowRef: (el: HTMLDivElement | null) => void;
   onMouseEnter: (ev: React.MouseEvent) => void;
@@ -37,7 +44,10 @@ export function GridItem(props: {
   return (
     <div
       data-dir-rel={e.isDir ? props.rel : undefined} /* 拖入落点：容器按事件委托读它 */
-      className={`grid-item ${props.focused || props.multi ? 'selected' : ''} ${props.searchHit ? 'search-hit' : ''}${props.pulse ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}${props.dropHover ? ' dir-drop-hover' : ''}`}
+      draggable
+      onDragStart={props.onDragStart}
+      onDragEnd={props.onDragEnd}
+      className={`grid-item ${props.focused || props.multi ? 'selected' : ''} ${props.searchHit ? 'search-hit' : ''}${props.pulse ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}${props.dropHover ? ' dir-drop-hover' : ''}${props.clipCut ? ' clip-cut' : ''}${props.dragSrc ? ' drag-src' : ''}`}
       ref={props.rowRef}
       onMouseEnter={props.onMouseEnter}
       onMouseLeave={props.onMouseLeave}

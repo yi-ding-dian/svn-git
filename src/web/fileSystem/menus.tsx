@@ -3,8 +3,9 @@
 import React from 'react';
 import { get, post } from '../api.js';
 import { cmdOfRepo } from '../cmd-preview.js';
-import { IconDownload, IconUpload, IconHistory, IconCopy, IconFolder, IconPlus, IconRevert, IconClean, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar } from '../ui/icons.js';
+import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar } from '../ui/icons.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
+import type { Clip, ClipItem } from './use-file-transfer.js';
 import { multiRevertName, removableFromRepo, renameableCode, renameItem, joinPaths, revertName, type Mode, type VisibleRow } from './utils.js';
 
 /** 「打开方式」程序图标：/api/icon 按 .desktop Icon 名查系统图标,缺失/失败回退通用文件图标 */
@@ -48,11 +49,45 @@ export interface MenuServices {
   addFavDir: (rel: string) => void;
   /** openWith 异步取到程序列表后替换菜单第 owIdx 项的子菜单 */
   menuPatchItems: (owIdx: number, subs: CtxMenuItem[]) => void;
+  /** 文件剪贴板（复制/剪切/粘贴）：null = 空 */
+  clip: Clip | null;
+  /** 放进剪贴板（不立刻动磁盘，粘贴时才执行） */
+  copyItems: (items: ClipItem[]) => void;
+  cutItems: (items: ClipItem[]) => void;
+  /** 粘贴到指定目录（缺省 = 当前浏览目录） */
+  pasteInto: (destDir?: string) => void;
+}
+
+/** 剪贴板菜单项：复制 / 剪切（行菜单与多选菜单共用同一份文案与图标） */
+function clipItems(tArr: { rel: string; name: string; isDir: boolean; code: string }[], s: MenuServices): CtxMenuItem[] {
+  const items: ClipItem[] = tArr.map((t) => ({ rel: t.rel, name: t.name, isDir: t.isDir, code: t.code }));
+  const n = items.length > 1 ? `（${items.length} 项）` : '';
+  return [
+    { icon: <IconCopy />, label: `复制${n}`, title: '放进剪贴板，到目标目录按 Ctrl+V 粘贴（可粘多次）', action: () => s.copyItems(items) },
+    {
+      icon: <IconCut />,
+      label: `剪切${n}`,
+      title: '放进剪贴板，粘贴后从原位置移走（版本化条目走 svn move / git mv，保留文件历史）',
+      action: () => s.cutItems(items),
+    },
+  ];
+}
+
+/** 剪贴板非空时的「粘贴」项（空白区用缺省落点=当前目录，目录行传 destDir）；剪贴板为空返回 [] */
+function pasteItem(s: MenuServices, destDir?: string): CtxMenuItem[] {
+  const c = s.clip;
+  if (!c) return [];
+  const names = c.items.map((i) => i.name);
+  const shown = names.slice(0, 3).join('、') + (names.length > 3 ? ` 等 ${names.length} 项` : '');
+  const label = `${c.mode === 'cut' ? '移动到这里' : '粘贴到这里'}（${names.length} 项）`;
+  return [{ icon: <IconPaste />, label, title: `${c.mode === 'cut' ? '移动' : '复制'}：${shown}`, action: () => s.pasteInto(destDir) }];
 }
 
 /** 空白区右键菜单 */
 export function buildBlankItems(s: MenuServices): CtxMenuItem[] {
   const items: CtxMenuItem[] = [
+    // 粘贴置顶：剪贴板里有东西时它就是用户最可能要做的事（顺带让"剪贴板非空"这件事可见）
+    ...pasteItem(s),
     { icon: <IconDownload />, label: s.repoType === 'git' ? '更新仓库' : '更新当前目录', cmd: cmdOfRepo(s.repoType, 'update', { path: s.dir }), action: () => s.onUpdateDir(s.dir) },
     { icon: <IconUpload />, label: '提交修改的文件…', cmd: cmdOfRepo(s.repoType, 'commit', { msg: '…' }), action: () => s.onCommitSelect(s.dir, s.dir) },
     { icon: <IconHistory />, label: '查看历史记录', cmd: cmdOfRepo(s.repoType, 'view_history', { path: s.dir || '.' }), action: () => s.onLog(s.dir) },
@@ -142,6 +177,7 @@ export function buildMultiItems(
     });
   }
   if (tNew.length || tMiss.length || tMod.length || tVer.length || tFsDel.length) items.push({ sep: true });
+  items.push(...clipItems(tArr, s));
   items.push({
     icon: <IconCopy />,
     label: `复制完整路径（${tArr.length} 项）`,
@@ -396,6 +432,11 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
         s.menuPatchItems(owIdx, [{ label: '无', action: () => {} }]);
       });
   }
+  // 剪贴板搬运（所有条目都有，含树冲突/缺失行——复制走的是磁盘路径，与版本库状态无关）；
+  // 目录额外能当粘贴落点。放在尾部分组，与「复制完整路径」这类路径工具在一起
+  items.push({ sep: true });
+  items.push(...clipItems([t], s));
+  if (t.isDir) items.push(...pasteItem(s, t.rel));
   items.push({
     icon: <IconCopy />,
     label: '复制完整路径',

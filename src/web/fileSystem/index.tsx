@@ -17,7 +17,7 @@ import { compareName } from '../../shared/types.js';
 import { useDirPreload } from './use-dir-preload.js';
 import { WcNotice } from './wc-notice.js';
 import { useWcConflicts, useConflictLookup, tcState, conflictPaths } from './use-wc-conflicts.js';
-import { useDropUpload, type ConflictMode } from './use-drop-upload.js';
+import { useDropUpload, useCopyPaste, moveItemsTo, MOVE_MIME, type ConflictChoice, type ClipItem } from './use-file-transfer.js';
 import { UploadConflictModal } from '../modals/upload-conflict.js';
 import { ModuleIndexDialog } from '../dialogs/module-index.js';
 
@@ -442,7 +442,11 @@ export function FsView(props: Props) {
       multi={selected.has(row.rel)}
       searchHit={search.searchResults.includes(row.rel)}
       pulse={pulseRels.includes(row.rel)}
+      clipCut={cutRels.has(row.rel)}
+      dragSrc={dragRels.has(row.rel)}
       dropHover={drop.hoverDir === row.rel}
+      onDragStart={(ev) => onRowDragStart(ev, row.rel, row.name, row.isDir, row.code)}
+      onDragEnd={onRowDragEnd}
       desc={descOf(row.rel)}
       buttons={rowButtons(row)}
       locateBadge={locateBadge}
@@ -665,6 +669,8 @@ export function FsView(props: Props) {
   const rows = mode === 'tree' ? visibleRows : listEntries;
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  /** 行的相对仓库根路径：树模式的行自带 rel，列表/网格模式由当前目录 + 名称推出 */
+  const rowRel = (r: (typeof rows)[number]): string => ('rel' in r ? r.rel : relOf(r));
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const focusRef = useRef(focusIndex);
@@ -860,6 +866,10 @@ export function FsView(props: Props) {
     removeFav,
     addFavDir,
     menuPatchItems,
+    clip: clipFlow.clip,
+    copyItems: (items) => clipFlow.take('copy', items),
+    cutItems: (items) => clipFlow.take('cut', items),
+    pasteInto: (dest) => void clipFlow.paste(dest),
   });
   /** 「打开方式」异步取到程序列表后替换菜单第 owIdx 项的子菜单（菜单已关闭则安全跳过） */
   const menuPatchItems = (owIdx: number, subs: CtxMenuItem[]) => {
@@ -966,14 +976,30 @@ export function FsView(props: Props) {
   /** 列表/浏览模式共用的条目行渲染 */
   // 拖入上传：落点 = 文件区（当前目录）或文件夹行/格子（该文件夹）。
   // 冲突时弹窗问策略：用 promise 把弹窗结果交回给 hook（弹窗状态只服务本视图，不进全局 modal-host）
-  const [conflictAsk, setConflictAsk] = useState<{ conflicts: string[]; resolve: (m: ConflictMode | null) => void } | null>(null);
+  const [conflictAsk, setConflictAsk] = useState<{ conflicts: string[]; resolve: (c: ConflictChoice | null) => void } | null>(null);
   const askConflict = useCallback(
-    (conflicts: string[]) => new Promise<ConflictMode | null>((resolve) => setConflictAsk({ conflicts, resolve })),
+    (conflicts: string[]) => new Promise<ConflictChoice | null>((resolve) => setConflictAsk({ conflicts, resolve })),
     [],
   );
   const drop = useDropUpload({
     dir,
     askConflict,
+    /** 项目内拖拽落在目录上 → 移动过去（规则与剪切粘贴同一套：版本化走 svn move / git mv） */
+    onMoveDrop: (destDir) => {
+      const items = dragItemsRef.current;
+      dragItemsRef.current = [];
+      // 松开在非文件夹上 = 用户自己放弃了这次拖拽：静默结束，不弹提示（拖没拖动他看得见）
+      if (destDir === null) return;
+      if (items.length === 0) return;
+      void (async () => {
+        const outcome = await moveItemsTo(items, destDir, props.onToast);
+        if (outcome !== 'ok') return;
+        // 移动同时改了两个目录（源与目标）→ 清空全部目录缓存再刷当前目录，与剪切粘贴同一处理
+        setNodeData(new Map());
+        if (mode === 'tree') loadNode('', true);
+        else void load(dir, true);
+      })();
+    },
     onDone: useCallback(
       async (okCount: number, failed: string[], saved: string[]) => {
         if (okCount > 0) {
@@ -1003,6 +1029,105 @@ export function FsView(props: Props) {
     ),
   });
 
+  /** 文件剪贴板（复制 / 剪切 / 粘贴）：冲突策略复用拖入上传那个弹窗；落点缺省 = 当前浏览目录 */
+  const clipFlow = useCopyPaste({
+    dir,
+    repoRoot: data?.root ?? '',
+    askConflict,
+    onToast: props.onToast,
+    onDone: useCallback(() => {
+      // 搬运一次动两个目录（剪切的源目录也变了）→ 清空全部目录缓存再强刷当前目录。
+      // 只刷当前目录的话，回上级会缓存命中、看到已经搬走的旧条目（与 tick 刷新同一套处理）
+      setNodeData(new Map());
+      // 树模式重载根节点，其余重载当前目录
+      if (mode === 'tree') loadNode('', true);
+      else void load(dir, true);
+    }, [mode, dir, load, loadNode]), // eslint-disable-line react-hooks/exhaustive-deps
+  });
+
+  // 剪贴板快捷键（Ctrl+C / Ctrl+X / Ctrl+V）：**单独一个监听**。
+  // clipFlow 到这里才定义，塞进上面那个键盘 effect 会踩 TDZ，也会把它的依赖搅成一团；
+  // 这里用 ref 取最新值，依赖只留 active，不必每次渲染重挂监听。
+  // ⚠ rowRel 也必须走 ref：它内部的 relOf 读的是 data（当前目录），只依赖 active 的 effect
+  //    会把它锁死在挂载那一刻的闭包上（那时 data 还是 null，算出的 rel 少了目录前缀，与 selected 对不上）
+  const clipKeyRef = useRef({ clipFlow, selected, preview, ctx, rowRel });
+  clipKeyRef.current = { clipFlow, selected, preview, ctx, rowRel };
+  useEffect(() => {
+    if (!props.active) return; // 视图隐藏时不响应（与其他键盘监听同一口径）
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 输入框内不拦截
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k !== 'c' && k !== 'x' && k !== 'v') return;
+      const { clipFlow: cf, selected: sel, preview: pv, ctx: cx, rowRel: rr } = clipKeyRef.current;
+      if (cx || pv) return; // 菜单开着/预览打开：让它们先处理各自的按键
+      const list = rowsRef.current;
+      if (list.length === 0) return;
+      e.preventDefault();
+      if (k === 'v') {
+        void cf.paste(); // 粘贴到当前浏览目录
+        return;
+      }
+      // 多选优先，没有多选就作用于当前焦点行
+      const picked = (sel.size > 0 ? list.filter((r) => sel.has(rr(r))) : [list[focusRef.current] ?? list[0]!]).map((r) => ({
+        rel: rr(r),
+        name: r.name,
+        isDir: r.isDir,
+        code: r.code,
+      }));
+      cf.take(k === 'c' ? 'copy' : 'cut', picked);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [props.active]);
+
+  /** 剪贴板里「剪切中」的条目：行渲染成半透明，提示它们下次粘贴就会从这里消失
+   *  （与系统文件管理器一致；复制不做标记——原件还在，粘完不变） */
+  const cutRels = useMemo(
+    () => new Set(clipFlow.clip?.mode === 'cut' ? clipFlow.clip.items.map((i) => i.rel) : []),
+    [clipFlow.clip],
+  );
+
+  /** 应用内拖拽移动：拖起时把要搬的条目记在这里。
+   *  拖拽期间浏览器不让读 dataTransfer 的内容（只在 drop 时才能读），所以拖了哪些只能自己记。 */
+  const dragItemsRef = useRef<ClipItem[]>([]);
+  /** 正在被拖的条目：整批一起变淡，让"我拖着的是一整批"一眼可见（浏览器默认只淡化鼠标按住的那一行） */
+  const [dragRels, setDragRels] = useState<Set<string>>(new Set());
+  /** 自定义拖拽图像（多点拖动时跟随鼠标的「N 项」卡片）；浏览器在下一帧才取快照，所以挂到 body 上、dragend 再摘 */
+  const dragGhostRef = useRef<HTMLElement | null>(null);
+  /** 拖起一行/一格：拖的是选中集合里的一员就整批搬，否则只搬它自己 */
+  const onRowDragStart = (ev: React.DragEvent, rel: string, name: string, isDir: boolean, code: string) => {
+    const picked: ClipItem[] =
+      selected.has(rel) && selected.size > 1
+        ? rowsRef.current.filter((r) => selected.has(rowRel(r))).map((r) => ({ rel: rowRel(r), name: r.name, isDir: r.isDir, code: r.code }))
+        : [{ rel, name, isDir, code }];
+    dragItemsRef.current = picked;
+    setDragRels(new Set(picked.map((i) => i.rel)));
+    // 拖动期间不挂悬浮卡：卡片是拖起来之前悬停弹出来的，不关掉它会一直停在原处挡路
+    // （HTML5 拖拽期间浏览器抑制鼠标事件，卡片既不会更新也不会自动消失）
+    setTip(null);
+    ev.dataTransfer.effectAllowed = 'move';
+    // 必须 setData，否则部分浏览器不触发 drop；值只在 drop 时读得到，
+    // 这里主要靠这个 MIME 让投放区分出「项目内拖拽」和「外部文件拖入」
+    ev.dataTransfer.setData(MOVE_MIME, picked.map((i) => i.rel).join('\n'));
+    // 多个条目才换图像：只拖一条时，浏览器默认给的那一行就是最好的提示
+    if (picked.length > 1) {
+      const ghost = document.createElement('div');
+      ghost.className = 'drag-ghost';
+      ghost.textContent = `移动 ${picked.length} 项`;
+      document.body.appendChild(ghost);
+      ev.dataTransfer.setDragImage(ghost, 18, 14);
+      dragGhostRef.current = ghost;
+    }
+  };
+  const onRowDragEnd = () => {
+    dragItemsRef.current = []; // 拖到窗口外松手不会触发 drop，这里兜底清掉
+    setDragRels(new Set());
+    dragGhostRef.current?.remove();
+    dragGhostRef.current = null;
+  };
+
   const renderEntryRow = (e: FsEntry, i: number) => {
     const rel = relOf(e);
     const focused = i === focusIndex;
@@ -1015,7 +1140,10 @@ export function FsView(props: Props) {
       <div
         key={rel}
         data-dir-rel={e.isDir ? rel : undefined} /* 拖入落点：容器按事件委托读它 */
-        className={`tree-row ${isMatch ? 'search-hit' : ''}${pulseRels.includes(rel) ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}${drop.hoverDir === rel ? ' dir-drop-hover' : ''}`}
+        className={`tree-row ${isMatch ? 'search-hit' : ''}${pulseRels.includes(rel) ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}${drop.hoverDir === rel ? ' dir-drop-hover' : ''}${cutRels.has(rel) ? ' clip-cut' : ''}${dragRels.has(rel) ? ' drag-src' : ''}`}
+        draggable
+        onDragStart={(ev) => onRowDragStart(ev, rel, e.name, e.isDir, e.code)}
+        onDragEnd={onRowDragEnd}
         style={{
           background: focused || multi ? 'var(--panel2)' : undefined,
           outline: focused ? '1px solid var(--accent)' : multi ? '1px solid var(--accent)' : undefined,
@@ -1454,7 +1582,11 @@ export function FsView(props: Props) {
                   multi={selected.has(rel)}
                   searchHit={currentMatchNames.has(e.name)}
                   pulse={pulseRels.includes(rel)}
+                  clipCut={cutRels.has(rel)}
+                  dragSrc={dragRels.has(rel)}
                   dropHover={drop.hoverDir === rel}
+                  onDragStart={(ev) => onRowDragStart(ev, rel, e.name, e.isDir, e.code)}
+                  onDragEnd={onRowDragEnd}
                   locked={data?.selfLocked?.includes(rel) ?? false}
                   tc={tcState(e, rel, conflictLookup)}
                   rowRef={(el) => {
@@ -1464,6 +1596,11 @@ export function FsView(props: Props) {
                   onMouseEnter={(ev) => {
                     if (!ctxLocked) setFocusIndex(-1);
                     else if (ctxRelRef.current === rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
+                    // 拖着东西经过（项目内拖拽或外部文件拖入）时不弹卡片：挡路，而且此刻要看的是落点高亮
+                    if (dragRels.size > 0 || drop.dragging || drop.hoverDir !== null) {
+                      setTip(null);
+                      return;
+                    }
                     // 悬浮提示: 目录带状态字母显示彩色徽标;文件始终显示信息卡片（含大小/时间/状态）
                     setTip({
                       x: ev.clientX, y: ev.clientY, name: e.name, isDir: e.isDir,

@@ -584,6 +584,24 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 /* 磁盘缺失条目（svn '!' / git " D"）：虚化渲染，悬浮卡提示已在磁盘上缺失 */
 .grid-item.miss { opacity: .6; }
 .grid-item.miss .grid-name { font-style: italic; }
+/* 剪贴板「剪切中」与「正在拖动」的条目：半透明（与系统文件管理器一致——它们下次粘贴/松手就搬到别处了）。
+   拖动默认只淡化鼠标按住的那一行，这里让整批都被淡化，"拖着的是一整批"才看得出来 */
+.tree-row.clip-cut, .grid-item.clip-cut, .tree-row.drag-src, .grid-item.drag-src { opacity: .45; }
+/* 多选拖动时跟随鼠标的小卡片（setDragImage 的快照源）：挪到视口外，用户看不见但浏览器渲染得到 */
+.drag-ghost {
+  position: fixed;
+  top: -200px;
+  left: 0;
+  display: inline-block;
+  padding: 3px 10px;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
 /* 搜索匹配项：当前目录内框选高亮 */
 .search-hit { outline: 2px solid var(--accent) !important; outline-offset: -2px; }
 

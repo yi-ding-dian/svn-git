@@ -15,6 +15,10 @@ export function TreeRow(props: {
   multi: boolean;
   searchHit: boolean;
   pulse: boolean;
+  /** 该条目正在剪贴板里等待剪切粘贴：半透明显示，提示它随时会从这儿消失 */
+  clipCut?: boolean;
+  /** 该条目正在被拖动（多选拖动时整批都为真）：同样淡化，让"拖着的是一整批"可见 */
+  dragSrc?: boolean;
   desc: string | null;
   buttons: React.ReactNode;
   rowRef: (el: HTMLDivElement | null) => void;
@@ -27,13 +31,19 @@ export function TreeRow(props: {
   locateBadge?: (rel: string, code: string) => void;
   /** 拖拽悬停在本行（仅目录可投放）：高亮提示落点 */
   dropHover?: boolean;
+  /** 拖起本行（应用内移动）：拖哪些条目由上层决定（选中一批或就它自己） */
+  onDragStart?: (ev: React.DragEvent) => void;
+  onDragEnd?: () => void;
 }) {
   const { row } = props;
   return (
     <div
       ref={props.rowRef}
       data-dir-rel={row.isDir ? row.rel : undefined} /* 拖入落点：容器按事件委托读它 */
-      className={`tree-row ${props.searchHit ? 'search-hit' : ''}${props.pulse ? ' file-pulse' : ''}${row.miss ? ' miss' : ''}${props.dropHover ? ' dir-drop-hover' : ''}`}
+      draggable
+      onDragStart={props.onDragStart}
+      onDragEnd={props.onDragEnd}
+      className={`tree-row ${props.searchHit ? 'search-hit' : ''}${props.pulse ? ' file-pulse' : ''}${row.miss ? ' miss' : ''}${props.dropHover ? ' dir-drop-hover' : ''}${props.clipCut ? ' clip-cut' : ''}${props.dragSrc ? ' drag-src' : ''}`}
       style={{
         paddingLeft: 8 + row.depth * 18,
         background: props.focused || props.multi ? 'var(--panel2)' : undefined,

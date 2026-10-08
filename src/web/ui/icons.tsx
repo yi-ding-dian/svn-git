@@ -506,6 +506,27 @@ export function IconCopy({ size = 16 }: IconProps) {
   );
 }
 
+/** 剪切：剪刀（与复制同灰度系，凭外形区分） */
+export function IconCut({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <circle cx="6" cy="6" r="3" stroke="#8b949e" strokeWidth="2" fill="none" />
+      <circle cx="6" cy="18" r="3" stroke="#b1bac4" strokeWidth="2" fill="none" />
+      <path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" stroke="#8b949e" strokeWidth="2" strokeLinecap="round" fill="none" />
+    </svg>
+  );
+}
+
+/** 粘贴：带夹板的剪贴板 */
+export function IconPaste({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2" stroke="#8b949e" strokeWidth="2" strokeLinecap="round" fill="none" />
+      <rect x="9" y="2" width="6" height="4" rx="1" stroke="#b1bac4" strokeWidth="2" fill="none" />
+    </svg>
+  );
+}
+
 
 /** 查看内容：蓝色文件页 */
 export function IconFile({ size = 16 }: IconProps) {
