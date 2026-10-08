@@ -10,7 +10,10 @@ import { handle as handleConflicts } from './routes/conflicts.js';
 import { handle as handleBranch } from './routes/branch.js';
 import { handle as handleOps } from './routes/ops.js';
 import { handle as handleStage } from './routes/stage.js';
-import { handle as handleMisc } from './routes/misc.js';
+import { handle as handleBrowse } from './routes/browse.js';
+import { handle as handleHost } from './routes/host.js';
+import { handle as handleHistory } from './routes/history.js';
+import { handle as handleRecent } from './routes/recent.js';
 import { handle as handleConfig } from './routes/config.js';
 import { handle as handleModuleIndex } from './routes/module-index.js';
 import { handle as handleUpload } from './routes/upload.js';
@@ -27,7 +30,7 @@ export interface ServerHandle {
 
 /** 系统目录选择器（Electron dialog 注入；纯 node 为 null）：
  * 宿主实现随 /api/pick-dir 端点迁至 routes/misc.ts，此处 re-export 保持 server.js 导出语义（main.tsx 静态导入不受影响） */
-export { setPickDirHandler } from './routes/misc.js';
+export { setPickDirHandler } from './routes/host.js';
 
 /** 静态资源 Content-Type（键带点 = path.extname 产物；仓库内文件的图片 MIME 见 routes/misc.ts 的 IMG_MIME） */
 const MIME: Record<string, string> = {
@@ -51,14 +54,17 @@ export function startServer(): Promise<ServerHandle> {
         sendJson(res, 403, { error: '拒绝跨站请求' });
         return;
       }
-      // 端点域模块（冲突防护 / 分支标签 / 操作类 / 杂项 / 配置 / 上传），按序尝试分发
+      // 端点域模块（冲突防护 / 分支标签 / 操作类 / 浏览 / 宿主环境 / 历史 / 最近项目 / 配置 / 上传 / 工作副本），按序尝试分发
       {
         const ctx: Ctx = { req, res, url, p };
         if (await handleConflicts(ctx)) return;
         if (await handleBranch(ctx)) return;
         if (await handleOps(ctx)) return;
         if (await handleStage(ctx)) return;
-        if (await handleMisc(ctx)) return;
+        if (await handleBrowse(ctx)) return;
+        if (await handleHost(ctx)) return;
+        if (await handleHistory(ctx)) return;
+        if (await handleRecent(ctx)) return;
         if (await handleConfig(ctx)) return;
         if (await handleModuleIndex(ctx)) return;
         if (await handleUpload(ctx)) return;

@@ -1,147 +1,18 @@
-/** 杂项域端点：仓库只读查询 / 项目与系统操作 / 最近历史 / 环境与文件打开（非 VCS 写操作）。
- * 写操作（add/commit/update/…/分支/冲突）见 ops.ts / branch.ts / conflicts.ts，配置读写见 config.ts。 */
+/** 浏览域端点：目录与文件内容的读取（列表/树/搜索/预览/历史版本内容）。
+ *  只读，不含写操作（见 ops.ts）与系统集成（见 sys.ts）。 */
+
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { detectRepo } from '../vcs/detect.js';
-import { platform } from '../platform/index.js';
 import { makeGitIgnoreChecker } from '../vcs/ignore.js';
-import { BINARY_EXTS, compareName } from '../shared/types.js';
+import { compareName } from '../shared/types.js';
 import { detectTextEncoding } from '../shared/text.js';
 import { run } from '../vcs/exec.js';
-import {
-  isBinaryFile, inRepoRoot, sendJson, readBody, getStatusCached, readTextFile, MAX_READ_BYTES,
-  currentScopes, vcsOf, repoInfo, START_DIR, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE,
-  type Ctx,
-} from './util.js';
-import type { RepoInfo } from '../vcs/index.js';
-
-/** 系统目录选择器（Electron dialog 注入；纯 node 为 null） */
-let pickDirHandler: (() => Promise<string | null>) | null = null;
-export function setPickDirHandler(fn: () => Promise<string | null>): void {
-  pickDirHandler = fn;
-}
-
-/** 最近打开的项目历史（服务端持久化：浏览器端口随机，localStorage 不可靠） */
-const HISTORY_PATH = path.join(os.homedir(), '.config', 'svngit', 'history.json');
-const HISTORY_MAX = 20;
+import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, readTextFile, MAX_READ_BYTES, vcsOf, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE, type Ctx } from './util.js';
 
 /** 忽略检测（svn status --no-ignore）的输出上限：超过就不解析。
  *  它只用来把被忽略的条目标成 I，而超大工作副本上这个扫描有 5MB+、解析要秒级——收益不值。
  *  实测参考：正常仓库几十 KB；某 35 万文件的工作副本 5.6MB / 4.3 万行。 */
 const MAX_IGNORE_SCAN_BYTES = 1024 * 1024;
-
-export interface HistoryItem {
-  path: string;
-  type: 'svn' | 'git';
-  lastOpened: number;
-  /** 常用项目标记（星号，启动时优先打开） */
-  fav?: boolean;
-  /** 用户备注（侧边栏右键「备注」设置）：侧边栏显示在时间前，过长由前端 CSS 截断；空/缺省 = 无备注 */
-  remark?: string;
-}
-
-function loadHistory(): HistoryItem[] {
-  try {
-    if (fs.existsSync(HISTORY_PATH)) {
-      const list = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8')) as HistoryItem[];
-      if (Array.isArray(list)) return list;
-    }
-  } catch {
-    /* 损坏则重置 */
-  }
-  return [];
-}
-
-/** 历史记录的项目身份键：**按 inode 归一，不能按路径字符串**。
- *  同一个目录可以有多个路径——bind mount（如 /data/home/x 与 /home/x，实测 inode 完全相同）、
- *  软链接、结尾斜杠等，按字符串比会当成两个项目，列表里就出现一模一样的条目（用户实报：
- *  最近项目里两个 svn-git，一个带星一个不带）。realpath 对 bind mount 无效（它只解析软链），
- *  所以必须看 dev:ino。取不到（目录已删/无权限）时退回字面路径，只归并完全相同的字符串。 */
-function historyKey(p: string): string {
-  try {
-    const st = fs.statSync(p);
-    return `${st.dev}:${st.ino}`;
-  } catch {
-    return path.resolve(p);
-  }
-}
-
-/** 启动时清理历史里的重复项：同一目录只留最近打开的那条路径，常用标记合并上去
- *  （星号不能因为去重丢了）。返回清理掉的条数，0 = 本来就干净（不写文件）。 */
-export function dedupeHistory(): number {
-  try {
-    const list = loadHistory();
-    const byKey = new Map<string, HistoryItem>();
-    for (const h of list) {
-      const key = historyKey(h.path);
-      const prev = byKey.get(key);
-      if (!prev) {
-        byKey.set(key, h);
-        continue;
-      }
-      const [keep, drop] = (h.lastOpened ?? 0) > (prev.lastOpened ?? 0) ? [h, prev] : [prev, h];
-      // fav 做「或」合并、备注取先有的那个：同一目录的两条别名记录，用户只在其中一条上设过星号/备注，
-      // 归并时必须留下，不能因为"保留的那条恰好没有"就并没了
-      byKey.set(key, { ...keep, fav: Boolean(keep.fav || drop.fav), remark: keep.remark ?? drop.remark });
-    }
-    if (byKey.size === list.length) return 0;
-    const out = [...byKey.values()].sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
-    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-    fs.writeFileSync(HISTORY_PATH, JSON.stringify(out, null, 2));
-    fs.chmodSync(HISTORY_PATH, 0o600);
-    return list.length - out.length;
-  } catch {
-    return 0; // 清理失败不影响启动
-  }
-}
-
-function addHistory(entry: { path: string; type: 'svn' | 'git' }): void {
-  try {
-    const key = historyKey(entry.path);
-    const existed = loadHistory().find((h) => historyKey(h.path) === key);
-    const list = loadHistory().filter((h) => historyKey(h.path) !== key); // 同一目录的别名路径一并去掉，不留重复
-    // 记录被整个重新构造，**用户自己设的两样东西都得显式带过来**，否则打开一次项目就没了：
-    // 常用标记（不丢星号）+ 备注（用户实报：「更新时间后就不见了，备注」）
-    list.unshift({ ...entry, lastOpened: Date.now(), fav: existed?.fav, remark: existed?.remark });
-    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-    fs.writeFileSync(HISTORY_PATH, JSON.stringify(list.slice(0, HISTORY_MAX), null, 2));
-    fs.chmodSync(HISTORY_PATH, 0o600); // 与 config 一致，仅本人可读写
-  } catch {
-    /* 忽略写失败 */
-  }
-}
-
-/** 目录浏览（打开仓库页用）：列目录 + 仓库识别 */
-function browseDirs(dir: string): { entries: { name: string; isDir: boolean }[]; repo: RepoInfo | null } {
-  const out: { name: string; isDir: boolean }[] = [];
-  const cur = path.resolve(dir);
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(cur);
-  } catch (err) {
-    throw new Error(`无法读取目录: ${(err as Error).message}`);
-  }
-  if (cur !== '/') out.push({ name: '..', isDir: true });
-  const dirs: string[] = [];
-  const files: string[] = [];
-  for (const n of entries) {
-    if (n.startsWith('.')) continue; // 隐藏目录默认过滤
-    let isDir = false;
-    try {
-      isDir = fs.statSync(path.join(cur, n)).isDirectory();
-    } catch {
-      continue;
-    }
-    if (isDir) dirs.push(n);
-    else files.push(n);
-  }
-  dirs.sort(compareName);
-  files.sort(compareName);
-  for (const d of dirs) out.push({ name: d, isDir: true });
-  for (const f of files) out.push({ name: f, isDir: false });
-  return { entries: out, repo: detectRepo(cur) };
-}
 
 /** 修改时间格式化: "2026/8/23 11:17"（不同于 toLocaleString.slice 会留下尾冒号） */
 function fmtMtime(ms: number): string {
@@ -150,93 +21,10 @@ function fmtMtime(ms: number): string {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** 扩展名 → MIME（办公文档/图片/文本/压缩包,用于匹配系统 .desktop 程序） */
-const EXT_MIME: Record<string, string> = {
-  pdf: 'application/pdf', doc: 'application/msword',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet', odp: 'application/vnd.oasis.opendocument.presentation',
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', svg: 'image/svg+xml', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon',
-  txt: 'text/plain', md: 'text/markdown', log: 'text/plain', rst: 'text/plain', csv: 'text/csv',
-  zip: 'application/zip', rar: 'application/vnd.rar', '7z': 'application/x-7z-compressed', tar: 'application/x-tar', gz: 'application/gzip',
-};
-
 export async function handle(ctx: Ctx): Promise<boolean> {
-  const { req, res, url } = ctx;
+  const { res, url } = ctx;
   const p = url.pathname;
 
-
-      if (p === '/api/fonts') {
-        // 系统字体表（字体设置：不存在的字体不给选；系统级查询无仓库语义，仅受 CSRF 同源限制）
-        sendJson(res, 200, { families: platform.listFontFamilies() });
-        return true;
-      }
-      if (p === '/api/info') {
-        // 版本与构建日期：构建脚本写入 dist/build-info.json（每次 npm run build 更新）
-        // package.json 相对 misc 编译产物有 1-2 层（dist 或 dist/routes），逐个候选路径尝试
-        let version = '';
-        let buildDate = '';
-        {
-          const base = import.meta.dirname ?? '.';
-          for (const rel of ['../package.json', '../../package.json']) {
-            try {
-              version = JSON.parse(fs.readFileSync(path.resolve(base, rel), 'utf8')).version ?? '';
-              break;
-            } catch {
-              /* 尝试下一个候选 */
-            }
-          }
-          for (const rel of ['../build-info.json', '../../build-info.json']) {
-            try {
-              buildDate = JSON.parse(fs.readFileSync(path.resolve(base, rel), 'utf8')).buildDate ?? '';
-              break;
-            } catch {
-              /* 尝试下一个候选 */
-            }
-          }
-        }
-        const repo = repoInfo();
-        if (!repo) {
-          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version, buildDate });
-          return true;
-        }
-        const { vcs } = vcsOf();
-        let url2 = repo.url ?? '';
-        let rev = repo.revOrBranch ?? '';
-        try {
-          if (repo.type === 'svn') {
-            const info = await vcs.info?.();
-            url2 = info?.url ?? url2;
-            rev = info?.revision ? `r${info.revision}` : rev;
-          } else {
-            const [b, r] = await Promise.all([vcs.branch?.(), vcs.remote?.()]);
-            rev = b || rev;
-            url2 = r || url2;
-          }
-        } catch {
-          /* 忽略 */
-        }
-        sendJson(res, 200, {
-          type: repo.type,
-          root: repo.root,
-          url: url2,
-          revOrBranch: rev,
-          startDir: START_DIR,
-          // 当前操作范围(相对仓库根,大仓库子项目场景):浏览起点 + 状态扫描范围
-          startRel: currentScopes.get(repo.root) ?? '',
-          home: os.homedir(),
-          version,
-          buildDate,
-        });
-        return true;
-      }
-      if (p === '/api/browse') {
-        const dir = String(url.searchParams.get('path') ?? START_DIR);
-        const result = browseDirs(dir);
-        sendJson(res, 200, { ...result, dir });
-        return true;
-      }
       if (p === '/api/search') {
         // 文件名搜索：仅搜索指定目录（dir 相对仓库根，默认根目录），深度限制 + 结果上限
         const { repo } = vcsOf();
@@ -289,159 +77,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         sendJson(res, 200, { paths: out });
         return true;
       }
-      if (p === '/api/history') {
-        if (req.method === 'POST') {
-          const body = await readBody(req);
-          const hp = String(body.path ?? '');
-          const ht = String(body.type ?? '') === 'git' ? 'git' : 'svn';
-          if (hp) addHistory({ path: hp, type: ht });
-          sendJson(res, 200, { ok: true });
-          return true;
-        }
-        sendJson(res, 200, { items: loadHistory() });
-        return true;
-      }
-      if (p === '/api/git-info') {
-        // Git 信息：分支 / 远程 / 上游 / 最近提交
-        const { vcs, repo } = vcsOf();
-        if (repo.type !== 'git') {
-          sendJson(res, 400, { error: '非 Git 仓库' });
-          return true;
-        }
-        sendJson(res, 200, await vcs.gitInfo?.());
-        return true;
-      }
-      if (p === '/api/mkdir' && req.method === 'POST') {
-        // 目录选择器：新建文件夹——系统级目录操作（打开项目的路径选择处使用,路径可不在任何仓库内,
-        // 无仓库路径语义,故不做 inRepoRoot 校验,仅受 CSRF 同源限制（本地凭证场景））
-        const body = await readBody(req);
-        const dir = String(body.path ?? '');
-        if (!dir) {
-          sendJson(res, 400, { error: '路径为空' });
-          return true;
-        }
-        try {
-          fs.mkdirSync(dir);
-          sendJson(res, 200, { ok: true });
-        } catch (e) {
-          sendJson(res, 500, { error: (e as Error).message });
-        }
-        return true;
-      }
-      if (p === '/api/rename' && req.method === 'POST') {
-        // 目录选择器：重命名文件夹——同 mkdir,系统级操作不校验仓库路径。
-        const body = await readBody(req);
-        const from = String(body.from ?? '');
-        const to = String(body.to ?? '');
-        if (!from || !to) {
-          sendJson(res, 400, { error: '路径为空' });
-          return true;
-        }
-        try {
-          fs.renameSync(from, to);
-          sendJson(res, 200, { ok: true });
-        } catch (e) {
-          sendJson(res, 500, { error: (e as Error).message });
-        }
-        return true;
-      }
-      if (p === '/api/history-remove' && req.method === 'POST') {
-        // 删除一条最近项目记录
-        const body = await readBody(req);
-        const hp = String(body.path ?? '');
-        if (hp) {
-          const list = loadHistory().filter((h) => h.path !== hp);
-          try {
-            fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-            fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));
-            fs.chmodSync(HISTORY_PATH, 0o600);
-          } catch {
-            /* 忽略写失败 */
-          }
-        }
-        sendJson(res, 200, { ok: true, items: loadHistory() });
-        return true;
-      }
-      if (p === '/api/history-fav' && req.method === 'POST') {
-        // 设置/取消常用项目标记（星号）
-        const body = await readBody(req);
-        const hp = String(body.path ?? '');
-        const fav = Boolean(body.fav);
-        if (hp) {
-          const list = loadHistory().map((h) => (h.path === hp ? { ...h, fav } : h));
-          try {
-            fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-            fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));
-            fs.chmodSync(HISTORY_PATH, 0o600);
-          } catch {
-            /* 忽略写失败 */
-          }
-        }
-        sendJson(res, 200, { ok: true, items: loadHistory() });
-        return true;
-      }
-      if (p === '/api/history-remark' && req.method === 'POST') {
-        // 设置/清除最近项目的备注（侧边栏右键菜单）。空串 = 清除：把字段删掉，不留空串
-        const body = await readBody(req);
-        const hp = String(body.path ?? '');
-        // 60 字上限：备注显示在 160px 侧边栏里，再长也只会被截断，别让 history.json 被塞长文本
-        const remark = String(body.remark ?? '').trim().slice(0, 60);
-        if (hp) {
-          const list = loadHistory().map((h) => {
-            if (h.path !== hp) return h;
-            const next: HistoryItem = { ...h };
-            if (remark) next.remark = remark;
-            else delete next.remark;
-            return next;
-          });
-          try {
-            fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-            fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));
-            fs.chmodSync(HISTORY_PATH, 0o600);
-          } catch {
-            /* 忽略写失败 */
-          }
-        }
-        sendJson(res, 200, { ok: true, items: loadHistory() });
-        return true;
-      }
-      if (p === '/api/pick-dir') {
-        // 系统目录选择对话框（Electron 打包版可用；纯 node 返回不支持）
-        if (!pickDirHandler) {
-          sendJson(res, 200, { path: null, unsupported: true });
-          return true;
-        }
-        const picked = await pickDirHandler();
-        sendJson(res, 200, { path: picked, unsupported: false });
-        return true;
-      }
-      if (p === '/api/open' && req.method === 'POST') {
-        // 打开指定仓库（前端浏览到仓库后点击进入）；POST-only：切换仓库属有副作用操作，不接受 GET
-        const body = await readBody(req);
-        const dir = String(body.path ?? '');
-        if (!dir) {
-          sendJson(res, 400, { error: '缺少路径' });
-          return true;
-        }
-        const r = detectRepo(dir);
-        if (!r) {
-          sendJson(res, 400, { error: `${dir} 不是 SVN/Git 工作副本` });
-          return true;
-        }
-        process.env.SVNGIT_REPO_DIR = r.root;
-        // 记录操作范围：打开的目录相对仓库根(子项目);打开根目录则为空(全仓库)
-        currentScopes.set(r.root, dir === r.root ? '' : path.relative(r.root, dir));
-        addHistory({ path: r.root, type: r.type }); // 记录到最近项目
-        sendJson(res, 200, { ok: true, repo: r });
-        return true;
-      }
-      if (p === '/api/status') {
-        const { repo } = vcsOf();
-        const force = url.searchParams.get('force') === '1';
-        const items = await getStatusCached(repo, force);
-        sendJson(res, 200, { items });
-        return true;
-      }
+
       if (p === '/api/new-files') {
         // 目录及所有子目录中的未版本化文件（'?' 条目；目录条目递归展开内部文件）。
         // 用于筛选"仅新文件"时平铺列出全部新文件，双击跳转定位
@@ -485,6 +121,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         sendJson(res, 200, { files });
         return true;
       }
+
       if (p === '/api/filtered-tree') {
         // 过滤后的树：目录及子目录中，状态码匹配的条目按目录层级构建树（'?' 目录展开内部全部文件）。
         // 供"仅修改/仅新文件/仅删除"过滤在树视图展示
@@ -588,6 +225,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         sendJson(res, 200, { tree: root });
         return true;
       }
+
       if (p === '/api/fs') {
         // 工作副本文件夹浏览：磁盘目录 + 状态匹配
         const { vcs, repo } = vcsOf();
@@ -885,42 +523,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         sendJson(res, 200, { dir: rel, abs, root: repo.root, entries, selfLocked, wcBroken, wcLocked, wcIncomplete, treeConflicts });
         return true;
       }
-      if (p === '/api/log') {
-        const { vcs, repo } = vcsOf();
-        const pathRel = url.searchParams.get('path') || undefined;
-        // 路径越界校验：svn log 会把 ../ 解析到仓库外的其他工作副本
-        if (pathRel && !inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
-          return true;
-        }
-        // limit 缺省 200（首屏）；显式 limit=0 → 全量。offset=已加载条数（git --skip 续拉）；afterRev=已加载最老版本（svn -r rev-1:1 续拉）
-        const limitRaw = url.searchParams.get('limit');
-        const limit = limitRaw === null ? 200 : Number(limitRaw);
-        const offset = Number(url.searchParams.get('offset') ?? 0) || 0;
-        const afterRev = url.searchParams.get('afterRev') || undefined;
-        // 日志（svn 不做总数探测——无轻量接口，全量 -q 会拖慢首次加载；git rev-list 秒级精确）
-        const logs = await vcs.log(limit, pathRel, offset, afterRev);
-        let total = 0;
-        if (repo.type === 'git') {
-          try {
-            const info = (await vcs.logTotal?.(pathRel)) ?? { count: 0, exact: true };
-            total = info.count;
-          } catch {
-            /* 探测失败不阻断历史列表 */
-          }
-        }
-        const totalGt = false;
-        let unpushed: string[] = [];
-        if (repo.type === 'git') {
-          try {
-            unpushed = (await vcs.unpushed?.()) ?? [];
-          } catch {
-            /* 计算失败不阻断历史列表 */
-          }
-        }
-        sendJson(res, 200, { logs, unpushed, total, totalGt });
-        return true;
-      }
+
       if (p === '/api/file-mtime') {
         // 工作区文件指纹（检测外部更新）
         const { repo } = vcsOf();
@@ -938,6 +541,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         sendJson(res, 200, { mtime: st.mtimeMs, size: st.size });
         return true;
       }
+
       if (p === '/api/file-versions') {
         // 并排对比：左右版本文件内容（无 a/b：左=BASE/HEAD 右=工作区；有 a/b：两版本）
         const { vcs, repo } = vcsOf();
@@ -985,30 +589,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         sendJson(res, 200, { left, right, leftLabel, rightLabel, rel });
         return true;
       }
-      if (p === '/api/diff') {
-        const { vcs, repo } = vcsOf();
-        const pathRel = url.searchParams.get('path') || undefined;
-        // 路径越界校验：svn diff 会把 ../ 解析到仓库外的其他工作副本
-        if (pathRel && !inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
-          return true;
-        }
-        if (pathRel && isBinaryFile(pathRel)) {
-          sendJson(res, 200, { ok: false, output: '', error: `二进制文件（${pathRel}），不支持文本对比` });
-          return true;
-        }
-        const a = url.searchParams.get('a') || undefined;
-        const b = url.searchParams.get('b') || undefined;
-        const d = await vcs.diff(a, b, pathRel);
-        let output = d.output;
-        // git 工作区模式：合并暂存区改动（否则已 git add 的修改行不会标记）
-        if (repo.type === 'git' && !a && !b) {
-          const staged = await vcs.diffStaged?.(pathRel);
-          if (staged?.ok && staged.output.trim()) output = output + (output ? '\n' : '') + staged.output;
-        }
-        sendJson(res, 200, { ...d, output });
-        return true;
-      }
+
       if (p === '/api/show') {
         const { vcs, repo } = vcsOf();
         const rev = url.searchParams.get('rev') || '';
@@ -1093,6 +674,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         return true;
       }
+
       if (p === '/api/ls') {
         const { vcs, repo } = vcsOf();
         const dir = url.searchParams.get('dir') || '';
@@ -1105,6 +687,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         sendJson(res, 200, { items: list, repoType: repo.type });
         return true;
       }
+
       if (p === '/api/cat') {
         const { vcs, repo } = vcsOf();
         const rel = url.searchParams.get('path') || '';
@@ -1146,6 +729,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         sendJson(res, 200, encoding ? { ...out, encoding } : out);
         return true;
       }
+
       if (p === '/api/file') {
         // md 预览图片：读取仓库内文件（仅图片扩展名 + 防目录穿越）
         const { repo } = vcsOf();
@@ -1182,180 +766,6 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         };
         res.writeHead(200, { 'Content-Type': IMG_MIME[ext] ?? 'application/octet-stream', 'Cache-Control': 'no-store' });
         res.end(fs.readFileSync(abs));
-        return true;
-      }
-      if (p === '/api/shutdown' && req.method === 'POST') {
-        sendJson(res, 200, { ok: true });
-        setTimeout(() => process.exit(0), 200);
-        return true;
-      }
-      if (p === '/api/remotes') {
-        const { repo, vcs } = vcsOf();
-        if (repo.type !== 'git') {
-          sendJson(res, 200, { remotes: [] });
-          return true;
-        }
-        const remotes = (await vcs.remoteList?.()) ?? [];
-        sendJson(res, 200, { remotes });
-        return true;
-      }
-      if (p === '/api/env-check') {
-        const check = async (cmd: string): Promise<{ installed: boolean; version: string }> => {
-          try {
-            const r = await run(cmd, ['--version'], { timeoutMs: 10_000 });
-            return { installed: r.code === 0, version: r.stdout.split('\n')[0]?.trim() ?? '' };
-          } catch {
-            // 命令不存在(如未安装 svn)→ 视为未安装,而非接口 500
-            return { installed: false, version: '' };
-          }
-        };
-        const [svn, git] = await Promise.all([check('svn'), check('git')]);
-        sendJson(res, 200, { svn, git });
-        return true;
-      }
-      if (p === '/api/apps-for') {
-        // 系统可用打开方式（办公/图片/文本/压缩文档）：按 MimeType 匹配 .desktop 程序
-        const ext = (url.searchParams.get('ext') ?? '').toLowerCase();
-        const mime = EXT_MIME[ext];
-        // 文本族父类回退：md/log/rst 等子类型（text/markdown 等）几乎无程序声明,
-        // 回退用 text/plain 匹配——任意文本编辑器皆可打开
-        const mimes = new Set<string>();
-        if (mime) {
-          mimes.add(mime);
-          if (mime.startsWith('text/') && mime !== 'text/plain') mimes.add('text/plain');
-        } else if (!BINARY_EXTS.has(ext)) {
-          // 代码/配置等未映射扩展（json/sh/yaml/html…）:文本编辑器兜底
-          mimes.add('text/plain');
-        }
-        // Linux 按 MimeType 匹配 .desktop 程序;Windows 无 .desktop 清单,按注册表枚举该扩展名已关联程序
-        const apps = platform.listOpenWithApps(ext, mimes);
-        sendJson(res, 200, {
-          apps,
-          // Windows 额外提供「选择其他应用…」：经 shell32,OpenAs_RunDLL 调系统「打开方式」选择器
-          chooseOpen: platform.chooseOpenCmd,
-        });
-        return true;
-      }
-      if (p === '/api/icon') {
-        // 图标：Windows = 从 .exe/.ico 提取嵌入图标；Linux = 按 .desktop Icon 名在系统图标目录找图片
-        const key = (url.searchParams.get('k') ?? '').trim();
-        if (!key) {
-          res.writeHead(404);
-          res.end();
-          return true;
-        }
-        const icon = platform.resolveAppIcon(key);
-        if (icon) {
-          res.writeHead(200, { 'Content-Type': icon.contentType, 'Cache-Control': 'public, max-age=3600' });
-          res.end(icon.data);
-          return true;
-        }
-        res.writeHead(404);
-        res.end();
-        return true;
-      }
-      if (p === '/api/open-with' && req.method === 'POST') {
-        // 用指定系统程序打开仓库内文件（win 注册表 / linux .desktop Exec 模板解析；平台逻辑下沉到 src/platform）
-        const { repo } = vcsOf();
-        const body = await readBody(req);
-        const rel = String(body.path ?? '');
-        const exec = String(body.exec ?? '');
-        const abs = path.resolve(repo.root, rel);
-        if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
-          return true;
-        }
-        if (!fs.existsSync(abs)) {
-          sendJson(res, 404, { error: '文件不存在' });
-          return true;
-        }
-        const r = await platform.openWithApp(abs, exec, rel);
-        sendJson(res, r.ok ? 200 : 500, r.ok ? { ok: true, message: r.message } : { ok: false, error: r.message });
-        return true;
-      }
-      if (p === '/api/app-menu') {
-        // 系统应用菜单集成（AppImage 运行方式）：GET 查状态；POST 安装；DELETE 卸载
-        if (req.method === 'GET') {
-          const desktopPath = path.join(os.homedir(), '.local', 'share', 'applications', 'svngit.desktop');
-          sendJson(res, 200, {
-            appImage: Boolean(process.env.APPIMAGE),
-            installed: process.platform === 'linux' && fs.existsSync(desktopPath),
-          });
-          return true;
-        }
-        if (req.method === 'POST') {
-          const appImagePath = process.env.APPIMAGE;
-          if (!appImagePath) {
-            sendJson(res, 400, { error: '仅 AppImage 运行方式支持；源码运行请用 scripts/install-appimage.sh' });
-            return true;
-          }
-          sendJson(res, 200, platform.installAppMenu(appImagePath));
-          return true;
-        }
-        if (req.method === 'DELETE') {
-          sendJson(res, 200, platform.uninstallAppMenu());
-          return true;
-        }
-      }
-      if (p === '/api/net-check') {
-        // 远程连通性检测（网络灯）：只握手不取数据(git ls-remote / svn ls),8s 超时。
-        // 区分"网络断"与"认证失败"：认证失败=网络通的（前端显示绿,tooltip 说明认证问题）
-        const { repo, vcs } = vcsOf();
-        let ok = false;
-        let reason = '未知错误';
-        try {
-          if (repo.type === 'git') {
-            const u = await run('git', ['remote', 'get-url', 'origin'], { cwd: repo.root, timeoutMs: 8_000 });
-            if (u.code !== 0 || !u.stdout.trim()) {
-              ok = true; // 未配置远程：无远程可检,不视为离线
-              reason = '未配置远程';
-            } else {
-              const r = await run('git', ['ls-remote', 'origin'], { cwd: repo.root, timeoutMs: 8_000 });
-              const errText = (r.stderr + '\n' + r.stdout).trim();
-              if (r.code === 0) {
-                ok = true; reason = '网络正常';
-              } else if (/auth|credential|401|403|could not read Username|terminal prompts/i.test(errText)) {
-                ok = true; reason = '已连通（认证失败，需检查令牌）';
-              } else {
-                ok = false; reason = errText.split('\n')[0] || '连接失败';
-              }
-            }
-          } else {
-            // svn: 访问仓库 URL（工作副本 svn info 无网络请求,必须直接打 URL）。
-            // repo.url 恒空（detectRepo 不含 url），改用 vcs.info() 与 /api/info 同源获取
-            const info = await vcs.info?.();
-            const url = info?.url ?? repo.url;
-            if (!url) {
-              ok = true; reason = '未配置仓库 URL';
-            } else {
-              const r = await run('svn', ['ls', url], { timeoutMs: 8_000 });
-              const errText = r.stderr.trim();
-              if (r.code === 0) {
-                ok = true; reason = '网络正常';
-              } else if (/E170001|Authorization failed|Authentication failed/i.test(errText)) {
-                ok = true; reason = '已连通（认证失败，请检查账号）';
-              } else {
-                ok = false; reason = errText.split('\n')[0] || '连接失败';
-              }
-            }
-          }
-        } catch (e) {
-          ok = false;
-          reason = (e as Error).message;
-        }
-        sendJson(res, 200, { ok, reason });
-        return true;
-      }
-      if (p === '/api/env-install/stream') {
-        // SSE：流式执行系统安装，前端显示实时日志/进度（平台差异下沉到 src/platform：win=winget 引导，linux=免密 sudo 自动装）
-        const tool = (url.searchParams.get('tool') ?? 'both') as 'svn' | 'git' | 'both';
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-        });
-        const send = (data: Record<string, unknown>) => res.write(`data: ${JSON.stringify(data)}\n\n`);
-        await platform.envInstall(tool, send, () => res.end());
         return true;
       }
 

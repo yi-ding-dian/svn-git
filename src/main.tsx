@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { startServer, setPickDirHandler } from './server.js';
 import { detectRepo } from './vcs/detect.js';
 import { platform } from './platform/index.js';
-import { dedupeHistory } from './routes/misc.js';
+import { dedupeHistory } from './routes/recent.js';
 
 const require = createRequire(import.meta.url);
 
