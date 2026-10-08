@@ -66,6 +66,16 @@ export interface VcsResult {
 // 状态码中文说明定义收敛于 src/shared/types.ts（前后端单一来源）
 export { CODE_DESC } from '../shared/types.js';
 
+/** 忽略预案（svn）：这条「加入忽略」最终会写成什么——供弹窗在确认前如实展示，避免「填了 A 却写入 B」 */
+export interface IgnorePlan {
+  /** 规则写进哪个目录（相对仓库根，'' 表示仓库根） */
+  target: string;
+  /** 建议的规则内容（弹窗预填，用户可改写；svn 表达不了子路径时是退化成的那一段目录名） */
+  rule: string;
+  /** 因 svn 忽略规则不能带路径而退化成「忽略整段」（如忽略 dist/bundle.js → 忽略整个 dist） */
+  degraded: boolean;
+}
+
 /** SVN 仓库布局探测：标准布局 trunk/branches/tags 目录是否存在 */
 export interface SvnLayout {
   trunk: boolean;
@@ -195,6 +205,8 @@ export interface Vcs {
   cleanup?(): Promise<VcsResult>;
   resolve?(pathRel: string, accept: string): Promise<VcsResult>;
   propSetIgnore?(pathRel: string, pattern: string): Promise<VcsResult>;
+  /** 忽略预案：规则最终写到哪个目录、内容是什么（弹窗确认前展示，避免「填了 A 却写入 B」） */
+  ignorePlan?(pathRel: string): Promise<IgnorePlan>;
   lock?(pathRel: string, force?: boolean): Promise<VcsResult>;
   unlock?(pathRel: string, force?: boolean): Promise<VcsResult>;
 }

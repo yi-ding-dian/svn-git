@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { XMLParser } from 'fast-xml-parser';
 import { run } from './exec.js';
-import type { FileStatus, LogEntry, RepoInfo, SvnLayout, VcsResult } from './types.js';
+import type { FileStatus, IgnorePlan, LogEntry, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
 export interface SvnCred {
   username: string;
@@ -832,22 +832,95 @@ export class SvnVcs {
     return { ok: true, message: `已解决: ${pathRel}（${accept}）` };
   }
 
-  /** svn propset svn:ignore：设置忽略模式（svn:ignore 只能设在目录上——目标是文件时改为设置到其父目录） */
-  async propSetIgnore(pathRel: string, pattern: string): Promise<VcsResult> {
-    let target = pathRel;
-    // 文件 → 父目录承载忽略规则；目录 → 目录本身
-    try {
-      const abs = path.join(this.repo.root, pathRel);
-      if (fs.existsSync(abs) && !fs.statSync(abs).isDirectory()) {
-        target = path.dirname(pathRel);
-        if (target === '.') target = '.';
-      }
-    } catch {
-      /* 目标不存在时按传入路径处理 */
+  /** svn info 判定该相对路径是否**已纳入版本控制的目录**（属性只能挂在这种节点上） */
+  private async isVersionedDir(rel: string): Promise<boolean> {
+    const res = await this.exec(['info', '--show-item', 'kind', rel || '.'], { timeoutMs: 30_000 });
+    return res.code === 0 && res.stdout.trim() === 'dir';
+  }
+
+  /** 从 rel 起逐级向上找**最近的已版本化目录**；连仓库根都没纳入版本控制（罕见）→ null */
+  private async nearestVersionedDir(rel: string): Promise<string | null> {
+    let cur = rel;
+    for (;;) {
+      if (await this.isVersionedDir(cur)) return cur;
+      if (!cur) return null;
+      cur = cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : '';
     }
-    const res = await this.exec(['propset', 'svn:ignore', pattern, target]);
+  }
+
+  /**
+   * 真正执行 propset（target 必须已是版本化目录）。
+   *
+   * **必须读出现有规则、追加去重后再整体写回**：`svn propset` 是**替换**属性值而不是追加，
+   * 直接写会把该目录已有的规则一起抹掉（用户实报：连续忽略三个目录，最后只剩最后一条，
+   * 前面的规则莫名消失；根源是这里按"追加一条"的语义用了 propset）。
+   */
+  private async setSvnIgnore(target: string, pattern: string): Promise<VcsResult> {
+    const at = target || '.';
+    const cur = await this.exec(['propget', 'svn:ignore', at], { timeoutMs: 30_000 });
+    const rules = (cur.code === 0 ? cur.stdout.split('\n') : []).map((s) => s.trim()).filter(Boolean);
+    if (rules.includes(pattern)) {
+      return { ok: true, message: `已设置忽略: ${at} → ${pattern}（规则已存在）` };
+    }
+    const res = await this.exec(['propset', 'svn:ignore', [...rules, pattern].join('\n'), at]);
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '设置忽略失败' };
-    return { ok: true, message: `已设置忽略: ${target || '.'} → ${pattern}` };
+    return { ok: true, message: `已设置忽略: ${at} → ${pattern}` };
+  }
+
+  /** 忽略规则的落点：承载规则的目录 `host` + 目标相对 host 的**第一段**（= host 的直接子项名）。
+   *  `direct`=规则直接作用于目标条目本身（此时用户填的规则内容才有意义）。
+   *  找不到可承载属性的目录（连仓库根都没纳入版本控制，罕见）→ null */
+  private async ignoreHost(rel: string): Promise<{ host: string; firstSeg: string; direct: boolean } | null> {
+    // 已版本化目录：规则挂在它自己身上（「忽略设置…」弹窗往目录里加规则就是这种）
+    if (await this.isVersionedDir(rel)) return { host: rel, firstSeg: rel.split('/').pop() ?? '', direct: true };
+    const parent = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
+    const host = await this.nearestVersionedDir(parent);
+    if (host === null) return null;
+    const firstSeg = (host ? rel.slice(host.length + 1) : rel).split('/')[0] ?? '';
+    return { host, firstSeg, direct: parent === host };
+  }
+
+  /** 忽略预案：规则最终写到哪个目录、内容建议是什么。
+   *  弹窗打开时就展示给用户看，避免「填了 A 却写入 B」（svn 表达不了子路径时会退化，见 ignoreHost）。 */
+  async ignorePlan(pathRel: string): Promise<IgnorePlan> {
+    const rel = pathRel === '.' ? '' : pathRel.replace(/\/+$/, '');
+    const h = await this.ignoreHost(rel);
+    if (!h) throw new Error('仓库中没有已纳入版本控制的目录可承载 svn:ignore 属性');
+    return {
+      target: h.host,
+      rule: h.direct ? (rel.split('/').pop() ?? '') : h.firstSeg,
+      degraded: !h.direct,
+    };
+  }
+
+  /**
+   * svn propset svn:ignore：设置忽略模式。
+   *
+   * svn 的忽略是**属性**，只能挂在【已纳入版本控制的目录】上，且规则只作用于该目录的**直接子项**
+   * （规则里不能带路径）。落点计算见 `ignoreHost`：
+   *  1) 目标是已版本化目录（「忽略设置…」弹窗在目录上加规则）→ 规则设在它自己身上
+   *  2) 目标未纳入版本控制（右键「加入忽略…」）→ 规则挂到**最近的已版本化祖先目录**上
+   *
+   * 旧实现把未版本化目录**自己**当 propset 目标（文件才转父目录）→ 未版本化节点挂不上属性，
+   * `svn: E155010: 找不到节点`（用户实报：右键加入忽略报找不到节点）。
+   */
+  async propSetIgnore(pathRel: string, pattern: string): Promise<VcsResult> {
+    const rel = pathRel === '.' ? '' : pathRel.replace(/\/+$/, '');
+    const h = await this.ignoreHost(rel);
+    if (!h) return { ok: false, message: '无法设置忽略：仓库中没有已纳入版本控制的目录可承载 svn:ignore 属性' };
+    // 目标在未版本化目录里时，规则只能按「host 的直接子项名」匹配。用户没改默认值（还是条目名）
+    // 就写入退化成的那一段；若他改成了别的（如 *.log），那是明确意图，照写。
+    const entryName = rel.split('/').pop() ?? '';
+    const rule = !h.direct && pattern === entryName ? h.firstSeg : pattern;
+    const r = await this.setSvnIgnore(h.host, rule);
+    if (!r.ok) return r;
+    if (rule !== pattern) {
+      return {
+        ok: true,
+        message: `已设置忽略: ${h.host || '.'} → ${rule}（svn 的忽略规则不能带路径，已忽略整个 ${rule} 目录）`,
+      };
+    }
+    return r;
   }
 
   // ============ 锁定 / Blame ============

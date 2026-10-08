@@ -238,6 +238,12 @@ export const get = {
     api<{ conflicts: { path: string; ours: string; theirs: string; base: string; work: string }[] }>('/api/conflicts'),
   ignoreRules: (path: string) =>
     api<{ rules: string[]; sources?: { pattern: string; where: string }[] }>(`/api/ignore?path=${encodeURIComponent(path)}`),
+  /** 忽略预案（仅 svn）：规则最终写到哪个目录、内容是什么 —— 弹窗确认前如实展示 */
+  ignorePlan: (path: string) =>
+    api<{ target: string; rule: string; degraded: boolean }>(`/api/ignore-plan?path=${encodeURIComponent(path)}`),
+  /** 「谁忽略了我」（仅 svn）：本目录无规则却被上层规则忽略时，指出规则在哪一层 */
+  ignoreSource: (path: string) =>
+    api<{ source: { dir: string; rule: string } | null }>(`/api/ignore-source?path=${encodeURIComponent(path)}`),
   conflictDetail: (path: string) =>
     api<{ path: string; theirsDiff: string; myDiff: string }>(`/api/conflict-detail?path=${encodeURIComponent(path)}`),
   /** 模块索引（md 文件说明注入）：全仓库作用目录→条目；preview=注入前解析预览 */

@@ -308,6 +308,54 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return runVcs(ctx, () => (action === 'lock' ? vcs.lock?.(pathRel, force) : vcs.unlock?.(pathRel, force)));
       }
 
+      if (p === '/api/ignore-plan' && req.method === 'GET') {
+        // 忽略预案（仅 svn 需要）：规则最终写到哪个目录、内容建议是什么。
+        // 弹窗打开时就展示给用户，避免「填了 A 却写入 B」（svn:ignore 只能按名字作用于某目录的直接子项）
+        const { repo, vcs } = vcsOf();
+        if (repo.type !== 'svn' || !vcs.ignorePlan) {
+          sendJson(res, 400, { error: '仅 SVN 需要忽略预案' });
+          return true;
+        }
+        const pathRel = url.searchParams.get('path') ?? '';
+        if (!inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          return true;
+        }
+        sendJson(res, 200, await vcs.ignorePlan(pathRel));
+        return true;
+      }
+
+      if (p === '/api/ignore-source' && req.method === 'GET') {
+        // 「谁忽略了我」：本目录自己没有规则、却被上层规则忽略时，指出规则挂在哪一层、内容是什么。
+        // 专治「忽略设置」看着空空的困惑——svn:ignore 不继承，被上层忽略的目录自己是没有任何规则的。
+        const { repo } = vcsOf();
+        const pathRel = url.searchParams.get('path') ?? '';
+        if (repo.type !== 'svn') {
+          sendJson(res, 200, { source: null }); // git 有否定规则/分档，来源由 check-ignore -v 单独给
+          return true;
+        }
+        if (!inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          return true;
+        }
+        const parts = pathRel.replace(/^\.\//, '').replace(/\/+$/, '').split('/').filter((s) => s && s !== '.');
+        const map = await getSvnIgnoreMap(repo.root);
+        let source: { dir: string; rule: string } | null = null;
+        let acc = '';
+        for (const part of parts) {
+          acc = acc ? `${acc}/${part}` : part;
+          const parentOf = path.dirname(acc);
+          const dir = parentOf === '.' ? '.' : parentOf;
+          const rule = (map.get(dir) ?? []).find((r) => isIgnoredByRules([r], part));
+          if (rule) {
+            source = { dir, rule };
+            break;
+          }
+        }
+        sendJson(res, 200, { source });
+        return true;
+      }
+
       if (p === '/api/ignore' && req.method === 'GET') {
         // 读取忽略规则（svn: svn:ignore 属性 / git: .gitignore）
         const { repo } = vcsOf();

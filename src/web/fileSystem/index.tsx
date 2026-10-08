@@ -945,20 +945,22 @@ export function FsView(props: Props) {
     ignoreModal,
     setIgnoreModal,
     ignoreAsk,
-    setIgnoreAsk,
     ignorePattern,
     setIgnorePattern,
+    ignorePlan,
     ignoreTarget,
     setIgnoreTarget,
     unignoreAsk,
     setUnignoreAsk,
     ignoreFile,
+    closeIgnore,
     doIgnore,
     doUnignore,
   } = useIgnoreFlow({
     onToast: props.onToast,
     reloadDir: () => (mode === 'tree' ? loadNode('', true) : void load(dir, true)),
     reloadFilter: () => ft.setFilterTreeTick((t) => t + 1),
+    repoType: props.repoType,
   });
 
   /** 列表/浏览模式共用的条目行渲染 */
@@ -1579,14 +1581,16 @@ export function FsView(props: Props) {
           title={`⚠ 加入忽略（写入 ${
             props.repoType === 'git'
               ? IGNORE_WHERE_LABEL[ignoreTarget]
-              : 'svn:ignore 属性 · 本目录生效，提交后随仓库分发'
+              : // svn 的规则是属性，只能挂在已加入版本库的目录上（未版本化条目会挂到最近的这种上级目录）
+                'svn:ignore 属性 · 挂在最近的已加入版本库的目录，提交后随仓库分发'
           }）`}
           width={440}
-          onClose={() => setIgnoreAsk(null)}
+          onClose={closeIgnore}
           foot={
             <>
-              <button onClick={() => setIgnoreAsk(null)}>取消</button>
-              <button className="primary" disabled={!ignorePattern.trim()} onClick={doIgnore}>
+              <button onClick={closeIgnore}>取消</button>
+              {/* svn 预案没回来前先别让用户确认：预填的还是条目名，此时提交会与展示的落点不符 */}
+              <button className="primary" disabled={!ignorePattern.trim() || ignorePlan === 'loading'} onClick={doIgnore}>
                 加入忽略
               </button>
             </>
@@ -1595,6 +1599,22 @@ export function FsView(props: Props) {
           <div className="dim small" style={{ marginBottom: 8, wordBreak: 'break-all' }}>
             加入忽略规则（默认当前文件名）：<span className="mono">{ignoreAsk.rel}</span>
           </div>
+          {ignorePlan && ignorePlan !== 'loading' && (
+            <div className="small" style={{ marginBottom: 8, wordBreak: 'break-all', color: ignorePlan.degraded ? 'var(--warn)' : undefined }}>
+              {ignorePlan.degraded ? (
+                <>
+                  ⚠ svn 的忽略规则不能带路径：<span className="mono">{ignoreAsk.rel}</span> 所在目录尚未加入版本库，
+                  只能忽略整个 <span className="mono">{ignorePlan.rule}</span>（写入{' '}
+                  <span className="mono">{ignorePlan.target || '仓库根目录'}</span>
+                  ）。想只忽略这一个，请先把该目录「添加到版本库」。
+                </>
+              ) : (
+                <>
+                  规则将写入：<span className="mono">{ignorePlan.target || '仓库根目录'}</span>
+                </>
+              )}
+            </div>
+          )}
           <FormRow label="规则">
             <input
               type="text"
@@ -1602,7 +1622,7 @@ export function FsView(props: Props) {
               value={ignorePattern}
               onChange={(e) => setIgnorePattern(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && ignorePattern.trim()) doIgnore();
+                if (e.key === 'Enter' && ignorePattern.trim() && ignorePlan !== 'loading') doIgnore();
               }}
               autoFocus
             />

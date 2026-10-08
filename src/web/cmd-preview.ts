@@ -77,7 +77,9 @@ export const CMDS: Record<string, string> = {
   s_resolve_theirs: 'svn resolve --accept theirs-full %path%',
   s_resolve_manual: 'svn resolve --accept working %path%',
 
-  s_ignore_add: 'svn propset svn:ignore "%pattern%" %path%',
+  // 规则挂到哪儿是**运行时算的**（已版本化目录就用它自己；未版本化条目则上溯最近的已版本化祖先），
+  // 写死 %path% 会把未版本化条目显示成 propset 目标——与真实执行不符，故用描述性占位
+  s_ignore_add: 'svn propset svn:ignore "%pattern%" <最近的已版本化目录>',
 };
 
 /** 按仓库类型前缀取模板（git→g_*, svn→s_*）；未知返回 undefined */
