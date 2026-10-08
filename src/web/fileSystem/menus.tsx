@@ -404,9 +404,11 @@ export function buildRowItems(t: { isDir: boolean; code: string; rel: string; na
       }
     }
   }
-  items.push({ sep: true });
-  // 打开方式：所有文件都提供（办公文档/图片/文本/代码……二进制按扩展映射表匹配，文本类型回退 text/plain）
-  {
+  // 打开方式：只对**磁盘上真实存在的文件**提供 ——
+  //   目录没有"用某个程序打开"这回事（该走「打开文件管理器」）；
+  //   缺失条目（'!'）磁盘上根本没文件，打开必然失败
+  if (!t.isDir && t.code !== '!') {
+    items.push({ sep: true });
     const ext = t.name.split('.').pop()!.toLowerCase();
     // 先 push 占位项，程序列表异步取回后按 owIdx 回填它的 submenu。
     // 不能省这一步：组件端要校验 items[owIdx].label === '打开方式…' 才回填，没有占位项就整个静默丢弃
