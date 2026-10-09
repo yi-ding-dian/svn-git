@@ -4,11 +4,12 @@ import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterT
 import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconDownload, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon, MiniIcon } from '../ui/icons.js';
 import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
-import { multiRevertName, renameableCode, removableFromRepo, renameItem, joinPaths, filterEntries, revertName, type Filter, type Mode, type VisibleRow } from './utils.js';
+import { multiRevertName, renameableCode, removableFromRepo, renameItem, joinPaths, filterEntries, relOfName, revertName, type Filter, type Mode, type VisibleRow } from './utils.js';
 import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } from './menus.js';
 import { useFileSearch, FsSearchBox } from './search.js';
 import { useFilterTree } from './filter-tree.js';
 import { useIgnoreFlow } from './use-ignore-flow.js';
+import { useFsKeyboard } from './use-fs-keyboard.js';
 import { TreeRow } from './views/rows.js';
 import { GridItem, FileTipCard } from './views/grid.js';
 import { ThumbIcon } from './views/thumb.js';
@@ -514,7 +515,6 @@ export function FsView(props: Props) {
   }, [data]);
 
   const relOf = (e: FsEntry) => (data?.dir ? `${data.dir}/${e.name}` : e.name);
-  const relOfName = (d: string, name: string) => (d ? `${d}/${name}` : name);
 
   /** 打开文件：有变更 → diff；无变更/未版本化 → 原文预览（内容由 PreviewPane 自行读取渲染） */
   const openFile = useCallback(
@@ -595,12 +595,21 @@ export function FsView(props: Props) {
   useEffect(() => {
     if (!pendingLocate || mode !== 'tree') return;
     const parts = pendingLocate.rel.split('/');
+    // ⚠ 先把祖先链收进数组再展开：setExpanded 的 updater 是**延迟执行**的，
+    // 若在循环里直接引用 `acc`，等 React 真正调用它时循环早已结束、acc 已是最终值，
+    // 于是每一级都写成同一个路径（深层目录只展开最末一级 —— 用户实报"切树停在仓库根"）。
+    // 1 级祖先不循环、2 级只循环一次（迟到读到同一个值），所以这个 bug 只在 **3 级及更深**才暴露。
+    const ancestors: string[] = [];
     let acc = '';
     for (let i = 0; i < parts.length - 1; i++) {
       acc = acc ? `${acc}/${parts[i]}` : parts[i]!;
-      setExpanded((s) => new Set(s).add(acc));
-      void loadNode(acc);
+      ancestors.push(acc);
     }
+    // forEach 的参数每次都是新的绑定，不会踩上面那个坑
+    ancestors.forEach((a) => {
+      setExpanded((s) => new Set(s).add(a));
+      void loadNode(a);
+    });
   }, [pendingLocate, mode, loadNode]);
 
   // 定位：visibleRows / 列表数据就绪后高亮并滚动
@@ -674,116 +683,61 @@ export function FsView(props: Props) {
   rowsRef.current = rows;
   /** 行的相对仓库根路径：树模式的行自带 rel，列表/网格模式由当前目录 + 名称推出 */
   const rowRel = (r: (typeof rows)[number]): string => ('rel' in r ? r.rel : relOf(r));
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
+
+  /** 切视图：把**当前位置**带过去（三种模式共享"当前目录 + 选中项"这个位置）。
+   *  浏览/列表共用 dir 与 selected，切过去天然一致；需要显式转换的只有树：
+   *  - 切到树：展开并定位当前目录（连它自己也展开——用户是"进到"这个目录里的）
+   *  - 从树切走：树里选中的是**目录**就进它；是**文件**就进父目录并选中该文件 */
+  const switchMode = (target: Mode) => {
+    if (target === mode) return;
+    if (target === 'tree') {
+      setMode('tree');
+      if (!dir) return; // 仓库根：树本来就从根摊开，无需定位
+      setPendingLocate({ rel: dir, at: Date.now() });
+      setExpanded((s) => new Set(s).add(dir));
+      void loadNode(dir);
+      return;
+    }
+    if (mode === 'tree') {
+      // 跟随树里的选中项（优先选中集，其次焦点行）：树模式点哪行就是哪行
+      const selRel = [...selected][0];
+      const cur = selRel ? rowsRef.current.find((r) => rowRel(r) === selRel) : rowsRef.current[focusRef.current];
+      if (cur) {
+        const rel = rowRel(cur); // 树模式的行是 VisibleRow，但类型上是 FsEntry | VisibleRow → 统一走 rowRel
+        if (cur.isDir) {
+          setDir(rel); // 目录 → 直接进它
+        } else {
+          // 文件 → 进它的父目录，并选中这个文件（不能"进入文件"）
+          setDir(rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '');
+          setPendingLocate({ rel, at: Date.now() });
+        }
+      }
+    }
+    setMode(target);
+  };
   const focusRef = useRef(focusIndex);
   focusRef.current = focusIndex;
-  const dirRef = useRef(dir);
-  dirRef.current = dir;
 
-  useEffect(() => {
-    if (!props.active) return; // 视图隐藏时键盘不响应（防止穿透到其他视图）
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 输入框内不拦截
-      if (ctx) {
-        if (e.key === 'Escape') {
-          closeCtx(); // 统一关闭路径：清计时器 + 解锁 + 清原条目记录
-        }
-        return;
-      }
-      if (preview) return; // 预览打开：按键由 PreviewPane 自己的监听处理（/ 搜索 · Esc/←/Backspace 返回），这里只吃键防止列表响应
-      const list = rowsRef.current;
-      if (list.length === 0) return;
-      const k = e.key;
-      let fi = focusRef.current;
-      const cur = list[fi] ?? list[0]!;
-
-      if (k === 'ArrowDown' || k === 'j') {
-        e.preventDefault();
-        // 网格模式按列数跳行，其余单行移动
-        if (modeRef.current === 'browse') {
-          const w = gridRef.current?.clientWidth ?? 600;
-          const cols = Math.max(1, Math.floor(w / 120));
-          setFocusIndex(Math.min(list.length - 1, fi + cols));
-        } else {
-          setFocusIndex(Math.min(list.length - 1, fi + 1));
-        }
-        return;
-      }
-      if (k === 'ArrowUp' || k === 'k') {
-        e.preventDefault();
-        if (modeRef.current === 'browse') {
-          const w = gridRef.current?.clientWidth ?? 600;
-          const cols = Math.max(1, Math.floor(w / 120));
-          setFocusIndex(Math.max(0, fi - cols));
-        } else {
-          setFocusIndex(Math.max(0, fi - 1));
-        }
-        return;
-      }
-      if (k === 'Enter' || k === 'ArrowRight') {
-        e.preventDefault();
-        if (mode === 'tree') {
-          const row = cur as VisibleRow;
-          if (row.isDir) {
-            if (!row.open) {
-              toggleExpand(row.rel);
-              // 展开后焦点移到第一个子行
-              setFocusIndex(Math.min(list.length, fi + 1));
-            }
-          } else {
-            void openFile(row.name, row.code, row.rel);
-          }
-        } else {
-          const row = cur as FsEntry;
-          if (row.isDir) {
-            setDir(relOfName(dirRef.current, row.name));
-            setPendingLocate(null); // 键盘进入目录：取消残留定位
-          } else {
-            void openFile(row.name, row.code, relOfName(dirRef.current, row.name));
-          }
-        }
-        return;
-      }
-      if (k === 'ArrowLeft' || k === 'Backspace') {
-        e.preventDefault();
-        if (mode === 'tree') {
-          const row = cur as VisibleRow;
-          if (row.isDir && row.open) {
-            toggleExpand(row.rel); // 收起
-            return;
-          }
-          // 焦点上移到最近父级行
-          for (let i = fi - 1; i >= 0; i--) {
-            if ((list[i] as VisibleRow).depth < row.depth) {
-              setFocusIndex(i);
-              return;
-            }
-          }
-        } else if (dirRef.current) {
-          setDir((d) => (d.includes('/') ? d.slice(0, d.lastIndexOf('/')) : ''));
-          setPendingLocate(null); // 键盘返回上级：取消残留定位
-          setFocusIndex(0);
-        }
-        return;
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [ctx, preview, mode, toggleExpand, openFile, props.active]);
-
-  // 焦点越界修正
-  useEffect(() => {
-    if (focusIndex >= rows.length) setFocusIndex(Math.max(0, rows.length - 1));
-  }, [rows.length, focusIndex]);
-
-  // 网格模式：焦点变化时滚动到选中项
-  useEffect(() => {
-    if (mode !== 'browse' || !rows.length) return;
-    const el = gridRef.current?.children[focusIndex] as HTMLElement | undefined;
-    el?.scrollIntoView({ block: 'nearest' });
-  }, [focusIndex, mode, rows.length]);
+  // 键盘导航（↑↓ 选择 · →/Enter 进入 · ← 返回 · Esc 关菜单）抽到 useFsKeyboard；
+  // 焦点越界修正与网格模式下"焦点跟随滚动"也一并搬过去（都只服务键盘）
+  useFsKeyboard({
+    active: props.active,
+    mode,
+    dir,
+    rows,
+    rowsRef,
+    focusIndex,
+    focusRef,
+    gridRef,
+    ctx,
+    preview,
+    closeCtx,
+    toggleExpand,
+    openFile,
+    setFocusIndex,
+    setDir,
+    clearLocate: () => setPendingLocate(null),
+  });
 
   /** 菜单定位：动态估算菜单尺寸，超出屏幕右/下边界时上移/左移，保证完整显示 */
   const ctxPos = (e: React.MouseEvent, itemCount: number) => {
@@ -1427,13 +1381,17 @@ export function FsView(props: Props) {
             )}
           </span>
           <span className="row" style={{ gap: 4, marginLeft: 4 }}>
-            <button className={`mini tool-btn ${mode === 'list' ? 'primary' : ''}`} onClick={() => setMode('list')} title="列表视图">
+            <button className={`mini tool-btn ${mode === 'list' ? 'primary' : ''}`} onClick={() => switchMode('list')} title="列表视图">
               <IconList /> 列表
             </button>
-            <button className={`mini tool-btn ${mode === 'tree' ? 'primary' : ''}`} onClick={() => setMode('tree')} title="树视图">
+            <button
+              className={`mini tool-btn ${mode === 'tree' ? 'primary' : ''}`}
+              onClick={() => switchMode('tree')}
+              title="树视图"
+            >
               <IconTree /> 树
             </button>
-            <button className={`mini tool-btn ${mode === 'browse' ? 'primary' : ''}`} onClick={() => setMode('browse')} title="文件浏览器视图">
+            <button className={`mini tool-btn ${mode === 'browse' ? 'primary' : ''}`} onClick={() => switchMode('browse')} title="文件浏览器视图">
               <IconGrid /> 浏览
             </button>
             {props.repoType === 'svn' && (

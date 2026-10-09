@@ -56,6 +56,9 @@ export function renameItem(
   };
 }
 
+/** 目录 + 条目名 → 相对仓库根的路径（'' 目录 = 仓库根）；键盘导航等纯逻辑共用 */
+export const relOfName = (d: string, name: string): string => (d ? `${d}/${name}` : name);
+
 /** 命令预览: 多路径缩写（前 3 个 + …） */
 export const joinPaths = (arr: string[]) => arr.slice(0, 3).join(' ') + (arr.length > 3 ? ' …' : '');
 
