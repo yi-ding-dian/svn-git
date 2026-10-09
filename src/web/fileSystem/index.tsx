@@ -10,6 +10,7 @@ import { useFileSearch, FsSearchBox } from './search.js';
 import { useFilterTree } from './filter-tree.js';
 import { useIgnoreFlow } from './use-ignore-flow.js';
 import { useFsKeyboard } from './use-fs-keyboard.js';
+import { useFsLocate } from './use-fs-locate.js';
 import { TreeRow } from './views/rows.js';
 import { GridItem, FileTipCard } from './views/grid.js';
 import { ThumbIcon } from './views/thumb.js';
@@ -130,59 +131,10 @@ export function FsView(props: Props) {
   // 文件搜索（工具栏）：防抖查询 + 结果下拉状态收于 useFileSearch
   const search = useFileSearch(data?.dir ?? '');
   // only：显式指定选中集合（拖入上传用）——跳过"按 code 同状态全选"，只选中真正落盘的那几个
-  const [pendingLocate, setPendingLocate] = useState<{ rel: string; at: number; code?: string; only?: string[]; tc?: boolean } | null>(null);
-  // 定位目标行/卡片脉冲："就是它"提示（渲染期挂 .file-pulse class，1500ms 后清除；同状态文件全选后全闪）
-  const [pulseRels, setPulseRels] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const gridRef = useRef<HTMLDivElement | null>(null);
-  // 角标定位：轮转索引（dir::code → 下一次取第几个）+ 竞态令牌（连点/换目录时中断旧动画）
-  const locateIdxRef = useRef<Map<string, number>>(new Map());
-  const locateTokenRef = useRef(0);
-  // 树模式定位兜底：目标行暂不可见（父链加载中/被隐藏）→ 800ms 后仍未出现则静默结束（防悬死劫持后续导航）
-  const locateMissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const breadcrumbRef = useRef<HTMLDivElement | null>(null);
-
-  /** 角标定位：点击文件夹状态徽标 → 跳转到其中"最近修改"的该状态文件（连续点击轮转；面包屑点亮 + 卡片脉冲动画）。
-   *  code='TC' 是树冲突角标：目标不是"某状态的文件"，而是这批冲突项本身（含条目自身与它内部的），
-   *  数据来自内存里的诊断清单，不必问服务器。 */
-  const locateBadge = async (dirRel: string, code: string) => {
-    const token = ++locateTokenRef.current;
-    let files: { path: string; mtime: number }[];
-    if (code === 'TC') {
-      // 基准同诊断（viewDir）：树模式的行 rel 相对仓库根，列表/网格相对 dir
-      files = conflictPaths(diag, viewDir)
-        .filter((p) => p === dirRel || p.startsWith(dirRel + '/'))
-        .map((path) => ({ path, mtime: 0 }));
-    } else {
-      try {
-        const r = await get.locate(dirRel, code);
-        files = r.files;
-      } catch {
-        // 定位失败即忽略（接口异常/目录不存在时不打扰用户，角标下次点击可重试）
-        return;
-      }
-    }
-    if (token !== locateTokenRef.current || files.length === 0) return;
-    const key = `${dirRel}::${code}`;
-    const idx = (locateIdxRef.current.get(key) ?? 0) % files.length;
-    locateIdxRef.current.set(key, idx + 1);
-    const target = files[idx]!.path;
-    const parent = target.includes('/') ? target.slice(0, target.lastIndexOf('/')) : '';
-    // 面包屑逐级点亮：目标链路（根→目标目录）
-    const chain: string[] = [];
-    {
-      let acc = '';
-      for (const part of parent.split('/').filter(Boolean)) {
-        acc = acc ? `${acc}/${part}` : part;
-        chain.push(acc);
-      }
-    }
-    void flashBreadcrumbs(breadcrumbRef.current, chain);
-    // 统一走 pendingLocate：树=展开父链+高亮；列表/网格=进目录+选中（数据就绪后的滚动/脉冲在 pendingLocate effect 内）
-    // tc 标记让 effect 按"是否树冲突"去选同目录的兄弟项（而不是按状态码，冲突项的 code 是 A/M，按码选会误伤）
-    setPendingLocate({ rel: target, at: 0, code: code === 'TC' ? undefined : code, tc: code === 'TC' });
-  };
 
   // 树模式状态：展开集合 + 各目录数据
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -591,91 +543,25 @@ export function FsView(props: Props) {
     return set;
   }, [search.searchResults, data]);
 
-  // 定位：树模式展开父链并加载数据
-  useEffect(() => {
-    if (!pendingLocate || mode !== 'tree') return;
-    const parts = pendingLocate.rel.split('/');
-    // ⚠ 先把祖先链收进数组再展开：setExpanded 的 updater 是**延迟执行**的，
-    // 若在循环里直接引用 `acc`，等 React 真正调用它时循环早已结束、acc 已是最终值，
-    // 于是每一级都写成同一个路径（深层目录只展开最末一级 —— 用户实报"切树停在仓库根"）。
-    // 1 级祖先不循环、2 级只循环一次（迟到读到同一个值），所以这个 bug 只在 **3 级及更深**才暴露。
-    const ancestors: string[] = [];
-    let acc = '';
-    for (let i = 0; i < parts.length - 1; i++) {
-      acc = acc ? `${acc}/${parts[i]}` : parts[i]!;
-      ancestors.push(acc);
-    }
-    // forEach 的参数每次都是新的绑定，不会踩上面那个坑
-    ancestors.forEach((a) => {
-      setExpanded((s) => new Set(s).add(a));
-      void loadNode(a);
-    });
-  }, [pendingLocate, mode, loadNode]);
-
-  // 定位：visibleRows / 列表数据就绪后高亮并滚动
-  useEffect(() => {
-    if (!pendingLocate) return;
-    if (mode === 'tree') {
-      const idx = visibleRows.findIndex((r) => r.rel === pendingLocate.rel);
-      if (idx >= 0) {
-        if (locateMissTimerRef.current) {
-          clearTimeout(locateMissTimerRef.current);
-          locateMissTimerRef.current = null;
-        }
-        setFocusIndex(idx);
-        // 同父目录下的同类项一并选中+脉冲（角标定位"找的不止一个"）：
-        //   状态字母（M/A…）→ 同状态码；树冲突（tc）→ 同目录下**其他冲突项**
-        //   （冲突项的 code 是 A/M，跟普通项混在一起，按码选会误伤）
-        const tParent = pendingLocate.rel.includes('/') ? pendingLocate.rel.slice(0, pendingLocate.rel.lastIndexOf('/')) : '';
-        const pfx = tParent ? `${tParent}/` : '';
-        // 同层 = 目标所在目录的直接子项；根目录时 pfx 为空，此时不含 '/' 的都算同层
-        // （原先 pfx 为空直接判 false，导致根目录下"同状态全选"静默失效）
-        const sameLayer = (rel: string) => (pfx ? rel.startsWith(pfx) && !rel.slice(pfx.length).includes('/') : !rel.includes('/'));
-        const same = visibleRows
-          .filter((r) => r.rel !== pendingLocate.rel && sameLayer(r.rel) && (pendingLocate.tc ? r.treeConflicted : Boolean(r.code) && r.code === pendingLocate.code))
-          .map((r) => r.rel);
-        const sel = pendingLocate.only ? new Set(pendingLocate.only) : new Set([pendingLocate.rel, ...same]);
-        setSelected(sel);
-        const el = rowRefs.current.get(pendingLocate.rel) ?? null;
-        el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        setPulseRels([...sel]);
-        setTimeout(() => setPulseRels([]), 1600);
-        setPendingLocate(null);
-      } else if (!locateMissTimerRef.current) {
-        // 目标行暂不可见（父链还在加载/数据还没刷新到/已被隐藏或删除）：兜底 3s 后仍无 → 静默结束，
-        // 否则悬着的定位会在后续导航的数据变化时反复拽回（用户点哪都被拉回——"一直刷新"现象根因）。
-        // 3s 而非更短：拖入上传后要等目录刷新回来（多文件时可能过秒），太快会白白放弃定位
-        locateMissTimerRef.current = setTimeout(() => {
-          locateMissTimerRef.current = null;
-          setPendingLocate(null);
-        }, 3000);
-      }
-    } else {
-      const parent = pendingLocate.rel.includes('/') ? pendingLocate.rel.slice(0, pendingLocate.rel.lastIndexOf('/')) : '';
-      if (data?.dir === parent) {
-        const idx = listEntries.findIndex((e) => (parent ? `${parent}/${e.name}` : e.name) === pendingLocate.rel);
-        if (idx >= 0) {
-          // 同状态文件全选（同目录层）+ 全部脉冲；树冲突定位则选同目录下的其他冲突项
-          const same = listEntries
-            .filter((e) => (pendingLocate.tc ? e.treeConflicted : Boolean(pendingLocate.code) && e.code === pendingLocate.code))
-            .map((e) => relOf(e));
-          const sel = pendingLocate.only ? new Set(pendingLocate.only) : same.length ? new Set(same) : new Set([pendingLocate.rel]);
-          setSelected(sel);
-          setFocusIndex(idx);
-          const el = rowRefs.current.get(pendingLocate.rel) ?? null;
-          el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-          setPulseRels([...sel]);
-          setTimeout(() => setPulseRels([]), 1600);
-          setPendingLocate(null);
-        } else {
-          // 目标行不存在（已删除/被隐藏/被过滤筛选掉）：静默结束定位，避免悬死劫持导航
-          setPendingLocate(null);
-        }
-      } else if (data?.dir !== parent) {
-        setDir(parent);
-      }
-    }
-  }, [pendingLocate, mode, visibleRows, data, listEntries]);
+  // 定位与脉冲（角标定位 → 展开父链 → 滚动高亮 → 卡片闪烁）抽到 useFsLocate：
+  // 里面含着两处竞态防护（连点令牌、目标不出现时的 3s 兜底），细节见该文件头注释
+  const { pendingLocate, setPendingLocate, pulseRels, locateBadge } = useFsLocate({
+    mode,
+    dir,
+    visibleRows,
+    listEntries,
+    data,
+    rowRefs,
+    loadNode,
+    setExpanded,
+    diag,
+    viewDir,
+    breadcrumbRef,
+    setFocusIndex,
+    setSelected,
+    setDir,
+    relOf,
+  });
 
   // ---------- 键盘导航 ----------
   const rows = mode === 'tree' ? visibleRows : listEntries;
