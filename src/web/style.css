@@ -709,6 +709,14 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   border-radius: 8px; padding: 8px 14px; color: var(--warn);
 }
 
+/* 非 UTF-8 文件的手动编辑警告（冲突解决面板）：编码是猜的（猜错就会改坏原编码），
+   不拦着用户改，但必须让他看见 —— 配色与上面的 .stale-tip 同族 */
+.enc-warn {
+  background: rgba(212, 167, 50, .15); border: 1px solid var(--warn);
+  border-radius: 8px; padding: 7px 12px; color: var(--warn);
+  font-size: 12px; line-height: 1.6;
+}
+
 /* ---------- 文件搜索 / 预览搜索 ---------- */
 .search-clear {
   position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
@@ -1161,3 +1169,40 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 .hidden { display: none; }
 /* hot test */
 
+
+/* 预览面板的内联编辑框：占满内容区，等宽字体（与只读预览的观感一致）。
+   行号只能另起一列 —— textarea 里塞不了行号元素 */
+.preview-edit-wrap { flex: 1; display: flex; min-height: 0; overflow: hidden; background: var(--bg); }
+.preview-edit-nums {
+  flex: 0 0 auto; overflow: hidden;           /* 不要自己的滚动条：由 textarea 的 onScroll 驱动 */
+  padding: 10px 8px 10px 12px;                /* 上 10 = textarea 的 padding-top，不齐整列偏移 */
+  text-align: right; user-select: none;
+  color: var(--dim); background: var(--panel); border-right: 1px solid var(--border);
+  font-family: var(--code-font, "JetBrains Mono", Consolas, "Courier New", monospace);
+  font-size: var(--font-size, 14px);          /* 与 textarea 同字号同倍率 → 行高一致 */
+  line-height: 1.5;
+}
+.preview-edit-nums > div {
+  font-size: 12px;                                   /* 行号小一号（与预览态 .sb-no 的观感一致） */
+  line-height: calc(var(--font-size, 14px) * 1.5);   /* ← 关键：按 textarea 的字号算行高。
+                                                        用 inherit/1.5 会跟着 12px 缩水，行号越往下越错位 */
+  padding-right: 8px;
+  min-width: 36px;
+}
+.preview-edit {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--code-font, "JetBrains Mono", Consolas, "Courier New", monospace);
+  font-size: var(--font-size, 14px);
+  line-height: 1.5;
+  tab-size: 4;
+  white-space: pre;                           /* 不折行：折了行号没法 1:1（用户选定方案） */
+  overflow: auto;
+}

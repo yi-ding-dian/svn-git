@@ -201,7 +201,8 @@ export const get = {
     return api<DiffResult>(`/api/show?${q}`);
   },
   ls: (dir?: string) => api<LsResult>(`/api/ls?dir=${encodeURIComponent(dir ?? '')}`),
-  cat: (pathRel: string) => api<DiffResult & { encoding?: string }>(`/api/cat?path=${encodeURIComponent(pathRel)}`),
+  cat: (pathRel: string) =>
+    api<DiffResult & { encoding?: string; truncated?: boolean }>(`/api/cat?path=${encodeURIComponent(pathRel)}`),
   browse: (dir?: string) => api<BrowseResult>(`/api/browse?path=${encodeURIComponent(dir ?? '')}`),
   pickDir: () => api<{ path: string | null; unsupported: boolean }>('/api/pick-dir'),
   fs: (dir?: string, force?: boolean) =>
@@ -360,6 +361,8 @@ export const post = {
   textDiff: (left: string, right: string) => api<{ diff: string }>('/api/text-diff', json({ left, right })),
   reveal: (path: string) => api<{ ok: boolean }>('/api/reveal', json({ path })),
   svnLock: (action: 'lock' | 'unlock', path: string, force = false) => api<VcsResult>('/api/svn-lock', json({ action, path, force })),
+  /** 内联编辑保存：按目标文件原编码写回（后端两道守卫，详见 writeTextKeepEncoding） */
+  writeFile: (path: string, content: string) => api<VcsResult>('/api/write-file', json({ path, content })),
   ignoreRemove: (path: string, pattern: string) => api<VcsResult>('/api/ignore-remove', json({ path, pattern })),
   /** 加入忽略：target=gitignore(默认，随仓库分发)/global(仅本机全部仓库)/exclude(仅本机本仓库) */
   ignore: (path: string, pattern: string, target: 'gitignore' | 'global' | 'exclude' = 'gitignore') =>

@@ -6,7 +6,10 @@
  *    其余键吞掉不让列表响应），与列表联动的焦点/滚动/跨行跳转定位逻辑保留在 FsView。
  *  - 错误分两级回调：文本读取失败（致命，退回列表）与展示类错误（图片加载失败，仅红条提示）。 */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { get } from '../api.js';
+import { get, post } from '../api.js';
+import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
+import { AppIcon } from '../ui/ui.js';
+import { IconExternal } from '../ui/icons.js';
 import { langOf, highlightLine } from '../highlight.js';
 import { renderMarkdown } from '../markdown.js';
 import { MdThemePopover, loadMdTheme, saveMdTheme, mdThemeVars, mdThemeName } from './md-theme.js';
@@ -31,6 +34,8 @@ interface Props {
   onError: (msg: string) => void;
   /** 致命错误（文本读取失败）：父级红条提示并退回列表（对应旧 openFile 读取失败后的行为） */
   onOpenError: (msg: string) => void;
+  /** 内联编辑保存成功：父级据此刷新列表（文件状态会从干净变成 M）并提示 */
+  onSaved?: (msg: string) => void;
 }
 
 export function PreviewPane(props: Props) {
@@ -47,6 +52,75 @@ export function PreviewPane(props: Props) {
   const [matchIdx, setMatchIdx] = useState(0);
   /** md/图片预览图片放大查看（点击图片 → 全屏显示原图） */
   const [imgViewer, setImgViewer] = useState<string | null>(null);
+  /** 内联编辑：编辑框内容 + 是否在编辑中 + 保存后重读的触发键（target 没变，只能靠它） */
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  /** 原文的行尾风格：**textarea 会把 CRLF 规范化成 LF**（浏览器行为），保存前得按这个还原，
+   *  否则 CRLF 文件存一次就变成整文件 diff —— 用户会以为工具把他的文件改乱了 */
+  const eolRef = useRef('\n');
+  /** 编辑态行号列：与 textarea 同步滚动的独立一列（textarea 里塞不了行号元素）。
+   *  行数与行高都和 textarea 严格一致，所以 scrollTop 直接照搬就对得上 */
+  const editTaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editNumsRef = useRef<HTMLDivElement | null>(null);
+  const syncEditScroll = () => {
+    if (editNumsRef.current && editTaRef.current) editNumsRef.current.scrollTop = editTaRef.current.scrollTop;
+  };
+  /** 「编辑」的程序选择菜单：点按钮时按扩展名拉一次可选程序 */
+  const [editMenu, setEditMenu] = useState<{ x: number; y: number; items: CtxMenuItem[] } | null>(null);
+  const openEditMenu = async (ev: React.MouseEvent) => {
+    const ext = props.target.name.split('.').pop()?.toLowerCase() ?? '';
+    let apps: { name: string; exec: string; icon: string }[] = [];
+    let chooseOpen: string | null | undefined;
+    try {
+      const r = await get.appsFor(ext);
+      apps = r.apps ?? [];
+      chooseOpen = r.chooseOpen;
+    } catch {
+      /* 探测失败就只留"系统默认程序"那一项，别把按钮点死 */
+    }
+    const run = (exec: string) => {
+      setEditMenu(null);
+      void post
+        .openWith(props.target.rel, exec)
+        .then((x) => {
+          if (!x.ok) props.onError(x.message || '打开失败');
+        })
+        .catch((e: Error) => props.onError(`打开失败: ${e.message}`));
+    };
+    const items: CtxMenuItem[] = [
+      // 第一项：工具内直接改（改完就能提交，不用切出去）。
+      // **只给"读全了的 UTF-8"**：
+      //  ① 非 UTF-8（用户决策）：编码是"不是合法 UTF-8 就当 GB18030"猜出来的 —— 猜错时（日文/繁体/韩文）
+      //     内容看着像正常汉字、改完保存却把原编码毁掉；真 GBK 与猜错的在探测层**无法区分**。
+      //  ② 超限文件：正文是占位符不是真内容，保存会把占位符写进文件。
+      // 两种都只走下面的外部程序（它们认编码更准、也不受我们的大小限制）。
+      ...(fileEnc || fileTruncated ? [] : [{ label: '✎ 直接编辑', action: startEdit }, { sep: true } as CtxMenuItem]),
+      // 想用外部编辑器时再往下选。**不替用户自动选默认程序**：不少系统上 .md/.txt 默认关联的是
+      // 浏览器或只读预览器，直接点下去等于什么也改不了
+      {
+        icon: <IconExternal />,
+        label: '用系统默认程序打开',
+        // 不给内联编辑时得说明原因，别让用户以为是功能坏了
+        title: fileTruncated
+          ? '文件过大（超过 5MB），未读取全文，不支持内联编辑；请用外部程序打开'
+          : fileEnc
+            ? `该文件是 ${fileEnc} 编码，不支持内联编辑（怕改坏原编码）`
+            : undefined,
+        action: () => run(''),
+      },
+      ...(apps.length ? [{ sep: true } as CtxMenuItem] : []),
+      // 程序图标与右键「打开方式…」同源（/api/icon 按 .desktop 的 Icon 名查），取不到会回退通用文件图标
+      ...apps.slice(0, 6).map((a) => ({ icon: <AppIcon icon={a.icon} />, label: a.name, action: () => run(a.exec) })),
+      ...(chooseOpen
+        ? [
+            { sep: true } as CtxMenuItem,
+            { icon: <IconExternal />, label: '选择其他应用…', action: () => run(chooseOpen!) },
+          ]
+        : []),
+    ];
+    setEditMenu({ x: ev.clientX, y: ev.clientY, items });
+  };
   /** 全屏浏览：面板浮到最上层铺满窗口（长文阅读用）。只切 className，DOM 不重挂 → 滚动位置不丢 */
   const [full, setFull] = useState(false);
   /** md 阅读主题（只染文档区，与界面主题无关）；localStorage 持久化，「跟随界面」= 'follow' */
@@ -59,6 +133,9 @@ export function PreviewPane(props: Props) {
   const note = target.img ? undefined : target.code === '?' ? '未版本化文件（原文）' : '无差异 — 文件原文';
   /** 非 UTF-8 文件（GBK 等）的编码提示：不提示的话，用户会以为文件本来就是 UTF-8 */
   const [fileEnc, setFileEnc] = useState('');
+  /** 超大文件（>5MB）：正文是"（文件过大，未读取全文）"**占位符**而非真内容，
+   *  拿去编辑保存就会把这句话写进文件 —— 和 fileEnc 一样不给内联编辑 */
+  const [fileTruncated, setFileTruncated] = useState(false);
   const isMd = target.name.toLowerCase().endsWith('.md');
   /** md 阅读主题的 inline 变量（只打给 md 的预览容器；「跟随界面」为 undefined 不覆盖） */
   const mdVars = isMd ? mdThemeVars(mdTheme) : undefined;
@@ -81,12 +158,15 @@ export function PreviewPane(props: Props) {
     let cancelled = false;
     setText(null); // 进入加载态
     setFileEnc('');
+    setFileTruncated(false);
     get
       .cat(target.rel)
       .then((r) => {
         if (cancelled) return;
         if (!r.ok) throw new Error(r.error ?? '读取失败');
         setFileEnc(r.encoding ?? '');
+        setFileTruncated(!!r.truncated);
+        eolRef.current = r.output.includes('\r\n') ? '\r\n' : '\n'; // 记下原文行尾
         setText(r.output);
       })
       .catch((err: Error) => {
@@ -95,7 +175,40 @@ export function PreviewPane(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [target]); // eslint-disable-line react-hooks/exhaustive-deps -- target 每次打开都是新对象，必须整引用重置
+  }, [target, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps -- target 每次打开都是新对象；reloadKey 用于保存后重读
+
+  /** 进入内联编辑（「编辑」菜单的第一项）。**只对 UTF-8 开**，原因见 openEditMenu */
+  const startEdit = () => {
+    setEditMenu(null);
+    // 纵深防御：菜单里已经不给非 UTF-8 这一项了，这里再挡一道
+    // （fileEnc 要等内容读完才有，万一它在菜单渲染之后才到，菜单里会短暂出现这一项）
+    if (fileEnc) {
+      props.onError(`该文件是 ${fileEnc} 编码，不支持内联编辑（怕改坏原编码）；请用外部程序打开`);
+      return;
+    }
+    if (fileTruncated) {
+      props.onError('文件过大（超过 5MB），未读取全文，不支持内联编辑；请用外部程序打开');
+      return;
+    }
+    setDraft(text ?? '');
+    setEditing(true);
+  };
+  /** 保存：行尾还原成原文风格 → 后端按原编码写回 → 重读内容 + 通知父级刷新列表 */
+  const saveEdit = () => {
+    const content = draft.replace(/\r?\n/g, eolRef.current);
+    void post
+      .writeFile(props.target.rel, content)
+      .then((r) => {
+        if (!r.ok) {
+          props.onError(r.message || '保存失败');
+          return;
+        }
+        setEditing(false);
+        setReloadKey((k) => k + 1);
+        props.onSaved?.(r.message || '已保存');
+      })
+      .catch((e: Error) => props.onError(`保存失败: ${e.message}`));
+  };
 
   /** md-render 容器点击：目标是图片则放大查看 */
   const onMdRenderClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -224,6 +337,8 @@ export function PreviewPane(props: Props) {
         ) : (
           <button className="mini" onClick={() => setSearchActive(true)}>🔍 搜索 (/)</button>
         )}
+        {!editing && (
+          <>
         <button
           className={`mini ${blameMode ? 'primary' : ''}`}
           disabled={target.code === '?' || target.code === 'I'}
@@ -261,10 +376,62 @@ export function PreviewPane(props: Props) {
             {mdPreview ? '📄 查看原文' : '👁 预览'}
           </button>
         )}
-        <span className="dim small">{full ? 'Esc 退出全屏 · ' : ''}← 键返回列表 · / 搜索</span>
-        <button className="mini" onClick={props.onClose}>← 返回列表</button>
+        {/* 编辑：用系统默认程序打开（openWith 传空 exec = 默认程序）。
+            **只给文本**：图片这类没有"文本编辑"的意义（二进制文档更进不到预览——双击时就被拦下了）。
+            改完不回读内容：文件在别的程序手里、什么时候保存我们不知道；用户自己按「刷新」即可。 */}
+        {!target.img && (
+          <button
+            className="mini"
+            onClick={(ev) => void openEditMenu(ev)}
+            title="选择用哪个程序打开来编辑这个文件；改完回到这里按「刷新」即可看到变更"
+          >
+            ✎ 编辑
+          </button>
+        )}
+          </>
+        )}
+        {editing ? (
+          <>
+            <span className="dim small">
+              编辑中{fileEnc ? ` · 按 ${fileEnc} 保存` : ''}
+              {eolRef.current === '\r\n' ? ' · 保持 CRLF 行尾' : ''}
+            </span>
+            <span className="grow" />
+            <button className="mini primary" onClick={saveEdit}>💾 保存</button>
+            <button className="mini" onClick={() => setEditing(false)}>取消</button>
+          </>
+        ) : (
+          <>
+            <span className="dim small">{full ? 'Esc 退出全屏 · ' : ''}← 键返回列表 · / 搜索</span>
+            <button className="mini" onClick={props.onClose}>← 返回列表</button>
+          </>
+        )}
+        {editMenu && (
+          /* mask：点菜单外面 = 不想编辑了，菜单关掉（用户实报：点其他地方菜单不消失） */
+          <ContextMenu x={editMenu.x} y={editMenu.y} items={editMenu.items} onClose={() => setEditMenu(null)} mask />
+        )}
       </div>
       {/* md 阅读主题：变量 inline 打在这个滚动容器上，只作用其子树（工具栏/界面不受影响） */}
+      {editing ? (
+        <div className="preview-edit-wrap">
+          {/* 行号列：行数与行高都跟 textarea 一致（见 CSS 的 calc），滚动由 textarea 驱动 */}
+          <div className="preview-edit-nums" ref={editNumsRef}>
+            {draft.split('\n').map((_, i) => (
+              <div key={i}>{i + 1}</div>
+            ))}
+          </div>
+          <textarea
+            className="preview-edit"
+            ref={editTaRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onScroll={syncEditScroll}
+            wrap="off"
+            spellCheck={false}
+            autoFocus
+          />
+        </div>
+      ) : (
       <div className="diff" style={{ flex: 1, overflow: 'auto', ...mdVars }}>
         {/* 图片预览：直接显示图片（点击放大复用 md-render 的放大机制） */}
         {target.img ? (
@@ -332,6 +499,7 @@ export function PreviewPane(props: Props) {
           })
         )}
       </div>
+      )}
       {/* md 阅读主题气泡：选完接着看（不关气泡，可连续试）；Esc / 点遮罩只关气泡，预览留着 */}
       {mdThemePop && (
         <MdThemePopover

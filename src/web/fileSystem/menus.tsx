@@ -5,24 +5,9 @@ import { get, post } from '../api.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar } from '../ui/icons.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
+import { AppIcon } from '../ui/ui.js';
 import type { Clip, ClipItem } from './use-file-transfer.js';
 import { multiRevertName, removableFromRepo, renameableCode, renameItem, joinPaths, revertName, type Mode, type VisibleRow } from './utils.js';
-
-/** 「打开方式」程序图标：/api/icon 按 .desktop Icon 名查系统图标,缺失/失败回退通用文件图标 */
-function AppIcon({ icon }: { icon: string }) {
-  const [err, setErr] = React.useState(false);
-  if (!icon || err) return <IconFile />;
-  return (
-    <img
-      src={`/api/icon?k=${encodeURIComponent(icon)}`}
-      alt=""
-      width={16}
-      height={16}
-      style={{ objectFit: 'contain' }}
-      onError={() => setErr(true)}
-    />
-  );
-}
 
 /** 菜单需要的组件侧服务（index.tsx 组装传入；菜单项动作绕过 UI 状态直接回组件回调） */
 export interface MenuServices {

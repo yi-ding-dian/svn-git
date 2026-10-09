@@ -3,8 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
 import {
-  sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached,
-  runVcs, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS,
+  sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached, runVcs, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS, writeTextKeepEncoding, isBinaryFile,
 } from './util.js';
 import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile } from '../vcs/ignore.js';
 import type { Ctx } from './util.js';
@@ -237,6 +236,39 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         } catch (e) {
           sendJson(res, 500, { error: `删除失败: ${(e as Error).message}` });
         }
+        return true;
+      }
+
+      if (p === '/api/write-file' && req.method === 'POST') {
+        // 内联编辑的保存：**按目标文件原编码写回**（GBK 文件写回去还是 GBK，两道守卫见 writeTextKeepEncoding），
+        // 行尾由前端负责保持（textarea 会把 CRLF 规范化成 LF，前端按原文风格还原后再发过来）。
+        const { repo } = vcsOf();
+        const body = await readBody(req);
+        const rel = String(body.path ?? '');
+        const content = String(body.content ?? '');
+        const abs = path.resolve(repo.root, rel);
+        if (!inRepoRoot(repo.root, abs)) {
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          return true;
+        }
+        // 二进制不给写：编辑入口只对文本预览开，这里再挡一道（防止接口被直接调用时把图片写成文本）
+        if (isBinaryFile(rel)) {
+          sendJson(res, 400, { error: '二进制文件不支持文本编辑' });
+          return true;
+        }
+        if (!fs.existsSync(abs)) {
+          sendJson(res, 404, { error: '文件不存在（可能已被删除或移走）' });
+          return true;
+        }
+        // 超限文件的守卫不在这里 —— 挪进了 writeTextKeepEncoding（所有写回路径的唯一入口），
+        // 那样 /api/write-file 和 /api/resolve-conflict 一处覆盖，免得两条路各写一遍还漏
+        const w = writeTextKeepEncoding(abs, content);
+        if (!w.ok) {
+          sendJson(res, 400, { error: w.message });
+          return true;
+        }
+        invalidateStatusCache(repo.root); // 保存后状态会变（干净 → M），缓存要失效
+        sendJson(res, 200, { ok: true, message: `已保存 ${rel}` });
         return true;
       }
 

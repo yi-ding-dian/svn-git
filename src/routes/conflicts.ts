@@ -4,40 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
 import { platform } from '../platform/index.js';
-import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, runVcs, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE } from './util.js';
+import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, runVcs, writeTextKeepEncoding, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE } from './util.js';
+import { detectTextEncoding } from '../shared/text.js';
 import { diffChangedLines } from '../vcs/diff-lines.js';
-import { detectTextEncoding, decodeText, encodeText } from '../shared/text.js';
 import type { Ctx } from './util.js';
 
-/** 把"手动编辑"的结果写回工作区文件，**按目标文件原编码写**（GBK 文件写回去还是 GBK）。
- *  为什么不能直接 writeFileSync(abs, content)：那是按 UTF-8 落盘——GBK 文件一旦这么写，
- *  全文件中文变成替换符、编码被静默改掉（全文件 diff，svn 的 resolve 还会把损坏固化）。
- *  两道守卫，宁可不写也不写坏：
- *   - 内容含替换符 U+FFFD（读侧解码时字节已丢）→ 拒写，写下去等于把丢失固化；
- *     但原文件本来就含替换符时不拦（那文件早已损坏，用户改它不该被永久卡住）。
- *   - 内容含该编码表示不了的字符（如 GBK 表示不了 emoji）→ 拒写并报出是哪个字符。
- *  返回 { ok: false } 时调用方**必须早返回**：后续的 git add / svn resolve 会把
- *  "没写成"当成"已解决"，那才是真的丢数据。 */
-function writeTextKeepEncoding(abs: string, content: string): { ok: true } | { ok: false; message: string } {
-  let original = '';
-  let enc = detectTextEncoding(Buffer.alloc(0));
-  try {
-    const buf = fs.readFileSync(abs);
-    enc = detectTextEncoding(buf);
-    original = decodeText(buf, enc);
-  } catch {
-    // 文件不存在（如"对方删除、本地修改"的冲突）：按 UTF-8 新建，与改动前行为一致
-  }
-  if (content.includes('�') && !original.includes('�')) {
-    return { ok: false, message: '内容含无法解码的替换字符（�）——写入会把乱码固化进文件，已拒绝保存。请先「还原」该文件再重试' };
-  }
-  try {
-    fs.writeFileSync(abs, encodeText(content, enc));
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, message: `该文件编码为 ${enc}，保存内容含其无法表示的字符（${(e as Error).message}），已拒绝写入` };
-  }
-}
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
@@ -49,7 +20,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const items = (await vcs.status()) as { code: string; path: string }[];
         const conflictPaths = items.filter((i) => i.code === 'C').map((i) => i.path);
         const read = (p: string) => (fs.existsSync(p) ? readTextFile(p) : '');
-        const out: { path: string; ours: string; theirs: string; base: string; work: string; binary: boolean }[] = [];
+        const out: { path: string; ours: string; theirs: string; base: string; work: string; binary: boolean; encoding?: string }[] = [];
         for (const rel of conflictPaths) {
           const abs = path.join(repo.root, rel);
           // 二进制文件（Word/PDF/图片等）：不读内容（utf8 读取是乱码，对比无意义），界面显示提示块
@@ -61,7 +32,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           if (!binary) {
             if (repo.type === 'git') {
               const show = async (stage: string): Promise<string> => {
-                const r = await run('git', ['show', `:${stage}:${rel}`], { cwd: repo.root, timeoutMs: 30_000 });
+                // decode: 'auto' —— 这是**内容型**调用点（见 vcs/exec.ts:50 的说明）：
+                // 取出来的是文件内容，可能是 GBK；默认按 UTF-8 硬解会让双栏 diff 整行乱码
+                // （实测：解出 "��һ�� �Է��ĵ�"，正确应为「第一行 本地改的」。
+                //  同一个面板里编辑框走 readTextFile 有探测、是对的，就这半边错 —— 就是这个漏传）
+                const r = await run('git', ['show', `:${stage}:${rel}`], { cwd: repo.root, timeoutMs: 30_000, decode: 'auto' });
                 return r.code === 0 ? r.stdout : '';
               };
               base = await show('1');
@@ -87,7 +62,20 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               base = rnums.length > 1 ? read(abs + '.r' + rnums[0]!) : '';
             }
           }
-          out.push({ path: rel, ours, theirs, base, work, binary });
+          // 编码提示：非 UTF-8（GBK 等）时告诉前端一声，手动编辑框据此挂警告条 ——
+          // 非 UTF-8 的编码是"不是合法 UTF-8 就当 GB18030"猜出来的，猜错（日文/繁体/韩文）时
+          // 内容看着像正常汉字、保存却把原编码毁掉；真 GBK 与猜错的在探测层无法区分，只能提示用户。
+          // 探测看工作区那份（编辑的对象就是它）；多读一次盘，冲突是低频场景，不优化。
+          let encoding: string | undefined;
+          if (!binary) {
+            try {
+              const enc = detectTextEncoding(fs.readFileSync(abs));
+              if (enc !== 'utf-8') encoding = enc;
+            } catch {
+              /* 读不到（已删除等）：不提示 */
+            }
+          }
+          out.push({ path: rel, ours, theirs, base, work, binary, encoding });
         }
         sendJson(res, 200, { conflicts: out });
         return true;

@@ -16,6 +16,9 @@ interface Conflict {
   work: string;
   /** 二进制文件（Word/PDF/图片等）：不读内容、不对比，仅可选用本地/对方版本 */
   binary?: boolean;
+  /** 工作区文件的编码（**仅非 UTF-8 时有值**，后端探测）：手动编辑框据此挂警告条 ——
+   *  非 UTF-8 是按"不是合法 UTF-8 就当 GB18030"猜的，猜错时（日文/繁体）保存会毁掉原编码 */
+  encoding?: string;
 }
 
 type Tab = 'base' | 'ours' | 'theirs';
@@ -391,6 +394,13 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
               {!expanded && (
                 <>
                   <div className="dim small" style={{ margin: '8px 0 4px' }}>手动编辑合并结果（初始为当前合并内容）：</div>
+                  {cur.encoding && (
+                    <div className="enc-warn">
+                      ⚠ 该文件不是 UTF-8（工具按 {cur.encoding.toUpperCase()} 猜测解码）：
+                      若它其实是日文/繁体等其他编码，保存会把原编码改坏。
+                      拿不准就用「采用本地 / 采用对方」，或先用外部程序改好再回来。
+                    </div>
+                  )}
                   <textarea
                     rows={6}
                     className="mono"

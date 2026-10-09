@@ -1,6 +1,6 @@
 /** 通用小组件：使用说明块 / 表单行 / 跟随鼠标提示（多个弹窗共用） */
 import React, { useEffect } from 'react';
-import { IconOk } from './icons.js';
+import { IconFile, IconOk } from './icons.js';
 
 /** 使用说明块（跟随主题） */
 export function HelpNote(props: { children: React.ReactNode }) {
@@ -50,5 +50,22 @@ export function ClickTip(props: {
         {props.msg}
       </span>
     </div>
+  );
+}
+
+/** 「打开方式」的程序图标：/api/icon 按 .desktop 的 Icon 名查系统图标；取不到/加载失败回退通用文件图标。
+ *  右键菜单与预览面板的「编辑」菜单共用（原先只在 menus.tsx 里私有）。 */
+export function AppIcon({ icon }: { icon: string }) {
+  const [err, setErr] = React.useState(false);
+  if (!icon || err) return <IconFile />;
+  return (
+    <img
+      src={`/api/icon?k=${encodeURIComponent(icon)}`}
+      alt=""
+      width={16}
+      height={16}
+      style={{ objectFit: 'contain' }}
+      onError={() => setErr(true)}
+    />
   );
 }

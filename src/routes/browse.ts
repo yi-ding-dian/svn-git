@@ -7,7 +7,7 @@ import { makeGitIgnoreChecker } from '../vcs/ignore.js';
 import { compareName } from '../shared/types.js';
 import { detectTextEncoding } from '../shared/text.js';
 import { run } from '../vcs/exec.js';
-import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, readTextFile, MAX_READ_BYTES, vcsOf, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE, type Ctx } from './util.js';
+import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, readTextFile, MAX_READ_BYTES, TOO_LARGE_PLACEHOLDER, vcsOf, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE, type Ctx } from './util.js';
 
 /** 忽略检测（svn status --no-ignore）的输出上限：超过就不解析。
  *  它只用来把被忽略的条目标成 I，而超大工作副本上这个扫描有 5MB+、解析要秒级——收益不值。
@@ -731,7 +731,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         } catch {
           /* 读不到（已删除等）：不提示 */
         }
-        sendJson(res, 200, encoding ? { ...out, encoding } : out);
+        // 超限文件：正文是 readTextFile 的**占位符**，不是真内容 —— 必须告诉前端，
+        // 否则编辑态拿它当正文，保存就把这句话写进文件（真内容被覆盖）。
+        // 判据是"手里这份是不是占位符"，不是"源文件多大"：git 分支走 vcs.cat（读 HEAD 版本、不截断），
+        // 按工作区文件大小判会误报（工作区 6MB、HEAD 版本很小的情况）。
+        const truncated = out.output === TOO_LARGE_PLACEHOLDER;
+        sendJson(res, 200, { ...out, ...(encoding ? { encoding } : {}), ...(truncated ? { truncated: true } : {}) });
         return true;
       }
 
