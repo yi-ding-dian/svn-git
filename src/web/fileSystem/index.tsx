@@ -1568,8 +1568,11 @@ export function FsView(props: Props) {
                   onMouseEnter={(ev) => {
                     if (!ctxLocked) setFocusIndex(-1);
                     else if (ctxRelRef.current === rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
-                    // 拖着东西经过（项目内拖拽或外部文件拖入）时不弹卡片：挡路，而且此刻要看的是落点高亮
-                    if (dragRels.size > 0 || drop.dragging || drop.hoverDir !== null) {
+                    // 拖拽/框选进行中一律不弹卡片：挡路，而且此刻要看的是落点/选区。
+                    //  - 项目内拖拽、外部文件拖入：浏览器拖拽期间本来就不发鼠标事件，这里挡住的是"拖起来前那一瞬"
+                    //  - **框选**（空白处按住左键拖选择框）：走的是普通鼠标事件，**一路都会触发 mouseenter**，
+                    //    不挡的话拖框经过哪个文件就弹哪个（用户实报带截图）
+                    if (dragRels.size > 0 || drop.dragging || drop.hoverDir !== null || selDragRef.current) {
                       setTip(null);
                       return;
                     }
