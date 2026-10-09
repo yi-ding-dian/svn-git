@@ -1,5 +1,5 @@
 /** 新建 / 获取仓库弹窗：新建仓库（CreateRepoDialog，git init / svnadmin create）+ 获取仓库（GetRepoDialog，git clone / svn checkout） */
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { post, type RepoCheck } from '../api.js';
 import { ModalShell, ResizableModal } from '../modals/modal-shell.js';
 import { IconDownload, IconPlus } from '../ui/icons.js';
@@ -8,6 +8,7 @@ import { HelpNote, FormRow } from '../ui/ui.js';
 import { ConfirmModal } from '../modals/modals.js';
 import { cmdOfRepo } from '../cmd-preview.js';
 import { ResultLine, runAction } from './common.js';
+import { GitPushAuthModal } from './tag-git-info.js';
 // ==================== 创建 / 克隆仓库 ====================
 
 export function CreateRepoDialog(props: { home?: string; onClose: () => void; onCreated: (dir: string) => void }) {
@@ -224,26 +225,65 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
       .finally(() => setBusy(false));
   };
 
+  /** 认证失败（私有仓库/凭据不对）：弹认证框引导填写，保存后自动重试克隆 */
+  const [authAsk, setAuthAsk] = useState<{ type: 'github' | 'server' | 'ssh'; error: string } | null>(null);
+  /** 正在获取时显示已用秒数（网络卡住时用户知道它在动，而不是卡死了） */
+  const [elapsed, setElapsed] = useState(0);
+  /** 当前这次获取的取消句柄：关弹窗/超时都靠它把请求连同后端的 git 子进程一起停掉 */
+  const abortRef = useRef<AbortController | null>(null);
+  /** 获取上限：与后端一致（超过就停，别让人干等） */
+  const GET_TIMEOUT_S = 30;
+
   // 二次确认后执行获取
   const doGet = () => {
     setPending(null);
     setBusy(true);
+    setElapsed(0);
+    abortRef.current?.abort(); // 上一次还挂着的（重试场景）：先取消，免得两个请求打架
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const tick = setInterval(() => setElapsed((n) => n + 1), 1000);
+    // 到点自动停：断开请求 → 后端 abort 掉 git 子进程（两边都是 30s，这里先动）
+    const deadline = setTimeout(() => ac.abort(), GET_TIMEOUT_S * 1000);
+    const done = () => {
+      clearInterval(tick);
+      clearTimeout(deadline);
+      if (abortRef.current === ac) abortRef.current = null;
+    };
     void runAction(
-      () => post.repoCreate(type, dir.trim(), name.trim(), url.trim(), true),
+      () => post.repoCreate(type, dir.trim(), name.trim(), url.trim(), true, ac.signal),
       (m, err) => {
         setMsg(m);
         setMsgErr(Boolean(err));
       },
-      // 打开服务端返回的仓库路径（git/svn 均为目标目录），没返回时兜底拼路径
-      (r) => props.onCreated(r.repoDir ?? `${dir.trim().replace(/\/$/, '')}/${name.trim()}`)
-    ).finally(() => setBusy(false));
+      (r) => {
+        // 认证失败：不在这里报错了事，弹认证框（存的是 git 账号/Token），保存后自动重试
+        if (!r.ok) {
+          if (r.authError && r.authType) setAuthAsk({ type: r.authType, error: r.message });
+          return;
+        }
+        // 打开服务端返回的仓库路径（git/svn 均为目标目录），没返回时兜底拼路径
+        props.onCreated(r.repoDir ?? `${dir.trim().replace(/\/$/, '')}/${name.trim()}`);
+      },
+      true // onFailOk：失败时也要拿到 r 才能判断是不是认证问题
+    )
+      .catch(() => {
+        /* abort/网络异常已在 runAction 里转过消息，这里只保证计时器收尾 */
+      })
+      .finally(() => {
+        done();
+        setBusy(false);
+      });
   };
 
   return (
     <ModalShell
       icon={<IconDownload size={16} />}
       title="获取仓库"
-      onClose={props.onClose}
+      onClose={() => {
+        abortRef.current?.abort(); // 关弹窗 = 真的停：断开请求，后端会连带杀掉 git 子进程
+        props.onClose();
+      }}
       width={540}
       foot={
         <>
@@ -317,6 +357,11 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
         })()}
       </div>
       <ResultLine msg={msg} err={msgErr} />
+      {busy && (
+        <div className="dim small" style={{ marginTop: 6 }}>
+          ⏳ 正在获取…已用 {elapsed} 秒（最多 {GET_TIMEOUT_S} 秒，超时会自动停止）
+        </div>
+      )}
       {/* 二次确认：目标路径 + 命令 + 风险检测 */}
       {pending && (
         <ConfirmModal
@@ -364,6 +409,20 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
             </div>
           </ResizableModal>
         </div>
+      )}
+      {/* 认证失败（私有仓库 / 凭据不对）：复用推送那套认证弹窗，保存后自动重试克隆 */}
+      {authAsk && (
+        <GitPushAuthModal
+          type={authAsk.type}
+          error={authAsk.error}
+          purpose="获取仓库"
+          onClose={() => setAuthAsk(null)}
+          onToast={(m) => setMsg(m)} // 这个弹窗组件没有全局 toast 通道，反馈落在自身结果行
+          onSaved={() => {
+            setAuthAsk(null);
+            doGet(); // 存好凭据直接重试（后端会带 GIT_ASKPASS）
+          }}
+        />
       )}
     </ModalShell>
   );

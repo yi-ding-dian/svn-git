@@ -10,8 +10,9 @@ import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.
 import { loadConfig } from '../config.js';
 import type { FileStatus, LogEntry, RepoInfo, VcsResult } from './types.js';
 
-/** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限） */
-function createAskPass(cred: { username: string; password: string }): { path: string; cleanup: () => void } {
+/** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限）
+ *  export 给 server.ts 的「获取仓库」用：clone 走的是那边（GitVcs.clone 目前无人调用） */
+export function createAskPass(cred: { username: string; password: string }): { path: string; cleanup: () => void } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'svngit-askpass-'));
   const file = path.join(dir, 'askpass.sh');
   const u = Buffer.from(cred.username, 'utf8').toString('base64');
@@ -35,7 +36,7 @@ function createAskPass(cred: { username: string; password: string }): { path: st
 }
 
 /** 认证失败类型：基于 remote URL 判断（github / 其他 https 服务器 / ssh） */
-function authTypeOf(remoteUrl: string): 'github' | 'server' | 'ssh' | undefined {
+export function authTypeOf(remoteUrl: string): 'github' | 'server' | 'ssh' | undefined {
   if (!remoteUrl) return undefined;
   if (/github\.com/i.test(remoteUrl)) return 'github';
   if (/^(git@|ssh:\/\/)/.test(remoteUrl)) return 'ssh';

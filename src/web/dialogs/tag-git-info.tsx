@@ -247,7 +247,10 @@ export function GitPushAuthModal(props: {
   onClose: () => void;
   onSaved: () => void;
   onToast: (m: string, err?: boolean) => void;
+  /** 用途（默认"推送"）：克隆等场景传"获取仓库"，否则标题/按钮/提示都会说错语境 */
+  purpose?: string;
 }) {
+  const purpose = props.purpose ?? '推送';
   const [username, setUsername] = useState(props.username ?? '');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -281,7 +284,7 @@ export function GitPushAuthModal(props: {
   return (
     <div className="modal-mask">
       <ResizableModal width={460} minWidth={420}>
-        <h3>{isGithub ? '🔑 GitHub 推送认证' : props.type === 'ssh' ? '🔑 SSH 推送提示' : '🔑 Git 服务器推送认证'}</h3>
+        <h3>{isGithub ? `🔑 GitHub ${purpose}认证` : props.type === 'ssh' ? `🔑 SSH ${purpose}提示` : `🔑 Git 服务器${purpose}认证`}</h3>
         <div className="body">
           {props.error && (
             <div className="error" style={{ marginBottom: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
@@ -293,7 +296,7 @@ export function GitPushAuthModal(props: {
               当前远程地址使用 <b>SSH</b>(git@…)。请确认本机已配置 SSH 密钥并已加入 ssh-agent
               （<span className="mono">ssh-keygen -t ed25519</span> 生成、<span className="mono">ssh-add</span> 加入、
               <span className="mono">ssh -T git@github.com</span> 验证）。
-              如需使用用户名密码推送，请改用 <b>HTTPS</b> 地址（可在「Git 信息」中修改远程地址）。
+              如需使用用户名密码{purpose}，请改用 <b>HTTPS</b> 地址（可在「Git 信息」中修改远程地址）。
             </HelpNote>
           ) : (
             <>
@@ -316,7 +319,7 @@ export function GitPushAuthModal(props: {
               {isGithub && (
                 <div className="dim small">
                   在 GitHub 的 Settings → Developer settings → Personal access tokens 生成，勾选
-                  <b> repo </b> 权限即可推送。
+                  <b> repo </b> 权限即可{purpose}。
                 </div>
               )}
             </>
@@ -326,7 +329,7 @@ export function GitPushAuthModal(props: {
           <button onClick={props.onClose}>取消</button>
           {props.type !== 'ssh' && (
             <button className="primary" disabled={busy} onClick={save}>
-              {busy ? '保存中…' : '保存并推送'}
+              {busy ? '保存中…' : `保存并${purpose}`}
             </button>
           )}
         </div>

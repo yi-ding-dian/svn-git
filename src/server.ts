@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { detectRepo } from './vcs/detect.js';
+import { createAskPass, authTypeOf } from './vcs/git.js';
+import { loadConfig } from './config.js';
 import { run } from './vcs/exec.js';
 import { isSafeOrigin, sendJson, readBody, isAuthError, type Ctx } from './routes/util.js';
 import { handle as handleConflicts } from './routes/conflicts.js';
@@ -113,12 +115,66 @@ export function startServer(): Promise<ServerHandle> {
           return;
         }
         const target = path.join(dir, name);
-        let result: { ok: boolean; message: string; repoDir?: string };
+        // authError/authType：克隆因认证失败时带给前端，由它引导用户去设置里填 git 凭据
+        let result: { ok: boolean; message: string; repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' };
         if (type === 'git') {
           if (url) {
-            // 克隆
-            const r = await run('git', ['clone', url, target], { timeoutMs: 600_000 });
-            result = r.code === 0 ? { ok: true, message: `已克隆到 ${target}`, repoDir: target } : { ok: false, message: r.stderr.trim() || '克隆失败' };
+            // 克隆（私有仓库要认证）：先**裸试**一次 —— 公开仓库无需凭据，也避免把凭据白白送出去；
+            // 认证失败且**存了凭据**时带 GIT_ASKPASS 重试（与 push 同一套机制）；仍失败则带上
+            // authType 交给前端，引导用户去设置里填 git 凭据。
+            //
+            // **客户端断开要真的停**：用户关掉弹窗（或前端 30s 超时）会 abort 请求，
+            // 这里把它接到子进程上 —— 否则 git 会在后台白跑到 10 分钟，还可能凭空建出目录。
+            // ⚠ 必须听 **res** 的 close，不能听 req 的：请求体已被 readBody 读完，
+            // req 的 'close' 在那时就已经触发过了（挂上去等于空放，实测克隆照样跑满）。
+            // res 的 'close' 才是"这条连接没了"（客户端关弹窗/超时断开）。
+            const ac = new AbortController();
+            const onClose = () => ac.abort();
+            res.on('close', onClose);
+            /** 克隆上限：网络卡住时别让用户干等（前端同时有 30s 倒计时，两边一致） */
+            const CLONE_TIMEOUT_MS = 30_000;
+            const isAuthFail = (r: { stderr: string; stdout: string }): boolean =>
+              /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403|没有那个设备或地址/i.test(r.stderr + r.stdout);
+            /** 克隆**开始前**目标是否已存在：
+             *  决定失败后能不能清理 —— 只清"这次克隆刚建出来的"，**绝不动用户已有的目录**。
+             *  （曾因为不判这个，把用户已有的整个目录连内容一起删了：重复获取同一位置时
+             *    clone 报"目标已存在且非空"，那句 cleanup 就把人家目录端了。） */
+            const targetExistedBefore = fs.existsSync(target);
+            /** 清掉本次克隆失败残留的半截目录（不清的话重试会报"目标已存在且非空"，掩盖真正原因） */
+            const cleanupTarget = () => {
+              if (targetExistedBefore) return; // 原本就在的东西，一个字节都不许动
+              try {
+                fs.rmSync(target, { recursive: true, force: true });
+              } catch {
+                /* 清不掉就照原样继续，让 git 报它自己的错 */
+              }
+            };
+            let r = await run('git', ['clone', url, target], { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal });
+            let authFail = isAuthFail(r);
+            const gitCred = loadConfig().git;
+            // 已 abort（用户关闭/超时）就不再重试；失败时先清半截目录再带凭据重试
+            if (r.code !== 0 && !r.aborted && authFail && gitCred?.username && gitCred?.password) {
+              cleanupTarget();
+              const ask = createAskPass(gitCred);
+              r = await run('git', ['clone', url, target], { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal, env: { GIT_ASKPASS: ask.path } });
+              ask.cleanup();
+              authFail = isAuthFail(r);
+            }
+            res.off('close', onClose);
+            // ⚠ aborted（客户端断开）与 timedOut（自己到 30s 上限）是两个字段，都要判 ——
+            // 只判 aborted 的话，超时会被当成"克隆失败"、把 git 的半截 stderr（"正克隆到…"）当错误抛给用户
+            if (r.aborted || r.timedOut) {
+              cleanupTarget(); // 收拾可能留下的半截目录
+              result = {
+                ok: false,
+                message: r.timedOut ? `获取超时（超过 ${CLONE_TIMEOUT_MS / 1000} 秒），已停止` : '已取消获取',
+              };
+            } else if (r.code === 0) {
+              result = { ok: true, message: `已克隆到 ${target}`, repoDir: target };
+            } else {
+              cleanupTarget(); // 失败也别留半个仓库，否则下次重试会撞"目录已存在"
+              result = { ok: false, message: r.stderr.trim() || '克隆失败', authError: authFail || undefined, authType: authFail ? authTypeOf(url) : undefined };
+            }
           } else {
             // init
             fs.mkdirSync(target, { recursive: true });

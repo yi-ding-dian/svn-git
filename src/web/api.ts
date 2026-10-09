@@ -339,8 +339,11 @@ export const post = {
   tag: (action: 'create' | 'delete', name: string) => api<VcsResult>('/api/tag', json({ action, name })),
   stash: (action: 'push' | 'pop' | 'drop', message = '', index = 0, paths?: string[]) =>
     api<VcsResult>('/api/stash', json({ action, message, index, paths })),
-  repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true) =>
-    api<VcsResult & { repoDir?: string }>('/api/repo-create', json({ type, dir, name, url, standard })),
+  repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true, signal?: AbortSignal) =>
+    api<VcsResult & { repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' }>(
+      '/api/repo-create',
+      json({ type, dir, name, url, standard }, signal),
+    ),
   /** 创建/获取前置风险检测（目标已存在、位于仓库内等），供二次确认展示 */
   repoCheck: (type: 'git' | 'svn', dir: string, name: string, url = '') =>
     api<RepoCheck>('/api/repo-create/check', json({ type, dir, name, url })),
