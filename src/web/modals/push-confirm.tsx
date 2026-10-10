@@ -7,6 +7,7 @@ import { ContextMenu } from '../ui/context-menu.js';
 import { ConfirmModal, InfoModal } from './modals.js';
 import { ClickTip } from '../ui/ui.js';
 import { autoSizeForText } from '../utils.js';
+import { renderMarkdown } from '../markdown.js';
 
 /** 二进制/图片等不支持差异查看的文件扩展名（双击查看差异前过滤） */
 const BINARY_EXT = new Set([
@@ -39,6 +40,8 @@ export function PushConfirmModal(props: {
   // 未推送提交右键（仅第一条=HEAD 可操作：amend/reset 只作用于最近一次提交；其余项提示需先撤销前面的）
   const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);
   const [amendOf, setAmendOf] = useState<LogEntry | null>(null);
+  /** 修改注释弹窗的「预览」态（false = 编写）：预览用与历史详情同一套 md 渲染，所见即所得 */
+  const [amendPreview, setAmendPreview] = useState(false);
   const [amendMsg, setAmendMsg] = useState('');
   /** 提交完整说明缓存（rev → 标题+正文）：悬浮提示用（列表接口只带 %s 标题） */
   const [fullMsgs, setFullMsgs] = useState<Record<string, string>>({});
@@ -253,6 +256,7 @@ export function PushConfirmModal(props: {
                 // 所有未推送提交都可改注释：HEAD 走 amend，其余走 reword（重写注释、代码不变）
                 const it = unpushed[menu.index]!;
                 setAmendOf(it);
+                setAmendPreview(false); // 每次打开都从「编写」进（预览态是上次留下的会莫名其妙）
                 setAmendMsg(it.msg); // 先回显标题（列表只带标题），完整说明异步补上，避免此前只编辑标题导致正文被覆盖丢失
                 setAmendNotice('');
                 void get
@@ -284,15 +288,39 @@ export function PushConfirmModal(props: {
               <div className="dim small" style={{ marginBottom: 6 }}>
                 提交 {amendOf.rev} · {amendOf.date.slice(0, 16)} · {amendOf.author}
               </div>
-              <textarea
-                className="mono"
-                rows={autoSizeForText(amendMsg).rows}
-                title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
-                style={{ width: '100%', flex: 1, minHeight: 120 }}
-                value={amendMsg}
-                onChange={(e) => setAmendMsg(e.target.value)}
-                autoFocus
-              />
+              {/* 编写 / 预览 切换（GitHub 评论框同款）：预览用与历史详情完全相同的渲染（含 breaks），
+                  所见即所得 —— 不然得提交完去历史里才知道渲染成什么样 */}
+              <div className="row" style={{ gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                <button className={`mini ${amendPreview ? '' : 'primary'}`} onClick={() => setAmendPreview(false)}>
+                  编写
+                </button>
+                <button className={`mini ${amendPreview ? 'primary' : ''}`} onClick={() => setAmendPreview(true)}>
+                  预览
+                </button>
+                <span className="dim small" style={{ marginLeft: 'auto' }}>
+                  {amendPreview ? '渲染效果（与历史里显示的一致）' : '支持 Markdown：**加粗**、- 列表、`代码`…'}
+                </span>
+              </div>
+              {amendPreview ? (
+                <div
+                  className="md-render"
+                  style={{
+                    flex: 1, minHeight: 120, overflow: 'auto',
+                    border: '1px solid var(--border)', borderRadius: 6, background: 'var(--panel2)',
+                  }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(amendMsg, { breaks: true }) }}
+                />
+              ) : (
+                <textarea
+                  className="mono"
+                  rows={autoSizeForText(amendMsg).rows}
+                  title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
+                  style={{ width: '100%', flex: 1, minHeight: 120 }}
+                  value={amendMsg}
+                  onChange={(e) => setAmendMsg(e.target.value)}
+                  autoFocus
+                />
+              )}
               {amendNotice && (
                 <div className="error small" style={{ marginTop: 6, wordBreak: 'break-all' }}>
                   {amendNotice}

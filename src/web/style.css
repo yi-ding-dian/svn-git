@@ -1015,6 +1015,11 @@ textarea:focus, input:focus { outline: none; border-color: var(--accent); }
 textarea { resize: vertical; font-family: inherit; }
 /* ---------- Markdown 渲染预览（marked 输出原生标签） ---------- */
 .md-render { padding: 8px 14px; line-height: 1.75; word-break: break-word; }
+/* 历史详情里的提交信息（md 渲染）：复用 .md-render 的元素样式，但去掉预览面板用的内边距
+   （详情里要和上方的 rev/作者行左对齐）；折叠态只露一行 —— 首尾段的 margin 会把那一行顶掉，去掉 */
+.commit-msg-md { padding: 0; }
+.commit-msg-md > :first-child { margin-top: 0; }
+.commit-msg-md > :last-child { margin-bottom: 0; }
 .md-render h1, .md-render h2, .md-render h3, .md-render h4, .md-render h5, .md-render h6 { margin: 14px 0 6px; line-height: 1.4; }
 .md-render h1 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
 .md-render h2 { font-size: 1.28em; }
