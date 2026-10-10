@@ -348,6 +348,17 @@ export function IconCommit({ size = 14 }: IconProps) {
   );
 }
 
+/** 终端：深色方框 + 绿色提示符（⋯ 菜单「终端」入口） */
+export function IconTerminal({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <rect x="3" y="4.5" width="18" height="15" rx="2.5" fill="#24292f" />
+      <path d="M7 10l3 2.5-3 2.5" stroke="#3fb950" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d="M12.5 15.5h4.5" stroke="#8b949e" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** 列表视图：蓝灰三横线 */
 export function IconList({ size = 14 }: IconProps) {
   return (

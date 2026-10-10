@@ -1,10 +1,13 @@
 /** 通用弹窗壳：遮罩 + 可调整大小容器 + 标题行 + 底部操作区（默认仅「关闭」）
  *  遮罩点击不关闭（只能通过关闭按钮 / Esc 关闭），避免误触弹窗消失 */
 export function ModalShell(props: {
-  title: string;
+  title: React.ReactNode;
   /** 标题图标：SVG 组件（优先）或 emoji；emoji 依赖系统字体，部分新字符(如 🪵)可能缺字形 */
   icon?: React.ReactNode;
   width?: number;
+  /** 初始高度（不传则按内容自适应）。**内容区要弹性伸缩的弹窗必须传** ——
+   *  否则 flex:1 的子项没有基准高度，整个弹窗会塌成一条（终端弹窗就踩过）。 */
+  height?: number | string;
   /** 最小宽度（默认 480） */
   minWidth?: number;
   /** 底部操作区；不传时仅「关闭」按钮 */
@@ -18,7 +21,7 @@ export function ModalShell(props: {
 }) {
   return (
     <div className="modal-mask">
-      <ResizableModal width={props.width ?? 560} minWidth={props.minWidth} onEsc={props.onClose}>
+      <ResizableModal width={props.width ?? 560} minWidth={props.minWidth} height={props.height} onEsc={props.onClose}>
         <h3 style={{ position: 'relative' }}>
           {props.icon && <span style={{ marginRight: 8 }}>{props.icon}</span>}
           {props.title}

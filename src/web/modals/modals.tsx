@@ -29,6 +29,7 @@ export type Modal =
   | { type: 'remote-conflicts'; files: { path: string; lines: number[] }[] }
   | { type: 'revert-confirm'; dir: string; dirLabel: string; items: { path: string; code: string }[] }
   | { type: 'rename'; from: string; fsMode: boolean }
+  | { type: 'terminal' }
   | {
       type: 'confirm';
       title: React.ReactNode;

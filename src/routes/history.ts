@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, currentScopes, vcsOf, repoInfo, START_DIR, MSG_PATH_OUT_OF_BOUNDS, type Ctx } from './util.js';
+import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, currentScopes, vcsOf, repoInfo, START_DIR, MSG_PATH_OUT_OF_BOUNDS, INSTANCE_ID, type Ctx } from './util.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { res, url } = ctx;
@@ -35,7 +35,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const repo = repoInfo();
         if (!repo) {
-          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version, buildDate });
+          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version, buildDate, instanceId: INSTANCE_ID });
           return true;
         }
         const { vcs } = vcsOf();
@@ -65,6 +65,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           home: os.homedir(),
           version,
           buildDate,
+          instanceId: INSTANCE_ID,
         });
         return true;
       }

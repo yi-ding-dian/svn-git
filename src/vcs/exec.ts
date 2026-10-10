@@ -11,6 +11,10 @@ export interface RunOptions {
   maxBuffer?: number;
   /** 取消信号（如前端请求断开），触发后杀掉子进程 */
   signal?: AbortSignal;
+  /** 用 shell 执行：`cmd` 作为**完整命令行**（支持管道 / 重定向 / &&），`args` 忽略。
+   *  **只给终端用** —— 其他调用点都走"命令 + 参数"数组形式，不经 shell 是刻意的
+   *  （避免文件名/用户输入被当成 shell 语法解释）。 */
+  shell?: boolean;
   /** 额外环境变量（合并到 process.env，如 GIT_ASKPASS） */
   env?: Record<string, string>;
   /** 输出解码方式：
@@ -41,11 +45,13 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
   return new Promise((resolve, reject) => {
     // 继承系统 locale（不能强制 LC_ALL=C：C locale 下 svn 无法转换中文文件名导致 E000022）
     // 解析全部使用 XML/porcelain 机器格式，与输出语言无关
-    const child = spawn(cmd, args, {
+    const spawnOpts = {
       cwd: opts.cwd,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'],
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
-    });
+    };
+    // shell 模式见 RunOptions.shell：cmd 是完整命令行，args 忽略
+    const child = opts.shell ? spawn(cmd, { ...spawnOpts, shell: true }) : spawn(cmd, args, spawnOpts);
 
     // 输出解码：默认 utf8（与改动前一致）；'auto' 走探测（UTF-8 → GB18030），只给内容型调用点用
     const dec = (b: Buffer) => (opts.decode === 'auto' ? decodeMixedText(b) : b.toString('utf8'));

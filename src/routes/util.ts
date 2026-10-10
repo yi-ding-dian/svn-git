@@ -178,6 +178,11 @@ export const  MAX_READ_BYTES = 5 * 1024 * 1024;
  *  字面量在两处各写一遍，迟早对不上。 */
 export const TOO_LARGE_PLACEHOLDER = '（文件过大，未读取全文）';
 
+/** 本次服务进程的标识：模块加载时生成一次，**进程重启即变**（见 /api/info）。
+ *  前端拿它判断"服务是不是重启过了" —— 终端的历史是**会话级**的（用户要求"重启服务历史消失、
+ *  不要一直堆积"），重启后旧记录作废。 */
+export const INSTANCE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 /** 读取文本文件：>MAX_READ_BYTES 时读前拦截,返回占位提示,不整读入内存。
  *  编码：先按 UTF-8，不是合法 UTF-8 再按 GB18030（中文项目里的 .bat/老代码常见），
  *  否则按 UTF-8 读会满屏 `�`（实报：运行.bat）。探测细节见 src/shared/text.ts。 */

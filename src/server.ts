@@ -20,6 +20,7 @@ import { handle as handleConfig } from './routes/config.js';
 import { handle as handleModuleIndex } from './routes/module-index.js';
 import { handle as handleUpload } from './routes/upload.js';
 import { handle as handleWc } from './routes/wc.js';
+import { handle as handleTerminal } from './routes/terminal.js';
 
 /** 前端静态目录：开发 = 项目根/dist/web；打包 = asar 内 dist/web */
 const WEB_DIR = path.resolve(import.meta.dirname ?? '.', 'web');
@@ -56,7 +57,7 @@ export function startServer(): Promise<ServerHandle> {
         sendJson(res, 403, { error: '拒绝跨站请求' });
         return;
       }
-      // 端点域模块（冲突防护 / 分支标签 / 操作类 / 浏览 / 宿主环境 / 历史 / 最近项目 / 配置 / 上传 / 工作副本），按序尝试分发
+      // 端点域模块（冲突防护 / 分支标签 / 操作类 / 浏览 / 宿主环境 / 历史 / 最近项目 / 配置 / 上传 / 工作副本 / 终端），按序尝试分发
       {
         const ctx: Ctx = { req, res, url, p };
         if (await handleConflicts(ctx)) return;
@@ -71,6 +72,7 @@ export function startServer(): Promise<ServerHandle> {
         if (await handleModuleIndex(ctx)) return;
         if (await handleUpload(ctx)) return;
         if (await handleWc(ctx)) return;
+        if (await handleTerminal(ctx)) return;
       }
 
       // ---------- 版本管理扩展 API ----------

@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo } from './api.js';
 import { cmdOfRepo } from './cmd-preview.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo } from './ui/icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal } from './ui/icons.js';
 import { type Modal } from './modals/modals.js';
 import { type View } from './sidebar.js';
 import { ContextMenu } from './ui/context-menu.js';
@@ -157,7 +157,7 @@ type ToolbarLayout = { shown: ToolbarItem[]; hidden: string[] };
 /** 默认布局：工具栏按钮（可见时按此顺序渲染，sep=分隔符可拖拽调整），其余固定项默认收在 ⋯ 菜单 */
 const DEFAULT_LAYOUT: ToolbarLayout = {
   shown: ['conflicts', 'pull', 'update', 'push', 'stash', 'sep-1', 'branch', 'sep-2', 'clean', 'refresh', 'sep-3', 'exit'],
-  hidden: ['open', 'create', 'get', 'tags', 'font', 'git-info', 'login'],
+  hidden: ['open', 'create', 'get', 'tags', 'terminal', 'font', 'git-info', 'login'], // terminal 紧跟 tags（用户要求）
 };
 
 /** 新分隔符唯一 id（Date.now 毫秒，工具内足够） */
@@ -360,6 +360,17 @@ const TOOLS: ToolDef[] = [
       icon: <IconTag />,
       label: '标签',
       onClick: () => c.setModal({ type: 'tags' }),
+    }),
+  },
+  {
+    // 终端：非交互 git / svn 命令的快捷通道（护栏见 routes/terminal.ts）。默认紧跟「标签」在 ⋯ 菜单里；
+    // 和别的项一样可拖到工具栏（想常驻也行）。快捷键 Ctrl+` 见 app.tsx。
+    key: 'terminal', zone: 'menu', visible: (c) => !!c.repoType,
+    render: (c) => ({
+      icon: <IconTerminal />,
+      label: '终端',
+      title: '在仓库目录下执行 git / svn 命令（Ctrl+` 也可打开）。只支持非交互命令：不支持管道/重定向，需要 TTY 的命令请用系统终端',
+      onClick: () => c.setModal({ type: 'terminal' }),
     }),
   },
   {

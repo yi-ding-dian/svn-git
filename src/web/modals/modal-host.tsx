@@ -27,6 +27,7 @@ import { RemoteConflictModal } from './remote-conflicts.js';
 import { ThemePopover, type MyTheme } from './theme-popover.js';
 import { RecentMorePopover } from './recent-more.js';
 import { FontModal } from './font-modal.js';
+import { TerminalModal } from './terminal.js';
 import { OpenModal } from '../views/open.js';
 import { IconOk } from '../ui/icons.js';
 import { pathAutoWidth, translateVcsError } from '../utils.js';
@@ -92,6 +93,8 @@ export interface ModalHostProps {
     repo: RepoInfo | null;
     env: { svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } } | null;
     info: RepoInfo | null;
+    /** 文件浏览器当前停在哪个目录（相对仓库根）：终端打开时以此作为执行目录（fs 视图的 onDirChange 上报） */
+    browseDir?: string;
   };
   /** 外观（字号 / 界面字体 / 代码字体） */
   appearance: {
@@ -129,7 +132,7 @@ export interface ModalHostProps {
 export function ModalHost(props: ModalHostProps) {
   const { state, set, ctx, appearance, theme, actions } = props;
   const { modal, pushAuth, updateResult, themePop, recentMore, history, invalidPaths, openHistoryItem, pushing, updating, updateElapsed, configUser } = state;
-  const { repo, env, info } = ctx;
+  const { repo, env, info, browseDir } = ctx;
   const { setModal, setPushAuth, setUpdateResult, setThemePop, setRecentMore, setConfigUser, setInfo, setOnboard, setView, showToast, setDiffReturnModal } = set;
   const { doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelPush, cancelUpdate } = actions;
 
@@ -184,7 +187,14 @@ export function ModalHost(props: ModalHostProps) {
           onClose={() => setModal(null)}
         />
       )}
-      {/* 推送中：转圈提示，可取消 */}
+      {modal?.type === 'terminal' && (
+        <TerminalModal
+          initialDir={browseDir}
+          repoRoot={repo?.root ?? ''}
+          repoType={repo?.type ?? ''}
+          onClose={() => setModal(null)}
+        />
+      )}
       {pushing && (
         <div className="modal-mask">
           <div className="modal" style={{ width: 380 }}>

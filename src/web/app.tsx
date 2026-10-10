@@ -49,6 +49,18 @@ export function App() {
     window.addEventListener('mousemove', onMove);
     return () => window.removeEventListener('mousemove', onMove);
   }, []);
+  // Ctrl+` 打开终端（跟 VSCode 一致）。用 e.code === 'Backquote' 而不是 e.key ——
+  // 后者随键盘布局变（中文输入法/非美式布局下 e.key 未必是反引号）。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.code === 'Backquote') {
+        e.preventDefault();
+        setModal({ type: 'terminal' });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   useEffect(() => {
     if (!toast) return;
     // 成功 1.5s 淡出；失败停留 3 秒（够读完一行报错，又不至于赖着不走）
@@ -999,7 +1011,7 @@ export function App() {
           showToast,
           setDiffReturnModal,
         }}
-        ctx={{ repo, env, info }}
+        ctx={{ repo, env, info, browseDir: browseDirRef.current }}
         appearance={{ fontSize, setFontSize, uiFont, setUiFont, codeFont, setCodeFont }}
         theme={{ current: theme, myThemes, setTheme, previewTheme, saveMyTheme, deleteMyTheme }}
         actions={{ doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelPush, cancelUpdate }}

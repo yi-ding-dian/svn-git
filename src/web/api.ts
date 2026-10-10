@@ -30,6 +30,8 @@ export interface RepoInfo {
   version?: string;
   /** 构建日期（dist/build-info.json，构建脚本写入） */
   buildDate?: string;
+  /** 服务实例标识（进程重启即变）：前端用它判断服务是否重启过（终端历史据此作废，见 terminal.tsx） */
+  instanceId?: string;
 }
 
 export interface FileStatus {
@@ -337,6 +339,23 @@ export const post = {
   push: (signal?: AbortSignal) => api<VcsResult>('/api/push', json({}, signal)),
   branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete', name: string, force = false, signal?: AbortSignal, base?: string) =>
     api<VcsResult>('/api/branch', json({ action, name, force, base }, signal)),
+  /** 终端：执行 git / svn 命令（护栏见 routes/terminal.ts）。
+   *  confirm=true 表示用户已在确认框里点过"仍要执行"（危险命令第二次调用）。 */
+  terminalRun: (cmd: string, dir = '', confirm = false, signal?: AbortSignal) =>
+    api<{
+      ok: boolean;
+      code: number;
+      stdout: string;
+      stderr: string;
+      /** 被 Ctrl+C 中断 */
+      aborted?: boolean;
+      /** 超过 30 秒被终止 */
+      timedOut?: boolean;
+      /** 危险命令：后端**没有执行**，等前端确认后带 confirm 重发 */
+      needConfirm?: boolean;
+      reason?: string;
+      error?: string;
+    }>('/api/terminal/run', json({ cmd, confirm, dir }, signal)),
   tag: (action: 'create' | 'delete', name: string) => api<VcsResult>('/api/tag', json({ action, name })),
   stash: (action: 'push' | 'pop' | 'drop', message = '', index = 0, paths?: string[]) =>
     api<VcsResult>('/api/stash', json({ action, message, index, paths })),
