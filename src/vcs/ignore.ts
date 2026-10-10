@@ -149,6 +149,19 @@ export async function gitIgnoreSources(repoRoot: string): Promise<{ file: string
 const SVN_IGNORE_MAP_TTL = 60_000;
 const svnIgnoreMapCache = new Map<string, { time: number; map: Map<string, string[]> }>();
 const svnIgnoreMapInflight = new Map<string, Promise<Map<string, string[]>>>();
+/** 缓存代际：invalidate 时 +1；拉取完成写缓存前比对，变了就不写 ——
+ *  否则"改规则时正好在途的那次拉取"完成后会把旧快照又写回去，失效等于白做 */
+const svnIgnoreMapGen = new Map<string, number>();
+
+/** 写入 svn:ignore 后**必须**调用（三处写入点：svn.ts 的 setSvnIgnore、/api/ignore-remove、
+ *  /api/unignore）。缓存是全仓库规则快照、TTL 60 秒，不清的话紧接着的读
+ *  （/api/ignore-source 查忽略来源、/api/unignore 找规则）拿到的是旧快照 ——
+ *  表现为"刚加的规则查不到、立刻取消忽略报'未找到规则'"，得等 60 秒才正常（实报 bug）。 */
+export function invalidateSvnIgnoreMap(root: string): void {
+  svnIgnoreMapCache.delete(root);
+  svnIgnoreMapInflight.delete(root);
+  svnIgnoreMapGen.set(root, (svnIgnoreMapGen.get(root) ?? 0) + 1);
+}
 
 /**
  * 拉取（带缓存）仓库全部 svn:ignore 规则：dir -> rules[]。
@@ -160,6 +173,7 @@ export function getSvnIgnoreMap(root: string): Promise<Map<string, string[]>> {
   if (hit && Date.now() - hit.time < SVN_IGNORE_MAP_TTL) return Promise.resolve(hit.map);
   const inflight = svnIgnoreMapInflight.get(root);
   if (inflight) return inflight;
+  const gen = svnIgnoreMapGen.get(root) ?? 0; // 发起时的代际，写缓存前比对
   const p = run('svn', ['propget', 'svn:ignore', '-R', '.'], { cwd: root, timeoutMs: 60_000 }).then((r) => {
     const map = new Map<string, string[]>();
     if (r.code === 0) {
@@ -183,7 +197,8 @@ export function getSvnIgnoreMap(root: string): Promise<Map<string, string[]>> {
       }
       if (curPath) map.set(curPath, rules.slice());
     }
-    svnIgnoreMapCache.set(root, { time: Date.now(), map });
+    // 拉取期间被 invalidate 过（用户改了规则）→ 这份快照已过期，不写回缓存
+    if ((svnIgnoreMapGen.get(root) ?? 0) === gen) svnIgnoreMapCache.set(root, { time: Date.now(), map });
     return map;
   });
   svnIgnoreMapInflight.set(root, p);

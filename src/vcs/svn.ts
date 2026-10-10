@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { XMLParser } from 'fast-xml-parser';
 import { run } from './exec.js';
+import { invalidateSvnIgnoreMap } from './ignore.js';
 import type { FileStatus, IgnorePlan, LogEntry, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
 export interface SvnCred {
@@ -872,6 +873,7 @@ export class SvnVcs {
     }
     const res = await this.exec(['propset', 'svn:ignore', [...rules, pattern].join('\n'), at]);
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '设置忽略失败' };
+    invalidateSvnIgnoreMap(this.repo.root); // 规则快照缓存必须失效，否则紧接着的读拿到旧值
     return { ok: true, message: `已设置忽略: ${at} → ${pattern}` };
   }
 

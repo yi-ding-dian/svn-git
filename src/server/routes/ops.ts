@@ -5,7 +5,7 @@ import { run } from '../../vcs/exec.js';
 import {
   sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached, runVcs, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS, writeTextKeepEncoding, isBinaryFile,
 } from './util.js';
-import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile } from '../../vcs/ignore.js';
+import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile, invalidateSvnIgnoreMap } from '../../vcs/ignore.js';
 import type { Ctx } from './util.js';
 import { detectTextEncoding, decodeText, encodeText, type TextEncoding } from '../../shared/text.js';
 
@@ -486,6 +486,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             sendJson(res, 200, { ok: false, message: setRes.stderr.trim() || '删除失败' });
             return true;
           }
+          invalidateSvnIgnoreMap(repo.root); // 规则快照缓存失效（否则 60 秒内读到旧规则集）
         } else {
           // git：三档任一文件删除该行（where 未知/global 未配置时自然跳过）
           const files = await gitIgnoreFiles(repo.root);
@@ -579,6 +580,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 200, { ok: false, message: setRes.stderr.trim() || '取消忽略失败' });
           return true;
         }
+        invalidateSvnIgnoreMap(repo.root); // 同上：本条自己就依赖过缓存找规则，改完必须失效
         invalidateStatusCache(repo.root);
         sendJson(res, 200, { ok: true, message: `已取消忽略: 删除 ${found.dir === '.' ? '根目录' : found.dir} 的规则「${found.rule}」，同目录匹配该规则的文件将变为未版本化` });
         return true;
