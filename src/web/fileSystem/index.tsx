@@ -1149,7 +1149,12 @@ export function FsView(props: Props) {
           box="1.15em"
           fallback={<MiniIcon isDir={e.isDir} name={e.name} />}
         />
-        <span className={`name ${e.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}>
+        <span
+          className={`name ${e.isDir ? 'dir' : 'file'}`}
+          style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}
+          // 重命名标出来源：列表里只显示新名字，光看名字看不出从哪移过来的
+          title={e.origPath ? `从 ${e.origPath} 移动/重命名而来` : undefined}
+        >
           {inline?.kind === 'rename' && inline.rel === rel ? inlineInput('left', e.name) : e.name}
           {e.count ? <span className="count"> （{e.count} 项）</span> : null}
           {descOf(rel) && (

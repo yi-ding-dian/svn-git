@@ -18,6 +18,10 @@ export interface RepoInfo {
 export interface FileStatus {
   /** 相对仓库根的路径 */
   path: string;
+  /** 仅重命名（code='R'）有值：**从哪个路径移过来的**。
+   *  提交时原路径的删除记录必须一起带上，否则一次提交只提交得了新增那半
+   *  （见 git.ts 的 withRenameOrigins）；前端也用它提示"从哪移来的"。 */
+  origPath?: string;
   /** 主状态码：M A D ? ! C R X I U ~（svn 语义为主，git 映射） */
   code: string;
   /** git porcelain 两列原文，svn 下为空 */

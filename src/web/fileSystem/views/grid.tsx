@@ -87,7 +87,13 @@ export function GridItem(props: {
           {props.locked && <IconLock size={13} />}
         </span>
       </span>
-      <span className={`grid-name ${e.isDir ? 'dir' : ''}`}>{props.renaming ?? e.name}</span>
+      <span
+        className={`grid-name ${e.isDir ? 'dir' : ''}`}
+        // 重命名标出来源：网格里只显示新名字，光看名字看不出从哪移过来的
+        title={e.origPath ? `从 ${e.origPath} 移动/重命名而来` : undefined}
+      >
+        {props.renaming ?? e.name}
+      </span>
       {!e.isDir && <span className="dim small nowrap">{fmtSize(e.size)}</span>}
     </div>
   );

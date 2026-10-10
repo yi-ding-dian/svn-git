@@ -236,8 +236,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 403, { error: MSG_OUT_OF_SCOPE });
           return true;
         }
-        const items = (await getStatusCached(repo, force, rel)) as { path: string; code: string; isDir: boolean; treeConflicted?: boolean }[];
-        const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; count?: number; codes?: string[]; unversionedCount?: number; miss?: boolean; treeConflicted?: boolean; innerTreeConflict?: boolean }[] = [];
+        const items = (await getStatusCached(repo, force, rel)) as { path: string; code: string; isDir: boolean; treeConflicted?: boolean; origPath?: string }[];
+        const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; origPath?: string; count?: number; codes?: string[]; unversionedCount?: number; miss?: boolean; treeConflicted?: boolean; innerTreeConflict?: boolean }[] = [];
         // 目录多状态徽标显示顺序：修改 / 添加 / 删除 / 冲突 / 替换 / 缺失 / 更新 / 类型变更
         const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
         let names: string[];
@@ -410,8 +410,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             codes = opCodes.length ? opCodes : undefined; // 空数组别留着：[] 是 truthy，!codes 之类的兜底会失效
           }
           // 目录自身调度（svn D/A 目录本体，如"已删除"）并入角标集合——位于子项块之外：
-          // svn delete 目录后 status 只输出目录自身行（子项不单列），sub 为空时也要能显示 D
-          if (self && self.code && self.code !== ' ' && self.code !== 'none' && self.code !== 'X' && !codes?.includes(self.code)) {
+          // svn delete 目录后 status 只输出目录自身行（子项不单列），sub 为空时也要能显示 D。
+          // **'?' 不在这里并入**：它是"这个目录不在版本库里"而非"一次操作"，无条件并进来会让
+          // `git rm --cached -r dir` 之后的目录同时挂着 ? 和 D 两个徽标、自相矛盾（用户实报）；
+          // 纯未跟踪目录由下面那行 `code === '?' && !codes?.length` 的兜底负责，照样显示 ?。
+          if (self && self.code && self.code !== ' ' && self.code !== 'none' && self.code !== 'X' && self.code !== '?' && !codes?.includes(self.code)) {
             codes = [...(codes ?? []), self.code];
           }
           if (codes) codes.sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b));
@@ -457,7 +460,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
           const relFile = prefix + f;
           const it = items.find((i) => i.path === relFile);
-          let code = dirSelf ? '?' : it?.code ?? '';
+          // **文件自己的状态优先于"目录未版本化"**：`git rm --cached -r dir` 之后，
+          // 目录本身是 ?（文件还在磁盘、已脱离版本库），但里面的文件在 index 里**有独立的 D 记录**
+          // （等提交的删除）。原来写成 `dirSelf ? '?' : it?.code`，把 D 盖成了 ?，
+          // 用户看到"从版本库移除后文件显示未版本化"——语义完全不对（用户实报）。
+          // 普通未跟踪目录不受影响：那种情况下 git 折叠成一行 `?? dir/`，文件没有独立条目 → it 为空 → 仍走 dirSelf。
+          let code = it?.code ?? (dirSelf ? '?' : '');
           // 祖先删除调度（含当前目录自身 D）→ 文件随目录移除，显示 D
           if (deletedAncestor && !code) code = 'D';
           // 无条目且非未版本化：祖先被忽略（如 node_modules 内）→ 直接 I；否则按忽略规则判断
@@ -474,6 +482,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             size: st.size,
             mtime: fmtMtime(st.mtimeMs),
             code,
+            // 重命名带出来源（列表 tooltip 用；提交时后端自己按路径补全，前端不参与）
+            origPath: it?.origPath || undefined,
             // 文件同样可能带树冲突（本地改/加 vs 服务器删除）——角标与目录共用一套渲染
             treeConflicted: it?.treeConflicted || undefined,
           });

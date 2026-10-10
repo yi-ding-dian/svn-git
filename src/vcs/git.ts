@@ -220,9 +220,15 @@ export class GitVcs {
       const xy = line.slice(0, 2);
       const p = line.slice(3);
       // 重命名/复制: "R  old -> new"
+      // **原路径必须留着**：提交时要带上它的删除记录，否则一次提交只提交得了新增那半
+      // （用户实报：移动三个文件后提交，旧路径又冒出来显示 D、得再提交一次）
       let pname = p;
+      let origPath: string | undefined;
       const arrow = p.indexOf(' -> ');
-      if (arrow > 0) pname = p.slice(arrow + 4);
+      if (arrow > 0) {
+        origPath = unquote(p.slice(0, arrow).trim());
+        pname = p.slice(arrow + 4);
+      }
       let relPath = unquote(pname.trim());
       // 未跟踪目录输出 "?? dir/" 带尾部斜杠：去掉，统一为无斜杠路径（否则状态匹配/拼接会双斜杠）
       if (relPath.endsWith('/')) relPath = relPath.slice(0, -1);
@@ -234,6 +240,7 @@ export class GitVcs {
       if (code === 'D' && xy[0] !== 'D') code = '!';
       list.push({
         path: relPath,
+        origPath, // 仅重命名/复制有值：从哪个路径移过来的（提交时要一起处理）
         code,
         porcelain: xy,
         wcCode: wc,
@@ -584,21 +591,43 @@ export class GitVcs {
       return { ok: true, message: m ? `提交成功 ${m[1]} ${m[2]?.slice(0, 7)}` : '提交成功' };
     }
     if (relPaths.length) {
-      // 磁盘存在的文件(修改/新增/未跟踪):add 暂存；已删除(D)文件磁盘不存在无法 add，由 commit -- 直接提交其 index 状态
       // stagedOnly：已在 hunk 弹窗里部分暂存过的文件——跳过 add，否则会把未选中的块一并暂存，覆盖用户的选择
       const stagedSet = new Set(stagedOnly);
-      const exist = relPaths.filter((p) => !stagedSet.has(p) && fs.existsSync(path.join(this.repo.root, p)));
-      const deleted = relPaths.filter((p) => !fs.existsSync(path.join(this.repo.root, p)));
+      // 一次拿状态，同时办两件事（省一次 git status）：
+      //  ① 重命名：勾选里的新路径 → 把**原路径**也补进来（否则 `commit -- new` 只提交新增那半）
+      //  ② 删除态：认出哪些路径在 index 里是 D
+      let items: FileStatus[] = [];
+      try {
+        items = (await this.status()) as FileStatus[];
+      } catch {
+        /* 拿不到状态就按最小逻辑走（不补原路径、也不额外跳过）—— 宁可少补，别阻断提交 */
+      }
+      const withOrigins = new Set(relPaths);
+      for (const it of items) {
+        if (it.origPath && relPaths.includes(it.path)) withOrigins.add(it.origPath);
+      }
+      relPaths = [...withOrigins];
+      // **删除态(D)的路径不能 add**：老代码假设"D 的文件磁盘一定不存在"（普通 rm 确实如此），
+      // 但 `git rm --cached` 之后**文件仍在磁盘上** —— 那句 `add -A -- <它>` 会把删除**撤销**掉，
+      // 随后 commit 无变更可提、git 报错：用户看到"git commit 失败"，而且"从版本库移除"被**静默撤销**
+      // （用户实报，已实测复现）。删除态交给下面的 `commit -- <paths>` 直接提交其 index 记录。
+      const deletedSet = new Set(items.filter((i) => i.code === 'D').map((i) => i.path));
+      // 磁盘存在 + 非 hunk 暂存 + 非删除态 → add 暂存
+      const exist = relPaths.filter((p) => !stagedSet.has(p) && !deletedSet.has(p) && fs.existsSync(path.join(this.repo.root, p)));
       if (exist.length) {
         const addRes = await this.exec(['add', '-A', '--', ...exist]);
         if (addRes.code !== 0) return { ok: false, message: `暂存失败: ${addRes.stderr.trim()}` };
       }
-      if (stagedSet.size > 0) {
+      // 有 hunk 级部分暂存、**或有删除态(D)** 时，都必须走"不带 pathspec 的 commit"：
+      // 见下面 647 行附近的说明 —— 带 pathspec 的 commit 不看 index、只看工作区，
+      // 而 `rm --cached` 的文件工作区还在（内容和 HEAD 一样）→ 它会报"无文件要提交"（实测）。
+      if (stagedSet.size > 0 || deletedSet.size > 0) {
         // 有 hunk 级部分暂存的文件时，**不能用 pathspec 形式的 commit**：
         // `git commit -- <paths>` 的语义是「忽略 index，直接记录这些路径工作区的内容」，
         // 会把用户在 hunk 弹窗里没勾选的块一并提交，index 里构造好的部分暂存形同虚设（已实测）。
         // 改为：把其余要提交的文件也 add 进 index（部分暂存的文件已就位），再不带路径提交。
-        const toAdd = relPaths.filter((p) => !stagedSet.has(p));
+        // **排除删除态**：对它们 add 会把"从版本库移除"撤销掉（它们要的是提交 index 里的删除记录）
+        const toAdd = relPaths.filter((p) => !stagedSet.has(p) && !deletedSet.has(p));
         if (toAdd.length) {
           const addRes = await this.exec(['add', '-A', '--', ...toAdd]);
           if (addRes.code !== 0) return { ok: false, message: `暂存失败: ${addRes.stderr.trim()}` };
@@ -619,7 +648,10 @@ export class GitVcs {
         const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
         return { ok: true, message: m ? `提交成功 ${m[1]} ${m[2]?.slice(0, 7)}` : '提交成功' };
       }
-      // 指定路径提交：已删除文件也在 paths 里（提交其 index 删除记录）
+      // 指定路径提交（注意：**这里没有删除态**的路径，有删除态的在上面那个分支就返回了）。
+      // ⚠ 带 pathspec 的 commit **不看 index，而是"按工作区内容记录这些路径"** ——
+      // 所以只有工作区真的和 HEAD 不同才提交得动。已删除(D)且文件仍在磁盘上的（`git rm --cached`），
+      // 走这条路会误判成"无文件要提交、干净的工作区"（实测），必须用不带 pathspec 的 commit。
       const res = await this.exec(['commit', '-m', msg, '--', ...relPaths], { timeoutMs: 120_000 });
       if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git commit 失败' };
       const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);

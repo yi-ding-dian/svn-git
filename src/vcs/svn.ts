@@ -293,6 +293,14 @@ export class SvnVcs {
 
   /** svn commit */
   async commit(relPaths: string[], msg: string): Promise<VcsResult> {
+    // 缺失(!)的条目：svn **不能直接提交它们的删除**，得先 `svn delete --force` 标记。
+    // 场景与 git 侧的重命名丢删除同类：在文件管理器里把文件挪到别处后，旧路径变成 !（版本库仍认为它在），
+    // 只 add 新路径的话旧的那份删不掉，用户得再提交一次。
+    const missing = relPaths.filter((p) => !fs.existsSync(path.join(this.repo.root, p)));
+    if (missing.length) {
+      // 失败不阻断：这些路径可能本来就不在版本库里（未跟踪），那种不需要 delete
+      await this.exec(['delete', '--force', ...missing], { timeoutMs: 60_000 });
+    }
     const args = relPaths.length ? ['commit', ...relPaths, '-m', msg] : ['commit', '-m', msg];
     const res = await this.exec(args, { timeoutMs: 300_000 });
     if (res.code !== 0) {

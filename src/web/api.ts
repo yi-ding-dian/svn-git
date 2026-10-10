@@ -36,6 +36,8 @@ export interface RepoInfo {
 
 export interface FileStatus {
   path: string;
+  /** 仅重命名（code='R'）有值：从哪个路径移过来的（后端 git status 解析带出，用于提示 + 提交时补全） */
+  origPath?: string;
   code: string;
   porcelain?: string;
   wcCode?: string;
@@ -95,6 +97,8 @@ export interface FsEntry {
   size: number;
   mtime: string;
   code: string;
+  /** 仅重命名（code='R'）有值：从哪个路径移过来的（后端 /api/fs 透传，列表用 tooltip 提示来源） */
+  origPath?: string;
   count?: number;
   /** 目录同时发生的操作集合（M/A/D…），无操作或未版本化时为 undefined */
   codes?: string[];
