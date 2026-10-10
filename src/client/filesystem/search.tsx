@@ -1,6 +1,7 @@
 /** 文件搜索（fs 拆分批次 1-3）：useFileSearch 防抖搜索 hook + FsSearchBox 输入框/结果下拉组件
  * （下拉贴屏幕右缘/下缘动态宽高，默认 10 条，第 11 行展开/收起全部） */
 import React, { useEffect, useRef, useState } from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { get } from '../shared/api.js';
 
 /** 搜索状态 hook：防抖 400ms 调 /api/search（当前目录），返回查询/结果/搜索中/高亮索引/展开态 */
@@ -20,7 +21,7 @@ export function useFileSearch(dir: string) {
   useEffect(() => {
     const q = fileQuery.trim();
     // 门槛：至少 2 个字符，或 1 个汉字
-    const isCn = /[一-鿿]/.test(q);
+    const isCn = /[一-鿿]/.test(q); // i18n-ignore: 判定输入是否含中文的逻辑正则（非界面文案）
     if (!q || q.length < (isCn ? 1 : 2)) {
       seqRef.current += 1; // 让在途请求作废（否则它回来还会把结果填上）
       setSearchResults([]);
@@ -87,7 +88,8 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
       <span style={{ position: 'relative' }} ref={wrapRef}>
         <input
           type="text"
-          placeholder="🔍 搜索文件…"
+          // 🔍 搜索文件…
+          placeholder={t('fs.search.placeholder')}
           value={fileQuery}
           onChange={(e) => {
             setFileQuery(e.target.value);
@@ -116,12 +118,14 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
         />
         {/* 右侧同一位置：搜索中转圈 / 否则是清空按钮（不并排占位，避免输入区变窄） */}
         {searching ? (
-          <span className="search-spin search-box-spin" title="正在搜索…" />
+          // 正在搜索…
+          <span className="search-spin search-box-spin" title={t('fs.search.searching')} />
         ) : (
           fileQuery && (
             <button
               className="search-clear"
-              title="清空"
+              // 清空
+              title={t('fs.search.clear')}
               onClick={() => {
                 setFileQuery('');
                 setShowResults(false);
@@ -145,10 +149,12 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
           {searching ? (
             // 搜索中不显示上一轮的结果：那些结果对应当前查询之外的输入，显示出来只会误导
             <div className="dim row" style={{ padding: '6px 10px', gap: 6, alignItems: 'center' }}>
-              <span className="search-spin" /> 正在搜索…
+              {/* 正在搜索… */}
+              <span className="search-spin" /> {t('fs.search.searching')}
             </div>
           ) : (
-            searchResults.length === 0 && <div className="dim" style={{ padding: '6px 10px' }}>无匹配文件</div>
+            // 无匹配文件
+            searchResults.length === 0 && <div className="dim" style={{ padding: '6px 10px' }}>{t('fs.search.none')}</div>
           )}
           {!searching && (searchExpanded ? searchResults : searchResults.slice(0, 10)).map((p, i) => (
             <div
@@ -167,11 +173,13 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
             <div
               className="search-item"
               style={{ justifyContent: 'center' }}
-              title={searchExpanded ? '收起列表' : '点击展开全部匹配'}
+              // 收起列表 / 点击展开全部匹配
+              title={searchExpanded ? t('fs.search.collapse') : t('fs.search.expand')}
               onClick={() => setSearchExpanded(!searchExpanded)}
             >
               <span className="dim">
-                {searchExpanded ? `收起 ▲（共 ${searchResults.length} 项）` : `… 共 ${searchResults.length} 个匹配（点击展开全部）`}
+                {/* 收起 ▲（共 {n} 项） / … 共 {n} 个匹配（点击展开全部） */}
+                {searchExpanded ? t('fs.search.collapsed', { n: searchResults.length }) : t('fs.search.expandAll', { n: searchResults.length })}
               </span>
             </div>
           )}

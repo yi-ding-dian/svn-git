@@ -3,6 +3,7 @@
  *  侧边栏只列前 N 项，剩下的放这里，避免项目多时把侧边栏撑得很长。 */
 import React, { useEffect, useRef, useState } from 'react';
 import type { HistoryItem } from '../shared/api.js';
+import { t } from '../../shared/i18n/index.js';
 
 interface Props {
   /** 面板锚点（一般取「…」按钮的右侧中点） */
@@ -52,19 +53,22 @@ export function RecentMorePopover(props: Props) {
         }}
       />
       <div ref={ref} className="ctx-menu recent-pop" style={{ left: pos.left, top: pos.top }}>
-        <div className="recent-pop-title">其余 {props.items.length} 个最近项目</div>
+        {/* 其余 {n} 个最近项目 */}
+        <div className="recent-pop-title">{t('repo.recentMore.title', { n: props.items.length })}</div>
         {props.items.map((h) => (
           <div
             key={h.path}
             className={`recent-item ${h.path === props.currentRoot ? 'active' : ''}`}
-            title={h.remark ? `${h.path}\n备注：${h.remark}` : h.path}
+            // {path}\n备注：{remark}
+            title={h.remark ? t('repo.recentMore.remarkTip', { path: h.path, remark: h.remark }) : h.path}
             onClick={() => props.onOpen(h.path)}
           >
             <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>
               {h.type.toUpperCase()}
             </span>
             <span className="recent-path">{h.path}</span>
-            {h.fav && <span className="fav-star" title="常用项目">★</span>}
+            {/* 常用项目 */}
+            {h.fav && <span className="fav-star" title={t('repo.recentMore.fav')}>★</span>}
           </div>
         ))}
       </div>

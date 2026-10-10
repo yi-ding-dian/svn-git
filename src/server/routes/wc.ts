@@ -63,7 +63,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
   const rel = url.searchParams.get('dir') ?? '';
   const abs = path.join(repo.root, rel);
   if (!inRepoRoot(repo.root, abs)) {
-    sendJson(res, 403, { error: MSG_OUT_OF_SCOPE });
+    sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
     return true;
   }
 

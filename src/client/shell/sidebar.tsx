@@ -7,6 +7,7 @@ import { RemarkModal } from '../repo/remark.js';
 import { THEMES, THEME_PINNED } from './header.js';
 import type { HistoryItem } from '../shared/api.js';
 import { baseName } from '../shared/utils.js';
+import { t } from '../../shared/i18n/index.js';
 
 /** 主视图类型（侧边栏导航目标） */
 export type View = 'log' | 'diff' | 'browse';
@@ -20,16 +21,21 @@ function relTime(ts: number): string {
   const d = new Date(ts);
   const now = new Date();
   const mins = Math.floor((now.getTime() - ts) / 60000);
-  if (mins < 1) return '刚刚';
-  if (mins < 60) return `${mins} 分钟前`;
+  // 刚刚
+  if (mins < 1) return t('shell.time.justNow');
+  // {n} 分钟前
+  if (mins < 60) return t('shell.time.minutesAgo', { n: mins });
   const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   const dayKey = (x: Date) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
-  if (dayKey(d) === dayKey(now)) return `今天 ${hm}`;
+  // 今天 {time}
+  if (dayKey(d) === dayKey(now)) return t('shell.time.today', { time: hm });
   const y = new Date(now);
   y.setDate(now.getDate() - 1);
-  if (dayKey(d) === dayKey(y)) return `昨天 ${hm}`;
+  // 昨天 {time}
+  if (dayKey(d) === dayKey(y)) return t('shell.time.yesterday', { time: hm });
   const days = Math.floor((now.getTime() - ts) / 86400000);
-  if (days < 7) return `${days} 天前`;
+  // {n} 天前
+  if (days < 7) return t('shell.time.daysAgo', { n: days });
   const mmdd = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return d.getFullYear() === now.getFullYear() ? mmdd : `${d.getFullYear()}-${mmdd}`;
 }
@@ -74,10 +80,12 @@ export function Sidebar(props: {
   const compact = props.history.length > RECENT_LIMIT;
 
   const NAV = [
-    { key: 'log' as View, label: '历史', icon: <IconClock size={16} /> },
+    // 历史
+    { key: 'log' as View, label: t('shell.nav.history'), icon: <IconClock size={16} /> },
     // 差异入口隐藏：提交弹窗双击文件/冲突界面仍可进入差异视图
     // { key: 'diff' as View, label: '差异', icon: <IconDiff size={16} /> },
-    { key: 'browse' as View, label: '文件夹', icon: <IconFolder size={16} /> },
+    // 文件夹
+    { key: 'browse' as View, label: t('shell.nav.files'), icon: <IconFolder size={16} /> },
   ];
 
   return (
@@ -95,18 +103,20 @@ export function Sidebar(props: {
       <div style={{ flex: 1 }} />
       {/* 外观区：前 5 套主题为快捷圆点，其余全部在「…」气泡里（含自定义配色/我的主题） */}
       <div className="row small dim nowrap" style={{ gap: 5, padding: '2px 20px 4px' }}>
-        {THEMES.slice(0, THEME_PINNED).map((t) => (
+        {/* map 参数名用 th：本文件 import 了 i18n 的 t()，同名会遮蔽 */}
+        {THEMES.slice(0, THEME_PINNED).map((th) => (
           <button
-            key={t.key}
-            className={`theme-btn ${props.theme === t.key ? 'active' : ''}`}
-            title={t.name}
-            style={{ background: t.color, width: 18, height: 18 }}
-            onClick={() => props.setTheme(t.key)}
+            key={th.key}
+            className={`theme-btn ${props.theme === th.key ? 'active' : ''}`}
+            title={t(th.nameKey)}
+            style={{ background: th.color, width: 18, height: 18 }}
+            onClick={() => props.setTheme(th.key)}
           />
         ))}
         <button
           className={`theme-more ${props.themePopOpen ? 'active' : ''}`}
-          title="更多主题 · 自定义配色"
+          // 更多主题 · 自定义配色
+          title={t('shell.theme.more')}
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             props.onOpenThemePop(r.left, r.bottom + 6);
@@ -118,7 +128,8 @@ export function Sidebar(props: {
       {/* 最近项目：底部区域（版本号上方） */}
       {props.history.length > 0 && (
         <>
-          <div className="sidebar-title">最近项目</div>
+          {/* 最近项目 */}
+          <div className="sidebar-title">{t('shell.recent.title')}</div>
           <div className="history-list">
             {props.history.slice(0, RECENT_LIMIT).map((h) => {
               const invalidMsg = props.invalidPaths[h.path];
@@ -129,8 +140,10 @@ export function Sidebar(props: {
                   className={`history-item ${h.path === props.currentRoot ? 'active' : ''}${invalid ? ' invalid' : ''}`}
                   title={
                     invalidMsg
-                      ? `${h.path}（打不开，目录已删除或不是工作副本）`
-                      : `${h.path}${h.remark ? `\n备注：${h.remark}` : ''}${h.path === props.currentRoot ? '\n（当前操作的项目）' : ''}${h.fav ? '\n（常用项目）' : ''}\n点击打开 · 右键设常用/备注/删除`
+                      // {path}（打不开，目录已删除或不是工作副本）
+                      ? t('shell.recent.invalid', { path: h.path })
+                      // 备注：{remark} / （当前操作的项目） / （常用项目） / 点击打开 · 右键设常用/备注/删除
+                      : `${h.path}${h.remark ? `\n${t('shell.recent.tipRemark', { remark: h.remark })}` : ''}${h.path === props.currentRoot ? `\n${t('shell.recent.tipCurrent')}` : ''}${h.fav ? `\n${t('shell.recent.tipFav')}` : ''}\n${t('shell.recent.tipClick')}`
                   }
                   onClick={() => props.onOpenHistory(h)}
                   onMouseEnter={() => {
@@ -149,14 +162,17 @@ export function Sidebar(props: {
                       名字下方，徽标底下那 30 多 px 白空着；160px 的侧边栏里这是很大一块
                       （用户实报「左边那么多空位」，备注"git仓库"因此被压成 "g…"） */}
                   <span className="history-path">{baseName(h.path)}</span>
-                  {h.fav && <span className="fav-star" title="常用项目（启动时优先打开）">★</span>}
+                  {/* 常用项目（启动时优先打开） */}
+                  {h.fav && <span className="fav-star" title={t('shell.recent.favStar')}>★</span>}
                   {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮）。
                       必须排在第二行**之前**——第二行 flex-basis:100% 会换行，× 写在它后面会被挤到第二行 */}
                   {invalid && (
                     <button
                       className="history-remove"
-                      title="该项目已打不开，点击从最近项目中移除"
-                      aria-label={`移除 ${h.path}`}
+                      // 该项目已打不开，点击从最近项目中移除
+                      title={t('shell.recent.removeInvalid')}
+                      // 移除 {path}
+                      aria-label={t('shell.recent.removeAria', { path: h.path })}
                       onClick={(e) => {
                         e.stopPropagation();
                         props.onRemoveHistory(h.path);
@@ -180,13 +196,15 @@ export function Sidebar(props: {
             {props.history.length > RECENT_LIMIT && (
               <div
                 className={`history-item history-more ${props.recentMoreOpen ? 'active' : ''}`}
-                title={`还有 ${props.history.length - RECENT_LIMIT} 个最近项目`}
+                // 还有 {n} 个最近项目
+                title={t('shell.recent.moreTitle', { n: props.history.length - RECENT_LIMIT })}
                 onClick={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
                   props.onOpenRecentMore(r.right + 6, r.top);
                 }}
               >
-                <span className="history-more-dots">…（{props.history.length - RECENT_LIMIT} 条）</span>
+                {/* …（{n} 条） */}
+                <span className="history-more-dots">{t('shell.recent.moreDots', { n: props.history.length - RECENT_LIMIT })}</span>
               </div>
             )}
             {/* 右键菜单：设为常用 / 删除 / 取消 */}
@@ -199,17 +217,20 @@ export function Sidebar(props: {
                 items={
                   // 失效项（已打不开）：只留「删除」——设为常用没意义，"取消"项也多余（点外面即可关）
                   props.invalidPaths[rmMenu.path]
-                    ? [{ icon: '🗑', label: '删除', danger: true, action: () => props.onRemoveHistory(rmMenu.path) }]
+                    // 删除
+                    ? [{ icon: '🗑', label: t('common.delete'), danger: true, action: () => props.onRemoveHistory(rmMenu.path) }]
                     : [
                         {
                           icon: rmMenu.fav ? '★' : '☆',
-                          label: rmMenu.fav ? '取消常用' : '设为常用',
+                          // 取消常用 / 设为常用
+                          label: rmMenu.fav ? t('shell.recent.unsetFav') : t('shell.recent.setFav'),
                           action: () => props.onSetFav(rmMenu.path, !rmMenu.fav),
                         },
                         {
                           // 铅笔用项目里的 SVG（IconRename），不引 emoji——没装彩色 emoji 字体的桌面会渲染成单色
                           icon: <IconRename size={14} />,
-                          label: rmMenu.remark ? '编辑备注' : '备注',
+                          // 编辑备注 / 备注
+                          label: rmMenu.remark ? t('shell.recent.editRemark') : t('shell.recent.remark'),
                           action: () => {
                             // 先收菜单再开弹窗：两者都带全屏遮罩，叠在一起点哪儿都像没反应
                             setRmMenu(null);
@@ -220,8 +241,10 @@ export function Sidebar(props: {
                             });
                           },
                         },
-                        { icon: '🗑', label: '删除', danger: true, action: () => props.onRemoveHistory(rmMenu.path) },
-                        { icon: '✕', label: '取消' },
+                        // 删除
+                        { icon: '🗑', label: t('common.delete'), danger: true, action: () => props.onRemoveHistory(rmMenu.path) },
+                        // 取消
+                        { icon: '✕', label: t('common.cancel') },
                       ]
                 }
               />
@@ -242,8 +265,10 @@ export function Sidebar(props: {
         </>
       )}
       {/* 打开项目：常驻在最近项目下方（没有历史记录时更要有这个入口） */}
-      <button className="history-open" onClick={props.onOpenProject} title="打开其它项目（选择目录）">
-        ＋ 打开项目
+      {/* 打开其它项目（选择目录） */}
+      <button className="history-open" onClick={props.onOpenProject} title={t('shell.recent.openOther')}>
+        {/* ＋ 打开项目 */}
+        {t('shell.recent.open')}
       </button>
     </div>
   );

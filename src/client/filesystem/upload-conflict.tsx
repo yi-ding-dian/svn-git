@@ -4,6 +4,7 @@
  *  每项右侧可直接改名字（默认预填自动编号 `a (1).txt`）：这样既保留"一键整批重命名"的省事，
  *  又能按用户想要的名字另存。改名不需要后端配合——上传/复制的目标名字本来就是请求里的相对路径。 */
 import React, { useState } from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import type { ConflictChoice } from './use-file-transfer.js';
 
@@ -29,11 +30,12 @@ export function UploadConflictModal(props: {
   return (
     <div className="modal-mask">
       <ResizableModal width={560} minWidth={440} onEsc={() => props.onChoose(null)}>
-        <h3>⚠ {props.conflicts.length} 项已存在</h3>
+        {/* ⚠ {n} 项已存在 */}
+        <h3>⚠ {t('fs.upload.title', { n: props.conflicts.length })}</h3>
         <div className="body">
           <div style={{ lineHeight: 1.7 }}>
-            目标目录 {props.dir ? <span className="mono">{props.dir}/</span> : '（仓库根）'} 下已有同名项。
-            可直接改下面的名字另存，或整批处理：
+            {/* 目标目录 / （仓库根） / 下已有同名项。可直接改下面的名字另存，或整批处理： */}
+            {t('fs.upload.targetPre')} {props.dir ? <span className="mono">{props.dir}/</span> : t('fs.repoRoot')} {t('fs.upload.targetPost')}
           </div>
           <div className="vcs-list" style={{ maxHeight: 220, overflow: 'auto', marginTop: 8 }}>
             {props.conflicts.map((c) => (
@@ -58,23 +60,29 @@ export function UploadConflictModal(props: {
                   style={{ flex: 1, minWidth: 0 }}
                   value={names[c] ?? ''}
                   onChange={(e) => setNames((s) => ({ ...s, [c]: e.target.value }))}
-                  title="新名字（可带子目录，如 backup/a.txt）；留空则不能按名字放入"
+                  // 新名字（可带子目录，如 backup/a.txt）；留空则不能按名字放入
+                  title={t('fs.upload.nameTip')}
                 />
               </div>
             ))}
           </div>
         </div>
         <div className="foot">
-          <button onClick={() => props.onChoose(null)}>取消</button>
-          <button onClick={() => props.onChoose({ mode: 'skip' })} title="目标目录里已存在的项保持原样，只放入新项">
-            跳过已存在
+          {/* 取消 */}
+          <button onClick={() => props.onChoose(null)}>{t('common.cancel')}</button>
+          {/* 目标目录里已存在的项保持原样，只放入新项 */}
+          <button onClick={() => props.onChoose({ mode: 'skip' })} title={t('fs.upload.skipTitle')}>
+            {/* 跳过已存在 */}
+            {t('fs.upload.skip')}
           </button>
           <button
             className="danger"
             onClick={() => props.onChoose({ mode: 'overwrite' })}
-            title="目标目录里的同名项会被覆盖（原内容会丢失，不保留副本）"
+            // 目标目录里的同名项会被覆盖（原内容会丢失，不保留副本）
+            title={t('fs.upload.overwriteTitle')}
           >
-            覆盖全部
+            {/* 覆盖全部 */}
+            {t('fs.upload.overwrite')}
           </button>
           <button
             className="primary"
@@ -82,11 +90,14 @@ export function UploadConflictModal(props: {
             onClick={() => props.onChoose({ mode: 'rename', renames: names })}
             title={
               blank.length > 0
-                ? `有 ${blank.length} 项名字为空：填上名字，或改用「跳过已存在」`
-                : '按各自右侧的名字放入（默认已自动编号，可直接改成别的名字）'
+                // 有 {n} 项名字为空：填上名字，或改用「跳过已存在」
+                ? t('fs.upload.blankHint', { n: blank.length })
+                // 按各自右侧的名字放入（默认已自动编号，可直接改成别的名字）
+                : t('fs.upload.byNameTitle')
             }
           >
-            按这些名字放入
+            {/* 按这些名字放入 */}
+            {t('fs.upload.byName')}
           </button>
         </div>
       </ResizableModal>

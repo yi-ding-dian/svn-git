@@ -1,11 +1,12 @@
 /** 状态徽标：文件状态码徽标（CodeBadge）与目录操作集合徽标（DirBadge） */
 import React from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { CODE_DESC } from '../shared/api.js';
 import { IconExternal } from './icons.js';
 
 function CodeBadge({ code, title, onClick }: { code: string; title?: string; onClick?: (e: React.MouseEvent) => void }) {
   // ✓(无状态)不显示描边、绿色表示干净；悬浮显示状态含义
-  const tip = title ?? (code ? CODE_DESC[code] : '');
+  const tip = title ?? (code ? CODE_DESC[code]?.() : '');
   if (!code) {
     return <span className="code" style={{ background: 'transparent', boxShadow: 'none', color: 'var(--ok)' }}>✓</span>;
   }
@@ -20,7 +21,8 @@ function CodeBadge({ code, title, onClick }: { code: string; title?: string; onC
   return (
     <span
       className={`code ${code}${onClick ? ' clickable' : ''}`}
-      title={onClick ? `${tip || ''}\n（点击定位到最近的该状态文件）` : tip || undefined}
+      // （点击定位到最近的该状态文件）
+      title={onClick ? `${tip || ''}\n${t('ui.badge.clickLocate')}` : tip || undefined}
       onClick={onClick}
     >
       {code}
@@ -28,17 +30,27 @@ function CodeBadge({ code, title, onClick }: { code: string; title?: string; onC
   );
 }
 
-/** 目录徽标：同时显示 M/A/D 等全部操作标识；无操作一律显示 √（文件夹不显示 ?，未版本化由文件体现） */
-const DIR_CODE_TITLE: Record<string, string> = {
-  '?': '整个目录未版本化（未加入版本库）',
-  M: '有修改的文件',
-  A: '有添加的文件',
-  D: '有删除的文件',
-  C: '有冲突的文件',
-  R: '有重命名/替换的文件',
-  '!': '有缺失的文件（更新可恢复）',
-  U: '有更新的文件',
-  '~': '有类型变更的文件',
+/** 目录徽标：同时显示 M/A/D 等全部操作标识；无操作一律显示 √（文件夹不显示 ?，未版本化由文件体现）
+ *  ⚠ 值写成函数：模块顶层求值只会算一次，切语言不会跟着变（见 i18n/index.ts 头部说明） */
+const DIR_CODE_TITLE: Record<string, () => string> = {
+  // 整个目录未版本化（未加入版本库）
+  '?': () => t('ui.dirCode.unversioned'),
+  // 有修改的文件
+  M: () => t('ui.dirCode.modified'),
+  // 有添加的文件
+  A: () => t('ui.dirCode.added'),
+  // 有删除的文件
+  D: () => t('ui.dirCode.deleted'),
+  // 有冲突的文件
+  C: () => t('ui.dirCode.conflict'),
+  // 有重命名/替换的文件
+  R: () => t('ui.dirCode.replaced'),
+  // 有缺失的文件（更新可恢复）
+  '!': () => t('ui.dirCode.missing'),
+  // 有更新的文件
+  U: () => t('ui.dirCode.updated'),
+  // 有类型变更的文件
+  '~': () => t('ui.dirCode.typeChanged'),
 };
 function DirBadge({ codes, onBadgeClick }: { codes?: string[]; onBadgeClick?: (code: string, e: React.MouseEvent) => void }) {
   if (codes && codes.length > 0) {
@@ -48,7 +60,7 @@ function DirBadge({ codes, onBadgeClick }: { codes?: string[]; onBadgeClick?: (c
           <CodeBadge
             key={c}
             code={c}
-            title={DIR_CODE_TITLE[c]}
+            title={DIR_CODE_TITLE[c]?.()}
             onClick={onBadgeClick ? (e) => { e.stopPropagation(); onBadgeClick(c, e); } : undefined}
           />
         ))}
@@ -64,26 +76,33 @@ function DirBadge({ codes, onBadgeClick }: { codes?: string[]; onBadgeClick?: (c
  *  灰=只知道本地冲突、服务器状态没查到（未诊断/没连上）。 */
 export type TreeConflictState = 'missing' | 'present' | 'unknown';
 
-const TC_TITLE: Record<TreeConflictState, string> = {
-  missing: '树冲突：服务器上该路径已删除，直接提交会被拒绝（右键 → 接受服务器的删除）',
-  present: '树冲突：服务器上该路径仍在，本地与服务器对同一路径各执一词（先 update 或找管理员）',
-  unknown: '树冲突：本地与服务器对同一路径的操作冲突（未查到服务器状态）',
+const TC_TITLE: Record<TreeConflictState, () => string> = {
+  // 树冲突：服务器上该路径已删除，直接提交会被拒绝（右键 → 接受服务器的删除）
+  missing: () => t('ui.tc.missing'),
+  // 树冲突：服务器上该路径仍在，本地与服务器对同一路径各执一词（先 update 或找管理员）
+  present: () => t('ui.tc.present'),
+  // 树冲突：本地与服务器对同一路径的操作冲突（未查到服务器状态）
+  unknown: () => t('ui.tc.unknown'),
 };
 
 /** 目录**内部**有冲突（不是它自己）：文案要说清"里面"，别让人以为这个目录本身有问题 */
-const TC_TITLE_INNER: Record<TreeConflictState, string> = {
-  missing: '树冲突：目录内部有路径在服务器上已删除，提交会被拒绝 —— 点进去逐条处理',
-  present: '树冲突：目录内部有路径与服务器各执一词 —— 点进去逐条处理',
-  unknown: '树冲突：目录内部有树冲突（未查到服务器状态）',
+const TC_TITLE_INNER: Record<TreeConflictState, () => string> = {
+  // 树冲突：目录内部有路径在服务器上已删除，提交会被拒绝 —— 点进去逐条处理
+  missing: () => t('ui.tc.innerMissing'),
+  // 树冲突：目录内部有路径与服务器各执一词 —— 点进去逐条处理
+  present: () => t('ui.tc.innerPresent'),
+  // 树冲突：目录内部有树冲突（未查到服务器状态）
+  unknown: () => t('ui.tc.innerUnknown'),
 };
 
 function TreeConflictBadge({ state, inner, innerCount, onClick }: { state: TreeConflictState; inner?: boolean; innerCount?: number; onClick?: (e: React.MouseEvent) => void }) {
-  const base = inner ? TC_TITLE_INNER[state] : TC_TITLE[state];
+  const base = inner ? TC_TITLE_INNER[state]() : TC_TITLE[state]();
   // 内部冲突带条数（⚠ 2）：与"自身冲突"（只有 ⚠）一眼分开。
   // 两者颜色相同（都按服务器状态上色），只靠 tooltip 根本分不出——用户报过。
   // 而且两者的**下一步动作相反**：自身冲突在本目录右键接受删除；内部冲突要点进去、在子项上处理
   const num = inner && innerCount ? innerCount : null;
-  const title = `${num ? `内部有 ${num} 处。` : ''}${base}${onClick ? '\n（点击定位到该冲突项，连点轮转）' : ''}`;
+  // 内部有 {n} 处。 / （点击定位到该冲突项，连点轮转）
+  const title = `${num ? t('ui.tc.innerCount', { n: num }) : ''}${base}${onClick ? `\n${t('ui.tc.clickRotate')}` : ''}`;
   return (
     <span
       className={`code tc ${state}${num ? ' with-num' : ''}${onClick ? ' clickable' : ''}`}

@@ -1,6 +1,7 @@
 /** 前端公共工具：纯函数 + 通用 hook */
 import { useCallback, useState } from 'react';
 import type { Hunk } from '../../shared/types.js';
+import { t, type I18nKey } from '../../shared/i18n/index.js';
 
 // 二进制文件扩展名集合：单一事实源在 src/shared/types.ts（server 与前端共用，避免双份维护）
 import { BINARY_EXTS, IMAGE_EXTS } from '../../shared/types.js';
@@ -66,33 +67,34 @@ export function isOutOfDateError(msg: string): boolean {
   return OUT_OF_DATE_RE.test(msg);
 }
 
-/** 常见 svn/git 错误码 → 中文提示（含下一步动作建议）。映射不到时原样返回原文。 */
-const VCS_ERR_INFO: { re: RegExp; cn: string }[] = [
+/** 常见 svn/git 错误码 → 界面提示（含下一步动作建议）。映射不到时原样返回原文。
+ *  ⚠️ 存的是 i18n key（不是文案本身）：模块顶层若求值 t() 会冻结在首次语言。 */
+const VCS_ERR_INFO: { re: RegExp; key: I18nKey }[] = [
   // 环境缺失：svn/git 命令不可用（ENOENT）
-  { re: /ENOENT|spawn[^\n]*ENOENT|command not found/i, cn: '⚠ 未检测到 svn/git 命令，请按顶部横幅指引安装后重试' },
+  { re: /ENOENT|spawn[^\n]*ENOENT|command not found/i, key: 'common.vcsErr.noCommand' },
   // svn: 服务器有新版本
-  { re: OUT_OF_DATE_RE, cn: '⚠ 服务器已有新版本，请先「更新」获取最新内容后再提交' },
+  { re: OUT_OF_DATE_RE, key: 'common.vcsErr.outOfDate' },
   // svn: 工作副本被锁定
-  { re: /E155004|working copy locked/i, cn: '⚠ 工作副本被锁定，请执行「清理」后再操作' },
+  { re: /E155004|working copy locked/i, key: 'common.vcsErr.locked' },
   // svn: 文件存在冲突
-  { re: /E155015|remains in conflict|merge conflict|CONFLICT \(content/i, cn: '⚠ 文件存在冲突，请先解决冲突再提交' },
+  { re: /E155015|remains in conflict|merge conflict|CONFLICT \(content/i, key: 'common.vcsErr.conflict' },
   // svn: 无法连接服务器
-  { re: /E170013|E175002|cannot connect|Could not connect|Unable to connect/i, cn: '⚠ 连接服务器失败，请检查网络/账号密码后重试' },
+  { re: /E170013|E175002|cannot connect|Could not connect|Unable to connect/i, key: 'common.vcsErr.connect' },
   // svn: 认证失败
-  { re: /E170001|Authentication failed|authorization failed/i, cn: '⚠ 认证失败，请检查账号密码（设置后重新操作）' },
+  { re: /E170001|Authentication failed|authorization failed/i, key: 'common.vcsErr.auth' },
   // git: 工作区有未提交修改
-  { re: /Please commit your changes or stash them|your local changes would be overwritten/i, cn: '⚠ 本地有未提交的修改，请先提交或撤销后重试' },
+  { re: /Please commit your changes or stash them|your local changes would be overwritten/i, key: 'common.vcsErr.localChanges' },
   // git: 非快进（需先拉取）
-  { re: /Non-fast-forward|rejected.*fetch first/i, cn: '⚠ 远程仓库有新提交，请先「拉取/更新」后再推送' },
+  { re: /Non-fast-forward|rejected.*fetch first/i, key: 'common.vcsErr.nonFastForward' },
   // git: 无法访问远程仓库
-  { re: /fatal: unable to access|Could not resolve host|Failed to connect/i, cn: '⚠ 无法访问远程仓库，请检查网络连接与远程地址' },
+  { re: /fatal: unable to access|Could not resolve host|Failed to connect/i, key: 'common.vcsErr.remoteAccess' },
 ];
 
-/** 展示层统一错误翻译：原始英文/svn 错误码 → 中文解释 + 下一步动作，未命中原样返回 */
+/** 展示层统一错误翻译：原始英文/svn 错误码 → 提示 + 下一步动作，未命中原样返回 */
 export function translateVcsError(msg: string): string {
   if (!msg) return msg;
-  for (const { re, cn } of VCS_ERR_INFO) {
-    if (re.test(msg)) return cn;
+  for (const { re, key } of VCS_ERR_INFO) {
+    if (re.test(msg)) return t(key);
   }
   return msg;
 }
@@ -115,7 +117,8 @@ export function useCheckedSet(initial: string[]) {
 export function hunkSummaryLabel(h: Hunk): string {
   const add = h.lines.filter((l) => l.type === 'add').length;
   const del = h.lines.filter((l) => l.type === 'del').length;
-  return `第 ${h.oldStart} 行 · +${add} −${del}`;
+  // 第 {line} 行 · +{add} −{del}
+  return t('common.hunkSummary', { line: h.oldStart, add, del });
 }
 
 /** 按文本内容估算编辑弹窗尺寸：宽按最长行、高度按行数（都钳制在合理范围）。

@@ -3,13 +3,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { get, post, type LogEntry } from '../shared/api.js';
 import { isBinaryFile, autoSizeForText } from '../shared/utils.js';
 import { DiffRender } from '../ui/diff-render.js';
-import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
+import { ContextMenu } from '../ui/context-menu.js';
 import { ConfirmModal, InfoModal } from '../ui/prompt.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { ClickTip } from '../ui/ui.js';
 import { IconOk, IconErr } from '../ui/icons.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { renderMarkdown } from '../shared/markdown.js';
+import { t } from '../../shared/i18n/index.js';
 
 interface Props {
   path?: string;
@@ -49,8 +50,8 @@ export function HistoryView(props: Props) {
     }
     const target = logs?.length ?? 0;
     if (shownLen >= target) return;
-    const t = setTimeout(() => setShownLen((s) => Math.min(target, s + 10)), 150);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setShownLen((s) => Math.min(target, s + 10)), 150);
+    return () => clearTimeout(timer);
   }, [loadingMore, shownLen, logs]);
   /** 分批追加的每批条数 */
   const PAGE = 200;
@@ -100,7 +101,7 @@ export function HistoryView(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [logs]);
+  }, [logs, props.repoType]); // repoType 也要入依赖：svn↔git 切换时需重判是否该请求完整说明
   /** 还原到指定版本：待确认的提交（rev）；还原对象 = 当前查看路径（props.path） */
   const [restoreOf, setRestoreOf] = useState<{ rev: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -257,7 +258,8 @@ export function HistoryView(props: Props) {
       r = { ok: false, message: (e as Error).message };
     }
     setNoticeErr(!r.ok);
-    setNotice(r.ok ? r.message : `还原失败: ${r.message}`);
+    // 还原失败: {msg}
+    setNotice(r.ok ? r.message : t('hist.restoreFailed', { msg: r.message }));
     if (r.ok) {
       setReloadKey((k) => k + 1); // 工作区变化：重载历史（diff 状态刷新）
       props.onChanged?.();
@@ -293,13 +295,16 @@ export function HistoryView(props: Props) {
     try {
       // 二进制文件（Word/PDF/图片等）：文本对比无意义，直接提示
       if (path && isBinaryFile(path)) {
-        setDiffText('该文件为二进制文件（Word 文档 / PDF / 图片等），不支持文本对比');
+        // 该文件为二进制文件（Word 文档 / PDF / 图片等），不支持文本对比
+        setDiffText(t('hist.binaryNoDiff'));
         return;
       }
       const r = await get.show(rev, path);
-      setDiffText(r.output || r.error || '(无差异)');
+      // (无差异)
+      setDiffText(r.output || r.error || t('hist.noDiff'));
     } catch (e) {
-      setDiffText(`读取失败: ${(e as Error).message}`);
+      // 读取失败: {msg}
+      setDiffText(t('hist.readFailed', { msg: (e as Error).message }));
     } finally {
       setDiffLoading(false);
     }
@@ -309,7 +314,8 @@ export function HistoryView(props: Props) {
     <div style={{ display: 'flex', gap: 14, height: '100%', minHeight: 0 }}>
       <div style={{ width: `${leftRatio}%`, flex: '0 0 auto', display: 'flex', flexDirection: 'column', minWidth: 220 }}>
         <div className="row dim" style={{ marginBottom: 8, gap: 8 }}>
-          历史: {props.path ? <span>{props.path}</span> : '全部提交'}
+          {/* 历史:  / 全部提交 */}
+          {t('hist.title')}{props.path ? <span>{props.path}</span> : t('hist.allCommits')}
           {!filterQ && logs && (
             <span className="small" style={{ color: 'var(--dim)' }}>
               （{loadingMore ? shownLen : logs.length}{total > (loadingMore ? shownLen : logs.length) ? `/${total}` : ''}）
@@ -325,19 +331,23 @@ export function HistoryView(props: Props) {
                 const r = e.currentTarget.getBoundingClientRect();
                 setMoreMenu({ x: r.left, y: r.bottom + 4 });
               }}
-              title="追加更多提交到列表底部（加载期间可继续浏览）"
+              // 追加更多提交到列表底部（加载期间可继续浏览）
+              title={t('hist.moreTip')}
             >
-              {loadingMore ? '⏳ 加载中…' : '更多'}
+              {/* ⏳ 加载中… / 更多 */}
+              {loadingMore ? t('hist.loadingMore') : t('hist.more')}
             </button>
           )}
           {logs && exhausted && total === 0 && logs.length >= PAGE && (
-            <span className="dim small">已全部加载</span>
+            // 已全部加载
+            <span className="dim small">{t('hist.allLoaded')}</span>
           )}
           <span className="grow" />
           {/* 模糊过滤：按消息/作者/版本号实时过滤提交列表 */}
           <input
             type="text"
-            placeholder="🔍 过滤提交（消息/作者/版本号）…"
+            // 🔍 过滤提交（消息/作者/版本号）…
+            placeholder={t('hist.filterPlaceholder')}
             value={filterQ}
             onChange={(e) => setFilterQ(e.target.value)}
             style={{ width: 220, fontSize: 12 }}
@@ -350,8 +360,10 @@ export function HistoryView(props: Props) {
             <span style={{ wordBreak: 'break-all' }}>{notice}</span>
           </div>
         )}
-        {!logs && !error && <div className="loading">⏳ 读取提交记录…</div>}
-        {logs && logs.length === 0 && !error && <div className="empty">暂无提交记录</div>}
+        {/* ⏳ 读取提交记录… */}
+        {!logs && !error && <div className="loading">{t('hist.loadingLogs')}</div>}
+        {/* 暂无提交记录 */}
+        {logs && logs.length === 0 && !error && <div className="empty">{t('hist.emptyLogs')}</div>}
         {logs && logs.length > 0 && (
           <div
             ref={listRef}
@@ -359,7 +371,8 @@ export function HistoryView(props: Props) {
             style={{ overflow: 'auto', flex: 1, gap: 0 }}
             onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
           >
-            {visibleLogs.length === 0 && <div className="empty">没有匹配的提交</div>}
+            {/* 没有匹配的提交 */}
+            {visibleLogs.length === 0 && <div className="empty">{t('hist.noMatch')}</div>}
             {/* 虚拟滚动：track 撑出总高度（flexShrink:0 防被容器压缩），只渲染可视区附近的 40 行 */}
             <div style={{ height: visibleLogs.length * ROW_H, position: 'relative', flexShrink: 0 }}>
               {(() => {
@@ -404,7 +417,8 @@ export function HistoryView(props: Props) {
                       <span className="msg">{l.msg}</span>
                       <span className="stat">{l.changed.length}</span>
                       {isUnpushed && (
-                        <span className="unpushed" title={`未推送：本地领先远程 ${unpushed.length} 个提交`}>
+                        // 未推送：本地领先远程 {n} 个提交
+                        <span className="unpushed" title={t('hist.unpushedTip', { n: unpushed.length })}>
                           <span className="unpushed-dot" />
                           {opable && <span className="unpushed-n">{unpushed.length}</span>}
                         </span>
@@ -417,16 +431,19 @@ export function HistoryView(props: Props) {
           </div>
         )}
       </div>
-      <div className="sb-resizer" onMouseDown={startDrag} title="拖动调整左右栏宽度" />
+      {/* 拖动调整左右栏宽度 */}
+      <div className="sb-resizer" onMouseDown={startDrag} title={t('hist.dragResizer')} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-        {!sel && <div className="empty">选择提交查看详情</div>}
+        {/* 选择提交查看详情 */}
+        {!sel && <div className="empty">{t('hist.selectHint')}</div>}
         {sel && !diffOf && (
           <>
             {/* 返回按钮行：与左栏标题栏同一水平线（marginBottom/高度一致，视觉同行）。
                 按钮 lineHeight 固定 16px：中文字体 normal 行高约 20px 会让按钮实高 28px，
                 超出本行 24px 上限→上溢部分被面板 overflow:hidden 裁掉上边框 */}
             <div className="row" style={{ marginBottom: 8, height: 24, alignItems: 'center', flexShrink: 0 }}>
-              <button className="mini" style={{ lineHeight: '16px' }} onClick={props.onBack}>← 返回</button>
+              {/* ← 返回 */}
+              <button className="mini" style={{ lineHeight: '16px' }} onClick={props.onBack}>{t('hist.back')}</button>
               <span className="grow" />
             </div>
             <div className="row" style={{ marginBottom: 10, flexShrink: 0 }}>
@@ -452,7 +469,8 @@ export function HistoryView(props: Props) {
               <div
                 className="md-render commit-msg-md dim"
                 onClick={() => detailMsgLong && !detailMsgOpen && setMsgExpanded(true)}
-                title={detailMsgLong && !detailMsgOpen ? '点击展开全文' : undefined}
+                // 点击展开全文
+                title={detailMsgLong && !detailMsgOpen ? t('hist.clickExpand') : undefined}
                 style={{
                   // 折叠态只露一行：高度按 .md-render 的行高（1.75）算，首段的 margin 由 CSS 去掉
                   maxHeight: detailMsgOpen ? undefined : '1.75em',
@@ -473,11 +491,13 @@ export function HistoryView(props: Props) {
                   style={{ marginTop: 4, flexShrink: 0, alignSelf: 'flex-start' }}
                   onClick={() => setMsgExpanded((v) => !v)}
                 >
-                  {detailMsgOpen ? '收起 ▲' : `展开全文（共 ${detailMsgLines} 行）▼`}
+                  {/* 收起 ▲ / 展开全文（共 {n} 行）▼ */}
+                  {detailMsgOpen ? t('hist.collapse') : t('hist.expandLines', { n: detailMsgLines })}
                 </button>
               )}
             </div>
-            <div className="small dim" style={{ marginBottom: 6, flexShrink: 0 }}>变更文件（点击查看 diff）：</div>
+            {/* 变更文件（点击查看 diff）： */}
+            <div className="small dim" style={{ marginBottom: 6, flexShrink: 0 }}>{t('hist.changedFiles')}</div>
             {/* flex: 0 1 auto（不是 1）—— 列表**不撑满**剩余空间：文件少时高度=内容高度，
                 「查看完整 diff」就跟在列表下面；文件多时它才收缩出滚动条，那行仍钉在面板底部。
                 配套：本节其它兄弟都加 flexShrink:0，让收缩只发生在列表身上 */}
@@ -499,7 +519,8 @@ export function HistoryView(props: Props) {
                   <span className="mono">{c.path}</span>
                 </div>
               ))}
-              {sel.changed.length === 0 && <div className="dim">无文件变更</div>}
+              {/* 无文件变更 */}
+              {sel.changed.length === 0 && <div className="dim">{t('hist.noChanged')}</div>}
             </div>
             {/* 「查看完整 diff」放在滚动容器**外面**并钉在底部：它曾是列表最后一行，
                 变更文件一多就跟着滚走、滚到一半时点不到（用户截图指出） */}
@@ -509,7 +530,8 @@ export function HistoryView(props: Props) {
               onClick={() => void showDiff(sel.rev, undefined)}
             >
               <span className="act" style={{ color: 'var(--accent)' }}>▸</span>
-              <span style={{ color: 'var(--accent)' }}>查看本次提交完整 diff</span>
+              {/* 查看本次提交完整 diff */}
+              <span style={{ color: 'var(--accent)' }}>{t('hist.viewFullDiff')}</span>
             </div>
           </>
         )}
@@ -517,12 +539,15 @@ export function HistoryView(props: Props) {
           <>
             <div className="row" style={{ marginBottom: 8 }}>
               <span className="dim">
-                差异: {diffOf.rev}{diffOf.path ? ` — ${diffOf.path}` : ''}
+                {/* 差异: {rev} — {path} / 差异: {rev} */}
+                {diffOf.path ? t('hist.diffOfPath', { rev: diffOf.rev, path: diffOf.path }) : t('hist.diffOf', { rev: diffOf.rev })}
               </span>
               <span className="grow" />
-              <button className="mini" style={{ lineHeight: '16px' }} onClick={() => setDiffOf(null)}>← 返回</button>
+              {/* ← 返回 */}
+              <button className="mini" style={{ lineHeight: '16px' }} onClick={() => setDiffOf(null)}>{t('hist.back')}</button>
             </div>
-            {diffLoading ? <div className="loading">⏳ 计算差异…</div> : <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DiffRender text={diffText} /></div>}
+            {/* ⏳ 计算差异… */}
+            {diffLoading ? <div className="loading">{t('hist.loadingDiff')}</div> : <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DiffRender text={diffText} /></div>}
           </>
         )}
       </div>
@@ -534,9 +559,12 @@ export function HistoryView(props: Props) {
           y={moreMenu.y}
           mask
           items={[
-            { icon: '⏬', label: '追加到 600 条', action: () => { setMoreMenu(null); void loadMore(600); } },
-            { icon: '⏬', label: '追加到 1200 条', action: () => { setMoreMenu(null); void loadMore(1200); } },
-            { icon: '⏬', label: total > 0 ? `加载全部提交（共 ${total} 条）` : '加载全部提交', action: () => { setMoreMenu(null); void loadMore(0); } },
+            // 追加到 {n} 条
+            { icon: '⏬', label: t('hist.appendTo', { n: 600 }), action: () => { setMoreMenu(null); void loadMore(600); } },
+            // 追加到 {n} 条
+            { icon: '⏬', label: t('hist.appendTo', { n: 1200 }), action: () => { setMoreMenu(null); void loadMore(1200); } },
+            // 加载全部提交（共 {n} 条） / 加载全部提交
+            { icon: '⏬', label: total > 0 ? t('hist.loadAllCount', { n: total }) : t('hist.loadAll'), action: () => { setMoreMenu(null); void loadMore(0); } },
           ]}
           onClose={() => setMoreMenu(null)}
         />
@@ -551,8 +579,10 @@ export function HistoryView(props: Props) {
               ? [
                   {
                     icon: '↩',
-                    label: '还原此版本',
-                    title: `还原 ${props.path} 到提交 ${logs[menu.index]!.rev.slice(0, 7)} 的版本内容（覆盖当前工作区，还原后为一次本地修改）`,
+                    // 还原此版本
+                    label: t('hist.restoreThis'),
+                    // 还原 {path} 到提交 {rev} 的版本内容（覆盖当前工作区，还原后为一次本地修改）
+                    title: t('hist.restoreItemTip', { path: props.path, rev: logs[menu.index]!.rev.slice(0, 7) }),
                     cmd: cmdOfRepo(props.repoType ?? 'git', 'restore_rev', { rev: logs[menu.index]!.rev, path: props.path }),
                     action: () => setRestoreOf({ rev: logs[menu.index]!.rev }),
                   },
@@ -562,7 +592,8 @@ export function HistoryView(props: Props) {
               ? [
                   {
                     icon: '✏️',
-                    label: '修改注释',
+                    // 修改注释
+                    label: t('hist.amend'),
                     cmd: menu.index === headIdx ? cmdOfRepo('git', 'amend', { msg: '…' }) : cmdOfRepo('git', 'reword'),
                     action: () => {
                       // 所有未推送提交都可改注释：HEAD 走 amend，其余走 reword（重写注释、代码不变）
@@ -580,12 +611,16 @@ export function HistoryView(props: Props) {
                   { sep: true },
                   {
                     icon: '↩',
-                    label: '撤销提交',
+                    // 撤销提交
+                    label: t('hist.reset'),
                     danger: true,
                     cmd: cmdOfRepo('git', 'reset_soft'),
                     action: () => {
                       if (menu.index === headIdx) setResetCfm(true);
-                      else setInfoTip(`仅支持撤销最近一次提交。此项之前还有 ${headIdx - menu.index} 个更新提交，需先逐一撤销前面的提交后，此项才可操作`);
+                      // 只能撤销「最新的那个未推送提交」；点更老的则提示上面还压着几个。
+                      // logs 是**新→旧**排序，故 index 越大越老：数量 = menu.index - headIdx（写反会得到负数）
+                      // 仅支持撤销最近一次提交。此项之前还有 {n} 个更新提交，需先逐一撤销前面的提交后，此项才可操作
+                      else setInfoTip(t('hist.resetBlocked', { n: menu.index - headIdx }));
                     },
                   },
                 ]
@@ -603,7 +638,8 @@ export function HistoryView(props: Props) {
           items={[
             {
               icon: '🔍',
-              label: '查看此文件差异',
+              // 查看此文件差异
+              label: t('hist.viewFileDiff'),
               cmd: cmdOfRepo('git', 'diff_versions', { a: `${sel.rev}^`, b: sel.rev, path: fileMenu.path }),
               action: () => {
                 const p = fileMenu.path;
@@ -616,15 +652,18 @@ export function HistoryView(props: Props) {
                   { sep: true },
                   {
                     icon: '↩',
-                    label: '撤销提交',
+                    // 撤销提交
+                    label: t('hist.reset'),
                     danger: true,
                     cmd: cmdOfRepo('git', 'reset_soft'),
-                    title: '撤销这次提交，改动保留在工作区（可重新勾选提交）；仅未推送的提交可撤销',
+                    // 撤销这次提交，改动保留在工作区（可重新勾选提交）；仅未推送的提交可撤销
+                    title: t('hist.resetTip'),
                     action: () => {
                       const rev = sel.rev;
                       setFileMenu(null);
                       if (rev === logs?.[headIdx]?.rev) setResetCfm(true);
-                      else setInfoTip('仅支持撤销最近一次提交（HEAD）。这次提交之前还有更新的提交，需先逐一撤销它们。');
+                      // 仅支持撤销最近一次提交（HEAD）。这次提交之前还有更新的提交，需先逐一撤销它们。
+                      else setInfoTip(t('hist.resetBlockedHead'));
                     },
                   },
                 ]
@@ -638,22 +677,27 @@ export function HistoryView(props: Props) {
         <div className="modal-mask">
           {/* 尺寸按注释长度自适应：长说明不再被固定 480px 宽 + 8 行高挤到只能滚动看 */}
           <ResizableModal width={autoSizeForText(amendMsg).width} minWidth={420}>
-            <h3>✏️ 修改提交注释</h3>
+            {/* ✏️ 修改提交注释 */}
+            <h3>{t('hist.amendTitle')}</h3>
             <div className="body">
               <div className="dim small" style={{ marginBottom: 6 }}>
-                提交 {amendOf.rev} · {amendOf.date.slice(0, 16)} · {amendOf.author}
+                {/* 提交 {rev} · {date} · {author} */}
+                {t('hist.amendMeta', { rev: amendOf.rev, date: amendOf.date.slice(0, 16), author: amendOf.author })}
               </div>
               {/* 编写 / 预览 切换（GitHub 评论框同款）：预览用与历史详情完全相同的渲染（含 breaks），
                   所见即所得 —— 不然得提交完去历史里才知道渲染成什么样 */}
               <div className="row" style={{ gap: 6, marginBottom: 6, alignItems: 'center' }}>
                 <button className={`mini ${amendPreview ? '' : 'primary'}`} onClick={() => setAmendPreview(false)}>
-                  编写
+                  {/* 编写 */}
+                  {t('common.write')}
                 </button>
                 <button className={`mini ${amendPreview ? 'primary' : ''}`} onClick={() => setAmendPreview(true)}>
-                  预览
+                  {/* 预览 */}
+                  {t('common.preview')}
                 </button>
                 <span className="dim small" style={{ marginLeft: 'auto' }}>
-                  {amendPreview ? '渲染效果（与历史里显示的一致）' : '支持 Markdown：**加粗**、- 列表、`代码`…'}
+                  {/* 渲染效果（与历史里显示的一致） / 支持 Markdown：**加粗**、- 列表、`代码`… */}
+                  {amendPreview ? t('hist.mdPreview') : t('hist.mdHint')}
                 </span>
               </div>
               {amendPreview ? (
@@ -669,7 +713,8 @@ export function HistoryView(props: Props) {
                 <textarea
                   className="mono"
                   rows={autoSizeForText(amendMsg).rows}
-                  title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
+                  // 完整提交说明（第一行为标题，空行后为正文），可直接编辑
+                  title={t('hist.amendInputTip')}
                   style={{ width: '100%', flex: 1, minHeight: 120 }}
                   value={amendMsg}
                   onChange={(e) => setAmendMsg(e.target.value)}
@@ -684,14 +729,16 @@ export function HistoryView(props: Props) {
             </div>
             <div className="foot">
               {/* 取消时一并清掉错误提示：否则会让用户以为操作失败了却不知道原因 */}
-              <button onClick={() => { setAmendOf(null); setNotice(''); setNoticeErr(false); }} disabled={busy}>取消</button>
+              {/* 取消 */}
+              <button onClick={() => { setAmendOf(null); setNotice(''); setNoticeErr(false); }} disabled={busy}>{t('common.cancel')}</button>
               <button
                 className="primary"
                 disabled={busy || !amendMsg.trim()}
                 onClick={(e) => void doAmend(e.clientX, e.clientY)}
                 title={`${cmdOfRepo('git', 'amend', { msg: amendMsg.trim() || '…' }) ?? ''}`}
               >
-                确认修改
+                {/* 确认修改 */}
+                {t('hist.confirmAmend')}
               </button>
             </div>
           </ResizableModal>
@@ -700,14 +747,18 @@ export function HistoryView(props: Props) {
       {/* 撤销提交二次确认 */}
       {resetCfm && logs && headIdx >= 0 && (
         <ConfirmModal
-          title="↩ 撤销最近一次提交"
+          // ↩ 撤销最近一次提交
+          title={t('hist.resetTitle')}
           message={
             <>
-              将撤销最近一次提交 <span className="mono">{logs[headIdx]!.rev}</span>。这次提交的改动会回到
-              <b>暂存区</b>（提交之后新改的内容不受影响），可以重新勾选文件再次提交。确认撤销?
+              {/* 将撤销最近一次提交  / 。这次提交的改动会回到 */}
+              {t('hist.resetMsgA')}<span className="mono">{logs[headIdx]!.rev}</span>{t('hist.resetMsgB')}
+              {/* 暂存区 / （提交之后新改的内容不受影响），可以重新勾选文件再次提交。确认撤销? */}
+              <b>{t('hist.resetMsgStaging')}</b>{t('hist.resetMsgC')}
             </>
           }
-          confirmLabel="撤销"
+          // 撤销
+          confirmLabel={t('hist.resetBtn')}
           danger
           onConfirm={() => void doReset()}
           onCancel={() => setResetCfm(false)}
@@ -715,14 +766,16 @@ export function HistoryView(props: Props) {
       )}
       {restoreOf && props.path && (
         <ConfirmModal
-          title="↩ 还原到指定版本"
+          // ↩ 还原到指定版本
+          title={t('hist.restoreTitle')}
           message={
             <>
-              将把 <b>{props.path}</b> 还原到提交 <span className="mono">{restoreOf.rev.slice(0, 7)}</span> 的版本内容：
-              覆盖当前工作区（还原后为一次本地修改，可再次提交）。确认？
+              {/* 将把  /  还原到提交  /  的版本内容：覆盖当前工作区（还原后为一次本地修改，可再次提交）。确认？ */}
+              {t('hist.restoreMsgA')}<b>{props.path}</b>{t('hist.restoreMsgB')}<span className="mono">{restoreOf.rev.slice(0, 7)}</span>{t('hist.restoreMsgC')}
             </>
           }
-          confirmLabel="还原此版本"
+          // 还原此版本
+          confirmLabel={t('hist.restoreThis')}
           onConfirm={() => void doRestore(restoreOf.rev)}
           onCancel={() => setRestoreOf(null)}
           confirmCmd={cmdOfRepo(props.repoType ?? 'git', 'restore_rev', { rev: restoreOf.rev, path: props.path })}
@@ -730,7 +783,8 @@ export function HistoryView(props: Props) {
       )}
       {/* 非 HEAD 未推送提交操作说明弹窗 */}
       {infoTip && (
-        <InfoModal title="⚠ 无法操作此项" message={infoTip} onClose={() => setInfoTip('')} />
+        // ⚠ 无法操作此项
+        <InfoModal title={t('hist.cantOperate')} message={infoTip} onClose={() => setInfoTip('')} />
       )}
       {/* 修改注释成功提示：跟随鼠标点击处 */}
       {clickTip && <ClickTip x={clickTip.x} y={clickTip.y} msg={clickTip.msg} onHide={() => setClickTip(null)} />}

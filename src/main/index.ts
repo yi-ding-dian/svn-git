@@ -7,6 +7,8 @@ import { startServer, setPickDirHandler } from '../server/index.js';
 import { detectRepo } from '../vcs/detect.js';
 import { platform } from '../platform/index.js';
 import { dedupeHistory } from '../server/routes/recent.js';
+import { loadConfig } from '../config.js';
+import { t, setLang } from '../shared/i18n/index.js';
 
 const require = createRequire(import.meta.url);
 
@@ -33,7 +35,8 @@ async function openUI(url: string) {
       height: 820,
       minWidth: 960,
       minHeight: 600,
-      title: 'svn-git文件版本管理',
+      // svn-git文件版本管理
+      title: t('main.title'),
       autoHideMenuBar: true,
       // import.meta.dirname = 编译产物 main/index.js 所在目录（dist/main/）——
       // icon 和 preload 都在它的上一级（dist/client/、dist/preload.cjs），所以要先 '..'
@@ -60,10 +63,16 @@ process.on('SIGHUP', () => {
 });
 
 async function boot() {
+  // 语言：从 ~/.config/svngit/config.json 读，早于一切输出/窗口创建。
+  // 主进程与 server / vcs 共享同一个 i18n 模块实例，故这一句就把三者的消息语言都定了。
+  // （渲染进程是另一个实例，由前端 localStorage + POST /api/lang 自行对齐，见 client/shared/use-lang.ts）
+  setLang(loadConfig().lang);
+
   // 启动时清理最近项目里的重复记录（同一目录的别名路径，如 bind mount 的 /data/home/x 与 /home/x）。
   // 放在最前面：下面"启动目录不是仓库时打开常用项目"要读这份清单
   const dup = dedupeHistory();
-  if (dup > 0) console.log(`  已清理最近项目中的 ${dup} 条重复记录`);
+  //   已清理最近项目中的 {n} 条重复记录
+  if (dup > 0) console.log(t('main.dedupe', { n: dup }));
   // 预检测仓库（仅提示用，界面内可重新选择）
   let repo = detectRepo(START_DIR);
   // 启动目录不是仓库时，优先打开最近使用的常用项目（星号标记）；显式指定目录则尊重指定
@@ -83,7 +92,8 @@ async function boot() {
       /* 历史文件损坏时忽略，走默认启动 */
     }
   }
-  const repoHint = repo ? `（检测到 ${repo.type.toUpperCase()} 仓库: ${repo.root}）` : '';
+  // （检测到 {type} 仓库: {root}）
+  const repoHint = repo ? t('main.repoHint', { type: repo.type.toUpperCase(), root: repo.root }) : '';
 
   // Electron 环境：注入系统目录选择对话框（供网页"选择目录"使用）
   // 注意：必须静态导入 setPickDirHandler（ESM 动态 import 在 asar 打包下可能失败导致注入不生效）
@@ -94,27 +104,28 @@ async function boot() {
       };
       setPickDirHandler(async () => {
         const r = await dialog.showOpenDialog({
-          title: '选择 SVN/Git 项目目录',
+          // 选择 SVN/Git 项目目录
+          title: t('main.pickDir'), // 取实时值：用户在界面切过语言后，这里要跟着变
           properties: ['openDirectory'],
         });
         return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
       });
     } catch (e) {
       /* 纯 node 运行时无对话框 */
-      console.error('[svngit] 注入系统目录选择失败（浏览器模式将无法选择目录）:', e);
+      // [svngit] 注入系统目录选择失败（浏览器模式将无法选择目录）:
+      console.error(t('main.pickDirFail'), e);
     }
   }
 
   const handle = await startServer();
   console.log('');
-  console.log('  ⬢ svn-git文件版本管理');
-  console.log(`  服务已启动: ${handle.url}`);
-  console.log(`  启动目录: ${START_DIR} ${repoHint}`);
-  if (process.versions.electron && !BROWSER) {
-    console.log('  正在打开应用窗口…（无需浏览器，关闭窗口即退出）');
-  } else {
-    console.log('  正在打开浏览器…（关闭浏览器标签后服务仍在后台，停止请用页面右上角「退出」）');
-  }
+  // svn-git文件版本管理
+  console.log(`  ⬢ ${t('main.title')}`);
+  //   服务已启动: {url}
+  console.log(t('main.serverStarted', { url: handle.url }));
+  //   启动目录: {dir} {hint}
+  console.log(t('main.startDir', { dir: START_DIR, hint: repoHint }));
+  console.log(t(process.versions.electron && !BROWSER ? 'main.openingWindow' : 'main.openingBrowser'));
   console.log('');
 
   await openUI(handle.url);

@@ -559,6 +559,17 @@ export function IconFont({ size = 16 }: IconProps) {
   );
 }
 
+/** 地球（语言切换）：圆 + 经线 + 纬线，纯线条与其它图标同一套描边风格 */
+export function IconGlobe({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3c2.4 2.7 3.6 5.7 3.6 9s-1.2 6.3-3.6 9c-2.4-2.7-3.6-5.7-3.6-9S9.6 5.7 12 3z" />
+    </svg>
+  );
+}
+
 /** 提示图标：线条勾（操作成功；颜色取 currentColor（=var(--ok)），无底填充随文字色，纯 SVG 跨平台一致） */
 export function IconOk({ size = 14 }: IconProps) {
   return (

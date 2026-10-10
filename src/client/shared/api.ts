@@ -1,8 +1,10 @@
 /** 后端 API 封装 */
 
-// 状态码中文说明：单一事实源在 src/shared/types.ts（含 ' ' 无变化 键），此处 re-export 保持 web 侧既有导入路径不变
+// 状态码说明（i18n，值取当前语言）：单一事实源在 src/shared/types.ts（含 ' ' 无变化 键），此处 re-export 保持 web 侧既有导入路径不变
 export { CODE_DESC } from '../../shared/types.js';
 import type { ParsedDiff } from '../../shared/types.js';
+import { t } from '../../shared/i18n/index.js';
+import type { Lang } from '../../shared/i18n/index.js';
 export type { ParsedDiff };
 
 export interface RepoCheck {
@@ -141,9 +143,12 @@ export interface WcConflictItem {
 
 export class ApiError extends Error {
   authError: boolean;
-  constructor(msg: string, authError = false) {
+  /** 用户主动中止（AbortError）。调用方判断「取消 vs 真失败」用这个标志，**不要比较 message 文本**（随界面语言变）。 */
+  cancelled: boolean;
+  constructor(msg: string, authError = false, cancelled = false) {
     super(msg);
     this.authError = authError;
+    this.cancelled = cancelled;
   }
 }
 
@@ -152,12 +157,14 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(path, init);
   } catch (e) {
-    // 用户主动取消（AbortError）
-    if ((e as Error).name === 'AbortError') throw new ApiError('已取消', false);
+    // 已取消
+    if ((e as Error).name === 'AbortError') throw new ApiError(t('common.cancelled'), false, true);
     // 网络层失败：服务进程可能已退出
-    throw new ApiError('无法连接服务（服务可能已停止）。请重新启动应用，或检查启动它的终端窗口', false);
+    // 无法连接服务（服务可能已停止）。请重新启动应用，或检查启动它的终端窗口
+    throw new ApiError(t('common.serviceDown'), false);
   }
-  let data: any = null;
+  // 后端约定的错误体形状；成功时就是 T 的 JSON（下面 `as T` 交还调用方）
+  let data: { error?: string; authError?: boolean } | null = null;
   try {
     data = await res.json();
   } catch {
@@ -217,6 +224,8 @@ export const get = {
   wcConflicts: (dir: string) =>
     api<{ conflicts: WcConflictItem[]; unchecked?: boolean }>(`/api/wc-conflicts?dir=${encodeURIComponent(dir)}`),
   config: () => api<{ username: string; trustServerCert: boolean }>('/api/config'),
+  /** 界面语言（主进程现值）：本地无偏好时用它对齐 */
+  lang: () => api<{ lang: string }>('/api/lang'),
   history: () => api<{ items: HistoryItem[] }>('/api/history'),
   search: (query: string, dir = '') =>
     api<{ paths: string[] }>(`/api/search?query=${encodeURIComponent(query)}&dir=${encodeURIComponent(dir)}`),
@@ -392,6 +401,8 @@ export const post = {
     api<VcsResult>('/api/ignore', json({ path, pattern, target })),
   unignore: (path: string) => api<VcsResult>('/api/unignore', json({ path })),
   config: (cfg: { username: string; password: string; trustServerCert: boolean }) => api<{ ok: boolean }>('/api/config', json(cfg)),
+  /** 切换界面语言：主进程随即 setLang，server / vcs / main 的消息语言一并跟上 */
+  lang: (lang: Lang) => api<{ ok: boolean }>('/api/lang', json({ lang })),
   historyRemove: (path: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remove', json({ path })),
   historyFav: (path: string, fav: boolean) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-fav', json({ path, fav })),
   /** 设置/清除备注（侧边栏右键菜单）：传空串 = 清除 */
@@ -452,7 +463,7 @@ function json(body: unknown, signal?: AbortSignal): RequestInit {
   return { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal };
 }
 
-/** 状态码中文说明：见文件头 re-export（src/shared/types.ts 单一事实源） */
+/** 状态码说明：见文件头 re-export（src/shared/types.ts 单一事实源，值写成函数以跟随语言） */
 
 /** 状态码优先级（排序 + 网格目录徽标取前 2 个 + 悬浮卡状态顺序，共用这一张表）。
  *  C 冲突最急；? 未版本化也是"要处理的"（加进版本库或忽略），排在干净文件之前；

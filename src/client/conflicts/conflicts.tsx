@@ -4,9 +4,14 @@ import { get, post } from '../shared/api.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { highlightLine, langOf } from '../shared/highlight.js';
 import { parseUnifiedDiff, lineMarksOf, type DiffLine } from '../../shared/diff-parse.js';
+import { t, type I18nKey } from '../../shared/i18n/index.js';
 import { IconFolder, IconOk } from '../ui/icons.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { ResizableModal } from '../shell/modal-shell.js';
+
+/** 冲突块比较的哨兵：`theirs === MAX` 表示对方没有该行（纯本地新增）。
+ *  放模块级而非组件内 —— 组件内每次渲染都会重建，进依赖数组无意义、不进又报 exhaustive-deps。 */
+const MAX = Number.MAX_SAFE_INTEGER;
 
 interface Conflict {
   path: string;
@@ -22,6 +27,20 @@ interface Conflict {
 }
 
 type Tab = 'base' | 'ours' | 'theirs';
+
+/** 三栏标签：模块级只存 key，用时才 t() —— 顶层求值文案切语言不会跟着变（见 i18n/index.ts 头部说明） */
+const TABS: [Tab, I18nKey][] = [
+  ['base', 'conflict.tab.base'],
+  ['ours', 'conflict.tab.ours'],
+  ['theirs', 'conflict.tab.theirs'],
+];
+
+/** 解决方式二次确认消息：模式 → key（同上，只存 key） */
+const CONFIRM_MSG = {
+  ours: 'conflict.confirm.ours',
+  theirs: 'conflict.confirm.theirs',
+  manual: 'conflict.confirm.manual',
+} as const;
 
 export function ConflictResolverModal(props: { onClose: () => void; onResolved: () => void }) {
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
@@ -78,7 +97,8 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
     post
       .textDiff(cur.ours, cur.theirs)
       .then((r) => {
-        if (!cancelled) setVsDiff(r.diff || '（本地与对方内容一致）');
+        // （本地与对方内容一致）
+        if (!cancelled) setVsDiff(r.diff || t('conflict.identical'));
       })
       .catch(() => {});
     return () => {
@@ -101,7 +121,7 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
       else if (l.type === 'del') rows.push({ no: -l.block, text: '', change: true, block: l.block, line: l, ph: true });
     }
     return rows;
-  }, [cur, vsLines]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cur, vsLines]);
   const oursRows = useMemo<VsRow[]>(() => {
     if (!cur) return [];
     // diff 的 + 行 = 对方有、本地无 → 本地栏插入占位；- 行 = 本地内容
@@ -112,7 +132,7 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
       else if (l.type === 'add') rows.push({ no: -l.block, text: '', change: true, block: l.block, line: l, ph: true });
     }
     return rows;
-  }, [cur, vsLines]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cur, vsLines]);
 
   // 放大/还原（对比区撑满）
   const [expanded, setExpanded] = useState(false);
@@ -120,7 +140,6 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
   // 双栏滚动容器 + 冲突块标记
   const theirsPane = useRef<HTMLDivElement>(null);
   const oursPane = useRef<HTMLDivElement>(null);
-  const MAX = Number.MAX_SAFE_INTEGER;
   const vsBlocks = useMemo(() => {
     const m = new Map<number, { theirs: number; ours: number }>();
     for (const l of vsLines) {
@@ -132,7 +151,7 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
     return [...m.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([id, v]) => ({ id, ...v }));
-  }, [vsLines]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [vsLines]);
   const vsMarkers = useMemo(() => {
     const total = Math.max(theirsRows.length, oursRows.length, 1);
     return vsBlocks.map((b) => {
@@ -203,7 +222,8 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
         setConflicts(res.conflicts);
         setSel((s) => Math.min(s, Math.max(0, res.conflicts.length - 1)));
         if (res.conflicts.length === 0) {
-          setMsg('🎉 所有冲突已解决');
+          // 🎉 所有冲突已解决
+          setMsg(t('conflict.allResolved'));
           props.onResolved();
         }
       }
@@ -222,7 +242,8 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
     try {
       const r = await post.branch('merge-abort', '');
       if (!r.ok) {
-        setMsg(r.message || '中止合并失败');
+        // 中止合并失败
+        setMsg(r.message || t('conflict.abortFailed'));
         setMsgErr(true);
         return;
       }
@@ -245,13 +266,16 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
         onToggleMax={() => setExpanded(false)}
       >
         <div className="row" style={{ alignItems: 'center' }}>
-          <h3 style={{ flex: 1, margin: 0 }}>⚠ 解决冲突（{conflicts.length}）</h3>
+          {/* ⚠ 解决冲突（{n}） */}
+          <h3 style={{ flex: 1, margin: 0 }}>{t('conflict.title', { n: conflicts.length })}</h3>
         </div>
         <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: expanded ? 'calc(96vh - 90px)' : 460 }}>
           {/* 上：冲突文件列表（横排铺满窗口宽；最多显示 3 个，超出滚动，少于自动收缩高度） */}
           <div className="vcs-list" style={{ width: '100%', flexShrink: 0, maxHeight: 106 }}>
-            {loading && <div className="dim" style={{ padding: 10 }}>加载中…</div>}
-            {!loading && conflicts.length === 0 && <div className="dim" style={{ padding: 10 }}>暂无冲突</div>}
+            {/* 加载中… */}
+            {loading && <div className="dim" style={{ padding: 10 }}>{t('conflict.loading')}</div>}
+            {/* 暂无冲突 */}
+            {!loading && conflicts.length === 0 && <div className="dim" style={{ padding: 10 }}>{t('conflict.none')}</div>}
             {conflicts.map((c, i) => (
               <div
                 key={c.path}
@@ -275,15 +299,9 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                 </span>
                 {!expanded && (
                   <span className="row" style={{ gap: 4 }}>
-                    {(
-                      [
-                        ['base', '基础'],
-                        ['ours', '本地'],
-                        ['theirs', '对方'],
-                      ] as [Tab, string][]
-                    ).map(([k, label]) => (
+                    {TABS.map(([k, labelKey]) => (
                       <button key={k} className={`mini ${tab === k ? 'primary' : ''}`} onClick={() => setTab(k)}>
-                        {label}
+                        {t(labelKey)}
                       </button>
                     ))}
                   </span>
@@ -301,17 +319,20 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                 >
                   <div style={{ fontSize: 26 }}>📎</div>
                   <div>
-                    该文件为 <b>二进制文件</b>（Word 文档 / PDF / 图片等），<b>不支持文本对比</b>
+                    {/* 该文件为  / 二进制文件 / （Word 文档 / PDF / 图片等）， / 不支持文本对比 */}
+                    {t('conflict.bin.lead')}<b>{t('conflict.bin.kind')}</b>{t('conflict.bin.types')}<b>{t('conflict.bin.noTextDiff')}</b>
                   </div>
                   <div className="small" style={{ maxWidth: 420 }}>
-                    请用「采用本地 / 采用对方」直接选择一个版本保留，或在外部程序中打开文件手动处理
+                    {/* 请用「采用本地 / 采用对方」直接选择一个版本保留，或在外部程序中打开文件手动处理 */}
+                    {t('conflict.bin.hint')}
                   </div>
                 </div>
               ) : (
                 <>
               {!expanded && (
                 <pre className="diff" style={{ flex: 1, maxHeight: 140, overflow: 'auto', fontSize: 12 }}>
-                  {(tab === 'base' ? cur.base : tab === 'ours' ? cur.ours : cur.theirs || '（无内容）')
+                  {/* （无内容） */}
+                  {(tab === 'base' ? cur.base : tab === 'ours' ? cur.ours : cur.theirs || t('conflict.noContent'))
                     .split('\n')
                     .map((l, i) => (
                       <div key={i} dangerouslySetInnerHTML={{ __html: highlightLine(l, lang) }} />
@@ -321,11 +342,13 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
               {/* 本地 vs 对方：双栏并排对比（左=对方，右=本地） */}
               <div className="row" style={{ margin: '8px 0 4px' }}>
                 <span className="dim small">
-                  🔀 双栏对比：<span style={{ color: 'var(--err)' }}>左=对方</span> · <span style={{ color: 'var(--ok)' }}>右=本地</span> · M=修改处
+                  {/* 🔀 双栏对比： / 左=对方 / 右=本地 / M=修改处 */}
+                  {t('conflict.vs.lead')}<span style={{ color: 'var(--err)' }}>{t('conflict.vs.left')}</span> · <span style={{ color: 'var(--ok)' }}>{t('conflict.vs.right')}</span> · {t('conflict.vs.mod')}
                 </span>
                 <span className="grow" />
                 <button className="mini" onClick={() => setExpanded((s) => !s)}>
-                  {expanded ? '⛶ 还原' : '⛶ 放大'}
+                  {/* ⛶ 还原 / ⛶ 放大 */}
+                  {expanded ? t('conflict.vs.restore') : t('conflict.vs.expand')}
                 </button>
               </div>
               <div
@@ -378,14 +401,16 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                 </div>
                 {/* 右侧滚动条冲突标记：点击双栏同步滚动 */}
                 {vsMarkers.length > 0 && (
-                  <div className="sb-scrollbar" title="冲突位置（点击双栏同步跳转）">
+                  // 冲突位置（点击双栏同步跳转）
+                  <div className="sb-scrollbar" title={t('conflict.vs.scrollTip')}>
                     {vsMarkers.map((m, i) => (
                       <div
                         key={m.id}
                         className={`sb-marker-dot ${m.color}`}
                         style={{ top: `${m.percent}%` }}
                         onClick={() => goBlock(i)}
-                        title={m.color === 'add' ? '对方修改处' : '删除处'}
+                        // 对方修改处 / 删除处
+                        title={m.color === 'add' ? t('conflict.vs.markAdd') : t('conflict.vs.markDel')}
                       />
                     ))}
                   </div>
@@ -393,12 +418,16 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
               </div>
               {!expanded && (
                 <>
-                  <div className="dim small" style={{ margin: '8px 0 4px' }}>手动编辑合并结果（初始为当前合并内容）：</div>
+                  {/* 手动编辑合并结果（初始为当前合并内容）： */}
+                  <div className="dim small" style={{ margin: '8px 0 4px' }}>{t('conflict.manual.label')}</div>
                   {cur.encoding && (
                     <div className="enc-warn">
-                      ⚠ 该文件不是 UTF-8（工具按 {cur.encoding.toUpperCase()} 猜测解码）：
-                      若它其实是日文/繁体等其他编码，保存会把原编码改坏。
-                      拿不准就用「采用本地 / 采用对方」，或先用外部程序改好再回来。
+                      {/* ⚠ 该文件不是 UTF-8（工具按 {enc} 猜测解码）： */}
+                      {t('conflict.enc.warnA', { enc: cur.encoding.toUpperCase() })}{' '}
+                      {/* 若它其实是日文/繁体等其他编码，保存会把原编码改坏。 */}
+                      {t('conflict.enc.warnB')}{' '}
+                      {/* 拿不准就用「采用本地 / 采用对方」，或先用外部程序改好再回来。 */}
+                      {t('conflict.enc.warnC')}
                     </div>
                   )}
                   <textarea
@@ -416,24 +445,30 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                 <button className="primary" disabled={busy} onClick={() => void resolve('ours')} title={`${cmdOfRepo(repoType, 'resolve_ours', { path: cur.path }) ?? ''}`}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                     <IconOk size={13} />
-                    采用本地
+                    {/* 采用本地 */}
+                    {t('conflict.takeOurs')}
                   </span>
                 </button>
-                <button disabled={busy} onClick={() => void resolve('theirs')} title={`${cmdOfRepo(repoType, 'resolve_theirs', { path: cur.path }) ?? ''}`}>采用对方</button>
-                {!cur.binary && <button disabled={busy} onClick={() => void resolve('manual')} title={`${cmdOfRepo(repoType, 'resolve_manual', { path: cur.path }) ?? ''}`}>💾 保存手动编辑</button>}
+                {/* 采用对方 */}
+                <button disabled={busy} onClick={() => void resolve('theirs')} title={`${cmdOfRepo(repoType, 'resolve_theirs', { path: cur.path }) ?? ''}`}>{t('conflict.takeTheirs')}</button>
+                {/* 💾 保存手动编辑 */}
+                {!cur.binary && <button disabled={busy} onClick={() => void resolve('manual')} title={`${cmdOfRepo(repoType, 'resolve_manual', { path: cur.path }) ?? ''}`}>{t('conflict.saveManual')}</button>}
                 {repoType === 'git' && (
                   <button
                     className="mini"
                     disabled={busy}
                     onClick={() => setConfirmAbort(true)}
-                    title="放弃本次合并（git merge --abort）：丢弃合并以来所有改动，工作区回到合并前。分支本身不受影响，可稍后再合并。"
+                    // 放弃本次合并（git merge --abort）：丢弃合并以来所有改动，工作区回到合并前。分支本身不受影响，可稍后再合并。
+                    title={t('conflict.abortTip')}
                   >
-                    ↩ 中止合并
+                    {/* ↩ 中止合并 */}
+                    {t('conflict.abort')}
                   </button>
                 )}
                 <button
                   className="mini tool-btn"
-                  title="打开冲突文件所在文件夹"
+                  // 打开冲突文件所在文件夹
+                  title={t('conflict.revealTip')}
                   onClick={() => {
                     if (!cur) return;
                     void post
@@ -441,7 +476,8 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                       .catch((e: Error) => setMsg((e as Error).message));
                   }}
                 >
-                  <IconFolder /> 打开文件夹
+                  {/* 打开文件夹 */}
+                  <IconFolder /> {t('conflict.reveal')}
                 </button>
                 <span className="grow" />
                 {msg && <span className={`small ${msgErr ? 'dim' : ''}`} style={{ color: msgErr ? 'var(--err)' : 'var(--ok)' }}>{msg}</span>}
@@ -450,21 +486,18 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
           )}
         </div>
         <div className="foot">
-          <button onClick={props.onClose} disabled={busy}>关闭</button>
+          {/* 关闭 */}
+          <button onClick={props.onClose} disabled={busy}>{t('common.close')}</button>
         </div>
       </ResizableModal>
       {/* 解决方式二次确认（工具风格） */}
       {confirmMode && (
         <ConfirmModal
-          title="⚠ 确认解决冲突"
-          message={
-            {
-              ours: '将用【你的版本】覆盖冲突文件，对方的修改会丢失。确认采用本地？',
-              theirs: '将用【对方的版本】覆盖冲突文件，你的修改会丢失。确认采用对方？',
-              manual: '将用你编辑的内容覆盖冲突文件。确认保存？',
-            }[confirmMode]
-          }
-          confirmLabel="确认"
+          // ⚠ 确认解决冲突
+          title={t('conflict.confirm.title')}
+          message={t(CONFIRM_MSG[confirmMode])}
+          // 确认
+          confirmLabel={t('ui.modal.confirm')}
           onConfirm={() => void doResolve(confirmMode)}
           onCancel={() => setConfirmMode(null)}
         />
@@ -472,9 +505,12 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
       {/* 中止合并二次确认（仅 git）：与「采用本地」互斥——此为全局退出，放弃的是整个合并 */}
       {confirmAbort && (
         <ConfirmModal
-          title="⚠ 确认中止合并"
-          message="将丢弃本次合并以来的所有改动（含已自动合并的文件），工作区回到合并前状态；分支本身不受影响，可稍后再合并。确认中止？"
-          confirmLabel="中止合并"
+          // ⚠ 确认中止合并
+          title={t('conflict.abortConfirm.title')}
+          // 将丢弃本次合并以来的所有改动（含已自动合并的文件），工作区回到合并前状态；分支本身不受影响，可稍后再合并。确认中止？
+          message={t('conflict.abortConfirm.msg')}
+          // 中止合并
+          confirmLabel={t('conflict.abortConfirm.btn')}
           onConfirm={() => void doAbort()}
           onCancel={() => setConfirmAbort(false)}
         />

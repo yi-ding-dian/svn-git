@@ -1,5 +1,6 @@
 /** 忽略设置弹窗：查看/删除/添加忽略规则（svn:ignore / .gitignore） */
 import React, { useCallback, useEffect, useState } from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { get, post } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
@@ -88,26 +89,32 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
   };
 
   return (
-    <ModalShell title="⚠ 忽略设置" width={480} onClose={props.onClose}>
-      <div className="dim small" style={{ marginBottom: 8, wordBreak: 'break-all' }}>目录: {props.dir || '（仓库根）'}</div>
+    // ⚠ 忽略设置
+    <ModalShell title={t('fs.ignore.title')} width={480} onClose={props.onClose}>
+      {/* 目录: {dir} / （仓库根） */}
+      <div className="dim small" style={{ marginBottom: 8, wordBreak: 'break-all' }}>{t('fs.ignore.dir', { dir: props.dir || t('fs.repoRoot') })}</div>
           {/* 本目录未纳入版本控制：在这里添加的规则挂不上它，会落到别的目录（甚至仓库根）——必须先说清楚 */}
           {repoType === 'svn' && plan && normDir(plan.target) !== normDir(props.dir) && (
             <div className="small" style={{ marginBottom: 8, wordBreak: 'break-all', color: 'var(--warn)' }}>
-              ⚠ 本目录尚未加入版本库：在下面添加的规则不会挂在它身上，而是写到{' '}
-              <span className="mono">{plan.target || '仓库根目录'}</span>
-              （svn 的规则只能挂在已加入版本库的目录上）。
+              {/* ⚠ 本目录尚未加入版本库：在下面添加的规则不会挂在它身上，而是写到 */}
+              {t('fs.ignore.notInRepoPre')}{' '}
+              {/* 仓库根目录 */}
+              <span className="mono">{plan.target || t('fs.repoRootDir')}</span>
+              {/* （svn 的规则只能挂在已加入版本库的目录上）。 */}
+              {t('fs.ignore.notInRepoPost')}
             </div>
           )}
           <div className="vcs-list" style={{ minHeight: 100 }}>
             {rules.length === 0 && (
               <div className="dim" style={{ padding: 10 }}>
-                暂无忽略规则
+                {/* 暂无忽略规则 */}
+                {t('fs.ignore.empty')}
                 {source && (
                   <div style={{ marginTop: 6 }}>
-                    本目录当前被上层规则忽略：
-                    <span className="mono">{source.dir === '.' ? '仓库根目录' : source.dir}</span> 的「
-                    <span className="mono">{source.rule}</span>」
-                    <span className="dim">（svn:ignore 不继承，被上层忽略的目录自己没有规则）</span>
+                    {/* 本目录当前被上层规则忽略：{dir} 的「{rule}」 / 仓库根目录 */}
+                    {t('fs.ignore.ignoredByParentRule', { dir: source.dir === '.' ? t('fs.repoRootDir') : source.dir, rule: source.rule })}
+                    {/* （svn:ignore 不继承，被上层忽略的目录自己没有规则） */}
+                    <span className="dim">{t('fs.ignore.noInherit')}</span>
                   </div>
                 )}
               </div>
@@ -118,14 +125,16 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
                   {r.pattern}
                 </span>
                 <span className="dim small nowrap" style={{ margin: '0 8px' }}>{r.where}</span>
-                <button className="mini danger" disabled={busy} onClick={() => remove(r.pattern)}>删除</button>
+                {/* 删除 */}
+                <button className="mini danger" disabled={busy} onClick={() => remove(r.pattern)}>{t('common.delete')}</button>
               </div>
             ))}
           </div>
           <div className="row" style={{ margin: '10px 0 0' }}>
             <input
               type="text"
-              placeholder="新规则，如 *.log 或 目录名/"
+              // 新规则，如 *.log 或 目录名/
+              placeholder={t('fs.ignore.rulePlaceholder')}
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
               onKeyDown={(e) => {
@@ -139,7 +148,8 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
               onClick={add}
               title={`${cmdOfRepo(repoType ?? 'git', 'ignore_add', { path: props.dir ?? '.', pattern: pattern.trim() || '…' }) ?? ''}`}
             >
-              添加
+              {/* 添加 */}
+              {t('fs.ignore.addBtn')}
             </button>
           </div>
           {msg && <div className="small" style={{ marginTop: 8, color: 'var(--dim)' }}>{msg}</div>}

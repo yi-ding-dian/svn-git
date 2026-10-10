@@ -1,6 +1,7 @@
 /** 平台共享工具：.desktop / Windows 注册命令的 Exec 模板解析、detach 启动 */
 
 import { spawn } from 'node:child_process';
+import { t } from '../shared/i18n/index.js';
 import type { LaunchResult } from './types.js';
 
 /** 文件占位符哨兵：先替换进 exec 再拆分 argv（保证含空格路径是一个整体参数），最后还原为绝对路径 */
@@ -13,7 +14,7 @@ const FILE_TOK = '__SVNGIT_FILE__';
  * 多个参数 → Notepad 报“文件名无效”。
  */
 export function parseAppCommand(exec: string, abs: string): string[] {
-  let ex = exec
+  const ex = exec
     .replace(/%[fFuU]/g, FILE_TOK)
     .replace(/%1/g, FILE_TOK)
     .replace(/%(?:[cikdDnNvm]|[fFuU]+)/g, '');
@@ -24,11 +25,13 @@ export function parseAppCommand(exec: string, abs: string): string[] {
   return cmd;
 }
 
-/** 以 detached + stdio ignore 启动命令；成功(SPAWN 事件)即视为已启动，失败(ERROR 事件)返回错误。okMsg 为成功文案。 */
+/** 以 detached + stdio ignore 启动命令；成功(SPAWN 事件)即视为已启动，失败(ERROR 事件)返回错误。
+ *  okMsg 为成功文案（调用方传入 `t(...)` 的成品）；失败文案在此统一取 `plat.launchFail`。 */
 export function launchDetached(cmd: string[], okMsg: string): Promise<LaunchResult> {
   return new Promise((resolve) => {
     const child = spawn(cmd[0]!, cmd.slice(1), { detached: true, stdio: 'ignore' });
-    child.once('error', (e) => resolve({ ok: false, message: `启动失败: ${e.message}` }));
+    // 启动失败: {msg}
+    child.once('error', (e) => resolve({ ok: false, message: t('plat.launchFail', { msg: e.message }) }));
     child.once('spawn', () => {
       child.unref();
       resolve({ ok: true, message: okMsg });

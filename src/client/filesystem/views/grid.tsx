@@ -1,5 +1,6 @@
 /** 文件系统视图 · 网格模式（fs 拆分批次 3）：网格卡片 + 悬浮信息卡片（tip） */
 import React from 'react';
+import { t } from '../../../shared/i18n/index.js';
 import { CODE_DESC, codeRank, type FsEntry } from '../../shared/api.js';
 import { fmtSize } from '../../shared/utils.js';
 import { CodeBadge, DirBadge, TreeConflictBadge, type TreeConflictState } from '../../ui/badges.js';
@@ -83,14 +84,16 @@ export function GridItem(props: {
           ) : (
             <CodeBadge code={e.code} />
           )}
-          {!props.tc && e.isDir && e.count ? <span className="grid-count" title={`${e.count} 项有变更`}>{e.count}</span> : null}
+          {/* {n} 项有变更 */}
+          {!props.tc && e.isDir && e.count ? <span className="grid-count" title={t('fs.countChangedTip', { n: e.count })}>{e.count}</span> : null}
           {props.locked && <IconLock size={13} />}
         </span>
       </span>
       <span
         className={`grid-name ${e.isDir ? 'dir' : ''}`}
         // 重命名标出来源：网格里只显示新名字，光看名字看不出从哪移过来的
-        title={e.origPath ? `从 ${e.origPath} 移动/重命名而来` : undefined}
+        // 从 {path} 移动/重命名而来
+        title={e.origPath ? t('fs.movedFrom', { path: e.origPath }) : undefined}
       >
         {props.renaming ?? e.name}
       </span>
@@ -118,9 +121,12 @@ export interface TipData {
 
 /** 悬浮卡的冲突描述：分"自身冲突 / 目录内部有冲突"两种口吻——后者要说清条数，别让人以为该目录本身有问题 */
 function tcText(tc: { state: TreeConflictState; inner?: boolean; innerCount?: number }): string {
-  const stateText = tc.state === 'missing' ? '服务器上已删除' : tc.state === 'present' ? '服务器上仍在' : '未查到服务器状态';
-  if (tc.inner) return `树冲突：目录内部有 ${tc.innerCount ?? '若干'} 处，${stateText}`;
-  return `树冲突：服务器上该路径${tc.state === 'missing' ? '已删除' : tc.state === 'present' ? '仍在' : '状态未查'}`;
+  // 服务器上已删除 / 服务器上仍在 / 未查到服务器状态
+  const stateText = tc.state === 'missing' ? t('fs.tc.deleted') : tc.state === 'present' ? t('fs.tc.present') : t('fs.tc.unknown');
+  // 树冲突：目录内部有{n}处，{state} / 树冲突：目录内部有若干处，{state}
+  if (tc.inner) return tc.innerCount ? t('fs.tc.innerCount', { n: tc.innerCount, state: stateText }) : t('fs.tc.innerSome', { state: stateText });
+  // 树冲突：服务器上该路径已删除 / 树冲突：服务器上该路径仍在 / 树冲突：服务器上该路径状态未查
+  return tc.state === 'missing' ? t('fs.tc.selfDeleted') : tc.state === 'present' ? t('fs.tc.selfPresent') : t('fs.tc.selfUnknown');
 }
 
 /** 网格悬浮信息卡片（列表/树模式已按用户要求去掉悬浮卡，仅网格保留）：彩色状态徽标 + 紧凑描述 */
@@ -146,10 +152,12 @@ export function FileTipCard(props: { tip: TipData | null }) {
     >
       <div style={{ fontWeight: 600, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {tip.name}
-        {tip.count ? <span className="dim">（{tip.count} 项有变更）</span> : null}
+        {/* （{n} 项有变更） */}
+        {tip.count ? <span className="dim">{t('fs.countChangesParen', { n: tip.count })}</span> : null}
       </div>
       {tip.miss && (
-        <div style={{ color: 'var(--danger)', marginBottom: 4 }}>文件已在磁盘上缺失，右键可还原</div>
+        // 文件已在磁盘上缺失，右键可还原
+        <div style={{ color: 'var(--danger)', marginBottom: 4 }}>{t('fs.missFileHint')}</div>
       )}
       {tip.tc ? (
         <>
@@ -157,7 +165,8 @@ export function FileTipCard(props: { tip: TipData | null }) {
             {tcText(tip.tc)}
             {tip.tcItem?.fromRev && (
               <span className="dim">
-                （复制自 r{tip.tcItem.fromRev} {tip.tcItem.fromAuthor} {tip.tcItem.fromDate}）
+                {/* （复制自 r{rev} {author} {date}） */}
+                {t('fs.tc.copiedFrom', { rev: tip.tcItem.fromRev, author: tip.tcItem.fromAuthor ?? '', date: tip.tcItem.fromDate ?? '' })}
               </span>
             )}
           </div>
@@ -167,10 +176,13 @@ export function FileTipCard(props: { tip: TipData | null }) {
               跟普通 added 目录"只取消登记、文件保留"不一样，别写错 */}
           <div className="dim" style={{ fontSize: 11, marginBottom: 4 }}>
             {tip.tc.inner
-              ? '点进该目录逐条处理'
+              // 点进该目录逐条处理
+              ? t('fs.tc.innerGuide')
               : tip.codes?.includes('A') === true
-                ? '右键可接受服务器的删除：本地文件会一并删除'
-                : '右键可放弃本地修改：文件回到版本库内容'}
+                // 右键可接受服务器的删除：本地文件会一并删除
+                ? t('fs.tc.acceptGuide')
+                // 右键可放弃本地修改：文件回到版本库内容
+                : t('fs.tc.revertGuide')}
           </div>
         </>
       ) : (
@@ -181,19 +193,20 @@ export function FileTipCard(props: { tip: TipData | null }) {
               .map((c) => (
                 <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                   <CodeBadge code={c} />
-                  <span>{CODE_DESC[c] ?? c}</span>
+                  <span>{CODE_DESC[c]?.() ?? c}</span>
                 </span>
               ))}
           {(!tip.codes || tip.codes.length === 0) && tip.code !== undefined && tip.code !== '' && tip.code !== ' ' && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
               <CodeBadge code={tip.code} />
-              <span>{CODE_DESC[tip.code] ?? tip.code}</span>
+              <span>{CODE_DESC[tip.code]?.() ?? tip.code}</span>
             </span>
           )}
           {(!tip.codes || tip.codes.length === 0) && (!tip.code || tip.code === '' || tip.code === ' ') && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
               <CodeBadge code={''} />
-              <span>干净</span>
+              {/* 干净 */}
+              <span>{t('fs.clean')}</span>
             </span>
           )}
         </div>
@@ -205,7 +218,8 @@ export function FileTipCard(props: { tip: TipData | null }) {
           {tip.mtime ?? ''}
         </div>
       )}
-      <div className="dim" style={{ fontSize: 11 }}>{tip.miss ? '右键可还原' : tip.isDir ? '双击进入' : '双击查看'}</div>
+      {/* 右键可还原 / 双击进入 / 双击查看 */}
+      <div className="dim" style={{ fontSize: 11 }}>{tip.miss ? t('fs.rightClickRestore') : tip.isDir ? t('fs.dblClickEnter') : t('fs.dblClickView')}</div>
     </div>
   );
 }

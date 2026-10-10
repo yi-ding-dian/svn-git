@@ -9,6 +9,7 @@
  */
 
 import type { HunkLine, Hunk, ParsedDiff } from '../shared/types.js';
+import { t } from '../shared/i18n/index.js';
 
 // 类型定义在 src/shared/types.ts（前后端共享）；这里 re-export，保持既有导入路径可用
 export type { HunkLine, Hunk, ParsedDiff };
@@ -81,5 +82,6 @@ export function blobOf(fileHeader: string): string | undefined {
 export function hunkSummary(h: Hunk): string {
   const add = h.lines.filter((l) => l.type === 'add').length;
   const del = h.lines.filter((l) => l.type === 'del').length;
-  return `第 ${h.oldStart} 行 · +${add} −${del}`;
+  // 第 {line} 行 · +{add} −{del}
+  return t('vcs.hunkSummary', { line: h.oldStart, add, del });
 }

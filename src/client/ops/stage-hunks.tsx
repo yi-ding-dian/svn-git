@@ -11,6 +11,7 @@ import { get, post, type ParsedDiff } from '../shared/api.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { hunkSummaryLabel } from '../shared/utils.js';
 import { highlightLine, langOf } from '../shared/highlight.js';
+import { t } from '../../shared/i18n/index.js';
 
 export function StageHunksModal(props: {
   /** 文件相对路径 */
@@ -66,7 +67,8 @@ export function StageHunksModal(props: {
         props.onClose();
       }
     } catch (e) {
-      props.onToast(`暂存失败: ${(e as Error).message}`, true);
+      // 暂存失败: {msg}
+      props.onToast(t('ops.stageHunks.err', { msg: (e as Error).message }), true);
     } finally {
       setBusy(false);
     }
@@ -74,25 +76,32 @@ export function StageHunksModal(props: {
 
   return (
     <ResizableModal width={860} minWidth={560} minHeight={360} onEsc={props.onClose}>
-      <h3>✂ 选择要提交的改动 — {props.path}</h3>
+      {/* ✂ 选择要提交的改动 */}
+      <h3>{t('ops.stageHunks.title')} — {props.path}</h3>
       <div className="body">
         {error && <div className="error">{error}</div>}
-        {!parsed && !error && <div className="dim">正在读取改动…</div>}
-        {parsed && total === 0 && <div className="dim">该文件没有可提交的改动</div>}
+        {/* 正在读取改动… */}
+        {!parsed && !error && <div className="dim">{t('ops.stageHunks.loading')}</div>}
+        {/* 该文件没有可提交的改动 */}
+        {parsed && total === 0 && <div className="dim">{t('ops.stageHunks.empty')}</div>}
         {parsed && total > 0 && (
           <>
             <div className="row small dim" style={{ marginBottom: 8, gap: 10 }}>
               <span>
-                共 {total} 处改动，已选 <b>{checked.size}</b> 处
+                {/* 共 {total} 处改动，已选 {n} 处 */}
+                {t('ops.stageHunks.summary', { total, n: checked.size })}
               </span>
               <button className="mini" onClick={() => setChecked(new Set(parsed.hunks.map((h) => h.index)))}>
-                全选
+                {/* 全选 */}
+                {t('ops.select.all')}
               </button>
               <button className="mini" onClick={() => setChecked(new Set())}>
-                全不选
+                {/* 全不选 */}
+                {t('ops.select.none')}
               </button>
               <span className="grow" />
-              <span>未选中的改动会留在工作区，不进入本次提交</span>
+              {/* 未选中的改动会留在工作区，不进入本次提交 */}
+              <span>{t('ops.stageHunks.note')}</span>
             </div>
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
               {parsed.hunks.map((h) => (
@@ -143,10 +152,12 @@ export function StageHunksModal(props: {
       </div>
       <div className="foot">
         <button onClick={props.onClose} disabled={busy}>
-          取消
+          {/* 取消 */}
+          {t('common.cancel')}
         </button>
         <button className="primary" disabled={busy || checked.size === 0} onClick={() => void confirm()}>
-          {busy ? '暂存中…' : `暂存选中的 ${checked.size} 处`}
+          {/* 暂存中… / 暂存选中的 {n} 处 */}
+          {busy ? t('ops.stageHunks.busy') : t('ops.stageHunks.confirm', { n: checked.size })}
         </button>
       </div>
     </ResizableModal>

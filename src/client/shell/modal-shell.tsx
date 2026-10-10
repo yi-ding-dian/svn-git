@@ -26,13 +26,15 @@ export function ModalShell(props: {
           {props.icon && <span style={{ marginRight: 8 }}>{props.icon}</span>}
           {props.title}
           {props.closeIcon && (
-            <button className="modal-x" title="关闭" aria-label="关闭" onClick={props.onClose}>
+            // 关闭
+            <button className="modal-x" title={t('common.close')} aria-label={t('common.close')} onClick={props.onClose}>
               ✕
             </button>
           )}
         </h3>
         <div className="body">{props.children}</div>
-        {!props.hideFoot && <div className="foot">{props.foot ?? <button onClick={props.onClose}>关闭</button>}</div>}
+        {/* 关闭 */}
+        {!props.hideFoot && <div className="foot">{props.foot ?? <button onClick={props.onClose}>{t('common.close')}</button>}</div>}
       </ResizableModal>
     </div>
   );
@@ -58,6 +60,7 @@ export function ModalShell(props: {
  * 注意：modal-mask 遮罩点击不关闭（防误触），关闭只能走按钮 / Esc（onEsc）
  */
 import React, { useEffect, useRef, useState } from 'react';
+import { t } from '../../shared/i18n/index.js';
 
 /** 边缘热区厚度(px) */
 const EDGE = 8;
@@ -145,8 +148,8 @@ export function ResizableModal(props: {
     if (!el) return;
     const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as Node | null;
-      const inside = !!t && el.contains(t);
+      const target = e.target as Node | null; // 变量名不用 t：本文件 import 了 i18n 的 t()，避免同名混淆
+      const inside = !!target && el.contains(target);
       const tag = (e.target as HTMLElement)?.tagName;
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable;
       if (e.key === 'Escape') {
@@ -185,6 +188,8 @@ export function ResizableModal(props: {
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
+    // onEsc 是这里唯一会变化的 prop；补 props 本身会让每次父渲染都重装全局键盘监听
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.onEsc]);
 
   // 拖拽中:window 级监听 mousemove/mouseup

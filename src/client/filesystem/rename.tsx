@@ -1,5 +1,6 @@
 /** 重命名/移动弹窗：只输入文件名（自动保留原目录），确认按钮悬浮显示将执行命令 */
 import React, { useState } from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 
@@ -18,23 +19,29 @@ export function RenameModal(props: {
   const [to, setTo] = useState(baseName);
   const trimmed = to.trim();
   const err = !trimmed
-    ? '名字不能为空'
+    // 名字不能为空
+    ? t('fs.rename.empty')
     : trimmed === baseName
-      ? '名字未变化'
+      // 名字未变化
+      ? t('fs.rename.unchanged')
       : trimmed.includes('/') || trimmed.includes('\\')
-        ? '只输入文件名，不用写路径'
+        // 只输入文件名，不用写路径
+        ? t('fs.rename.onlyNameErr')
         : '';
   const fullTo = dir ? `${dir}/${trimmed}` : trimmed;
   const cmd = props.fsMode
-    ? '从磁盘直接改名，不影响版本库（状态保持 ? / I）'
+    // 从磁盘直接改名，不影响版本库（状态保持 ? / I）
+    ? t('fs.rename.fsCmd')
     : cmdOfRepo(props.repoType, 'move', { from: baseName, to: trimmed || '…' }) ?? '';
   return (
     <div className="modal-mask">
       <ResizableModal width={440} minWidth={420} onEsc={props.onCancel}>
-        <h3>重命名</h3>
+        {/* 重命名 */}
+        <h3>{t('fs.rename.title')}</h3>
         <div className="body">
           <div className="dim small" style={{ marginBottom: 8 }}>
-            {props.fsMode ? '未版本化文件，仅改磁盘文件名，不影响版本库' : '本地改名，提交后生效'}
+            {/* 未版本化文件，仅改磁盘文件名，不影响版本库 / 本地改名，提交后生效 */}
+            {props.fsMode ? t('fs.rename.fsHint') : t('fs.rename.vcsHint')}
           </div>
           <input
             autoFocus
@@ -53,13 +60,16 @@ export function RenameModal(props: {
             </div>
           )}
           <div className="dim small" style={{ marginTop: 8 }}>
-            只输入文件名，改名后仍在当前目录
+            {/* 只输入文件名，改名后仍在当前目录 */}
+            {t('fs.rename.onlyNameHint')}
           </div>
         </div>
         <div className="foot">
-          <button onClick={props.onCancel}>取消</button>
+          {/* 取消 */}
+          <button onClick={props.onCancel}>{t('common.cancel')}</button>
           <button className="primary" disabled={!!err} onClick={() => props.onConfirm(fullTo)} title={cmd}>
-            重命名
+            {/* 重命名 */}
+            {t('fs.rename.title')}
           </button>
         </div>
       </ResizableModal>

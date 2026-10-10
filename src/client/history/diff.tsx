@@ -7,6 +7,7 @@ import { renderMarkdown } from '../shared/markdown.js';
 import { IconCopy } from '../ui/icons.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { parseUnifiedDiff, lineMarksOf, type DiffLine } from '../../shared/diff-parse.js';
+import { t } from '../../shared/i18n/index.js';
 
 export interface DiffTarget {
   path?: string;
@@ -65,22 +66,29 @@ export function DiffView(props: Props) {
   // 浏览器右键按下会清空文本选区（contextmenu 时 getSelection 已空），mousedown 捕获仍在
   const [lineCtx, setLineCtx] = useState<{ x: number; y: number; items: CtxMenuItem[] } | null>(null);
   const selRef = useRef('');
-  const copyText = (t: string, label: string) => {
+  /** 复制 text 到剪贴板：toast 文案由调用方整句给出（各语言语序不同，不能靠 label 拼接） */
+  const copyText = (text: string, toast: string) => {
     void navigator.clipboard
-      ?.writeText(t)
-      .then(() => props.onToast?.(`${label}已复制`))
-      .catch(() => props.onToast?.('复制失败'));
+      ?.writeText(text)
+      .then(() => props.onToast?.(toast))
+      // 复制失败
+      .catch(() => props.onToast?.(t('hist.copyFailed')));
   };
   const openLineMenu = (e: React.MouseEvent, rowText: string, side: 'left' | 'right') => {
     e.preventDefault();
     const sel = selRef.current;
+    // 左栏 / 右栏
+    const sideName = side === 'left' ? t('hist.sideLeft') : t('hist.sideRight');
     const items: CtxMenuItem[] = [];
     if (sel) {
-      items.push({ icon: <IconCopy />, label: '复制选中文本', action: () => copyText(sel, '选中文本') });
+      // 复制选中文本 / 选中文本已复制
+      items.push({ icon: <IconCopy />, label: t('hist.copySelection'), action: () => copyText(sel, t('hist.copiedSelection')) });
     }
     items.push(
-      { icon: <IconCopy />, label: '复制此行', action: () => copyText(rowText, '本行') },
-      { icon: <IconCopy />, label: `复制${side === 'left' ? '左栏' : '右栏'}全部文本`, action: () => copyText((side === 'left' ? leftRows : rightRows).map((r) => r.text).join('\n'), `${side === 'left' ? '左栏' : '右栏'}全部文本`) },
+      // 复制此行 / 本行已复制
+      { icon: <IconCopy />, label: t('hist.copyRow'), action: () => copyText(rowText, t('hist.copiedRow')) },
+      // 复制{side}全部文本 / {side}全部文本已复制
+      { icon: <IconCopy />, label: t('hist.copyAll', { side: sideName }), action: () => copyText((side === 'left' ? leftRows : rightRows).map((r) => r.text).join('\n'), t('hist.copiedAll', { side: sideName })) },
     );
     setLineCtx({ x: e.clientX, y: e.clientY, items });
   };
@@ -119,12 +127,12 @@ export function DiffView(props: Props) {
     let cancelled = false;
     setLoading(true);
     setError('');
-    const t = props.target;
+    const tgt = props.target;
     if (sideMode) {
       // 并排模式：加载左右版本 + 行级 diff
       Promise.all([
-        get.fileVersions(t.path!, t.a, t.b),
-        get.diff(t.path, t.a, t.b),
+        get.fileVersions(tgt.path!, tgt.a, tgt.b),
+        get.diff(tgt.path, tgt.a, tgt.b),
       ])
         .then(([fv, d]) => {
           if (cancelled) return;
@@ -132,7 +140,7 @@ export function DiffView(props: Props) {
           setDiffLines(d.ok ? parseUnifiedDiff(d.output) : []);
           setCurBlock(0);
           // 记录文件指纹，开始外部更新检测
-          get.fileMtime(t.path!).then((m) => { mtimeRef.current = m; }).catch(() => {});
+          get.fileMtime(tgt.path!).then((m) => { mtimeRef.current = m; }).catch(() => {});
           setStaleTip(false);
         })
         .catch((e: Error) => {
@@ -144,11 +152,13 @@ export function DiffView(props: Props) {
     } else {
       // 文本模式（全仓库 diff 或版本间）
       get
-        .diff(t.path, t.a, t.b)
+        .diff(tgt.path, tgt.a, tgt.b)
         .then((r) => {
           if (!cancelled) {
-            if (!r.ok) setError(r.error ?? 'diff 失败');
-            else setText(r.output.trim() || '(无差异)');
+            // diff 失败
+            if (!r.ok) setError(r.error ?? t('hist.diffFailed'));
+            // (无差异)
+            else setText(r.output.trim() || t('hist.noDiff'));
           }
         })
         .catch((e: Error) => {
@@ -216,6 +226,9 @@ export function DiffView(props: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // goBlock 是 useCallback，但它依赖 flashTarget/locateDel（变动较频繁）——
+    // 入依赖会让全局键盘监听反复解绑/重绑。props 已按 onBack/active 精确到字段。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.onBack, sideMode, props.active]);
 
   // 差异块列表（只含真正的变更块：ctx 行的 block = -1 是「不属于任何块」的标记而不是块号，
@@ -312,12 +325,12 @@ export function DiffView(props: Props) {
     // 占位行行号取 -block（负数，不显示行号）：与真实行号不冲突，且可直接作 rightRefs 的 key 供定位
     const pushPh = (a: { block: number; count: number }) =>
       out.push({ no: -a.block, text: '', change: true, block: a.block, delPh: a.count });
-    versions.right.split('\n').forEach((t, i) => {
+    versions.right.split('\n').forEach((ln, i) => {
       const no = i + 1;
       for (const a of before.get(no) ?? []) pushPh(a);
       const m = rightMap.get(no);
       if (m) out.push({ no, text: m.text, change: true, block: m.block, line: m.line });
-      else out.push({ no, text: t, change: false, block: -1 });
+      else out.push({ no, text: ln, change: false, block: -1 });
       for (const a of after.get(no) ?? []) pushPh(a);
     });
     return out;
@@ -486,37 +499,46 @@ export function DiffView(props: Props) {
   const title = props.target
     ? props.target.a && props.target.b
       ? `${props.target.a} → ${props.target.b}`
-      : '工作区差异'
+      // 工作区差异
+      : t('hist.workingTreeDiff')
     : '';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div className="row" style={{ marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
         <span className="dim">
-          差异: {title}
-          {props.target?.path ? ` — ${props.target.path}` : ''}
+          {/* 差异: {rev} — {path} / 差异: {rev} */}
+          {props.target?.path ? t('hist.diffOfPath', { rev: title, path: props.target.path }) : t('hist.diffOf', { rev: title })}
         </span>
         <span className="grow" />
         {sideMode && blocks.length > 0 && (
           <>
-            <span className="dim small nowrap">差异点 {curBlock + 1}/{blocks.length}</span>
-            <button className="mini" onClick={() => goBlock((curBlock - 1 + blocks.length) % blocks.length)}>上一个 ↑</button>
-            <button className="mini" onClick={() => goBlock((curBlock + 1) % blocks.length)}>下一个 ↓</button>
+            {/* 差异点 {i}/{n} */}
+            <span className="dim small nowrap">{t('hist.blockCounter', { i: curBlock + 1, n: blocks.length })}</span>
+            {/* 上一个 ↑ */}
+            <button className="mini" onClick={() => goBlock((curBlock - 1 + blocks.length) % blocks.length)}>{t('hist.prevBlock')}</button>
+            {/* 下一个 ↓ */}
+            <button className="mini" onClick={() => goBlock((curBlock + 1) % blocks.length)}>{t('hist.nextBlock')}</button>
             <button
               className={`mini${syncMode ? ' primary' : ''}`}
               onClick={() => setSyncMode((v) => !v)}
-              title="开启后滚动任一栏，另一栏自动跟随（预览模式下为按比例跟随，无行对齐）"
+              // 开启后滚动任一栏，另一栏自动跟随（预览模式下为按比例跟随，无行对齐）
+              title={t('hist.syncTip')}
             >
-              ↔ 同步滚动
+              {/* ↔ 同步滚动 */}
+              {t('hist.syncScroll')}
             </button>
           </>
         )}
-        <span className="dim small">← 键返回</span>
-        <button className="mini" onClick={props.onBack}>← 返回</button>
+        {/* ← 键返回 */}
+        <span className="dim small">{t('hist.arrowKeyBack')}</span>
+        {/* ← 返回 */}
+        <button className="mini" onClick={props.onBack}>{t('hist.back')}</button>
       </div>
       {staleTip && (
         <div className="stale-tip" style={{ marginBottom: 8 }}>
-          <span>⚠ 文件已更新，是否更新文件？</span>
+          {/* ⚠ 文件已更新，是否更新文件？ */}
+          <span>{t('hist.fileChanged')}</span>
           <span className="grow" />
           <button
             className="mini primary"
@@ -524,24 +546,27 @@ export function DiffView(props: Props) {
               setStaleTip(false);
               setLoading(true);
               setError('');
-              const t = props.target!;
-              Promise.all([get.fileVersions(t.path!, t.a, t.b), get.diff(t.path, t.a, t.b)])
+              const tgt = props.target!;
+              Promise.all([get.fileVersions(tgt.path!, tgt.a, tgt.b), get.diff(tgt.path, tgt.a, tgt.b)])
                 .then(([fv, d]) => {
                   setVersions({ left: fv.left, right: fv.right, leftLabel: fv.leftLabel, rightLabel: fv.rightLabel });
                   setDiffLines(d.ok ? parseUnifiedDiff(d.output) : []);
-                  get.fileMtime(t.path!).then((m) => { mtimeRef.current = m; }).catch(() => {});
+                  get.fileMtime(tgt.path!).then((m) => { mtimeRef.current = m; }).catch(() => {});
                 })
                 .catch((e: Error) => setError(e.message))
                 .finally(() => setLoading(false));
             }}
           >
-            更新文件
+            {/* 更新文件 */}
+            {t('hist.reloadFile')}
           </button>
-          <button className="mini" onClick={() => setStaleTip(false)}>忽略</button>
+          {/* 忽略 */}
+          <button className="mini" onClick={() => setStaleTip(false)}>{t('hist.dismiss')}</button>
         </div>
       )}
       {error && <div className="error">{error}</div>}
-      {loading && !error && <div className="loading">⏳ 加载对比…</div>}
+      {/* ⏳ 加载对比… */}
+      {loading && !error && <div className="loading">{t('hist.loadingCompare')}</div>}
       {!loading && !error && sideMode && versions && (
         <>
           {/* 栏头：左右各带独立搜索框（定位各自栏内代码） */}
@@ -555,7 +580,8 @@ export function DiffView(props: Props) {
                     <input
                       autoFocus
                       type="text"
-                      placeholder="搜索左栏代码…"
+                      // 搜索左栏代码…
+                      placeholder={t('hist.searchLeftPlaceholder')}
                       value={dSearchL}
                       onChange={(e) => {
                         setDSearchL(e.target.value);
@@ -568,21 +594,28 @@ export function DiffView(props: Props) {
                       style={{ flex: 1, minWidth: 0 }}
                     />
                     <span className="dim small nowrap">
-                      {dSearchL.trim() && dMatchesL.length > 0 ? `${dMatchLIdx + 1}/${dMatchesL.length}` : dSearchL.trim() ? '无匹配' : ''}
+                      {/* 无匹配 */}
+                      {dSearchL.trim() && dMatchesL.length > 0 ? `${dMatchLIdx + 1}/${dMatchesL.length}` : dSearchL.trim() ? t('hist.noMatchText') : ''}
                     </span>
-                    <button className="mini" onClick={goNextLMatch}>下一个 ↓</button>
+                    {/* 下一个 ↓ */}
+                    <button className="mini" onClick={goNextLMatch}>{t('hist.nextBlock')}</button>
                   </>
                 ) : (
-                  <button className="mini" onClick={() => setDSearchLActive(true)}>🔍 搜索此栏</button>
+                  // 🔍 搜索此栏
+                  <button className="mini" onClick={() => setDSearchLActive(true)}>{t('hist.searchPane')}</button>
                 )}
                 {isMd && previewL && (
-                  <button className="mini" onClick={() => setPreviewL((v) => !v)} title="返回差异行视图">
-                    返回对比
+                  // 返回差异行视图
+                  <button className="mini" onClick={() => setPreviewL((v) => !v)} title={t('hist.backToDiff')}>
+                    {/* 返回对比 */}
+                    {t('hist.backToCompare')}
                   </button>
                 )}
                 {isMd && !previewL && (
-                  <button className="mini" onClick={() => setPreviewL((v) => !v)} title="Markdown 渲染预览（原版）">
-                    👁 预览
+                  // Markdown 渲染预览（原版）
+                  <button className="mini" onClick={() => setPreviewL((v) => !v)} title={t('hist.mdPreviewLeft')}>
+                    {/* 预览 */}
+                    👁 {t('common.preview')}
                   </button>
                 )}
               </div>
@@ -596,7 +629,8 @@ export function DiffView(props: Props) {
                     <input
                       autoFocus
                       type="text"
-                      placeholder="搜索右栏代码…"
+                      // 搜索右栏代码…
+                      placeholder={t('hist.searchRightPlaceholder')}
                       value={dSearch}
                       onChange={(e) => {
                         setDSearch(e.target.value);
@@ -609,16 +643,21 @@ export function DiffView(props: Props) {
                       style={{ flex: 1, minWidth: 0 }}
                     />
                     <span className="dim small nowrap">
-                      {dSearch.trim() && dMatches.length > 0 ? `${dMatchIdx + 1}/${dMatches.length}` : dSearch.trim() ? '无匹配' : ''}
+                      {/* 无匹配 */}
+                      {dSearch.trim() && dMatches.length > 0 ? `${dMatchIdx + 1}/${dMatches.length}` : dSearch.trim() ? t('hist.noMatchText') : ''}
                     </span>
-                    <button className="mini" onClick={goNextDMatch}>下一个 ↓</button>
+                    {/* 下一个 ↓ */}
+                    <button className="mini" onClick={goNextDMatch}>{t('hist.nextBlock')}</button>
                   </>
                 ) : (
-                  <button className="mini" onClick={() => setDSearchActive(true)}>🔍 搜索此栏</button>
+                  // 🔍 搜索此栏
+                  <button className="mini" onClick={() => setDSearchActive(true)}>{t('hist.searchPane')}</button>
                 )}
                 {isMd && (
-                  <button className="mini" onClick={() => setPreviewR((v) => !v)} title={previewR ? '返回差异行视图' : 'Markdown 渲染预览（当前）'}>
-                    {previewR ? '返回对比' : '👁 预览'}
+                  // 返回差异行视图 / Markdown 渲染预览（当前）
+                  <button className="mini" onClick={() => setPreviewR((v) => !v)} title={previewR ? t('hist.backToDiff') : t('hist.mdPreviewRight')}>
+                    {/* 返回对比 / 预览 */}
+                    {previewR ? t('hist.backToCompare') : `👁 ${t('common.preview')}`}
                   </button>
                 )}
               </div>
@@ -635,7 +674,8 @@ export function DiffView(props: Props) {
                 />
               ) : (
               <>
-              {leftRows.length === 0 && <div className="dim" style={{ padding: 20 }}>（原版为空 — 新增文件）</div>}
+              {/* （原版为空 — 新增文件） */}
+              {leftRows.length === 0 && <div className="dim" style={{ padding: 20 }}>{t('hist.leftEmpty')}</div>}
               {leftRows.map((r) => {
                 const isHitL = dSearchLActive && dMatchesL.includes(r.no);
                 const isCurL = isHitL && r.no === dMatchesL[dMatchLIdx % Math.max(1, dMatchesL.length)];
@@ -652,7 +692,8 @@ export function DiffView(props: Props) {
                   onClick={() => r.change && jumpRight(r.block)}
                   onContextMenu={(e) => openLineMenu(e, r.text, 'left')}
                   onMouseDown={(e) => { if (e.button === 2) selRef.current = (window.getSelection()?.toString() ?? '').trim(); }}
-                  title={r.ph ? '右栏此处有新增（点击右侧定位）' : r.change ? '修改处（点击右侧定位）' : ''}
+                  // 右栏此处有新增（点击右侧定位） / 修改处（点击右侧定位）
+                  title={r.ph ? t('hist.phRight') : r.change ? t('hist.changeRight') : ''}
                 >
                   <span className="sb-no">{r.ph ? '' : r.no}</span>
                   <span className="sb-marker" style={{ color: r.ph ? 'var(--ok)' : r.line && lineMarks.get(r.line) === 'del' ? 'var(--err)' : undefined }}>
@@ -666,7 +707,8 @@ export function DiffView(props: Props) {
               )}
             </div>
             {/* 拖拽手柄 */}
-            <div className="sb-resizer" onMouseDown={startDrag} title="拖动调整左右栏宽度" />
+            {/* 拖动调整左右栏宽度 */}
+            <div className="sb-resizer" onMouseDown={startDrag} title={t('hist.dragResizer')} />
             {/* 右栏：当前 + 滚动条预览标记 */}
             <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0 }}>
             <div ref={rightPane} className="sb-pane" onScroll={onScrollSync('right')}>
@@ -678,7 +720,8 @@ export function DiffView(props: Props) {
                 />
               ) : (
               <>
-              {rightRows.length === 0 && <div className="dim" style={{ padding: 20 }}>（当前为空 — 文件已删除）</div>}
+              {/* （当前为空 — 文件已删除） */}
+              {rightRows.length === 0 && <div className="dim" style={{ padding: 20 }}>{t('hist.rightEmpty')}</div>}
               {rightRows.map((r) => {
                 const isDelPh = r.delPh !== undefined; // 删除占位行：左栏此处有 N 行被删，右栏无对应内容
                 const isHit = !isDelPh && dSearchActive && dMatches.includes(r.no);
@@ -693,14 +736,16 @@ export function DiffView(props: Props) {
                     onClick={() => r.change && jumpLeft(r.block)}
                     onContextMenu={(e) => openLineMenu(e, r.text, 'right')}
                     onMouseDown={(e) => { if (e.button === 2) selRef.current = (window.getSelection()?.toString() ?? '').trim(); }}
-                    title={isDelPh ? `左栏此处删除了 ${r.delPh} 行（点击定位）` : r.change ? '修改处（点击左侧定位）' : ''}
+                    // 左栏此处删除了 {n} 行（点击定位） / 修改处（点击左侧定位）
+                    title={isDelPh ? t('hist.delPhRightTip', { n: r.delPh! }) : r.change ? t('hist.changeLeft') : ''}
                   >
                     <span className="sb-no">{isDelPh ? '' : r.no}</span>
                     <span className="sb-marker" style={{ color: isDelPh ? 'var(--err)' : r.line && lineMarks.get(r.line) === 'add' ? 'var(--ok)' : undefined }}>
                       {isDelPh ? '-' : r.change ? (r.line && lineMarks.get(r.line) === 'mod' ? 'M' : '+') : ''}
                     </span>
                     {isDelPh ? (
-                      <span className="sb-ph-hint">← 左栏此处删除了 {r.delPh} 行</span>
+                      // ← 左栏此处删除了 {n} 行
+                      <span className="sb-ph-hint">{t('hist.delPhRightHint', { n: r.delPh! })}</span>
                     ) : (
                       <span className="sb-code" dangerouslySetInnerHTML={{ __html: highlightLine(r.text, lang) }} />
                     )}
@@ -712,7 +757,8 @@ export function DiffView(props: Props) {
             </div>
             {/* 滚动条预览标记：绿=新增/修改，红=删除 */}
             {scrollMarkers.length > 0 && (
-              <div className="sb-scrollbar" title="修改位置（点击跳转）">
+              // 修改位置（点击跳转）
+              <div className="sb-scrollbar" title={t('hist.markerTip')}>
                 {scrollMarkers.map((m) => (
                   <div
                     key={m.block}
@@ -722,7 +768,8 @@ export function DiffView(props: Props) {
                       e.stopPropagation();
                       goBlock(blocks.findIndex((b) => b.id === m.block));
                     }}
-                    title={m.color === 'add' ? '新增/修改' : '删除'}
+                    // 新增/修改 / 删除
+                    title={m.color === 'add' ? t('hist.markerAdd') : t('common.delete')}
                   />
                 ))}
               </div>
@@ -731,7 +778,8 @@ export function DiffView(props: Props) {
           </div>
         </>
       )}
-      {!loading && !error && sideMode && !versions && <div className="empty">（无差异）</div>}
+      {/* (无差异) */}
+      {!loading && !error && sideMode && !versions && <div className="empty">{t('hist.noDiff')}</div>}
       {!loading && !error && !sideMode && <DiffRender text={text} />}
       {lineCtx && (
         <ContextMenu x={lineCtx.x} y={lineCtx.y} items={lineCtx.items} onClose={() => setLineCtx(null)} mask />

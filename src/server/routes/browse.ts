@@ -8,6 +8,7 @@ import { compareName } from '../../shared/types.js';
 import { detectTextEncoding } from '../../shared/text.js';
 import { run } from '../../vcs/exec.js';
 import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, readTextFile, MAX_READ_BYTES, TOO_LARGE_PLACEHOLDER, vcsOf, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE, type Ctx } from './util.js';
+import { t } from '../../shared/i18n/index.js';
 
 /** 忽略检测（svn status --no-ignore）的输出上限：超过就不解析。
  *  它只用来把被忽略的条目标成 I，而超大工作副本上这个扫描有 5MB+、解析要秒级——收益不值。
@@ -36,7 +37,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const start = path.join(repo.root, dirRel);
         if (!inRepoRoot(repo.root, start)) {
-          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE });
+          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
           return true;
         }
         const q = query.toLowerCase();
@@ -233,7 +234,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const force = url.searchParams.get('force') === '1';
         const abs = path.join(repo.root, rel);
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE });
+          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
           return true;
         }
         const items = (await getStatusCached(repo, force, rel)) as { path: string; code: string; isDir: boolean; treeConflicted?: boolean; origPath?: string }[];
@@ -244,7 +245,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         try {
           names = fs.readdirSync(abs);
         } catch (err) {
-          sendJson(res, 500, { error: `无法读取目录: ${(err as Error).message}` });
+          // 无法读取目录: {msg}
+          sendJson(res, 500, { error: t('srv.readDirFailed', { msg: (err as Error).message }) });
           return true;
         }
         // 目录本身或其任一祖先未版本化 → 内部全部未版本化
@@ -382,7 +384,6 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
           const sub = items.filter((i) => i.path.startsWith(relDir + '/'));
           if (sub.length > 0) {
-            let best = ' ';
             for (const s of sub) {
               const rk = { C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3, '?': 2 }[s.code] ?? 0;
               // 子项全部删除调度（D）时不把目录自身升级为 D：目录自身仍版本化（可右键「从版本库移除」），
@@ -545,11 +546,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const rel = url.searchParams.get('path') ?? '';
         const abs = path.join(repo.root, rel);
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE });
+          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
           return true;
         }
         if (!fs.existsSync(abs)) {
-          sendJson(res, 404, { error: '文件不存在' });
+          // 文件不存在
+          sendJson(res, 404, { error: t('srv.fileNotFound') });
           return true;
         }
         const st = fs.statSync(abs);
@@ -565,12 +567,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const b = url.searchParams.get('b') || undefined;
         const abs = path.join(repo.root, rel);
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE });
+          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
           return true;
         }
         // 工作区模式且文件不存在（路径错误）→ 明确报错，避免空白对比
         if (!a && !b && !fs.existsSync(abs)) {
-          sendJson(res, 404, { error: `文件不存在: ${rel}` });
+          // 文件不存在: {path}
+          sendJson(res, 404, { error: t('srv.fileNotFoundAt', { path: rel }) });
           return true;
         }
         let left = '';
@@ -586,21 +589,27 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return out && out.ok ? out.output : '';
         };
         if (repo.type === 'git') {
-          leftLabel = a ? a : 'HEAD（原版）';
-          rightLabel = b ? b : '工作区（当前）';
+          // HEAD（原版）
+          leftLabel = a ? a : t('srv.headLabel');
+          // 工作区（当前）
+          rightLabel = b ? b : t('srv.worktreeLabel');
           left = await gitShow(a ?? 'HEAD', rel);
           // 工作区裸读：readTextFile 含大小预检（>5MB 不整读入内存）
           right = b ? await gitShow(b, rel) : readTextFile(abs);
         } else {
-          leftLabel = a ? `r${a}` : 'BASE（原版）';
-          rightLabel = b ? `r${b}` : '工作区（当前）';
+          // BASE（原版）
+          leftLabel = a ? `r${a}` : t('srv.baseLabel');
+          // 工作区（当前）
+          rightLabel = b ? `r${b}` : t('srv.worktreeLabel');
           left = await svnCat(a ?? 'BASE', rel);
           right = b ? await svnCat(b, rel) : readTextFile(abs);
         }
         // 截断超大文件
         const MAX = 200_000;
-        if (left.length > MAX) left = left.slice(0, MAX) + '\n…（文件过大已截断）';
-        if (right.length > MAX) right = right.slice(0, MAX) + '\n…（文件过大已截断）';
+        // …（文件过大已截断）
+        if (left.length > MAX) left = left.slice(0, MAX) + '\n' + t('srv.truncatedLarge');
+        // …（文件过大已截断）
+        if (right.length > MAX) right = right.slice(0, MAX) + '\n' + t('srv.truncatedLarge');
         sendJson(res, 200, { left, right, leftLabel, rightLabel, rel });
         return true;
       }
@@ -610,7 +619,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const rev = url.searchParams.get('rev') || '';
         const pathRel = url.searchParams.get('path') || undefined;
         if (pathRel && isBinaryFile(pathRel)) {
-          sendJson(res, 200, { ok: false, output: '', error: `二进制文件（${pathRel}），不支持文本对比` });
+          // 二进制文件（{path}），不支持文本对比
+          sendJson(res, 200, { ok: false, output: '', error: t('srv.binaryNoDiff', { path: pathRel }) });
           return true;
         }
         if (repo.type === 'git') {
@@ -652,7 +662,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             } catch {
               /* URL 失败走下方提示 */
             }
-            sendJson(res, 200, { ok: false, output: '', error: `该文件不在当前工作副本中，无法查看差异：${pathRel}` });
+            // 该文件不在当前工作副本中，无法查看差异：{path}
+            sendJson(res, 200, { ok: false, output: '', error: t('srv.notInWcNoDiff', { path: pathRel }) });
             return true;
           }
           const d = await vcs.diff(String(n - 1), rev, rel);
@@ -676,7 +687,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
                 sendJson(res, 200, {
                   ok: true,
                   output:
-                    `--- ${pathRel}\t(不存在的)\n+++ ${pathRel}\t(版本 ${rev})\n@@ -0,0 +${range} @@\n` +
+                    // (不存在的) / (版本 {rev})
+                    `--- ${pathRel}\t${t('srv.diffNotExist')}\n+++ ${pathRel}\t${t('srv.diffRevision', { rev })}\n@@ -0,0 +${range} @@\n` +
                     lines.map((l: string) => '+' + l).join('\n'),
                 });
                 return true;
@@ -695,7 +707,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const dir = url.searchParams.get('dir') || '';
         // svn list 以 URL 语义解析参数，防 ../ 指向仓库根之外（^/ 相对 URL 除外）
         if (dir && !dir.startsWith('^/') && !inRepoRoot(repo.root, path.resolve(repo.root, dir))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         const list = await vcs.ls(dir);
@@ -711,20 +723,22 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           // git.cat 内部有磁盘回退（未跟踪文件读盘），同样先做越界校验防 ../ 出界
           const abs = path.resolve(repo.root, rel);
           if (!inRepoRoot(repo.root, abs)) {
-            sendJson(res, 400, { ok: false, output: '', error: MSG_PATH_OUT_OF_BOUNDS });
+            sendJson(res, 400, { ok: false, output: '', error: MSG_PATH_OUT_OF_BOUNDS() });
             return true;
           }
-          out = (await vcs.cat?.(rel)) ?? { ok: false, output: '', error: '读取失败' };
+          // 读取失败
+          out = (await vcs.cat?.(rel)) ?? { ok: false, output: '', error: t('srv.readFailed') };
         } else {
           // svn 工作副本直接读本地文件
           const abs = path.resolve(repo.root, rel);
           // 路径越界校验：svn 分支是裸磁盘读取,与 /api/file-versions 一致,防 ../ 穿越与符号链接出界
           if (!inRepoRoot(repo.root, abs)) {
-            sendJson(res, 400, { ok: false, output: '', error: MSG_PATH_OUT_OF_BOUNDS });
+            sendJson(res, 400, { ok: false, output: '', error: MSG_PATH_OUT_OF_BOUNDS() });
             return true;
           }
           if (!fs.existsSync(abs)) {
-            sendJson(res, 404, { ok: false, output: '', error: '文件不存在' });
+            // 文件不存在
+            sendJson(res, 404, { ok: false, output: '', error: t('srv.fileNotFound') });
             return true;
           }
           out = { ok: true, output: readTextFile(abs) };
@@ -755,24 +769,27 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const { repo } = vcsOf();
         const fileRel = url.searchParams.get('path') || '';
         if (!/\.(png|jpe?g|gif|svg|webp|bmp|ico)$/i.test(fileRel)) {
-          sendJson(res, 400, { error: '仅支持图片文件' });
+          // 仅支持图片文件
+          sendJson(res, 400, { error: t('srv.imageOnly') });
           return true;
         }
         const root = path.resolve(repo.root);
         const abs = path.resolve(root, fileRel);
         // 统一 inRepoRoot（含 realpath）：与其余端点一致,防 symlink 出界
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
-          sendJson(res, 404, { error: '文件不存在' });
+          // 文件不存在
+          sendJson(res, 404, { error: t('srv.fileNotFound') });
           return true;
         }
         // 超大图片（如几百 MB 的 PNG）：整读入内存会 OOM,读前拦截
         const imgSize = fs.statSync(abs).size;
         if (imgSize > 50 * 1024 * 1024) {
-          sendJson(res, 400, { error: '图片过大（超过 50MB），无法预览' });
+          // 图片过大（超过 50MB），无法预览
+          sendJson(res, 400, { error: t('srv.imageTooLarge') });
           return true;
         }
         const ext = abs.split('.').pop()!.toLowerCase();

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
+import { t } from '../shared/i18n/index.js';
 import { parseAppCommand, launchDetached } from './util.js';
 import type { InstallTool, OpenWithApp, Platform } from './types.js';
 
@@ -45,7 +46,7 @@ function regToString(buf: Buffer): string {
 
 /** reg 对「空值」输出的占位文案（随系统语言本地化）：英文 (value not set)、中文 (数值未设置) 等。
  *  这些不是真实命令，必须过滤掉，否则会被当成程序名显示成第一项。 */
-const REG_NOT_SET = /^\s*\(\s*(?:value\s+not\s+set|not\s+set|数值未设置|值未设置|未设置|未定义|未設定|設定されていません|설정되지 않음|valeur non définie|nicht festgelegt|non definito|no establecido|не задано)\s*\)\s*$/i;
+const REG_NOT_SET = /^\s*\(\s*(?:value\s+not\s+set|not\s+set|数值未设置|值未设置|未设置|未定义|未設定|設定されていません|설정되지 않음|valeur non définie|nicht festgelegt|non definito|no establecido|не задано)\s*\)\s*$/i; // i18n-ignore: 解析 reg.exe 在各国语言系统下输出的「空值」占位文案（不是界面文案；翻了会认不出占位、把空值当程序名）
 function isRegPlaceholder(v: string): boolean {
   return v.trim() === '' || REG_NOT_SET.test(v);
 }
@@ -170,20 +171,24 @@ export const win32: Platform = {
     // 系统默认程序：Start-Process 即 ShellExecute，路径含空格也正确
     return launchDetached(
       ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', `Start-Process -FilePath '${abs.replace(/'/g, "''")}'`],
-      `已用系统默认程序打开: ${rel}`
+      // 已用系统默认程序打开: {rel}
+      t('plat.openedDefault', { rel })
     );
   },
 
   async openWithApp(abs, exec, rel) {
     if (exec === '__CHOOSE__') {
       // 系统「打开方式」选择器：rundll32 shell32,OpenAs_RunDLL <文件>（路径含空格也能正确弹窗）
-      return launchDetached(['rundll32.exe', 'shell32.dll,OpenAs_RunDLL', abs], `已打开系统「打开方式」选择器: ${rel}`);
+      // 已打开系统「打开方式」选择器: {rel}
+      return launchDetached(['rundll32.exe', 'shell32.dll,OpenAs_RunDLL', abs], t('plat.openedChooser', { rel }));
     }
     if (!exec) return this.openDefault(abs, rel);
     try {
       const cmd = parseAppCommand(exec, abs);
-      if (!cmd.length) throw new Error('Exec 为空');
-      return await launchDetached(cmd, `已用 ${cmd[0]} 打开: ${rel}`);
+      // Exec 为空
+      if (!cmd.length) throw new Error(t('plat.execEmpty'));
+      // 已用 {app} 打开: {rel}
+      return await launchDetached(cmd, t('plat.openedWith', { app: cmd[0]!, rel }));
     } catch (e) {
       return { ok: false, message: (e as Error).message };
     }
@@ -205,7 +210,8 @@ export const win32: Platform = {
 
   openUrl(url) {
     const p = spawn('cmd', ['/c', 'start', '', url], { stdio: 'ignore', detached: true });
-    p.on('error', (e) => console.error(`[svngit] 打开浏览器失败(cmd): ${e.message}`));
+    // [svngit] 打开浏览器失败({cmd}): {msg}
+    p.on('error', (e) => console.error(t('plat.openUrlFail', { cmd: 'cmd', msg: e.message })));
     p.unref();
   },
 
@@ -229,10 +235,12 @@ export const win32: Platform = {
 
   installAppMenu() {
     // Windows 用安装包（NSIS）的快捷方式，无桌面文件安装概念
-    return { ok: false, message: 'Windows 请使用安装包（NSIS 自动创建开始菜单/桌面快捷方式）' };
+    // Windows 请使用安装包（NSIS 自动创建开始菜单/桌面快捷方式）
+    return { ok: false, message: t('plat.winInstallHint') };
   },
   uninstallAppMenu() {
-    return { ok: false, message: 'Windows 请使用安装包的卸载程序' };
+    // Windows 请使用安装包的卸载程序
+    return { ok: false, message: t('plat.winUninstallHint') };
   },
 
   async envInstall(tool: InstallTool, send, done) {
@@ -245,7 +253,8 @@ export const win32: Platform = {
               'winget install --id TortoiseSVN.TortoiseSVN --accept-source-agreements',
               'winget install --id Git.Git --source winget --accept-source-agreements',
             ];
-    send({ line: 'Windows 环境：请在终端以管理员身份执行以下命令安装：' });
+    // Windows 环境：请在终端以管理员身份执行以下命令安装：
+    send({ line: t('plat.winEnvHint') });
     for (const c of cmds) send({ line: `  ${c}` });
     send({ done: true, code: 1, manual: cmds.join(' && ') });
     done();

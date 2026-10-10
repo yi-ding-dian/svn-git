@@ -2,6 +2,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './shell/app.js';
+import { initLang, syncLangFromServer } from './shared/use-lang.js';
 
 /** 开发模式标记（esbuild define 注入：dev 构建为 true，生产为 false） */
 declare const __DEV__: boolean;
@@ -40,4 +41,9 @@ if (__DEV__) {
 }
 
 const container = document.getElementById('root')!;
+
+// 语言要在首次渲染**之前**定好，否则会先出一屏中文再跳成英文（闪一下）
+initLang();
+syncLangFromServer(); // 本地无偏好时（换浏览器 / 清过缓存）跟随主进程配置
+
 createRoot(container).render(<App />);

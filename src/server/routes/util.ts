@@ -1,13 +1,13 @@
 /** 服务层共享工具：路由模块与 server.ts 复用（路径校验/响应/状态缓存等，无外部框架依赖） */
 import http from 'node:http';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { detectRepo } from '../../vcs/detect.js';
 import { createVcs, type RepoInfo, type VcsResult } from '../../vcs/index.js';
 import { loadConfig } from '../../config.js';
 import { BINARY_EXTS } from '../../shared/types.js';
 import { detectTextEncoding, decodeText, encodeText } from '../../shared/text.js';
+import { t } from '../../shared/i18n/index.js';
 import type { SvnCred } from '../../vcs/svn.js';
 
 /** 路由上下文：req/res 与解析后的 URL 按需传递 */
@@ -18,12 +18,16 @@ export interface Ctx {
   p: string;
 }
 
-/** VCS 写操作兜底文案：仓库类型/实现不支持该操作（routes 多文件共用，收敛于此） */
-export const MSG_UNSUPPORTED_OP = '当前仓库不支持该操作';
-/** 路径越界校验统一文案（防 ../ 穿越；routes 多文件共用，收敛于此） */
-export const MSG_PATH_OUT_OF_BOUNDS = '路径越界';
-/** 路径超出工作副本范围校验文案（403 域；与 MSG_PATH_OUT_OF_BOUNDS 同族不同字面，分别收敛保持响应文本不变） */
-export const MSG_OUT_OF_SCOPE = '超出工作副本范围';
+/** VCS 写操作兜底文案：仓库类型/实现不支持该操作（routes 多文件共用，收敛于此）。
+ *  **函数而非字符串常量**：语言可切换，模块顶层求值会把文案固化成首次加载时的语言。 */
+// 当前仓库不支持该操作
+export const MSG_UNSUPPORTED_OP = () => t('srv.unsupportedOp');
+/** 路径越界校验统一文案（防 ../ 穿越；routes 多文件共用，收敛于此）。函数形式同上。 */
+// 路径越界
+export const MSG_PATH_OUT_OF_BOUNDS = () => t('srv.pathOutOfBounds');
+/** 路径超出工作副本范围校验文案（403 域；与 MSG_PATH_OUT_OF_BOUNDS 同族不同字面，分别收敛保持响应文本不变）。函数形式同上。 */
+// 超出工作副本范围
+export const MSG_OUT_OF_SCOPE = () => t('srv.outOfScope');
 
 /** 二进制文件判断：常量来自 shared（单一来源），与前端 utils.isBinaryFile 一致 */
 export function isBinaryFile(p: string): boolean {
@@ -52,7 +56,8 @@ export function  vcsOf(): { vcs: ReturnType<typeof createVcs>; repo: RepoInfo } 
 
 /** 认证失败错误码 */
 export function  isAuthError(err: Error): boolean {
-  return /认证失败|E170001|Authentication failed/i.test(err.message);
+  // 这行是**解析错误文本**的正则（vcs 层抛出的「认证失败…」/ git 英文输出），不是界面文案，禁止翻译
+  return /认证失败|E170001|Authentication failed/i.test(err.message); // i18n-ignore: 解析用正则，翻了认证识别失效
 }
 
 /** 统一认证判定：结构化 code 优先（P1-5），正则仅兜底 throw 型异常与未迁移路径 */
@@ -127,7 +132,7 @@ export function invalidateStatusCache(root: string): void {
  * 成功与失败均失效状态缓存（写操作后状态集必然变化；失败时多一次重扫无害）；
  * op 抛异常不在此吞掉——与收口前一致，由 server 层 catch 统一转 500。 */
 export async function runVcs(ctx: Ctx, op: () => VcsResult | undefined | Promise<VcsResult | undefined>): Promise<boolean> {
-  const result = (await op()) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
+  const result = (await op()) ?? { ok: false, message: MSG_UNSUPPORTED_OP() };
   invalidateStatusCache(vcsOf().repo.root);
   sendJson(ctx.res, 200, { ...result, authError: authErrorOf(result) });
   return true;
@@ -176,7 +181,7 @@ export const  MAX_READ_BYTES = 5 * 1024 * 1024;
 /** 超限文件读出来的占位文本。**导出成常量**：调用方要拿它判断"手里这份不是真内容"
  *  （`/api/cat` 据此返回 truncated、`/api/write-file` 据此拒绝写入）——
  *  字面量在两处各写一遍，迟早对不上。 */
-export const TOO_LARGE_PLACEHOLDER = '（文件过大，未读取全文）';
+export const TOO_LARGE_PLACEHOLDER = '（文件过大，未读取全文）'; // i18n-ignore: 字面量比较标记（写入守卫），翻译后语言切换会比对不上、守卫失效
 
 /** 本次服务进程的标识：模块加载时生成一次，**进程重启即变**（见 /api/info）。
  *  前端拿它判断"服务是不是重启过了" —— 终端的历史是**会话级**的（用户要求"重启服务历史消失、
@@ -217,7 +222,8 @@ export function writeTextKeepEncoding(abs: string, content: string): { ok: true 
     // 文件不存在（如"对方删除、本地修改"的冲突）：按 UTF-8 新建，与改动前行为一致
   }
   if (content.includes('�') && !original.includes('�')) {
-    return { ok: false, message: '内容含无法解码的替换字符（�）——写入会把乱码固化进文件，已拒绝保存。请先「还原」该文件再重试' };
+    // 内容含无法解码的替换字符（�）——写入会把乱码固化进文件，已拒绝保存。请先「还原」该文件再重试
+    return { ok: false, message: t('srv.refuseReplacementChar') };
   }
   // 第三道守卫：调用方手里若是 readTextFile 的**占位符**（超限文件没读全），写下去就是拿占位符覆盖真内容。
   // 判据是"**发来的内容恰是占位符**"，不是"文件多大" —— git 分支走 vcs.cat，拿到的都是完整内容
@@ -226,12 +232,14 @@ export function writeTextKeepEncoding(abs: string, content: string): { ok: true 
   // **放在这个函数里而不是各调用点**：它是所有写回路径的唯一入口
   // （/api/write-file 的内联编辑 + /api/resolve-conflict 的手动解决），一处守卫覆盖全部。
   if (originalTooLarge && content === TOO_LARGE_PLACEHOLDER) {
-    return { ok: false, message: `文件超过 ${MAX_READ_BYTES / 1024 / 1024}MB，未读取全文——写入会把占位提示固化进文件，已拒绝保存。请用外部程序打开` };
+    // 文件超过 {mb}MB，未读取全文——写入会把占位提示固化进文件，已拒绝保存。请用外部程序打开
+    return { ok: false, message: t('srv.refuseTooLarge', { mb: MAX_READ_BYTES / 1024 / 1024 }) };
   }
   try {
     fs.writeFileSync(abs, encodeText(content, enc));
     return { ok: true };
   } catch (e) {
-    return { ok: false, message: `该文件编码为 ${enc}，保存内容含其无法表示的字符（${(e as Error).message}），已拒绝写入` };
+    // 该文件编码为 {enc}，保存内容含其无法表示的字符（{msg}），已拒绝写入
+    return { ok: false, message: t('srv.refuseUnencodable', { enc, msg: (e as Error).message }) };
   }
 }

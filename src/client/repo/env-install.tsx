@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { HelpNote } from '../ui/ui.js';
 import { IconOk, IconErr } from '../ui/icons.js';
+import { t } from '../../shared/i18n/index.js';
 
 /** 环境检测 / 安装弹窗：显示 svn/git 是否安装，缺失可一键安装（SSE 实时日志） */
 export function EnvInstallModal(props: {
@@ -64,7 +65,8 @@ export function EnvInstallModal(props: {
     esRef.current = null;
     setBusyTool('');
     setStatus('idle');
-    setLogs((l) => [...l, '【已取消安装】']);
+    // 【已取消安装】
+    setLogs((l) => [...l, t('repo.env.canceled')]);
   };
 
   const Row = (props: { name: string; info: { installed: boolean; version: string }; tool: 'svn' | 'git' }) => (
@@ -72,19 +74,23 @@ export function EnvInstallModal(props: {
       <span className={`badge ${props.tool}`} style={{ minWidth: 42, textAlign: 'center' }}>{props.name.toUpperCase()}</span>
       {props.info.installed ? (
         <span style={{ color: 'var(--ok)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          <IconOk size={12} />已安装
+          {/* 已安装 */}
+          <IconOk size={12} />{t('repo.env.installed')}
         </span>
       ) : (
         <span style={{ color: 'var(--err)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          <IconErr size={12} />未安装
+          {/* 未安装 */}
+          <IconErr size={12} />{t('repo.env.notInstalled')}
         </span>
       )}
       <span className="dim small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {props.info.version || (props.info.installed ? '' : `仅影响 ${props.name.toUpperCase()} 仓库操作`)}
+        {/* 仅影响 {tool} 仓库操作 */}
+        {props.info.version || (props.info.installed ? '' : t('repo.env.onlyAffects', { tool: props.name.toUpperCase() }))}
       </span>
       {!props.info.installed && (
         <button className="mini primary" disabled={status === 'running'} onClick={() => install(props.tool)}>
-          {busyTool === props.tool && status === 'running' ? '安装中…' : '下载安装'}
+          {/* 安装中… / 下载安装 */}
+          {busyTool === props.tool && status === 'running' ? t('repo.env.installing') : t('repo.env.download')}
         </button>
       )}
     </div>
@@ -93,10 +99,12 @@ export function EnvInstallModal(props: {
   return (
     <div className="modal-mask">
       <ResizableModal width={560} onEsc={props.onClose}>
-        <h3>环境检测</h3>
+        {/* 环境检测 */}
+        <h3>{t('repo.env.title')}</h3>
         <div className="body">
           <HelpNote>
-            本工具同时支持 <b>SVN</b> 和 <b>Git</b> 两种仓库。使用哪种仓库，系统需已安装对应的命令行工具；只用其中一种时，只需安装对应的一种即可，未安装的引擎仅影响该类仓库的操作。
+            {/* 本工具同时支持  /  和  /  两种仓库。使用哪种仓库，系统需已安装对应的命令行工具；只用其中一种时，只需安装对应的一种即可，未安装的引擎仅影响该类仓库的操作。 */}
+            {t('repo.env.help1')}<b>SVN</b>{t('repo.env.help2')}<b>Git</b>{t('repo.env.help3')}
           </HelpNote>
           <div className="vcs-list" style={{ marginTop: 12 }}>
             <Row name="svn" info={props.env.svn} tool="svn" />
@@ -118,21 +126,26 @@ export function EnvInstallModal(props: {
               {status === 'done' && (
                 <div style={{ color: 'var(--ok)', marginTop: 10, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <IconOk size={13} />
-                  安装完成，点击下方按钮刷新页面后即可使用
+                  {/* 安装完成，点击下方按钮刷新页面后即可使用 */}
+                  {t('repo.env.done')}
                 </div>
               )}
               {status === 'error' && (
                 <div className="error" style={{ marginTop: 10 }}>
-                  安装失败。请在终端手动执行：<code className="mono">{manual || 'sudo apt-get install -y subversion git'}</code>
+                  {/* 安装失败。请在终端手动执行： */}
+                  {t('repo.env.failed')}<code className="mono">{manual || 'sudo apt-get install -y subversion git'}</code>
                 </div>
               )}
             </>
           )}
         </div>
         <div className="foot">
-          <button onClick={props.onClose} disabled={status === 'running'}>关闭</button>
-          {status === 'running' && <button onClick={cancelInstall}>取消安装</button>}
-          {status === 'done' && <button className="primary" onClick={props.onInstalled}>🔄 刷新页面</button>}
+          {/* 关闭 */}
+          <button onClick={props.onClose} disabled={status === 'running'}>{t('common.close')}</button>
+          {/* 取消安装 */}
+          {status === 'running' && <button onClick={cancelInstall}>{t('repo.env.cancelInstall')}</button>}
+          {/* 🔄 刷新页面 */}
+          {status === 'done' && <button className="primary" onClick={props.onInstalled}>{t('repo.env.reload')}</button>}
         </div>
       </ResizableModal>
     </div>

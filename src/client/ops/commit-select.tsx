@@ -4,6 +4,7 @@ import { ResizableModal } from '../shell/modal-shell.js';
 import { pathAutoWidth, useCheckedSet } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { IconOk } from '../ui/icons.js';
+import { t } from '../../shared/i18n/index.js';
 import { StageHunksModal } from './stage-hunks.js';
 import { CommitCommentBox } from './commit-comment.js';
 
@@ -69,11 +70,13 @@ export function CommitSelectModal(props: {
 
   const submit = () => {
     if (checked.size === 0) {
-      setErr('请至少勾选一个文件');
+      // 请至少勾选一个文件
+      setErr(t('ops.err.needFile'));
       return;
     }
     if (!msg.trim()) {
-      setErr('请填写提交信息');
+      // 请填写提交信息
+      setErr(t('ops.commitSelect.err.noMessage'));
       return;
     }
     props.onConfirm([...checked], msg.trim(), stagedLocal);
@@ -87,30 +90,36 @@ export function CommitSelectModal(props: {
     <div className="modal-mask">
       <ResizableModal width={autoWidth} maxed={maxed} onToggleMax={() => setMaxed((m) => !m)}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ flex: 1 }}>📝 提交修改的文件 ({props.repoType.toUpperCase()})</span>
-          <button className="mini" title={maxed ? '还原窗口' : '最大化'} onClick={() => setMaxed((m) => !m)}>
+          {/* 📝 提交修改的文件 */}
+          <span style={{ flex: 1 }}>{t('ops.commitSelect.title')} ({props.repoType.toUpperCase()})</span>
+          <button className="mini" title={t(maxed ? 'ops.window.restore' : 'ops.window.maximize')} onClick={() => setMaxed((m) => !m)}>
             {maxed ? '🗗' : '⛶'}
           </button>
-          <button className="mini danger" title="关闭" onClick={props.onClose}>✕</button>
+          {/* 关闭 */}
+          <button className="mini danger" title={t('common.close')} onClick={props.onClose}>✕</button>
         </h3>
         <div className="body" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           <div className="dim small" style={{ marginBottom: 8, flexShrink: 0 }}>
-            ℹ️ 未版本化文件（?）不在列表中——需先在文件夹视图右键「添加到版本库」，再提交
+            {/* ℹ️ 未版本化文件（?）不在列表中——需先在文件夹视图右键「添加到版本库」，再提交 */}
+            {t('ops.commitSelect.hintUnversioned')}
             {props.repoType === 'svn' && (
               <>
                 <br />
-                🔗 外部引用（文件夹视图里带链环图标的目录）也不在列表中——它装的是另一个仓库路径的内容，
-                提交它等于提交那个目录，请直接到那里提交
+                {/* 🔗 外部引用（文件夹视图里带链环图标的目录）也不在列表中——它装的是另一个仓库路径的内容，提交它等于提交那个目录，请直接到那里提交 */}
+                {t('ops.commitSelect.hintExternals')}
               </>
             )}
           </div>
           {/* 目录信息条：清晰展示提交范围与勾选进度 */}
           <div className="help-note" style={{ alignItems: 'center', marginBottom: 10, padding: '8px 12px', flexShrink: 0 }}>
             <span style={{ flexShrink: 0 }}>📁</span>
-            <span className="small" style={{ flex: 1, wordBreak: 'break-all' }}>{props.dirLabel || '（仓库根）'}</span>
+            {/* （仓库根） */}
+            <span className="small" style={{ flex: 1, wordBreak: 'break-all' }}>{props.dirLabel || t('ops.repoRoot')}</span>
             <span className="small dim nowrap" style={{ flexShrink: 0 }}>
-              已勾选 <b>{checked.size}</b>/{props.items.length}
-              {filterA || filterD ? ` · 过滤显示 ${visibleItems.length} 个（${[filterA ? 'A' : '', filterD ? 'D' : ''].filter(Boolean).join('+')}）` : ''}
+              {/* 已勾选 */}
+              {t('ops.checkedLabel')} <b>{checked.size}</b>/{props.items.length}
+              {/*  · 过滤显示 {n} 个（{codes}） */}
+              {filterA || filterD ? t('ops.commitSelect.filtered', { n: visibleItems.length, codes: [filterA ? 'A' : '', filterD ? 'D' : ''].filter(Boolean).join('+') }) : ''}
             </span>
           </div>
           {/* 文件列表：弹窗高度变化时跟随伸缩，全部显示得下则不滚动 */}
@@ -119,20 +128,24 @@ export function CommitSelectModal(props: {
             <div className="row" style={{ gap: 12, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4 }}>
               <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
                 <input type="checkbox" checked={allOn} onChange={toggleAllVisible} />
-                <span className="dim small">{allOn ? '取消全选' : '全选'}</span>
+                <span className="dim small">{t(allOn ? 'ops.select.clear' : 'ops.select.all')}</span>
               </label>
               {hasA && (
-                <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title="只显示已添加的文件（勾选自动限定为可见项）">
+                // 只显示已添加的文件（勾选自动限定为可见项）
+                <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.commitSelect.filterATip')}>
                   <input type="checkbox" checked={filterA} onChange={() => applyFilter(!filterA, filterD)} />
                   <span className="act A small">A</span>
-                  <span className="dim small">添加</span>
+                  {/* 添加 */}
+                  <span className="dim small">{t('ops.commitSelect.filterA')}</span>
                 </label>
               )}
               {hasD && (
-                <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title="只显示已删除的文件（勾选自动限定为可见项）">
+                // 只显示已删除的文件（勾选自动限定为可见项）
+                <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.commitSelect.filterDTip')}>
                   <input type="checkbox" checked={filterD} onChange={() => applyFilter(filterA, !filterD)} />
                   <span className="act D small">D</span>
-                  <span className="dim small">删除</span>
+                  {/* 删除 */}
+                  <span className="dim small">{t('ops.commitSelect.filterD')}</span>
                 </label>
               )}
             </div>
@@ -142,7 +155,8 @@ export function CommitSelectModal(props: {
                 className="changed-row"
                 style={{ cursor: 'pointer' }}
                 title={props.onDiff && !it.isDir
-                  ? `${it.path}\n双击查看差异${isGit ? ' · 右键选择部分改动' : ''}`
+                  // 双击查看差异 /  · 右键选择部分改动
+                  ? `${it.path}\n${t('ops.rowTip.diff')}${isGit ? t('ops.rowTip.stagePartial') : ''}`
                   : it.path}
                 onDoubleClick={(ev) => {
                   ev.preventDefault();
@@ -161,14 +175,18 @@ export function CommitSelectModal(props: {
                   {it.path}{it.isDir ? '/' : ''}
                 </span>
                 {stagedLocal.includes(it.path) && (
-                  <span className="small" style={{ flexShrink: 0, color: 'var(--accent)' }} title="已部分暂存：提交时只提交选中的改动，未选中的留在工作区">
-                    ✂ 部分
+                  // 已部分暂存：提交时只提交选中的改动，未选中的留在工作区
+                  <span className="small" style={{ flexShrink: 0, color: 'var(--accent)' }} title={t('ops.commitSelect.stagePartialTip')}>
+                    {/* ✂ 部分 */}
+                    {t('ops.commitSelect.stagePartial')}
                   </span>
                 )}
               </label>
             ))}
-            {props.items.length === 0 && <div className="dim" style={{ padding: '8px 4px' }}>当前目录下没有变更文件</div>}
-            {props.items.length > 0 && visibleItems.length === 0 && <div className="dim" style={{ padding: '8px 4px' }}>没有匹配当前过滤的文件</div>}
+            {/* 当前目录下没有变更文件 */}
+            {props.items.length === 0 && <div className="dim" style={{ padding: '8px 4px' }}>{t('ops.commitSelect.noChanges')}</div>}
+            {/* 没有匹配当前过滤的文件 */}
+            {props.items.length > 0 && visibleItems.length === 0 && <div className="dim" style={{ padding: '8px 4px' }}>{t('ops.commitSelect.noMatch')}</div>}
           </div>
           <div style={{ marginTop: 2 }}>
             <CommitCommentBox
@@ -176,13 +194,15 @@ export function CommitSelectModal(props: {
               onChange={setMsg}
               onSubmit={submit}
               rows={3}
-              placeholder="简要说明本次提交内容，如：修复xxx问题、新增xxx功能…"
+              // 简要说明本次提交内容，如：修复xxx问题、新增xxx功能…
+              placeholder={t('ops.commit.msgPlaceholder')}
             />
           </div>
           {err && <div className="error mt8">{err}</div>}
         </div>
         <div className="foot">
-          <button onClick={props.onClose}>取消</button>
+          {/* 取消 */}
+          <button onClick={props.onClose}>{t('common.cancel')}</button>
           <button
             className="primary"
             onClick={submit}
@@ -191,7 +211,8 @@ export function CommitSelectModal(props: {
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               <IconOk size={13} />
-              提交勾选的 {checked.size} 个文件
+              {/* 提交勾选的 {n} 个文件 */}
+              {t('ops.commitSelect.confirm', { n: checked.size })}
             </span>
           </button>
         </div>

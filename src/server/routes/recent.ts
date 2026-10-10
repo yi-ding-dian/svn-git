@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { detectRepo } from '../../vcs/detect.js';
 import { sendJson, readBody, currentScopes, type Ctx } from './util.js';
+import { t } from '../../shared/i18n/index.js';
 
 /** 最近打开的项目历史（服务端持久化：浏览器端口随机，localStorage 不可靠） */
 const HISTORY_PATH = path.join(os.homedir(), '.config', 'svngit', 'history.json');
@@ -101,12 +102,14 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const dir = String(body.path ?? '');
         if (!dir) {
-          sendJson(res, 400, { error: '缺少路径' });
+          // 缺少路径
+          sendJson(res, 400, { error: t('srv.missingPath') });
           return true;
         }
         const r = detectRepo(dir);
         if (!r) {
-          sendJson(res, 400, { error: `${dir} 不是 SVN/Git 工作副本` });
+          // {dir} 不是 SVN/Git 工作副本
+          sendJson(res, 400, { error: t('srv.notWc', { dir }) });
           return true;
         }
         process.env.SVNGIT_REPO_DIR = r.root;

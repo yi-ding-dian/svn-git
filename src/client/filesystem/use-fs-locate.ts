@@ -49,7 +49,7 @@ export function useFsLocate(opts: {
   setDir: React.Dispatch<React.SetStateAction<string>>;
   relOf: (e: FsEntry) => string;
 }) {
-  const { mode, dir, visibleRows, listEntries, data, rowRefs, loadNode, setExpanded, diag, viewDir, breadcrumbRef, setFocusIndex, setSelected, setDir, relOf } = opts;
+  const { mode, visibleRows, listEntries, data, rowRefs, loadNode, setExpanded, diag, viewDir, breadcrumbRef, setFocusIndex, setSelected, setDir, relOf } = opts;
 
   const [pendingLocate, setPendingLocate] = useState<LocateTarget | null>(null);
   /** 正在脉冲闪烁的条目（渲染时挂 .file-pulse） */
@@ -100,7 +100,7 @@ export function useFsLocate(opts: {
       // 统一走 pendingLocate：树=展开父链+高亮；列表/网格=进目录+选中（数据就绪后的滚动/脉冲在下面的 effect 里）
       setPendingLocate({ rel: target, at: Date.now(), code: code === 'TC' ? undefined : code, tc: code === 'TC' });
     },
-    [diag, viewDir, breadcrumbRef], // eslint-disable-line react-hooks/exhaustive-deps
+    [diag, viewDir, breadcrumbRef],
   );
 
   // 定位第一步（树）：展开目标的父链并逐级加载

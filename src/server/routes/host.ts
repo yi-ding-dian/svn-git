@@ -10,6 +10,7 @@ import { platform } from '../../platform/index.js';
 import { BINARY_EXTS, compareName } from '../../shared/types.js';
 import { run } from '../../vcs/exec.js';
 import { inRepoRoot, sendJson, readBody, vcsOf, START_DIR, MSG_PATH_OUT_OF_BOUNDS, type Ctx } from './util.js';
+import { t } from '../../shared/i18n/index.js';
 import type { RepoInfo } from '../../vcs/index.js';
 
 /** 系统目录选择器（Electron dialog 注入；纯 node 为 null） */
@@ -26,7 +27,8 @@ function browseDirs(dir: string): { entries: { name: string; isDir: boolean }[];
   try {
     entries = fs.readdirSync(cur);
   } catch (err) {
-    throw new Error(`无法读取目录: ${(err as Error).message}`);
+    // 无法读取目录: {msg}
+    throw new Error(t('srv.readDirFailed', { msg: (err as Error).message }));
   }
   if (cur !== '/') out.push({ name: '..', isDir: true });
   const dirs: string[] = [];
@@ -84,7 +86,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const dir = String(body.path ?? '');
         if (!dir) {
-          sendJson(res, 400, { error: '路径为空' });
+          // 路径为空
+          sendJson(res, 400, { error: t('srv.pathEmpty') });
           return true;
         }
         try {
@@ -102,7 +105,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const from = String(body.from ?? '');
         const to = String(body.to ?? '');
         if (!from || !to) {
-          sendJson(res, 400, { error: '路径为空' });
+          // 路径为空
+          sendJson(res, 400, { error: t('srv.pathEmpty') });
           return true;
         }
         try {
@@ -197,11 +201,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const exec = String(body.exec ?? '');
         const abs = path.resolve(repo.root, rel);
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         if (!fs.existsSync(abs)) {
-          sendJson(res, 404, { error: '文件不存在' });
+          // 文件不存在
+          sendJson(res, 404, { error: t('srv.fileNotFound') });
           return true;
         }
         const r = await platform.openWithApp(abs, exec, rel);
@@ -222,7 +227,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         if (req.method === 'POST') {
           const appImagePath = process.env.APPIMAGE;
           if (!appImagePath) {
-            sendJson(res, 400, { error: '仅 AppImage 运行方式支持；源码运行请用 scripts/install-appimage.sh' });
+            // 仅 AppImage 运行方式支持；源码运行请用 scripts/install-appimage.sh
+            sendJson(res, 400, { error: t('srv.appImageOnly') });
             return true;
           }
           sendJson(res, 200, platform.installAppMenu(appImagePath));
@@ -239,22 +245,26 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         // 区分"网络断"与"认证失败"：认证失败=网络通的（前端显示绿,tooltip 说明认证问题）
         const { repo, vcs } = vcsOf();
         let ok = false;
-        let reason = '未知错误';
+        // 未知错误
+        let reason = t('srv.unknownError');
         try {
           if (repo.type === 'git') {
             const u = await run('git', ['remote', 'get-url', 'origin'], { cwd: repo.root, timeoutMs: 8_000 });
             if (u.code !== 0 || !u.stdout.trim()) {
               ok = true; // 未配置远程：无远程可检,不视为离线
-              reason = '未配置远程';
+              // 未配置远程
+              reason = t('srv.noRemote');
             } else {
               const r = await run('git', ['ls-remote', 'origin'], { cwd: repo.root, timeoutMs: 8_000 });
               const errText = (r.stderr + '\n' + r.stdout).trim();
               if (r.code === 0) {
-                ok = true; reason = '网络正常';
+                ok = true; reason = ''; // 一切正常：不返回文本（前端按空串判断"无可说"；返回固定文案会因语言切换导致比较失效）
               } else if (/auth|credential|401|403|could not read Username|terminal prompts/i.test(errText)) {
-                ok = true; reason = '已连通（认证失败，需检查令牌）';
+                // 已连通（认证失败，需检查令牌）
+                ok = true; reason = t('srv.netAuthFailToken');
               } else {
-                ok = false; reason = errText.split('\n')[0] || '连接失败';
+                // 连接失败
+                ok = false; reason = errText.split('\n')[0] || t('srv.connectFailed');
               }
             }
           } else {
@@ -263,16 +273,19 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             const info = await vcs.info?.();
             const url = info?.url ?? repo.url;
             if (!url) {
-              ok = true; reason = '未配置仓库 URL';
+              // 未配置仓库 URL
+              ok = true; reason = t('srv.noRepoUrl');
             } else {
               const r = await run('svn', ['ls', url], { timeoutMs: 8_000 });
               const errText = r.stderr.trim();
               if (r.code === 0) {
-                ok = true; reason = '网络正常';
+                ok = true; reason = ''; // 一切正常：不返回文本（前端按空串判断"无可说"；返回固定文案会因语言切换导致比较失效）
               } else if (/E170001|Authorization failed|Authentication failed/i.test(errText)) {
-                ok = true; reason = '已连通（认证失败，请检查账号）';
+                // 已连通（认证失败，请检查账号）
+                ok = true; reason = t('srv.netAuthFailAccount');
               } else {
-                ok = false; reason = errText.split('\n')[0] || '连接失败';
+                // 连接失败
+                ok = false; reason = errText.split('\n')[0] || t('srv.connectFailed');
               }
             }
           }

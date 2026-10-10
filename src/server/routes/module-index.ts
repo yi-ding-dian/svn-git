@@ -7,6 +7,7 @@ import { decodeText } from '../../shared/text.js';
 import os from 'node:os';
 import path from 'node:path';
 import { sendJson, readBody, repoInfo, type Ctx } from './util.js';
+import { t } from '../../shared/i18n/index.js';
 
 /** 单条路径→描述 */
 export interface IndexEntry {
@@ -121,7 +122,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
 
   if (p === '/api/module-index' && req.method === 'GET') {
     if (!repo) {
-      sendJson(res, 400, { error: '未打开仓库' });
+      // 未打开仓库
+      sendJson(res, 400, { error: t('srv.noRepoOpen') });
       return true;
     }
     sendJson(res, 200, { indexes: loadIndex().repos[repo.root] ?? {} });
@@ -131,13 +133,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
   if (p === '/api/module-index/preview' && req.method === 'GET') {
     // 注入前预览解析结果（弹窗列举给用户勾选）
     if (!repo) {
-      sendJson(res, 400, { error: '未打开仓库' });
+      // 未打开仓库
+      sendJson(res, 400, { error: t('srv.noRepoOpen') });
       return true;
     }
     const md = url.searchParams.get('md') ?? '';
     const entries = parseRepoMd(repo.root, md);
     if (!entries) {
-      sendJson(res, 400, { error: '解析失败：md 文件不存在或不在仓库内，或未找到「路径 ← 描述」条目' });
+      // 解析失败：md 文件不存在或不在仓库内，或未找到「路径 ← 描述」条目
+      sendJson(res, 400, { error: t('srv.parseFailedFull') });
       return true;
     }
     sendJson(res, 200, { entries });
@@ -147,23 +151,27 @@ export async function handle(ctx: Ctx): Promise<boolean> {
   if (p === '/api/module-index' && req.method === 'POST') {
     // 注入（或更新覆盖）：快照 md 解析结果；included 为前端勾选保留的 path 清单（缺省全保留）
     if (!repo) {
-      sendJson(res, 400, { error: '未打开仓库' });
+      // 未打开仓库
+      sendJson(res, 400, { error: t('srv.noRepoOpen') });
       return true;
     }
     const body = await readBody(req);
     const dir = String(body.dir ?? '').trim();
     const md = String(body.md ?? '').trim();
     if (!dir.startsWith('/') && dir.split(path.sep).includes('..')) {
-      sendJson(res, 400, { error: '作用目录非法' });
+      // 作用目录非法
+      sendJson(res, 400, { error: t('srv.scopeDirInvalid') });
       return true;
     }
     if (dir && !path.resolve(repo.root, dir).startsWith(repo.root + path.sep)) {
-      sendJson(res, 400, { error: '作用目录越界' });
+      // 作用目录越界
+      sendJson(res, 400, { error: t('srv.scopeDirOutOfBounds') });
       return true;
     }
     const entries = parseRepoMd(repo.root, md);
     if (!entries) {
-      sendJson(res, 400, { error: '解析失败：md 文件不存在或不在仓库内' });
+      // 解析失败：md 文件不存在或不在仓库内
+      sendJson(res, 400, { error: t('srv.parseFailed') });
       return true;
     }
     const included = Array.isArray(body.included) ? (body.included as string[]) : null;
@@ -187,7 +195,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
   if (p === '/api/module-index/clear' && req.method === 'POST') {
     // 清除指定作用目录的注入
     if (!repo) {
-      sendJson(res, 400, { error: '未打开仓库' });
+      // 未打开仓库
+      sendJson(res, 400, { error: t('srv.noRepoOpen') });
       return true;
     }
     const body = await readBody(req);

@@ -1,10 +1,11 @@
 /** 文件夹浏览视图：列表/树/浏览(网格)三模式，支持键盘导航（↑↓ 选择、→/Enter 进入、← 返回） */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterTreeNode } from '../shared/api.js';
-import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconDownload, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon, MiniIcon } from '../ui/icons.js';
+import { t } from '../../shared/i18n/index.js';
+import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry } from '../shared/api.js';
+import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconList, IconTree, IconGrid, IconHome, IconUp, GridIcon, MiniIcon } from '../ui/icons.js';
 import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
-import { multiRevertName, renameableCode, removableFromRepo, renameItem, joinPaths, filterEntries, relOfName, revertName, type Filter, type Mode, type VisibleRow } from './utils.js';
+import { filterEntries, type Filter, type Mode, type VisibleRow } from './utils.js';
 import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } from './menus.js';
 import { useFileSearch, FsSearchBox } from './search.js';
 import { useFilterTree } from './filter-tree.js';
@@ -14,11 +15,10 @@ import { useFsLocate } from './use-fs-locate.js';
 import { TreeRow } from './views/rows.js';
 import { GridItem, FileTipCard } from './views/grid.js';
 import { ThumbIcon } from './views/thumb.js';
-import { flashBreadcrumbs } from '../ui/motion.js';
 import { compareName } from '../../shared/types.js';
 import { useDirPreload } from './use-dir-preload.js';
 import { WcNotice } from './wc-notice.js';
-import { useWcConflicts, useConflictLookup, tcState, conflictPaths } from './use-wc-conflicts.js';
+import { useWcConflicts, useConflictLookup, tcState } from './use-wc-conflicts.js';
 import { useDropUpload, useCopyPaste, moveItemsTo, MOVE_MIME, type ConflictChoice, type ClipItem } from './use-file-transfer.js';
 import { UploadConflictModal } from './upload-conflict.js';
 import { ModuleIndexDialog } from './module-index.js';
@@ -29,7 +29,7 @@ import { ModuleIndexDialog } from './module-index.js';
 /** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
 import { IgnoreModal } from './ignore-modal.js';
 import { FavDirsModal } from './fav-dirs.js';
-import { fmtSize, statusColor, translateVcsError, isBinaryFile, isImageFile } from '../shared/utils.js';
+import { fmtSize, statusColor, isBinaryFile, isImageFile } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 /** 命令预览: 多路径缩写（前 3 个 + …） */
 import { ModalShell } from '../shell/modal-shell.js';
@@ -119,11 +119,14 @@ export function FsView(props: Props) {
     return () => window.removeEventListener('mouseup', onWinUp);
   }, []);
   const lastWasDragRef = useRef(false);
-  /** 忽略写入去向的中文说明（JSX 用；状态本身在 useIgnoreFlow 里） */
+  /** 忽略写入去向的说明（JSX 用；状态本身在 useIgnoreFlow 里）。每次渲染重建，故可直接 t() */
   const IGNORE_WHERE_LABEL: Record<'gitignore' | 'global' | 'exclude', string> = {
-    gitignore: '仓库 .gitignore（随仓库分发）',
-    global: '全局忽略（仅本机，所有仓库生效）',
-    exclude: '.git/info/exclude（仅本机本仓库）',
+    // 仓库 .gitignore（随仓库分发）
+    gitignore: t('fs.ignoreWhere.gitignore'),
+    // 全局忽略（仅本机，所有仓库生效）
+    global: t('fs.ignoreWhere.global'),
+    // .git/info/exclude（仅本机本仓库）
+    exclude: t('fs.ignoreWhere.exclude'),
   };
   const [focusIndex, setFocusIndex] = useState(0);
   // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
@@ -131,7 +134,6 @@ export function FsView(props: Props) {
   // 文件搜索（工具栏）：防抖查询 + 结果下拉状态收于 useFileSearch
   const search = useFileSearch(data?.dir ?? '');
   // only：显式指定选中集合（拖入上传用）——跳过"按 code 同状态全选"，只选中真正落盘的那几个
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const gridRef = useRef<HTMLDivElement | null>(null);
   const breadcrumbRef = useRef<HTMLDivElement | null>(null);
@@ -218,7 +220,8 @@ export function FsView(props: Props) {
     localStorage.setItem(favKey(props.repoRoot), JSON.stringify(next));
     setFavs(next);
     preloadDir(rel);
-    props.onToast(`已加入常用文件夹，正在后台预加载：${rel}`);
+    // 已加入常用文件夹，正在后台预加载：{rel}
+    props.onToast(t('fs.fav.added', { rel }));
   };
   /** 移除常用文件夹 */
   const removeFav = (rel: string) => {
@@ -247,7 +250,8 @@ export function FsView(props: Props) {
       // 大目录提示：条目多时告知原因（加载完成后展示 5 秒）
       const n = r.entries?.length ?? 0;
       if (n > 200) {
-        setBigTip(`该目录文件较多（共 ${n} 项），首次加载可能需要一点时间`);
+        // 该目录文件较多（共 {n} 项），首次加载可能需要一点时间
+        setBigTip(t('fs.tip.bigDir', { n }));
         if (bigTipTimer.current) clearTimeout(bigTipTimer.current);
         bigTipTimer.current = setTimeout(() => setBigTip(''), 5000);
       } else {
@@ -265,12 +269,14 @@ export function FsView(props: Props) {
     } finally {
       setFsLoading(false);
     }
+    // setPendingLocate 的 useState 在下方才声明，放进依赖数组会 TDZ（Block-scoped variable used before its declaration）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 目录切换：优先缓存
   useEffect(() => {
     void load(dir, false);
-  }, [dir, load]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dir, load]);
   // 仓库切换（repoRoot 变化）→ 浏览位置回到操作范围(子项目/根)，清空旧目录缓存
   useEffect(() => {
     setDir(props.startRel ?? '');
@@ -364,7 +370,7 @@ export function FsView(props: Props) {
   // 列表模式条目
   const listEntries = useMemo(() => {
     if (!data) return [];
-    let list = filterEntries(data.entries.filter((e) => showHidden || !e.name.startsWith('.')), filters);
+    const list = filterEntries(data.entries.filter((e) => showHidden || !e.name.startsWith('.')), filters);
     return list
       .slice()
       .sort((a, b) => Number(b.isDir) - Number(a.isDir) || codeRank(b.code) - codeRank(a.code) || compareName(a.name, b.name));
@@ -423,7 +429,8 @@ export function FsView(props: Props) {
         onRowClick(r.rel, idx, ev, { name: r.name, isDir: r.isDir, code: r.code, size: r.size, mtime: r.mtime, relPath: r.rel } as FsEntry);
         if (r.isDir && r.miss) {
           // 缺失目录（树/过滤树共用）：磁盘已不存在，展开/折叠会加载空数据——拦截并提示还原
-          props.onToast('目录已在磁盘上缺失，请右键「还原」恢复', true);
+          // 目录已在磁盘上缺失，请右键「还原」恢复
+          props.onToast(t('fs.missingDir'), true);
           return;
         }
         if (r.isDir && !ev.ctrlKey && !ev.shiftKey) {
@@ -443,7 +450,8 @@ export function FsView(props: Props) {
       onDoubleClick={(r) => {
         setTip(null); // 双击即关闭悬浮卡片
         if (r.miss) {
-          props.onToast('文件已在磁盘上缺失，请右键「还原」恢复', true);
+          // 文件已在磁盘上缺失，请右键「还原」恢复
+          props.onToast(t('fs.missingFile'), true);
           return;
         }
         if (filtered) {
@@ -479,7 +487,8 @@ export function FsView(props: Props) {
       }
       // 办公文档/压缩包等二进制：双击不打开（diff 无意义、原文会乱码、大文件拖死界面），提示走「打开方式…」
       if (isBinaryFile(rel)) {
-        props.onToast('二进制文档：右键「打开方式…」用系统程序打开', true);
+        // 二进制文档：右键「打开方式…」用系统程序打开
+        props.onToast(t('fs.tip.binary'), true);
         return;
       }
       if (code && code !== '?' && code !== 'I') {
@@ -545,7 +554,7 @@ export function FsView(props: Props) {
 
   // 定位与脉冲（角标定位 → 展开父链 → 滚动高亮 → 卡片闪烁）抽到 useFsLocate：
   // 里面含着两处竞态防护（连点令牌、目标不出现时的 3s 兜底），细节见该文件头注释
-  const { pendingLocate, setPendingLocate, pulseRels, locateBadge } = useFsLocate({
+  const { setPendingLocate, pulseRels, locateBadge } = useFsLocate({
     mode,
     dir,
     visibleRows,
@@ -681,8 +690,10 @@ export function FsView(props: Props) {
   const openInFm = (rel: string) => {
     void post
       .reveal(rel)
-      .then(() => props.onToast('已打开文件管理器'))
-      .catch((err: Error) => props.onToast(`打开失败: ${err.message}`, true));
+      // 已打开文件管理器
+      .then(() => props.onToast(t('fs.tip.fmOpened')))
+      // 打开失败: {msg}
+      .catch((err: Error) => props.onToast(t('fs.menu.openFailed', { msg: err.message }), true));
   };
 
   // 右键菜单服务：菜单项动作所需数据/回调（menus.tsx 纯构建 items,不直接碰组件状态）
@@ -730,7 +741,8 @@ export function FsView(props: Props) {
   /** 「打开方式」异步取到程序列表后替换菜单第 owIdx 项的子菜单（菜单已关闭则安全跳过） */
   const menuPatchItems = (owIdx: number, subs: CtxMenuItem[]) => {
     setCtx((cur) =>
-      cur && cur.items[owIdx]?.label === '打开方式…'
+      // 打开方式…
+      cur && cur.items[owIdx]?.label === t('fs.act.openWith')
         ? { ...cur, items: cur.items.map((it, i) => (i === owIdx ? { ...it, submenu: subs } : it)) }
         : cur
     );
@@ -872,12 +884,23 @@ export function FsView(props: Props) {
           setPendingLocate({ rel: here[0]!, at: Date.now(), only: here });
         }
         const elsewhere = saved.length - here.length;
-        const picked = here.length > 0 ? '，已选中并定位' : '';
-        const sub = elsewhere > 0 ? `，另有 ${elsewhere} 个在子文件夹里` : '';
+        // ，已选中并定位
+        const picked = here.length > 0 ? t('fs.drop.picked') : '';
+        // ，另有 {n} 个在子文件夹里
+        const sub = elsewhere > 0 ? t('fs.drop.elsewhere', { n: elsewhere }) : '';
         props.onToast(
           failed.length
-            ? `已复制 ${okCount} 个${picked}${sub}；${failed.length} 个失败：${failed.slice(0, 3).join('、')}${failed.length > 3 ? ' 等' : ''}`
-            : `已复制 ${okCount} 个文件${picked}${sub}`,
+            // 已复制 {ok} 个文件{picked}{sub}；{n} 个失败：{list}
+            ? t('fs.drop.copiedFailed', {
+                ok: okCount,
+                picked,
+                sub,
+                n: failed.length,
+                //  等
+                list: failed.slice(0, 3).join(t('common.listSep')) + (failed.length > 3 ? t('fs.andMore') : ''),
+              })
+            // 已复制 {n} 个文件{picked}{sub}
+            : t('fs.drop.copied', { n: okCount, picked, sub }),
           failed.length > 0, // 有失败项就按错误态显示（停留久一点，也提醒去处理）
         );
       },
@@ -898,7 +921,7 @@ export function FsView(props: Props) {
       // 树模式重载根节点，其余重载当前目录
       if (mode === 'tree') loadNode('', true);
       else void load(dir, true);
-    }, [mode, dir, load, loadNode]), // eslint-disable-line react-hooks/exhaustive-deps
+    }, [mode, dir, load, loadNode]),
   });
 
   // 剪贴板快捷键（Ctrl+C / Ctrl+X / Ctrl+V）：**单独一个监听**。
@@ -971,7 +994,8 @@ export function FsView(props: Props) {
     if (picked.length > 1) {
       const ghost = document.createElement('div');
       ghost.className = 'drag-ghost';
-      ghost.textContent = `移动 ${picked.length} 项`;
+      // 移动 {n} 项
+      ghost.textContent = t('fs.drop.movingGhost', { n: picked.length });
       document.body.appendChild(ghost);
       ev.dataTransfer.setDragImage(ghost, 18, 14);
       dragGhostRef.current = ghost;
@@ -1014,7 +1038,8 @@ export function FsView(props: Props) {
     setInlineText('');
     if (!cur || !text) return;
     if (/[/\\]/.test(text)) {
-      props.onToast('名字不能包含 / 或 \\', true);
+      // 名字不能包含 / 或 \
+      props.onToast(t('fs.inline.badName'), true);
       return;
     }
     const isRename = cur.kind === 'rename';
@@ -1032,18 +1057,22 @@ export function FsView(props: Props) {
       await load(dir, true);
       setPendingLocate({ rel, at: Date.now() }); // 选中并定位到刚落地的条目
       if (isRename) {
-        props.onToast(`已重命名为 ${text}`);
+        // 已重命名为 {name}
+        props.onToast(t('fs.inline.renamed', { name: text }));
       } else {
         // git 不跟踪目录本身：空文件夹不会出现在提交里，不提醒的话用户会以为建失败了
         // （空**文件**没这问题，git 会照常显示为未跟踪）
         props.onToast(
           cur.type === 'dir' && props.repoType === 'git'
-            ? `${r.message ?? `已新建 ${rel}`}（空目录不会被 Git 提交，放个文件进去才会出现在变更里）`
-            : (r.message ?? `已新建 ${rel}`),
+            // 已新建 {rel} / （空目录不会被 Git 提交，放个文件进去才会出现在变更里）
+            ? (r.message ?? t('fs.inline.created', { rel })) + t('fs.inline.emptyDirGit')
+            // 已新建 {rel}
+            : (r.message ?? t('fs.inline.created', { rel })),
         );
       }
     } catch (e) {
-      props.onToast(`${isRename ? '重命名' : '新建'}失败：${(e as Error).message}`, true); // 同名已存在等原样带出来
+      // {action}失败：{msg} / 重命名 / 新建
+      props.onToast(t('fs.inline.failed', { action: isRename ? t('fs.rename.title') : t('fs.inline.new'), msg: (e as Error).message }), true); // 同名已存在等原样带出来
     }
   };
 
@@ -1110,7 +1139,8 @@ export function FsView(props: Props) {
           onRowClick(rel, i, ev, e);
           // 缺失目录：磁盘已不存在，进入会 ENOENT——拦截并提示还原
           if (e.isDir && e.miss) {
-            props.onToast('目录已在磁盘上缺失，请右键「还原」恢复', true);
+            // 目录已在磁盘上缺失，请右键「还原」恢复
+            props.onToast(t('fs.missingDir'), true);
             return;
           }
           if (e.isDir && !ev.ctrlKey && !ev.shiftKey) {
@@ -1121,7 +1151,8 @@ export function FsView(props: Props) {
         onDoubleClick={() => {
           setTip(null); // 双击即关闭悬浮卡片
           if (e.miss) {
-            props.onToast('文件已在磁盘上缺失，请右键「还原」恢复', true);
+            // 文件已在磁盘上缺失，请右键「还原」恢复
+            props.onToast(t('fs.missingFile'), true);
             return;
           }
           if (!e.isDir) void openFile(e.name, e.code, rel);
@@ -1153,10 +1184,12 @@ export function FsView(props: Props) {
           className={`name ${e.isDir ? 'dir' : 'file'}`}
           style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}
           // 重命名标出来源：列表里只显示新名字，光看名字看不出从哪移过来的
-          title={e.origPath ? `从 ${e.origPath} 移动/重命名而来` : undefined}
+          // 从 {path} 移动/重命名而来
+          title={e.origPath ? t('fs.movedFrom', { path: e.origPath }) : undefined}
         >
           {inline?.kind === 'rename' && inline.rel === rel ? inlineInput('left', e.name) : e.name}
-          {e.count ? <span className="count"> （{e.count} 项）</span> : null}
+          {/* （{n} 项） */}
+          {e.count ? <span className="count"> {t('fs.countItems', { n: e.count })}</span> : null}
           {descOf(rel) && (
             <span className="dim small" style={{ marginLeft: 10, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               · {descOf(rel)}
@@ -1164,7 +1197,8 @@ export function FsView(props: Props) {
           )}
           {e.miss && (
             <span className="dim small" style={{ marginLeft: 10 }}>
-              · 已在磁盘上缺失，右键可还原
+              {/* 已在磁盘上缺失，右键可还原 */}
+              · {t('fs.missRowHint')}
             </span>
           )}
         </span>
@@ -1187,34 +1221,44 @@ export function FsView(props: Props) {
     <span className="actions" onClick={(ev) => ev.stopPropagation()}>
       {/* diff 仅限版本化文件（文件夹无 diff；未版本化/干净文件无差异可看；缺失文件磁盘无内容） */}
       {e.code !== '' && e.code !== '?' && !e.isDir && !e.miss && (
-        <ActionBtn icon={<IconDiff />} label="diff" title="查看差异" cmd={cmdOfRepo(props.repoType, 'diff', { path: e.rel })} onClick={() => props.onDiff(e.rel)} />
+        // 查看差异
+        <ActionBtn icon={<IconDiff />} label="diff" title={t('fs.act.viewDiff')} cmd={cmdOfRepo(props.repoType, 'diff', { path: e.rel })} onClick={() => props.onDiff(e.rel)} />
       )}
       {/* 缺失条目：还原（svn revert / git checkout 拉回） */}
       {e.code === '!' && (
-        <ActionBtn icon={<IconRevert />} label="还原" title="文件已在磁盘上缺失，还原从版本库恢复" cmd={cmdOfRepo(props.repoType, 'revert', { paths: e.rel })} onClick={() => onAction('revert', e.rel)} />
+        // 还原 / 文件已在磁盘上缺失，还原从版本库恢复
+        <ActionBtn icon={<IconRevert />} label={t('fs.revert.revert')} title={t('fs.act.restoreMissingFileTitle')} cmd={cmdOfRepo(props.repoType, 'revert', { paths: e.rel })} onClick={() => onAction('revert', e.rel)} />
       )}
       {e.code === '?' && (
         <>
-          <ActionBtn icon={<IconPlus />} label="添加" cmd={cmdOfRepo(props.repoType, 'add', { paths: e.rel })} onClick={() => onAction('add', e.rel)} />
-          <ActionBtn icon={<IconEyeOff />} label="忽略" title="加入忽略" cmd={cmdOfRepo(props.repoType, 'ignore_add', { path: e.rel, pattern: '…' })} onClick={() => ignoreFile(e)} />
+          {/* 添加 */}
+          <ActionBtn icon={<IconPlus />} label={t('fs.act.add')} cmd={cmdOfRepo(props.repoType, 'add', { paths: e.rel })} onClick={() => onAction('add', e.rel)} />
+          {/* 忽略 / 加入忽略 */}
+          <ActionBtn icon={<IconEyeOff />} label={t('fs.act.ignore')} title={t('fs.act.ignoreTitle')} cmd={cmdOfRepo(props.repoType, 'ignore_add', { path: e.rel, pattern: '…' })} onClick={() => ignoreFile(e)} />
         </>
       )}
       {e.isDir && e.code && e.code !== '?' && !e.miss && (
-        <ActionBtn icon={<IconCommit />} label="提交" title="提交此目录修改" cmd={cmdOfRepo(props.repoType, 'commit', { msg: '…' })} onClick={() => props.onAction('commit', [e.rel])} />
+        // 提交 / 提交此目录修改
+        <ActionBtn icon={<IconCommit />} label={t('fs.act.commit')} title={t('fs.act.commitDirTitle')} cmd={cmdOfRepo(props.repoType, 'commit', { msg: '…' })} onClick={() => props.onAction('commit', [e.rel])} />
       )}
       {(e.code === 'M' || e.code === 'A' || e.code === 'D' || e.code === 'R') && (
         <>
-          <ActionBtn icon={<IconRevert />} label="还原" cmd={cmdOfRepo(props.repoType, 'revert', { paths: e.rel })} onClick={() => onAction('revert', e.rel)} />
-          <ActionBtn icon={<IconClean />} label="从版本库移除" cmd={cmdOfRepo(props.repoType, 'remove_keep', { paths: e.rel })} onClick={() => onAction('delete', e.rel, true)} />
+          {/* 还原 */}
+          <ActionBtn icon={<IconRevert />} label={t('fs.revert.revert')} cmd={cmdOfRepo(props.repoType, 'revert', { paths: e.rel })} onClick={() => onAction('revert', e.rel)} />
+          {/* 从版本库移除 */}
+          <ActionBtn icon={<IconClean />} label={t('fs.act.removeFromRepo')} cmd={cmdOfRepo(props.repoType, 'remove_keep', { paths: e.rel })} onClick={() => onAction('delete', e.rel, true)} />
         </>
       )}
       {!e.isDir && e.code !== '?' && !e.miss && props.repoType === 'svn' && (
         <>
-          <ActionBtn icon={<IconLock />} label="锁定" onClick={() => svnLock(e.rel, 'lock')} />
-          <ActionBtn icon={<IconUnlock />} label="解锁" onClick={() => svnLock(e.rel, 'unlock')} />
+          {/* 锁定 */}
+          <ActionBtn icon={<IconLock />} label={t('fs.act.lock')} onClick={() => svnLock(e.rel, 'lock')} />
+          {/* 解锁 */}
+          <ActionBtn icon={<IconUnlock />} label={t('fs.act.unlock')} onClick={() => svnLock(e.rel, 'unlock')} />
         </>
       )}
-      {!e.isDir && e.code !== '?' && <ActionBtn icon={<IconClock />} label="历史" onClick={() => props.onLog(e.rel)} />}
+      {/* 历史 */}
+      {!e.isDir && e.code !== '?' && <ActionBtn icon={<IconClock />} label={t('fs.act.history')} onClick={() => props.onLog(e.rel)} />}
     </span>
   );
 
@@ -1233,13 +1277,17 @@ export function FsView(props: Props) {
               if (mode === 'tree') setExpanded(new Set());
               setFocusIndex(0);
             }}
-            title="回到项目根目录"
+            // 回到项目根目录
+            title={t('fs.toolbar.rootTitle')}
           >
-            <IconHome /> 根目录
+            {/* 根目录 */}
+            <IconHome /> {t('fs.toolbar.root')}
           </button>
           {/* 刷新已由顶部工具栏全局刷新覆盖（tick 机制连带重载本视图），不重复提供 */}
-          <button className="mini tool-btn" onClick={() => setShowHidden((s) => !s)} title="显示/隐藏隐藏文件">
-            {showHidden ? <IconEye /> : <IconEyeOff />} {showHidden ? '隐藏' : '隐藏文件'}
+          {/* 显示/隐藏隐藏文件 */}
+          <button className="mini tool-btn" onClick={() => setShowHidden((s) => !s)} title={t('fs.toolbar.hiddenTitle')}>
+            {/* 隐藏 / 隐藏文件 */}
+            {showHidden ? <IconEye /> : <IconEyeOff />} {showHidden ? t('fs.toolbar.hide') : t('fs.toolbar.hiddenFiles')}
           </button>
           <span className="row" style={{ gap: 4 }}>
             {(['changed', 'new', 'deleted'] as Filter[]).map((f) => (
@@ -1261,33 +1309,44 @@ export function FsView(props: Props) {
                     setMode(prevModeRef.current);
                   }
                 }}
-                title={f === 'changed' ? '只看有修改的文件' : f === 'new' ? '只看未添加的新文件（树视图，双击文件跳转）' : '只看已删除的文件'}
+                // 只看有修改的文件 / 只看未添加的新文件（树视图，双击文件跳转） / 只看已删除的文件
+                title={f === 'changed' ? t('fs.filter.changedTitle') : f === 'new' ? t('fs.filter.newTitle') : t('fs.filter.deletedTitle')}
               >
                 {f === 'changed' ? <IconDiff /> : f === 'new' ? <IconPlus /> : <IconClean />}
-                {f === 'changed' ? '仅修改' : f === 'new' ? '仅新文件' : '仅删除'}
+                {/* 仅修改 / 仅新文件 / 仅删除 */}
+                {f === 'changed' ? t('fs.filter.changed') : f === 'new' ? t('fs.filter.new') : t('fs.filter.deleted')}
               </button>
             ))}
             {filters.size > 0 && (
-              <button className="mini" onClick={() => { setFilters(new Set()); setMode(prevModeRef.current); }}>全部</button>
+              // 全部
+              <button className="mini" onClick={() => { setFilters(new Set()); setMode(prevModeRef.current); }}>{t('fs.filter.all')}</button>
             )}
           </span>
           <span className="row" style={{ gap: 4, marginLeft: 4 }}>
-            <button className={`mini tool-btn ${mode === 'list' ? 'primary' : ''}`} onClick={() => switchMode('list')} title="列表视图">
-              <IconList /> 列表
+            {/* 列表视图 */}
+            <button className={`mini tool-btn ${mode === 'list' ? 'primary' : ''}`} onClick={() => switchMode('list')} title={t('fs.toolbar.listTitle')}>
+              {/* 列表 */}
+              <IconList /> {t('fs.toolbar.list')}
             </button>
             <button
               className={`mini tool-btn ${mode === 'tree' ? 'primary' : ''}`}
               onClick={() => switchMode('tree')}
-              title="树视图"
+              // 树视图
+              title={t('fs.toolbar.treeTitle')}
             >
-              <IconTree /> 树
+              {/* 树 */}
+              <IconTree /> {t('fs.toolbar.tree')}
             </button>
-            <button className={`mini tool-btn ${mode === 'browse' ? 'primary' : ''}`} onClick={() => switchMode('browse')} title="文件浏览器视图">
-              <IconGrid /> 浏览
+            {/* 文件浏览器视图 */}
+            <button className={`mini tool-btn ${mode === 'browse' ? 'primary' : ''}`} onClick={() => switchMode('browse')} title={t('fs.toolbar.browseTitle')}>
+              {/* 浏览 */}
+              <IconGrid /> {t('fs.toolbar.browse')}
             </button>
             {props.repoType === 'svn' && (
-              <button className={`mini tool-btn ${favs.length > 0 ? 'primary' : ''}`} onClick={() => setFavModal(true)} title="常用文件夹：指定后后台预加载缓存，进入秒开">
-                ⭐ 常用{favs.length > 0 ? `(${favs.length})` : ''}
+              // 常用文件夹：指定后后台预加载缓存，进入秒开
+              <button className={`mini tool-btn ${favs.length > 0 ? 'primary' : ''}`} onClick={() => setFavModal(true)} title={t('fs.toolbar.favTitle')}>
+                {/* ⭐ 常用({n}) / ⭐ 常用 */}
+                {favs.length > 0 ? t('fs.toolbar.favN', { n: favs.length }) : t('fs.toolbar.fav')}
               </button>
             )}
           </span>
@@ -1302,13 +1361,16 @@ export function FsView(props: Props) {
               if (mode === 'tree') setPendingLocate({ rel: up, at: 0 });
               else setPendingLocate(null); // 列表/浏览：取消残留定位（树模式用新定位替换）
             }}
-            title="上一级"
+            // 上一级
+            title={t('fs.toolbar.upTitle')}
             style={{ marginLeft: 12 }}
           >
-            <IconUp /> 上级
+            {/* 上级 */}
+            <IconUp /> {t('fs.toolbar.up')}
           </button>
           <FsSearchBox search={search} onPick={(rel, at) => setPendingLocate({ rel, at })} />
-          <span className="dim small">（{rows.length} 项 · 键盘: ↑↓ 选择 · →/Enter 进入 · ← 返回 · 空白处右键菜单）</span>
+          {/* （{n} 项 · 键盘: ↑↓ 选择 · →/Enter 进入 · ← 返回 · 空白处右键菜单） */}
+          <span className="dim small">{t('fs.toolbar.hint', { n: rows.length })}</span>
         </div>
         {/* 面包屑导航（所有模式，从仓库根开始） */}
         <div className="breadcrumb" ref={breadcrumbRef} style={{ marginBottom: 8, overflowX: 'auto', whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -1340,7 +1402,8 @@ export function FsView(props: Props) {
         {error && (
           <div className="error" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{error}</span>
-            <button className="mini" style={{ flexShrink: 0 }} onClick={() => setError('')} title="关闭错误提示">✕</button>
+            {/* 关闭错误提示 */}
+            <button className="mini" style={{ flexShrink: 0 }} onClick={() => setError('')} title={t('fs.err.close')}>✕</button>
           </div>
         )}
         {bigTip && <div className="fs-big-tip">⚠ {bigTip}</div>}
@@ -1348,12 +1411,14 @@ export function FsView(props: Props) {
             诊断结果（diag）来自上层，与条目角标共用同一份 */}
         <WcNotice flags={data ?? undefined} diag={diag} />
         {/* 拖入上传：悬停提示落点 / 上传进度 / 同名冲突确认 */}
-        {drop.dragging && <div className="fs-drop-hint">松开即复制到 {dir ? `${dir}/` : '仓库根目录'}</div>}
+        {/* 松开即复制到 {dest} / 仓库根目录 */}
+        {drop.dragging && <div className="fs-drop-hint">{t('fs.drop.hint', { dest: dir ? `${dir}/` : t('fs.repoRootDir') })}</div>}
         {drop.progress && (
           <div className="fs-drag-bar">
             <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
             <span>
-              正在上传 {drop.progress.done}/{drop.progress.total}…
+              {/* 正在上传 {done}/{total}… */}
+              {t('fs.drop.uploading', { done: drop.progress.done, total: drop.progress.total })}
             </span>
           </div>
         )}
@@ -1371,14 +1436,16 @@ export function FsView(props: Props) {
         {mode === 'tree' && nodeData.size === 0 && !error && (
           <div className="loading">
             <div className="spinner" style={{ width: 24, height: 24 }} />
-            <div style={{ marginTop: 8 }}>正在加载…</div>
+            {/* 正在加载… */}
+            <div style={{ marginTop: 8 }}>{t('fs.loading')}</div>
           </div>
         )}
         {/* 列表/浏览模式：加载中转圈提示条（切换目录/首次加载都有反馈，不再干等） */}
         {(mode === 'list' || mode === 'browse') && fsLoading && !error && (
           <div className="fs-loading-bar">
             <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
-            <span>{data ? '正在加载目录…' : '正在加载…'}</span>
+            {/* 正在加载目录… / 正在加载… */}
+            <span>{data ? t('fs.loadingDir') : t('fs.loading')}</span>
           </div>
         )}
         {/* 常用文件夹后台预加载进度 */}
@@ -1387,8 +1454,10 @@ export function FsView(props: Props) {
             <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
             <span>
               {preload.running
-                ? `正在后台预加载常用文件夹：${preload.done}/${preload.total}（${preload.cur}）`
-                : `✅ 常用文件夹后台预加载完成（${preload.done} 个目录），进入秒开`}
+                // 正在后台预加载常用文件夹：{done}/{total}（{cur}）
+                ? t('fs.fav.barProgress', { done: preload.done, total: preload.total, cur: preload.cur })
+                // ✅ 常用文件夹后台预加载完成（{n} 个目录），进入秒开
+                : t('fs.fav.barDone', { n: preload.done })}
             </span>
           </div>
         )}
@@ -1409,13 +1478,15 @@ export function FsView(props: Props) {
             {/* 过滤激活：渲染过滤树（树列表同款行样式，仅数据过滤；目录可折叠，双击文件跳转） */}
             {filters.size > 0 ? (
               ft.filterTree && ft.filterTree.length === 0 ? (
-                <div className="empty">没有符合条件的文件</div>
+                // 没有符合条件的文件
+                <div className="empty">{t('fs.empty.noMatchFilter')}</div>
               ) : (
                 ft.filterRows.map((row, i) => renderTreeRow(row, i, true))
               )
             ) : (
               <>
-                {visibleRows.length === 0 && !error && <div className="empty">空文件夹（← 上级 · 空白处右键菜单）</div>}
+                {/* 空文件夹（← 上级 · 空白处右键菜单） */}
+                {visibleRows.length === 0 && !error && <div className="empty">{t('fs.empty.tree')}</div>}
                 {visibleRows.map((row, i) => renderTreeRow(row, i, false))}
               </>
             )}
@@ -1439,13 +1510,18 @@ export function FsView(props: Props) {
               <div className="empty">
                 {filters.size > 0
                   ? filters.has('deleted')
-                    ? '该目录下没有已删除的文件'
+                    // 该目录下没有已删除的文件
+                    ? t('fs.empty.deleted')
                     : filters.has('new') && filters.has('changed')
-                      ? '该目录下没有修改或未版本化的文件'
+                      // 该目录下没有修改或未版本化的文件
+                      ? t('fs.empty.newChanged')
                       : filters.has('new')
-                        ? '该目录下没有未版本化的新文件'
-                        : '该目录下没有修改的文件'
-                  : '空文件夹（← 返回上级 · 空白处右键菜单）'}
+                        // 该目录下没有未版本化的新文件
+                        ? t('fs.empty.new')
+                        // 该目录下没有修改的文件
+                        : t('fs.empty.changed')
+                  // 空文件夹（← 返回上级 · 空白处右键菜单）
+                  : t('fs.empty.list')}
               </div>
             )}
             {inline?.kind === 'new' && (
@@ -1453,7 +1529,8 @@ export function FsView(props: Props) {
               <div className="tree-row new-entry" style={{ background: 'var(--panel2)', outline: '1px solid var(--accent)' }}>
                 <span className="arrow" />
                 <MiniIcon isDir={inline.type === 'dir'} name="" />
-                {inlineInput('left', inline.type === 'dir' ? '文件夹名' : '文件名')}
+                {/* 文件夹名 / 文件名 */}
+                {inlineInput('left', inline.type === 'dir' ? t('fs.inline.folderPlaceholder') : t('fs.inline.filePlaceholder'))}
               </div>
             )}
             {listEntries.map((e, i) => renderEntryRow(e, i))}
@@ -1529,13 +1606,18 @@ export function FsView(props: Props) {
               <div className="empty">
                 {filters.size > 0
                   ? filters.has('deleted')
-                    ? '该目录下没有已删除的文件'
+                    // 该目录下没有已删除的文件
+                    ? t('fs.empty.deleted')
                     : filters.has('new') && filters.has('changed')
-                      ? '该目录下没有修改或未版本化的文件'
+                      // 该目录下没有修改或未版本化的文件
+                      ? t('fs.empty.newChanged')
                       : filters.has('new')
-                        ? '该目录下没有未版本化的新文件'
-                        : '该目录下没有修改的文件'
-                  : '空文件夹（← 返回上级 · 空白处右键菜单）'}
+                        // 该目录下没有未版本化的新文件
+                        ? t('fs.empty.new')
+                        // 该目录下没有修改的文件
+                        : t('fs.empty.changed')
+                  // 空文件夹（← 返回上级 · 空白处右键菜单）
+                  : t('fs.empty.list')}
               </div>
             )}
             {/* 就地新建的卡片：图标在上、名字输入框在下（与网格条目同构） */}
@@ -1544,7 +1626,8 @@ export function FsView(props: Props) {
                 <span className="grid-icon-wrap">
                   <GridIcon isDir={inline.type === 'dir'} name="" />
                 </span>
-                {inlineInput('center', inline.type === 'dir' ? '文件夹名' : '文件名')}
+                {/* 文件夹名 / 文件名 */}
+                {inlineInput('center', inline.type === 'dir' ? t('fs.inline.folderPlaceholder') : t('fs.inline.filePlaceholder'))}
               </div>
             )}
             {listEntries.map((e, i) => {
@@ -1598,7 +1681,8 @@ export function FsView(props: Props) {
                   onDoubleClick={() => {
                     setTip(null); // 双击即关闭悬浮卡片
                     if (e.miss) {
-                      props.onToast(e.isDir ? '目录已在磁盘上缺失，请右键「还原」恢复' : '文件已在磁盘上缺失，请右键「还原」恢复', true);
+                      // 目录已在磁盘上缺失，请右键「还原」恢复 / 文件已在磁盘上缺失，请右键「还原」恢复
+                      props.onToast(e.isDir ? t('fs.missingDir') : t('fs.missingFile'), true);
                       return;
                     }
                     if (e.isDir) {
@@ -1653,28 +1737,38 @@ export function FsView(props: Props) {
       {mode === 'list' && sel && !preview && (
         <div style={{ width: 240, flexShrink: 0 }}>
           <div className="panel">
-            <div className="panel-title">文件详情</div>
+            {/* 文件详情 */}
+            <div className="panel-title">{t('fs.detail.title')}</div>
             <div className="panel-body">
               <div className="detail-name">{sel.name}</div>
               <div className="dim small" style={{ wordBreak: 'break-all' }}>{relOf(sel)}</div>
               <table className="detail-table">
                 <tbody>
-                  <tr><td>状态</td><td>{sel.code ? `${CODE_DESC[sel.code] ?? sel.code} (${sel.code})` : '无变更'}</td></tr>
-                  <tr><td>大小</td><td>{fmtSize(sel.size)}</td></tr>
-                  <tr><td>修改时间</td><td>{sel.mtime}</td></tr>
-                  <tr><td>类型</td><td>{sel.isDir ? '文件夹' : '文件'}</td></tr>
+                  {/* 状态 / 无变更 */}
+                  <tr><td>{t('fs.detail.status')}</td><td>{sel.code ? `${CODE_DESC[sel.code]?.() ?? sel.code} (${sel.code})` : t('fs.detail.noChange')}</td></tr>
+                  {/* 大小 */}
+                  <tr><td>{t('fs.detail.size')}</td><td>{fmtSize(sel.size)}</td></tr>
+                  {/* 修改时间 */}
+                  <tr><td>{t('fs.detail.mtime')}</td><td>{sel.mtime}</td></tr>
+                  {/* 类型 / 文件夹 / 文件 */}
+                  <tr><td>{t('fs.detail.type')}</td><td>{sel.isDir ? t('fs.kind.folder') : t('fs.kind.file')}</td></tr>
                 </tbody>
               </table>
               <div className="row mt16" style={{ flexWrap: 'wrap', gap: 6 }}>
-                {sel.code !== '' && sel.code !== '?' && <button className="mini" onClick={() => props.onDiff(relOf(sel))}>查看 diff</button>}
-                {sel.code === '?' && <button className="mini" onClick={() => onAction('add', relOf(sel))}>添加到版本库</button>}
+                {/* 查看 diff */}
+                {sel.code !== '' && sel.code !== '?' && <button className="mini" onClick={() => props.onDiff(relOf(sel))}>{t('fs.detail.viewDiff')}</button>}
+                {/* 添加到版本库 */}
+                {sel.code === '?' && <button className="mini" onClick={() => onAction('add', relOf(sel))}>{t('fs.act.addToRepo')}</button>}
                 {(sel.code === 'M' || sel.code === 'A' || sel.code === 'D') && (
                   <>
-                    <button className="mini" onClick={() => onAction('revert', relOf(sel))}>还原</button>
-                    <button className="mini" onClick={() => onAction('delete', relOf(sel), true)}>从版本库移除</button>
+                    {/* 还原 */}
+                    <button className="mini" onClick={() => onAction('revert', relOf(sel))}>{t('fs.revert.revert')}</button>
+                    {/* 从版本库移除 */}
+                    <button className="mini" onClick={() => onAction('delete', relOf(sel), true)}>{t('fs.act.removeFromRepo')}</button>
                   </>
                 )}
-                <button className="mini" onClick={() => props.onLog(relOf(sel))}>历史记录</button>
+                {/* 历史记录 */}
+                <button className="mini" onClick={() => props.onLog(relOf(sel))}>{t('fs.detail.history')}</button>
               </div>
             </div>
           </div>
@@ -1683,7 +1777,8 @@ export function FsView(props: Props) {
       {/* 无历史记录提示（点击位置，1 秒后淡出） */}
       {noHist && (
         <div className="no-hist-tip" style={{ left: noHist.x, top: noHist.y }}>
-          没有历史记录
+          {/* 没有历史记录 */}
+          {t('fs.noHistory')}
         </div>
       )}
 
@@ -1703,47 +1798,54 @@ export function FsView(props: Props) {
       {/* 加入忽略输入弹窗（替代 window.prompt） */}
       {ignoreAsk && (
         <ModalShell
-          title={`⚠ 加入忽略（写入 ${
-            props.repoType === 'git'
-              ? IGNORE_WHERE_LABEL[ignoreTarget]
-              : // svn 的规则是属性，只能挂在已加入版本库的目录上（未版本化条目会挂到最近的这种上级目录）
-                'svn:ignore 属性 · 挂在最近的已加入版本库的目录，提交后随仓库分发'
-          }）`}
+          // ⚠ 加入忽略（写入 {where}）
+          title={t('fs.ignoreAsk.title', {
+            where:
+              props.repoType === 'git'
+                ? IGNORE_WHERE_LABEL[ignoreTarget]
+                : // svn 的规则是属性，只能挂在已加入版本库的目录上（未版本化条目会挂到最近的这种上级目录）
+                  // svn:ignore 属性 · 挂在最近的已加入版本库的目录，提交后随仓库分发
+                  t('fs.ignoreAsk.svnWhere'),
+          })}
           width={440}
           onClose={closeIgnore}
           foot={
             <>
-              <button onClick={closeIgnore}>取消</button>
+              {/* 取消 */}
+              <button onClick={closeIgnore}>{t('common.cancel')}</button>
               {/* svn 预案没回来前先别让用户确认：预填的还是条目名，此时提交会与展示的落点不符 */}
               <button className="primary" disabled={!ignorePattern.trim() || ignorePlan === 'loading'} onClick={doIgnore}>
-                加入忽略
+                {/* 加入忽略 */}
+                {t('fs.act.addIgnoreShort')}
               </button>
             </>
           }
         >
           <div className="dim small" style={{ marginBottom: 8, wordBreak: 'break-all' }}>
-            加入忽略规则（默认当前文件名）：<span className="mono">{ignoreAsk.rel}</span>
+            {/* 加入忽略规则（默认当前文件名）： */}
+            {t('fs.ignoreAsk.hintPre')}<span className="mono">{ignoreAsk.rel}</span>
           </div>
           {ignorePlan && ignorePlan !== 'loading' && (
             <div className="small" style={{ marginBottom: 8, wordBreak: 'break-all', color: ignorePlan.degraded ? 'var(--warn)' : undefined }}>
               {ignorePlan.degraded ? (
                 <>
-                  ⚠ svn 的忽略规则不能带路径：<span className="mono">{ignoreAsk.rel}</span> 所在目录尚未加入版本库，
-                  只能忽略整个 <span className="mono">{ignorePlan.rule}</span>（写入{' '}
-                  <span className="mono">{ignorePlan.target || '仓库根目录'}</span>
-                  ）。想只忽略这一个，请先把该目录「添加到版本库」。
+                  {/* ⚠ svn 的忽略规则不能带路径：{rel} 所在目录尚未加入版本库，只能忽略整个 {rule}（写入 {target}）。想只忽略这一个，请先把该目录「添加到版本库」。 / 仓库根目录 */}
+                  {t('fs.ignoreAsk.degraded', { rel: ignoreAsk.rel, rule: ignorePlan.rule, target: ignorePlan.target || t('fs.repoRootDir') })}
                 </>
               ) : (
                 <>
-                  规则将写入：<span className="mono">{ignorePlan.target || '仓库根目录'}</span>
+                  {/* 规则将写入： / 仓库根目录 */}
+                  {t('fs.ignoreAsk.willWrite')}<span className="mono">{ignorePlan.target || t('fs.repoRootDir')}</span>
                 </>
               )}
             </div>
           )}
-          <FormRow label="规则">
+          {/* 规则 */}
+          <FormRow label={t('fs.ignoreAsk.ruleLabel')}>
             <input
               type="text"
-              placeholder="如 *.log 或 目录名/"
+              // 如 *.log 或 目录名/
+              placeholder={t('fs.ignoreAsk.rulePlaceholder')}
               value={ignorePattern}
               onChange={(e) => setIgnorePattern(e.target.value)}
               onKeyDown={(e) => {
@@ -1758,28 +1860,35 @@ export function FsView(props: Props) {
       {/* 取消忽略确认弹窗：变回未版本化(?)后可右键「添加到版本库」 */}
       {unignoreAsk && (
         <ConfirmModal
-          title="取消忽略"
+          // 取消忽略
+          title={t('fs.act.unignore')}
           message={
             <div style={{ lineHeight: 1.7 }}>
               <div className="dim small mono" style={{ wordBreak: 'break-all' }}>
-                {unignoreAsk.rel}（{unignoreAsk.isDir ? '目录' : '文件'}）
+                {/* 目录 / 文件 */}
+                {unignoreAsk.rel}（{unignoreAsk.isDir ? t('fs.kind.dir') : t('fs.kind.file')}）
               </div>
               {props.repoType === 'git' ? (
                 <div style={{ marginTop: 8 }}>
-                  将向 <span className="mono">.gitignore</span> 追加否定规则，该项将变为未版本化（<b>?</b>），之后可右键「添加到版本库」。
+                  {/* 将向 .gitignore 追加否定规则，该项将变为未版本化（?），之后可右键「添加到版本库」。 */}
+                  {t('fs.unignore.gitNote')}
                   {unignoreAsk.isDir && (
-                    <div className="dim" style={{ marginTop: 6 }}>若匹配的是父目录规则，该目录下其他文件将按剩余规则重新判定。</div>
+                    // 若匹配的是父目录规则，该目录下其他文件将按剩余规则重新判定。
+                    <div className="dim" style={{ marginTop: 6 }}>{t('fs.unignore.gitExtra')}</div>
                   )}
                 </div>
               ) : (
                 <div style={{ marginTop: 8 }}>
-                  将删除匹配的忽略规则，该项将变为未版本化（<b>?</b>），之后可右键「添加到版本库」。
-                  <div className="dim" style={{ marginTop: 6 }}>同目录下匹配该规则的其他文件也会一起变为未版本化（?）。</div>
+                  {/* 将删除匹配的忽略规则，该项将变为未版本化（?），之后可右键「添加到版本库」。 */}
+                  {t('fs.unignore.svnNote')}
+                  {/* 同目录下匹配该规则的其他文件也会一起变为未版本化（?）。 */}
+                  <div className="dim" style={{ marginTop: 6 }}>{t('fs.unignore.svnExtra')}</div>
                 </div>
               )}
             </div>
           }
-          confirmLabel="取消忽略"
+          // 取消忽略
+          confirmLabel={t('fs.act.unignore')}
           onConfirm={doUnignore}
           onCancel={() => setUnignoreAsk(null)}
         />
@@ -1789,7 +1898,8 @@ export function FsView(props: Props) {
       {moduleIndexModal && (
         <ModuleIndexDialog
           dir={data?.dir ?? ''}
-          dirLabel={data?.dir ?? '（仓库根）'}
+          // （仓库根）
+          dirLabel={data?.dir ?? t('fs.repoRoot')}
           md={moduleIndexModal.md}
           onClose={() => setModuleIndexModal(null)}
           onDone={loadModuleIndex}

@@ -1,5 +1,6 @@
 /** 通用提示类弹窗：InfoModal（单按钮说明）/ ConfirmModal（确认 + 可选副操作） */
 import React from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 
 /** 信息提示弹窗（单按钮，用于"不可操作"类说明提示） */
@@ -14,7 +15,8 @@ export function InfoModal(props: { title: string; message: React.ReactNode; onCl
           <div style={{ lineHeight: 1.7 }}>{props.message}</div>
         </div>
         <div className="foot">
-          <button className="primary" onClick={props.onClose}>知道了</button>
+          {/* 知道了 */}
+          <button className="primary" onClick={props.onClose}>{t('ui.modal.gotIt')}</button>
         </div>
       </ResizableModal>
     </div>
@@ -51,7 +53,8 @@ export function ConfirmModal(props: {
           <div style={{ lineHeight: 1.7 }}>{props.message}</div>
         </div>
         <div className="foot">
-          {!props.hideCancel && <button onClick={props.onCancel}>取消</button>}
+          {/* 取消 */}
+          {!props.hideCancel && <button onClick={props.onCancel}>{t('common.cancel')}</button>}
           {props.secondaryLabel && props.onSecondary && (
             <button
               className={props.secondaryDanger ? 'danger' : 'primary'}
@@ -66,7 +69,8 @@ export function ConfirmModal(props: {
             onClick={props.onConfirm}
             title={props.confirmCmd ? `${props.confirmCmd}` : undefined}
           >
-            {props.confirmLabel ?? '确认'}
+            {/* 确认 */}
+            {props.confirmLabel ?? t('ui.modal.confirm')}
           </button>
         </div>
       </ResizableModal>

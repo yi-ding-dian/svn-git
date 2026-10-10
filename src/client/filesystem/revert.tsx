@@ -1,5 +1,6 @@
 /** 还原清单弹窗（目录还原）：列出可还原文件，确认后只还原选中的 —— 破坏性操作前置清单 */
 import React, { useState } from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { pathAutoWidth } from '../shared/utils.js';
 import { IconOk, IconWarn } from '../ui/icons.js';
@@ -39,14 +40,19 @@ export function RevertModal(props: {
   // 勾选项的同一判断：用户可能只勾了一部分，按钮文案要跟着勾选走
   const selItems = props.items.filter((i) => checked.has(i.path));
   const selAllTc = selItems.length > 0 && selItems.every((i) => i.treeConflicted);
-  const actionName = allA ? '取消添加' : allD ? '撤销删除' : '还原';
+  // 取消添加 / 撤销删除 / 还原
+  const actionName = allA ? t('fs.revert.cancelAdd') : allD ? t('fs.revert.undoDelete') : t('fs.revert.revert');
   const titleName = allA
     ? allTc
-      ? '接受服务器的删除（解决树冲突）'
-      : '取消添加确认'
+      // 接受服务器的删除（解决树冲突）
+      ? t('fs.tcFix.accept')
+      // 取消添加确认
+      : t('fs.revert.titleCancelAdd')
     : allD
-      ? '撤销删除确认'
-      : '还原确认';
+      // 撤销删除确认
+      ? t('fs.revert.titleUndoDelete')
+      // 还原确认
+      : t('fs.revert.titleRevert');
   return (
     <div className="modal-mask">
       <ResizableModal width={autoWidth}>
@@ -57,14 +63,16 @@ export function RevertModal(props: {
             <span style={{ flexShrink: 0 }}>📁</span>
             <span className="small" style={{ flex: 1, wordBreak: 'break-all' }}>{props.dirLabel}</span>
             <span className="small dim nowrap" style={{ flexShrink: 0 }}>
-              已勾选 <b>{checked.size}</b>/{props.items.length}
+              {/* 已勾选 */}
+              {t('fs.revert.checked')} <b>{checked.size}</b>/{props.items.length}
             </span>
           </div>
           {/* 可还原文件列表：全选/取消全选 + 勾选 */}
           <div className="changed" style={{ flex: 1, minHeight: 80, maxHeight: 300, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
             <label className="row" style={{ cursor: 'pointer', gap: 6, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4, flexShrink: 0 }}>
               <input type="checkbox" checked={allOn} onChange={toggleAll} />
-              <span className="dim small">{allOn ? '取消全选' : '全选'}</span>
+              {/* 取消全选 / 全选 */}
+              <span className="dim small">{allOn ? t('fs.unselectAll') : t('fs.selectAll')}</span>
             </label>
             {props.items.map((it) => (
               <label key={it.path} className="changed-row" style={{ cursor: 'pointer' }} title={it.path}>
@@ -72,7 +80,8 @@ export function RevertModal(props: {
                 <span className={`act ${it.code}`}>{it.code}</span>
                 {/* 树冲突项标一个中性 ⚠：弹窗里拿不到服务器状态（那要另查），只说"这项是冲突" */}
                 {it.treeConflicted && (
-                  <span className="code tc unknown" style={{ width: 18, height: 15, fontSize: 10 }} title="树冲突：本地与服务器对同一路径的操作冲突">
+                  // 树冲突：本地与服务器对同一路径的操作冲突
+                  <span className="code tc unknown" style={{ width: 18, height: 15, fontSize: 10 }} title={t('fs.revert.tcBadgeTitle')}>
                     ⚠
                   </span>
                 )}
@@ -88,10 +97,13 @@ export function RevertModal(props: {
             <div className="small" style={{ color: 'var(--err)', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
               <IconWarn size={13} />
               <span>
-                其中 <b>{tcItems.length}</b> 项是<b>树冲突</b>：服务器上同路径已删除或移动。
+                {/* 其中 / 项是树冲突：服务器上同路径已删除或移动。 */}
+                {t('fs.revert.tcIntroPre')} <b>{tcItems.length}</b>{t('fs.revert.tcIntroPost')}
                 {allA
-                  ? '取消添加＝接受服务器的删除，本地文件会一并删除（与服务器保持一致，不可恢复），之后即可正常提交。'
-                  : '还原后本地会与服务器保持一致（本地改动不可恢复），随后更新即可同步服务器的删除。'}
+                  // 取消添加＝接受服务器的删除，本地文件会一并删除（与服务器保持一致，不可恢复），之后即可正常提交。
+                  ? t('fs.revert.tcAcceptNote')
+                  // 还原后本地会与服务器保持一致（本地改动不可恢复），随后更新即可同步服务器的删除。
+                  : t('fs.revert.tcRevertNote')}
               </span>
             </div>
           )}
@@ -103,14 +115,17 @@ export function RevertModal(props: {
               {hasMod ? <IconWarn size={13} /> : <IconOk size={13} />}
               <span>
                 {hasMod
-                  ? '还原会放弃这些文件的本地修改（不可恢复）。未版本化（?）与忽略/外部文件不在列表中。'
-                  : '仅撤销版本库调度（取消添加 / 撤销删除），磁盘文件保留，不丢失任何数据。未版本化（?）与忽略/外部文件不在列表中。'}
+                  // 还原会放弃这些文件的本地修改（不可恢复）。未版本化（?）与忽略/外部文件不在列表中。
+                  ? t('fs.revert.hasModNote')
+                  // 仅撤销版本库调度（取消添加 / 撤销删除），磁盘文件保留，不丢失任何数据。未版本化（?）与忽略/外部文件不在列表中。
+                  : t('fs.revert.noModNote')}
               </span>
             </div>
           )}
         </div>
         <div className="foot">
-          <button onClick={props.onClose}>取消</button>
+          {/* 取消 */}
+          <button onClick={props.onClose}>{t('common.cancel')}</button>
           <button
             className="danger"
             disabled={checked.size === 0}
@@ -122,17 +137,27 @@ export function RevertModal(props: {
                 msg:
                   selTc > 0
                     ? selTc === selItems.length
-                      ? `服务器上这些路径已删除或移动，将连同这 ${checked.size} 项本地文件一起删除（与服务器保持一致，不可恢复）。确认？`
-                      : `其中 ${selTc} 项在服务器上已删除或移动，会连同本地文件一起删除（不可恢复）；其余勾选项按一般还原处理。确认？`
+                      // 服务器上这些路径已删除或移动，将连同这 {n} 项本地文件一起删除（与服务器保持一致，不可恢复）。确认？
+                      ? t('fs.revert.confirmAllTc', { n: checked.size })
+                      // 其中 {n} 项在服务器上已删除或移动，会连同本地文件一起删除（不可恢复）；其余勾选项按一般还原处理。确认？
+                      : t('fs.revert.confirmSomeTc', { n: selTc })
                     : hasMod
-                      ? `将放弃已勾选的 ${checked.size} 个文件的本地修改，不可恢复（A 文件变为未版本化，M/C 改动丢失）。确认${actionName}？`
-                      : `将撤销已勾选的 ${checked.size} 项版本库调度（${allA ? '文件变回未版本化 ?，内容保留' : '文件从版本库找回，内容保留'}），不丢失任何数据。确认${actionName}？`,
+                      // 将放弃已勾选的 {n} 个文件的本地修改，不可恢复（A 文件变为未版本化，M/C 改动丢失）。确认{action}？
+                      ? t('fs.revert.confirmMod', { n: checked.size, action: actionName })
+                      // 将撤销已勾选的 {n} 项版本库调度（{detail}），不丢失任何数据。确认{action}？
+                      : t('fs.revert.confirmSched', {
+                          n: checked.size,
+                          // 文件变回未版本化 ?，内容保留 / 文件从版本库找回，内容保留
+                          detail: allA ? t('fs.revert.schedDetailAdd') : t('fs.revert.schedDetailDelete'),
+                          action: actionName,
+                        }),
               });
             }}
           >
             {/* 按钮文案跟菜单入口一致：用户是从「接受服务器的删除」点进来的，
                 这里却说"取消添加"就是同一操作两个名字；底层确实是 svn revert，但用户视角的动作是删本地副本 */}
-            ↩ {selAllTc ? `接受服务器的删除（${checked.size} 项）` : `${actionName}勾选的 ${checked.size} 项`}
+            {/* 接受服务器的删除（{n} 项） / {action}勾选的 {n} 项 */}
+            ↩ {selAllTc ? t('fs.revert.acceptSelected', { n: checked.size }) : t('fs.revert.actionSelected', { action: actionName, n: checked.size })}
           </button>
         </div>
       </ResizableModal>
@@ -147,7 +172,8 @@ export function RevertModal(props: {
           }
           message={cfm.msg}
           danger
-          confirmLabel={selAllTc ? '确认删除本地文件' : `确认${actionName}`}
+          // 确认删除本地文件 / 确认{action}
+          confirmLabel={selAllTc ? t('fs.revert.confirmDeleteLocal') : t('fs.revert.confirmAction', { action: actionName })}
           onConfirm={() => {
             const sel = [...checked];
             setCfm(null);

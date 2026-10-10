@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { run } from '../../vcs/exec.js';
 import { sendJson, readBody, vcsOf, inRepoRoot, invalidateStatusCache, type Ctx } from './util.js';
+import { t } from '../../shared/i18n/index.js';
 
 /** 命令超时：30 秒（用户定的）。超时只是兜底 —— 长命令随时可以 Ctrl+C 中断 */
 const TIMEOUT_MS = 30_000;
@@ -35,7 +36,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
   const body = await readBody(req);
   const cmdline = String(body.cmd ?? '').trim();
   if (!cmdline) {
-    sendJson(res, 400, { error: '命令为空' });
+    // 命令为空
+    sendJson(res, 400, { error: t('srv.emptyCommand') });
     return true;
   }
 
@@ -46,7 +48,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
   if (dirRel) {
     const abs = path.resolve(repo.root, dirRel);
     if (!inRepoRoot(repo.root, abs) || !fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) {
-      sendJson(res, 400, { error: '执行目录无效（不存在或超出仓库范围）' });
+      // 执行目录无效（不存在或超出仓库范围）
+      sendJson(res, 400, { error: t('srv.invalidCwd') });
       return true;
     }
     cwd = abs;

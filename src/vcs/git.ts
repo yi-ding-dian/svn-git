@@ -8,6 +8,7 @@ import { decodeText, detectTextEncoding } from '../shared/text.js';
 import { parseDiff, buildPatch, blobOf, type ParsedDiff } from './hunks.js';
 import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.js';
 import { loadConfig } from '../config.js';
+import { t, getLang } from '../shared/i18n/index.js';
 import type { FileStatus, LogEntry, RepoInfo, VcsResult } from './types.js';
 
 /** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限）
@@ -137,7 +138,7 @@ function parseMergeTreeConflicts(out: string): string[] {
   const files: string[] = [];
   for (const seg of out.split('changed in both')) {
     if (!/^\+<<<<<<< \.our/m.test(seg)) continue; // 无冲突标记 = 该文件可自动合并
-    const m = seg.match(/^  our\s+\d+\s+[0-9a-f]+\s+(.+)$/m);
+    const m = seg.match(/^ {2}our\s+\d+\s+[0-9a-f]+\s+(.+)$/m);
     if (m) files.push(unquote(m[1]!.trim()));
   }
   return [...new Set(files)];
@@ -201,8 +202,10 @@ export class GitVcs {
     const r = hasOrigin
       ? await this.exec(['remote', 'set-url', 'origin', url])
       : await this.exec(['remote', 'add', 'origin', url]);
-    if (r.code !== 0) return { ok: false, message: r.stderr.trim() || '设置远程地址失败' };
-    return { ok: true, message: hasOrigin ? '远程地址已更新' : '远程地址已添加' };
+    // 设置远程地址失败
+    if (r.code !== 0) return { ok: false, message: r.stderr.trim() || t('vcs.setRemoteFailed') };
+    // 远程地址已更新 / 远程地址已添加
+    return { ok: true, message: hasOrigin ? t('vcs.remoteUpdated') : t('vcs.remoteAdded') };
   }
 
   /** git status --porcelain=v1 */
@@ -213,7 +216,8 @@ export class GitVcs {
     const args = ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-unormal'];
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args);
-    if (res.code !== 0) throw new Error(`git status 失败: ${res.stderr.trim()}`);
+    // git status 失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.gitStatusFailed', { err: res.stderr.trim() }));
     const list: FileStatus[] = [];
     for (const line of res.stdout.split('\n')) {
       if (!line || line.length < 4) continue;
@@ -263,8 +267,9 @@ export class GitVcs {
     const res = await this.exec(args);
     // 刚 git init 的空仓库（尚无任何提交）：git log 直接失败，返回空列表即可，不该让上游 500
     if (res.code !== 0) {
-      if (/尚无任何提交|does not have any commits|unknown revision|bad default revision/i.test(res.stderr)) return [];
-      throw new Error(`git log 失败: ${res.stderr.trim()}`);
+      if (/尚无任何提交|does not have any commits|unknown revision|bad default revision/i.test(res.stderr)) return []; // i18n-ignore: 解析 git log 的中英文报错（判断空仓库）
+      // git log 失败: {err}
+      throw new Error(t('vcs.gitLogFailed', { err: res.stderr.trim() }));
     }
     return parseGitLog(res.stdout);
   }
@@ -274,7 +279,8 @@ export class GitVcs {
     const args = ['rev-list', '--count', 'HEAD'];
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args);
-    if (res.code !== 0) throw new Error(`git log 失败: ${res.stderr.trim()}`);
+    // git log 失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.gitLogFailed', { err: res.stderr.trim() }));
     return { count: Number(res.stdout.trim()) || 0, exact: true };
   }
 
@@ -338,7 +344,8 @@ export class GitVcs {
       '--name-status',
       `${range}..HEAD`,
     ]);
-    if (res.code !== 0) throw new Error(`git log 失败: ${res.stderr.trim()}`);
+    // git log 失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.gitLogFailed', { err: res.stderr.trim() }));
     return parseGitLog(res.stdout);
   }
 
@@ -346,7 +353,8 @@ export class GitVcs {
    *  列表接口的 format 只有 %s（parseGitLog 按行扫描，含换行的 %B 会破坏解析），故完整说明按需单独拉取。 */
   async commitMessage(rev: string): Promise<string> {
     const res = await this.exec(['-c', 'core.quotepath=false', 'log', '-1', '--format=%B', rev], { decode: 'auto' });
-    if (res.code !== 0) throw new Error(`读取提交说明失败: ${res.stderr.trim() || '提交不存在'}`);
+    // 读取提交说明失败: {err} / 提交不存在
+    if (res.code !== 0) throw new Error(t('vcs.readCommitMsgFailed', { err: res.stderr.trim() || t('vcs.commitNotFound') }));
     return res.stdout.replace(/\n+$/, '');
   }
 
@@ -355,7 +363,8 @@ export class GitVcs {
   async commitMessages(revs: string[]): Promise<Record<string, string>> {
     if (revs.length === 0) return {};
     const res = await this.exec(['-c', 'core.quotepath=false', 'log', '--no-walk', '--format=%H%x1f%B%x1e', ...revs], { decode: 'auto' });
-    if (res.code !== 0) throw new Error(`读取提交说明失败: ${res.stderr.trim()}`);
+    // 读取提交说明失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.readCommitMsgFailed', { err: res.stderr.trim() }));
     const out: Record<string, string> = {};
     for (const chunk of res.stdout.split('\x1e')) {
       const sep = chunk.indexOf('\x1f');
@@ -371,9 +380,11 @@ export class GitVcs {
    *  --cleanup=whitespace：默认 strip 会删掉以 # 开头的行（Markdown 标题会被静默吃掉）。 */
   async amend(message: string): Promise<VcsResult> {
     const res = await this.exec(['commit', '--amend', '--cleanup=whitespace', '-F', '-'], { stdinData: message });
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '修改注释失败' };
+    // 修改注释失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.amendFailed') };
     const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
-    return { ok: true, message: m ? `已修改注释 ${m[2]?.slice(0, 7)}` : '已修改注释' };
+    // 已修改注释 {hash} / 已修改注释
+    return { ok: true, message: m ? t('vcs.amendedHash', { hash: m[2]?.slice(0, 7) ?? '' }) : t('vcs.amended') };
   }
 
   /**
@@ -384,16 +395,19 @@ export class GitVcs {
   async reword(hash: string, message: string): Promise<VcsResult> {
     // 1. 目标提交必须存在（转完整 hash）
     const full = await this.exec(['rev-parse', '--verify', `${hash}^{commit}`]);
-    if (full.code !== 0 || !full.stdout.trim()) return { ok: false, message: '提交不存在' };
+    // 提交不存在
+    if (full.code !== 0 || !full.stdout.trim()) return { ok: false, message: t('vcs.commitNotFound') };
     const h = full.stdout.trim();
     // 2. 必须未推送（防重写远程历史）。
     //    双重检查：a) 不在未推送集合（有上游时精确）；b) 任何远程分支不包含它
     //    （无上游时 unpushed() 会把全部提交视为未推送，此时靠 b 兜底）
     const up = await this.unpushed();
-    if (!up.includes(h)) return { ok: false, message: '该提交已推送，修改注释需重写远程历史（force push），已禁止' };
+    // 该提交已推送，修改注释需重写远程历史（force push），已禁止
+    if (!up.includes(h)) return { ok: false, message: t('vcs.commitAlreadyPushed') };
     const remoteContains = await this.exec(['branch', '-r', '--contains', h]);
     if (remoteContains.code === 0 && remoteContains.stdout.trim()) {
-      return { ok: false, message: '该提交已推送，修改注释需重写远程历史（force push），已禁止' };
+      // 该提交已推送，修改注释需重写远程历史（force push），已禁止
+      return { ok: false, message: t('vcs.commitAlreadyPushed') };
     }
     // 3. 工作区必须干净：rebase 的硬性要求（否则 git 直接拒绝，返回的是 "不能 rebase: 您有未暂存的变更"
     //    这种原文，界面上看起来像"点了没反应"）。未跟踪文件不影响 rebase，只看已跟踪文件的改动。
@@ -401,7 +415,8 @@ export class GitVcs {
     if (dirty.code === 0) {
       const trackedDirty = dirty.stdout.split('\n').filter((l) => l.trim() && !l.startsWith('??'));
       if (trackedDirty.length > 0) {
-        return { ok: false, message: '修改较早提交的注释需要工作区干净：请先提交或贮藏当前改动（新增的未跟踪文件不影响）' };
+        // 修改较早提交的注释需要工作区干净：请先提交或贮藏当前改动（新增的未跟踪文件不影响）
+        return { ok: false, message: t('vcs.rewordNeedsCleanWc') };
       }
     }
     // 4. 确定 rebase 基点与目标在 todo 中的行号（todo 里 hash 是短 hash，须按行号定位）：
@@ -416,7 +431,8 @@ export class GitVcs {
       lineNo = Number(cnt.stdout.trim()) || 1;
     } else {
       const parent = await this.exec(['rev-parse', `${h}^`]);
-      if (parent.code !== 0 || !parent.stdout.trim()) return { ok: false, message: '无法确定该提交的父提交' };
+      // 无法确定该提交的父提交
+      if (parent.code !== 0 || !parent.stdout.trim()) return { ok: false, message: t('vcs.noParentCommit') };
       base = parent.stdout.trim();
       const depth = await this.exec(['rev-list', '--count', `${base}..${h}`]);
       lineNo = Number(depth.stdout.trim()) || 1;
@@ -434,8 +450,10 @@ export class GitVcs {
         timeoutMs: 120_000,
         env: { GIT_SEQUENCE_EDITOR: seq, GIT_EDITOR: msgScript },
       });
-      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '修改注释失败（工作区有未提交修改时需先提交或还原）' };
-      return { ok: true, message: `已修改注释 ${h.slice(0, 7)}` };
+      // 修改注释失败（工作区有未提交修改时需先提交或还原）
+      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.rewordFailedDirty') };
+      // 已修改注释 {hash}
+      return { ok: true, message: t('vcs.amendedHash', { hash: h.slice(0, 7) }) };
     } finally {
       try {
         fs.rmSync(dir, { recursive: true, force: true });
@@ -465,7 +483,8 @@ export class GitVcs {
    *  解析逻辑在 hunks.ts 的纯函数里，这里只负责取 diff 文本。 */
   async diffHunks(pathRel: string): Promise<ParsedDiff> {
     const res = await this.exec(['-c', 'core.quotepath=false', 'diff', '-U1', '--no-color', '--', pathRel], { decode: 'auto' });
-    if (res.code !== 0) throw new Error(`读取差异失败: ${res.stderr.trim()}`);
+    // 读取差异失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.readDiffFailed', { err: res.stderr.trim() }));
     return parseDiff(res.stdout);
   }
 
@@ -478,34 +497,42 @@ export class GitVcs {
     // 提交后仓库里就是坏的，工作区还显示"已修改"。宁可明确拒绝，也不能写坏。
     try {
       if (detectTextEncoding(fs.readFileSync(path.resolve(this.repo.root, pathRel))) !== 'utf-8') {
-        return { ok: false, message: '该文件不是 UTF-8 编码（如 GBK），行级暂存暂不支持——请整文件暂存，或用其它工具处理' };
+        // 该文件不是 UTF-8 编码（如 GBK），行级暂存暂不支持——请整文件暂存，或用其它工具处理
+        return { ok: false, message: t('vcs.stageNotUtf8') };
       }
     } catch {
       /* 读不到（已删除等）交给下面的 diff 逻辑去报错 */
     }
     const parsed = await this.diffHunks(pathRel);
-    if (parsed.hunks.length === 0) return { ok: false, message: '该文件没有可暂存的改动' };
+    // 该文件没有可暂存的改动
+    if (parsed.hunks.length === 0) return { ok: false, message: t('vcs.noStagedChanges') };
     // 弹窗打开后文件被外部改过：块的位置会错位，按旧索引暂存会暂存到界面上没显示过的块——直接拒绝
     if (expectBlob && blobOf(parsed.fileHeader) !== expectBlob) {
-      return { ok: false, message: '文件在弹窗打开后已被改动，请关闭后重新打开再选' };
+      // 文件在弹窗打开后已被改动，请关闭后重新打开再选
+      return { ok: false, message: t('vcs.fileChangedAfterOpen') };
     }
     const picked = hunkIndices.filter((i) => i >= 0 && i < parsed.hunks.length);
-    if (picked.length === 0) return { ok: false, message: '未选择任何改动' };
+    // 未选择任何改动
+    if (picked.length === 0) return { ok: false, message: t('vcs.noHunksSelected') };
     const patch = buildPatch(parsed, picked);
     const res = await this.exec(['apply', '--cached', '--whitespace=nowarn', '-'], { stdinData: patch });
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '暂存失败' };
+    // 暂存失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.stageFailed') };
     markHunkStaged(this.repo.root, pathRel); // 登记：提交时该文件要跳过整文件 add
-    return { ok: true, message: `已暂存 ${picked.length} 处改动` };
+    // 已暂存 {n} 处改动
+    return { ok: true, message: t('vcs.stagedHunks', { n: picked.length }) };
   }
 
   /** 撤销最近一次提交（--soft 保留工作区修改，可重新勾选提交） */
   async resetSoft(): Promise<VcsResult> {
     const res = await this.exec(['reset', '--soft', 'HEAD~']);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '撤销提交失败' };
+    // 撤销提交失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.resetSoftFailed') };
     // 撤销后 index 里是那次提交的完整内容，不再代表「hunk 级部分暂存」——
     // 不清登记的话，「撤销 → 继续改 → 提交」会被误判成部分暂存而跳过 add，提交出旧内容（实测过）
     clearHunkStaged(this.repo.root);
-    return { ok: true, message: '已撤销最近一次提交（改动回到暂存区，可重新提交）' };
+    // 已撤销最近一次提交（改动回到暂存区，可重新提交）
+    return { ok: true, message: t('vcs.resetSoftDone') };
   }
 
   /** git diff：工作区/暂存区，或版本间；可限定路径 */
@@ -543,7 +570,6 @@ export class GitVcs {
     // 未跟踪/新增文件不在 HEAD：直接读磁盘（存在才读）。
     // 双保险：readpath 解析后必须仍在仓库根内（path.join 会归一化 ..，../ 可出界读取任意文件）
     const abs = path.resolve(this.repo.root, pathRel);
-    const rel2 = path.relative(this.repo.root, fs.realpathSync(this.repo.root));
     if (fs.existsSync(abs)) {
       let ok = false;
       try {
@@ -573,8 +599,10 @@ export class GitVcs {
   /** git add */
   async add(relPaths: string[]): Promise<VcsResult> {
     const res = await this.exec(['add', ...relPaths]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git add 失败' };
-    return { ok: true, message: `已暂存 ${relPaths.length} 项` };
+    // git add 失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitAddFailed') };
+    // 已暂存 {n} 项
+    return { ok: true, message: t('vcs.stagedCount', { n: relPaths.length }) };
   }
 
   /** git add -A + commit */
@@ -584,11 +612,14 @@ export class GitVcs {
     const merging = await this.exec(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']);
     if (merging.code === 0) {
       const addAll = await this.exec(['add', '-A']);
-      if (addAll.code !== 0) return { ok: false, message: `暂存失败: ${addAll.stderr.trim()}` };
+      // 暂存失败: {err}
+      if (addAll.code !== 0) return { ok: false, message: t('vcs.stageFailedErr', { err: addAll.stderr.trim() }) };
       const res = await this.exec(['commit', '-m', msg], { timeoutMs: 120_000 });
-      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git commit 失败' };
+      // git commit 失败
+      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitCommitFailed') };
       const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
-      return { ok: true, message: m ? `提交成功 ${m[1]} ${m[2]?.slice(0, 7)}` : '提交成功' };
+      // 提交成功 {ref} {hash} / 提交成功
+      return { ok: true, message: m ? t('vcs.commitOkRef', { ref: m[1] ?? '', hash: m[2]?.slice(0, 7) ?? '' }) : t('vcs.commitOk') };
     }
     if (relPaths.length) {
       // stagedOnly：已在 hunk 弹窗里部分暂存过的文件——跳过 add，否则会把未选中的块一并暂存，覆盖用户的选择
@@ -616,7 +647,8 @@ export class GitVcs {
       const exist = relPaths.filter((p) => !stagedSet.has(p) && !deletedSet.has(p) && fs.existsSync(path.join(this.repo.root, p)));
       if (exist.length) {
         const addRes = await this.exec(['add', '-A', '--', ...exist]);
-        if (addRes.code !== 0) return { ok: false, message: `暂存失败: ${addRes.stderr.trim()}` };
+        // 暂存失败: {err}
+        if (addRes.code !== 0) return { ok: false, message: t('vcs.stageFailedErr', { err: addRes.stderr.trim() }) };
       }
       // 有 hunk 级部分暂存、**或有删除态(D)** 时，都必须走"不带 pathspec 的 commit"：
       // 见下面 647 行附近的说明 —— 带 pathspec 的 commit 不看 index、只看工作区，
@@ -630,7 +662,8 @@ export class GitVcs {
         const toAdd = relPaths.filter((p) => !stagedSet.has(p) && !deletedSet.has(p));
         if (toAdd.length) {
           const addRes = await this.exec(['add', '-A', '--', ...toAdd]);
-          if (addRes.code !== 0) return { ok: false, message: `暂存失败: ${addRes.stderr.trim()}` };
+          // 暂存失败: {err}
+          if (addRes.code !== 0) return { ok: false, message: t('vcs.stageFailedErr', { err: addRes.stderr.trim() }) };
         }
         // 不带路径的 commit 会提交 index 里的全部内容——把"不在本次勾选范围"的文件从 index 剔除
         // （用户在弹窗里取消了勾选、或之前手工暂存过的），否则会把它们一并提交。reset 只动 index，不碰工作区。
@@ -638,62 +671,76 @@ export class GitVcs {
         const drop = stagedNow.filter((p) => !relPaths.includes(p));
         if (drop.length) {
           const resetRes = await this.exec(['reset', '-q', 'HEAD', '--', ...drop]);
-          if (resetRes.code !== 0) return { ok: false, message: `暂存区清理失败: ${resetRes.stderr.trim()}` };
+          // 暂存区清理失败: {err}
+          if (resetRes.code !== 0) return { ok: false, message: t('vcs.stagedCleanupFailed', { err: resetRes.stderr.trim() }) };
           // 同步清登记：index 已被清空，登记若留着，该文件下次提交会跳过 add → git 拒绝空提交（死锁）
           clearHunkStaged(this.repo.root, drop);
         }
         const res = await this.exec(['commit', '-m', msg], { timeoutMs: 120_000 });
-        if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git commit 失败' };
+        // git commit 失败
+        if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitCommitFailed') };
         clearHunkStaged(this.repo.root, relPaths); // 已提交，登记失效
         const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
-        return { ok: true, message: m ? `提交成功 ${m[1]} ${m[2]?.slice(0, 7)}` : '提交成功' };
+        // 提交成功 {ref} {hash} / 提交成功
+        return { ok: true, message: m ? t('vcs.commitOkRef', { ref: m[1] ?? '', hash: m[2]?.slice(0, 7) ?? '' }) : t('vcs.commitOk') };
       }
       // 指定路径提交（注意：**这里没有删除态**的路径，有删除态的在上面那个分支就返回了）。
       // ⚠ 带 pathspec 的 commit **不看 index，而是"按工作区内容记录这些路径"** ——
       // 所以只有工作区真的和 HEAD 不同才提交得动。已删除(D)且文件仍在磁盘上的（`git rm --cached`），
       // 走这条路会误判成"无文件要提交、干净的工作区"（实测），必须用不带 pathspec 的 commit。
       const res = await this.exec(['commit', '-m', msg, '--', ...relPaths], { timeoutMs: 120_000 });
-      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git commit 失败' };
+      // git commit 失败
+      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitCommitFailed') };
       const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
-      return { ok: true, message: m ? `提交成功 ${m[1]} ${m[2]?.slice(0, 7)}` : '提交成功' };
+      // 提交成功 {ref} {hash} / 提交成功
+      return { ok: true, message: m ? t('vcs.commitOkRef', { ref: m[1] ?? '', hash: m[2]?.slice(0, 7) ?? '' }) : t('vcs.commitOk') };
     }
     // 未指定路径：全部暂存并提交
     const addRes = await this.exec(['add', '-A']);
-    if (addRes.code !== 0) return { ok: false, message: `暂存失败: ${addRes.stderr.trim()}` };
+    // 暂存失败: {err}
+    if (addRes.code !== 0) return { ok: false, message: t('vcs.stageFailedErr', { err: addRes.stderr.trim() }) };
     const res = await this.exec(['commit', '-m', msg], { timeoutMs: 120_000 });
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git commit 失败' };
+    // git commit 失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitCommitFailed') };
     const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
-    return { ok: true, message: m ? `提交成功 ${m[1]} ${m[2]?.slice(0, 7)}` : '提交成功' };
+    // 提交成功 {ref} {hash} / 提交成功
+    return { ok: true, message: m ? t('vcs.commitOkRef', { ref: m[1] ?? '', hash: m[2]?.slice(0, 7) ?? '' }) : t('vcs.commitOk') };
   }
 
   /** git pull */
   async pull(signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }> {
     // 无远程（孤仓库）：git pull 只会报原始 fatal，换成友好提示（不执行命令）
     const remotes = await this.remoteList();
-    if (remotes.length === 0) return { ok: false, message: '此仓库未配置远程（origin），无法拉取更新。' };
+    // 此仓库未配置远程（origin），无法拉取更新。
+    if (remotes.length === 0) return { ok: false, message: t('vcs.noRemotePull') };
     // -c core.quotepath=false：更新输出的中文文件名不做八进制转义
     let res = await this.exec(['-c', 'core.quotepath=false', 'pull'], { timeoutMs: 600_000, signal });
-    if (res.aborted) return { ok: false, message: '更新已取消' };
+    // 更新已取消
+    if (res.aborted) return { ok: false, message: t('vcs.updateCancelled') };
     if (res.code !== 0) {
       // 当前分支无上游跟踪信息（git pull 不知道拉哪个远程分支）：
       // 自动用 git pull origin <当前分支> 重试，无需用户手动设置 upstream
-      if (/没有跟踪信息|no tracking information/i.test(res.stderr)) {
+      if (/没有跟踪信息|no tracking information/i.test(res.stderr)) { // i18n-ignore: 解析 git pull 的中英文报错
         const branch = (await this.exec(['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
         if (branch && branch !== 'HEAD') {
           const retry = await this.exec(['-c', 'core.quotepath=false', 'pull', 'origin', branch], { timeoutMs: 600_000, signal });
-          if (retry.aborted) return { ok: false, message: '更新已取消' };
+          // 更新已取消
+          if (retry.aborted) return { ok: false, message: t('vcs.updateCancelled') };
           if (retry.code === 0) res = retry;
-          else return { ok: false, message: retry.stderr.trim() || 'git pull 失败' };
+          // git pull 失败
+          else return { ok: false, message: retry.stderr.trim() || t('vcs.gitPullFailed') };
         }
       }
-      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git pull 失败' };
+      // git pull 失败
+      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitPullFailed') };
     }
     const out = res.stdout.trim();
     // 无更新：git 输出 "Already up to date." 等（中英文），提示当前分支 + 短 hash
-    if (/up to date|up-to-date|已经是最新|已是最新/i.test(out)) {
+    if (/up to date|up-to-date|已经是最新|已是最新/i.test(out)) { // i18n-ignore: 解析 git pull 的中英文输出
       const branch = (await this.exec(['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
       const short = (await this.exec(['rev-parse', '--short', 'HEAD'])).stdout.trim();
-      return { ok: true, message: `已是最新（分支 ${branch} @ ${short}）` };
+      // 已是最新（分支 {branch} @ {hash}）
+      return { ok: true, message: t('vcs.pullLatestBranch', { branch, hash: short }) };
     }
     // 有更新：解析 diffstat 文件列表（" file.txt | 2 +-"；重命名 " a => b | n ++--" 取目标路径）
     const files: { path: string; status: string; code: string }[] = [];
@@ -704,7 +751,8 @@ export class GitVcs {
       if (raw.startsWith('mode change')) continue;
       files.push({ path: raw.includes('=>') ? raw.split('=>').pop()!.trim() : raw, status: 'updated', code: 'U' });
     }
-    const msg = files.length > 0 ? `更新了 ${files.length} 个文件` : out.split('\n').slice(0, 2).join('; ') || '更新完成';
+    // 更新了 {n} 个文件 / 更新完成
+    const msg = files.length > 0 ? t('vcs.updatedFiles', { n: files.length }) : out.split('\n').slice(0, 2).join('; ') || t('vcs.updateDone');
     return { ok: true, message: msg, files: files.length ? files : undefined };
   }
 
@@ -727,13 +775,16 @@ export class GitVcs {
   async revert(relPaths: string[]): Promise<VcsResult> {
     for (const p of relPaths) {
       const inHead = await this.exec(['ls-tree', 'HEAD', '--', p]);
-      if (inHead.code !== 0) return { ok: false, message: inHead.stderr.trim() || 'git 还原失败' };
+      // git 还原失败
+      if (inHead.code !== 0) return { ok: false, message: inHead.stderr.trim() || t('vcs.gitRevertFailed') };
       const r = inHead.stdout.trim()
         ? await this.exec(['checkout', 'HEAD', '--', p])
         : await this.exec(['rm', '--cached', '-r', '--quiet', p]);
-      if (r.code !== 0) return { ok: false, message: r.stderr.trim() || 'git 还原失败' };
+      // git 还原失败
+      if (r.code !== 0) return { ok: false, message: r.stderr.trim() || t('vcs.gitRevertFailed') };
     }
-    return { ok: true, message: `已还原 ${relPaths.length} 项` };
+    // 已还原 {n} 项
+    return { ok: true, message: t('vcs.revertedCount', { n: relPaths.length }) };
   }
 
   /** git rm；未跟踪文件（git rm 不支持）直接删除磁盘 */
@@ -751,50 +802,64 @@ export class GitVcs {
         }
       }
       if (failed.length === 0 && fs.existsSync(path.join(this.repo.root, relPaths[0] ?? '')) === false) {
-        return { ok: true, message: `已删除 ${relPaths.length} 项` };
+        // 已删除 {n} 项
+        return { ok: true, message: t('vcs.deletedCount', { n: relPaths.length }) };
       }
-      return { ok: false, message: res.stderr.trim() || 'git rm 失败' };
+      // git rm 失败
+      return { ok: false, message: res.stderr.trim() || t('vcs.gitRmFailed') };
     }
-    return { ok: true, message: `已删除 ${relPaths.length} 项` };
+    // 已删除 {n} 项
+    return { ok: true, message: t('vcs.deletedCount', { n: relPaths.length }) };
   }
 
   /** 仅从版本库移除（git rm --cached）：磁盘文件保留,变为未版本化 ?（与"删除"硬删磁盘不同） */
   async removeKeep(relPaths: string[]): Promise<VcsResult> {
     const res = await this.exec(['rm', '--cached', '-r', '--quiet', ...relPaths]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '从版本库移除失败' };
-    return { ok: true, message: `已从版本库移除 ${relPaths.length} 项（本地文件保留，状态变为 ? 未版本化）` };
+    // 从版本库移除失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.removeKeepFailed') };
+    // 已从版本库移除 {n} 项（本地文件保留，状态变为 ? 未版本化）
+    return { ok: true, message: t('vcs.removeKeepRemoved', { n: relPaths.length }) };
   }
 
   /** 还原到指定历史版本：git checkout REV -- path（任意提交；文件/目录；结果=工作区修改，可提交） */
   async restoreToRev(relPath: string, rev: string): Promise<VcsResult> {
     const r = await this.exec(['checkout', rev, '--', relPath]);
-    if (r.code !== 0) return { ok: false, message: r.stderr.trim() || '还原到指定版本失败' };
-    return { ok: true, message: `已将 ${relPath} 还原到 ${rev.slice(0, 7)} 版本（工作区修改，可提交）` };
+    // 还原到指定版本失败
+    if (r.code !== 0) return { ok: false, message: r.stderr.trim() || t('vcs.restoreRevFailed') };
+    // 已将 {path} 还原到 {rev} 版本（工作区修改，可提交）
+    return { ok: true, message: t('vcs.restoredToRev', { path: relPath, rev: rev.slice(0, 7) }) };
   }
 
   /** git mv：本地重命名/移动（文件即改磁盘+暂存，提交后生效）；未跟踪文件 git 不支持返回失败 */
   async move(from: string, to: string): Promise<VcsResult> {
     const res = await this.exec(['mv', from, to]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git mv 失败' };
-    return { ok: true, message: `已重命名 ${from} → ${to}（提交后生效）` };
+    // git mv 失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitMvFailed') };
+    // 已重命名 {from} → {to}（提交后生效）
+    return { ok: true, message: t('vcs.moved', { from, to }) };
   }
 
   /** git push：认证失败时用保存的凭据(GIT_ASKPASS)自动重试；仍失败返回 authType 供前端引导认证 */
   async push(signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }> {
     // 无远程（孤仓库）：git push 只会报原始 fatal，换成友好提示（不执行命令）
     const remotes = await this.remoteList();
-    if (remotes.length === 0) return { ok: false, message: '此仓库未配置远程（origin），无法推送。' };
+    // 此仓库未配置远程（origin），无法推送。
+    if (remotes.length === 0) return { ok: false, message: t('vcs.noRemotePush') };
     const cred = loadConfig().git;
     let res = await this.exec(['push'], { timeoutMs: 600_000, signal });
-    if (res.aborted) return { ok: false, message: '推送已取消' };
-    if (res.code === 0) return { ok: true, message: '推送成功' };
+    // 推送已取消
+    if (res.aborted) return { ok: false, message: t('vcs.pushCancelled') };
+    // 推送成功
+    if (res.code === 0) return { ok: true, message: t('vcs.pushOk') };
     // 无上游分支：自动 git push -u origin <当前分支>（-u 建立上游跟踪，角标才能正确归零；与 pull 的无上游自动重试一致）
-    if (/没有对应的上游分支|no upstream branch|no tracking information/i.test(res.stderr)) {
+    if (/没有对应的上游分支|no upstream branch|no tracking information/i.test(res.stderr)) { // i18n-ignore: 解析 git push 的中英文报错
       const branch = await this.branch();
       if (branch && branch !== 'HEAD') {
         const r2 = await this.exec(['push', '-u', 'origin', branch], { timeoutMs: 600_000, signal });
-        if (r2.aborted) return { ok: false, message: '推送已取消' };
-        if (r2.code === 0) return { ok: true, message: '推送成功' };
+        // 推送已取消
+        if (r2.aborted) return { ok: false, message: t('vcs.pushCancelled') };
+        // 推送成功
+        if (r2.code === 0) return { ok: true, message: t('vcs.pushOk') };
         res = r2;
       }
     }
@@ -811,13 +876,17 @@ export class GitVcs {
         { timeoutMs: 600_000, signal, env: { GIT_ASKPASS: ask.path } }
       );
       ask.cleanup();
-      if (retry.aborted) return { ok: false, message: '推送已取消' };
-      if (retry.code === 0) return { ok: true, message: '推送成功' };
-      return { ok: false, message: retry.stderr.trim() || 'git push 失败', authType: authTypeOf(await this.remote()), code: 'AUTH' };
+      // 推送已取消
+      if (retry.aborted) return { ok: false, message: t('vcs.pushCancelled') };
+      // 推送成功
+      if (retry.code === 0) return { ok: true, message: t('vcs.pushOk') };
+      // git push 失败
+      return { ok: false, message: retry.stderr.trim() || t('vcs.gitPushFailed'), authType: authTypeOf(await this.remote()), code: 'AUTH' };
     }
     return {
       ok: false,
-      message: res.stderr.trim() || 'git push 失败',
+      // git push 失败
+      message: res.stderr.trim() || t('vcs.gitPushFailed'),
       authType: isAuthError ? authTypeOf(await this.remote()) : undefined,
       code: isAuthError ? 'AUTH' : undefined,
     };
@@ -829,7 +898,8 @@ export class GitVcs {
     const target = dir ? `${dir.replace(/\/$/, '')}/` : '.';
     // -c core.quotepath=false：中文文件名不做八进制转义
     const res = await this.exec(['-c', 'core.quotepath=false', 'ls-tree', 'HEAD', '--', target]);
-    if (res.code !== 0) throw new Error(`git ls-tree 失败: ${res.stderr.trim()}`);
+    // git ls-tree 失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.gitLsTreeFailed', { err: res.stderr.trim() }));
     const out: { name: string; isDir: boolean }[] = [];
     const prefix = dir ? `${dir.replace(/\/$/, '')}/` : '';
     for (const line of res.stdout.split('\n')) {
@@ -850,18 +920,19 @@ export class GitVcs {
   async branchList(): Promise<{ current: string; branches: { name: string; remote: boolean }[] }> {
     const cur = await this.branch();
     const res = await this.exec(['branch', '-a']);
-    if (res.code !== 0) throw new Error(`git branch 失败: ${res.stderr.trim()}`);
+    // git branch 失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.gitBranchFailed', { err: res.stderr.trim() }));
     const branches: { name: string; remote: boolean }[] = [];
     for (const line of res.stdout.split('\n')) {
-      const t = line.trim();
-      if (!t) continue;
+      const trimmed = line.trim();
+      if (!trimmed) continue;
       // "* master" 当前分支（去星号）；"remotes/origin/xxx" 远程
-      if (t.startsWith('remotes/')) {
+      if (trimmed.startsWith('remotes/')) {
         // 过滤符号引用（remotes/origin/HEAD -> origin/main）：非真实分支，checkout 会失败
-        if (t.includes(' -> ')) continue;
-        branches.push({ name: t.replace(/^remotes\//, ''), remote: true });
-      } else if (t !== 'HEAD') {
-        const name = t.replace(/^\*\s*/, '');
+        if (trimmed.includes(' -> ')) continue;
+        branches.push({ name: trimmed.replace(/^remotes\//, ''), remote: true });
+      } else if (trimmed !== 'HEAD') {
+        const name = trimmed.replace(/^\*\s*/, '');
         if (name) branches.push({ name, remote: false });
       }
     }
@@ -872,16 +943,19 @@ export class GitVcs {
    * 从非主干分支开新分支会包含该分支已提交的改动，基于主干可避开（前端确认弹窗引导） */
   async branchCreate(name: string, base?: string): Promise<VcsResult> {
     const res = await this.exec(['branch', name, ...(base ? [base] : [])]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '创建分支失败' };
-    return { ok: true, message: base ? `已创建分支 ${name}（基于 ${base}）` : `已创建分支 ${name}` };
+    // 创建分支失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.createBranchFailed') };
+    // 已创建分支 {name}（基于 {base}） / 已创建分支 {name}
+    return { ok: true, message: base ? t('vcs.createBranchWithBase', { name, base }) : t('vcs.branchCreated', { name }) };
   }
 
   /** 推送指定分支到远程（分支管理"推送到远程"）：无上游自动 git push -u origin <名字>；认证失败按保存凭据(GIT_ASKPASS)重试 */
   /** push 类操作通用：认证失败时用保存的凭据(GIT_ASKPASS)自动重试；仍失败返回 authType 供前端引导认证 */
   private async pushWithAuth(args: string[], okMsg: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }> {
     const cred = loadConfig().git;
-    let res = await this.exec(args, { timeoutMs: 600_000, signal });
-    if (res.aborted) return { ok: false, message: '推送已取消' };
+    const res = await this.exec(args, { timeoutMs: 600_000, signal });
+    // 推送已取消
+    if (res.aborted) return { ok: false, message: t('vcs.pushCancelled') };
     if (res.code === 0) return { ok: true, message: okMsg };
     const errText = res.stderr + res.stdout;
     const isAuthError = /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(errText);
@@ -889,29 +963,35 @@ export class GitVcs {
       const ask = createAskPass(cred);
       const retry = await this.exec(args, { timeoutMs: 600_000, signal, env: { GIT_ASKPASS: ask.path } });
       ask.cleanup();
-      if (retry.aborted) return { ok: false, message: '推送已取消' };
+      // 推送已取消
+      if (retry.aborted) return { ok: false, message: t('vcs.pushCancelled') };
       if (retry.code === 0) return { ok: true, message: okMsg };
-      return { ok: false, message: retry.stderr.trim() || 'git push 失败', authType: authTypeOf(await this.remote()), code: 'AUTH' };
+      // git push 失败
+      return { ok: false, message: retry.stderr.trim() || t('vcs.gitPushFailed'), authType: authTypeOf(await this.remote()), code: 'AUTH' };
     }
     return {
       ok: false,
-      message: res.stderr.trim() || 'git push 失败',
+      // git push 失败
+      message: res.stderr.trim() || t('vcs.gitPushFailed'),
       authType: isAuthError ? authTypeOf(await this.remote()) : undefined,
       code: isAuthError ? 'AUTH' : undefined,
     };
   }
 
   async branchPush(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }> {
-    return this.pushWithAuth(['push', '-u', 'origin', name], `已推送分支 ${name} 到远程`, signal);
+    // 已推送分支 {name} 到远程
+    return this.pushWithAuth(['push', '-u', 'origin', name], t('vcs.branchPushed', { name }), signal);
   }
 
   /** 删除远程分支：name 为 origin/xxx 形式（拆 remote + branch），命令 push --delete；认证重试同推送 */
   async branchRemoteDelete(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }> {
     const slash = name.indexOf('/');
-    if (slash <= 0) return { ok: false, message: '需远程分支名（origin/名字）' };
+    // 需远程分支名（origin/名字）
+    if (slash <= 0) return { ok: false, message: t('vcs.needRemoteBranchName') };
     return this.pushWithAuth(
       ['push', name.slice(0, slash), '--delete', name.slice(slash + 1)],
-      `已删除远程分支 ${name}`,
+      // 已删除远程分支 {name}
+      t('vcs.remoteBranchDeleted', { name }),
       signal,
     );
   }
@@ -955,21 +1035,27 @@ export class GitVcs {
       const hasLocal = await this.exec(['rev-parse', '--verify', '--quiet', `refs/heads/${local}`]);
       if (hasLocal.code !== 0) {
         const res = await this.exec(['checkout', '-b', local, name], { timeoutMs: 60_000 });
-        if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '切换分支失败' };
-        return { ok: true, message: `已切换到 ${name}（自动创建本地跟踪分支 ${local}）` };
+        // 切换分支失败
+        if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.switchBranchFailed') };
+        // 已切换到 {name}（自动创建本地跟踪分支 {local}）
+        return { ok: true, message: t('vcs.switchedWithTracking', { name, local }) };
       }
       name = local; // 本地已有同名分支，直接切换（保留跟踪关系）
     }
     const res = await this.exec(['checkout', name], { timeoutMs: 60_000 });
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '切换分支失败' };
-    return { ok: true, message: `已切换到 ${name}` };
+    // 切换分支失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.switchBranchFailed') };
+    // 已切换到 {name}
+    return { ok: true, message: t('vcs.switchedTo', { name }) };
   }
 
   /** 删除分支（force 为 true 时 -D） */
   async branchDelete(name: string, force = false): Promise<VcsResult> {
     const res = await this.exec(['branch', force ? '-D' : '-d', name]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '删除分支失败' };
-    return { ok: true, message: `已删除分支 ${name}` };
+    // 删除分支失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.deleteBranchFailed') };
+    // 已删除分支 {name}
+    return { ok: true, message: t('vcs.branchDeleted', { name }) };
   }
 
   /** 合并分支到当前分支。
@@ -980,45 +1066,57 @@ export class GitVcs {
     // 后者是 git 2.22+ 才有的，本机 2.20.1 会报 unknown option（实测）。分离头指针时它返回 "HEAD"
     const curRaw = await this.exec(['rev-parse', '--abbrev-ref', 'HEAD']);
     const curName = curRaw.stdout.trim();
-    const cur = !curName || curName === 'HEAD' ? '当前分支' : curName;
+    // 当前分支
+    const cur = !curName || curName === 'HEAD' ? t('vcs.currentBranch') : curName;
     const res = await this.exec(['merge', name], { timeoutMs: 120_000 });
     const out = res.stdout;
     const err = res.stderr;
 
     if (res.code !== 0) {
       // 冲突：git 把冲突写进 **stdout**（stderr 常为空），不读它就只剩一句"可能有冲突"
-      const conflicts = [...out.matchAll(/^冲突（内容）[:：].*?于 (.+)$/gm)].map((m) => m[1]!.trim());
+      const conflicts = [...out.matchAll(/^冲突（内容）[:：].*?于 (.+)$/gm)].map((m) => m[1]!.trim()); // i18n-ignore: 解析 git merge 中文输出（冲突文件列表）
       for (const m of out.matchAll(/^CONFLICT \([^)]*\): .*? in (.+)$/gm)) conflicts.push(m[1]!.trim());
       if (conflicts.length > 0) {
-        const list = conflicts.slice(0, 5).join('、') + (conflicts.length > 5 ? ` 等 ${conflicts.length} 个` : '');
+        // 、 / 等 {n} 个
+        const list = conflicts.slice(0, 5).join(t('vcs.pathListSep')) + (conflicts.length > 5 ? ` ${t('vcs.moreCount', { n: conflicts.length })}` : '');
         return {
           ok: false,
-          message: `合并 ${name} 时这些文件冲突了，需要手动解决（${conflicts.length} 个）：${list}\n解决完提交，合并就完成了`,
+          // 合并 {name} 时这些文件冲突了，需要手动解决（{n} 个）：{list}\n解决完提交，合并就完成了
+          message: t('vcs.mergeConflicts', { name, n: conflicts.length, list }),
         };
       }
-      if (/不能合并|not something we can merge/i.test(err)) return { ok: false, message: `找不到分支 ${name}` };
-      if (/未合并的文件|you have unmerged files/i.test(err)) {
-        return { ok: false, message: `上次合并的冲突还没处理完，先去「解决冲突」里解决掉` };
+      // 找不到分支 {name}
+      if (/不能合并|not something we can merge/i.test(err)) return { ok: false, message: t('vcs.branchNotFound', { name }) }; // i18n-ignore: 解析 git merge 中英文报错（分支不存在）
+      if (/未合并的文件|you have unmerged files/i.test(err)) { // i18n-ignore: 解析 git merge 中英文报错（有未解决的冲突）
+        // 上次合并的冲突还没处理完，先去「解决冲突」里解决掉
+        return { ok: false, message: t('vcs.unresolvedMergeFirst') };
       }
-      if (/本地修改将被合并操作覆盖|local changes to the following files would be overwritten/i.test(err)) {
-        const files = [...err.matchAll(/^\s+(\S.*)$/gm)].map((m) => m[1]!.trim()).filter((s) => !/^(请|Please)/.test(s));
-        const list = files.length > 0 ? `：${files.slice(0, 5).join('、')}` : '';
-        return { ok: false, message: `这些文件你有未提交的改动，合并会覆盖它们，请先提交或贮藏${list}` };
+      if (/本地修改将被合并操作覆盖|local changes to the following files would be overwritten/i.test(err)) { // i18n-ignore: 解析 git merge 中英文报错（本地改动会被覆盖）
+        const files = [...err.matchAll(/^\s+(\S.*)$/gm)].map((m) => m[1]!.trim()).filter((s) => !/^(请|Please)/.test(s)); // i18n-ignore: 「请」用于滤掉 git 中文提示行
+        // 、
+        const list = files.slice(0, 5).join(t('vcs.pathListSep'));
+        // 这些文件你有未提交的改动，合并会覆盖它们，请先提交或贮藏：{list} / 这些文件你有未提交的改动，合并会覆盖它们，请先提交或贮藏
+        return { ok: false, message: list ? t('vcs.mergeLocalChangesBlocked', { list }) : t('vcs.mergeLocalChangesBlockedNoList') };
       }
-      return { ok: false, message: err.trim() || '合并失败' };
+      // 合并失败
+      return { ok: false, message: err.trim() || t('vcs.mergeFailed') };
     }
 
     // 成功也分三种（原先只要没匹配到"真合并"就一律说成快进，"已经是最新的"因此看着像合过了）
-    if (/已经是最新的|Already up to date/i.test(out)) {
-      return { ok: true, message: `不用合并：${name} 的改动 ${cur} 里已经有了` };
+    if (/已经是最新的|Already up to date/i.test(out)) { // i18n-ignore: 解析 git merge 中英文输出（已是最新）
+      // 不用合并：{name} 的改动 {cur} 里已经有了
+      return { ok: true, message: t('vcs.mergeUpToDate', { name, cur }) };
     }
-    if (/Fast-forward|^更新 /m.test(out)) {
-      return { ok: true, message: `${name} 上的改动已经进 ${cur} 了（现在两边内容一样）` };
+    if (/Fast-forward|^更新 /m.test(out)) { // i18n-ignore: 解析 git merge 中英文输出（快进合并没有合并提交）
+      // {name} 上的改动已经进 {cur} 了（现在两边内容一样）
+      return { ok: true, message: t('vcs.mergeFastForward', { name, cur }) };
     }
-    if (/Merge made by|策略合并|合并提交/i.test(out)) {
-      return { ok: true, message: `已把 ${name} 合并进 ${cur}，生成了一条合并记录` };
+    if (/Merge made by|策略合并|合并提交/i.test(out)) { // i18n-ignore: 解析 git merge 中英文输出（生成了合并提交）
+      // 已把 {name} 合并进 {cur}，生成了一条合并记录
+      return { ok: true, message: t('vcs.mergedWithCommit', { name, cur }) };
     }
-    return { ok: true, message: `已把 ${name} 合并进 ${cur}` };
+    // 已把 {name} 合并进 {cur}
+    return { ok: true, message: t('vcs.mergedInto', { name, cur }) };
   }
 
   /** 合并预检（git）：
@@ -1045,10 +1143,13 @@ export class GitVcs {
   async mergeAbort(): Promise<VcsResult> {
     // 前置检查 MERGE_HEAD：没有进行中的合并时 git 报 "fatal: There is no merge to abort"，换成友好提示
     const chk = await this.exec(['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']);
-    if (chk.code !== 0) return { ok: false, message: '当前没有进行中的合并' };
+    // 当前没有进行中的合并
+    if (chk.code !== 0) return { ok: false, message: t('vcs.noMergeInProgress') };
     const res = await this.exec(['merge', '--abort']);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '中止合并失败' };
-    return { ok: true, message: '已中止合并，工作区已还原到合并前状态' };
+    // 中止合并失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.mergeAbortFailed') };
+    // 已中止合并，工作区已还原到合并前状态
+    return { ok: true, message: t('vcs.mergeAbortDone') };
   }
 
   // ============ 标签管理 ============
@@ -1056,24 +1157,30 @@ export class GitVcs {
   /** 标签列表 */
   async tagList(): Promise<string[]> {
     const res = await this.exec(['tag', '-l']);
-    if (res.code !== 0) throw new Error(`git tag 失败: ${res.stderr.trim()}`);
+    // git tag 失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.gitTagFailed', { err: res.stderr.trim() }));
     return res.stdout.split('\n').filter(Boolean);
   }
 
   /** 创建标签（annotated，附当前/指定提交） */
   async tagCreate(name: string, message = '', rev?: string): Promise<VcsResult> {
-    const args = ['tag', '-a', name, '-m', message || `标签 ${name}`];
+    // 创建标签 {name}
+    const args = ['tag', '-a', name, '-m', message || t('vcs.commitMsg.tagCreate', { name })];
     if (rev) args.push(rev);
     const res = await this.exec(args);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '创建标签失败' };
-    return { ok: true, message: `已创建标签 ${name}` };
+    // 创建标签失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.createTagFailed') };
+    // 已创建标签 {name}
+    return { ok: true, message: t('vcs.tagCreated', { name }) };
   }
 
   /** 删除标签 */
   async tagDelete(name: string): Promise<VcsResult> {
     const res = await this.exec(['tag', '-d', name]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '删除标签失败' };
-    return { ok: true, message: `已删除标签 ${name}` };
+    // 删除标签失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.deleteTagFailed') };
+    // 已删除标签 {name}
+    return { ok: true, message: t('vcs.tagDeleted', { name }) };
   }
 
   // ============ Stash ============
@@ -1100,28 +1207,36 @@ export class GitVcs {
     // git 2.20 无改动时 exit code 为 0（仅 stderr 提示 "没有要保存的本地修改"/"No local changes to save"），
     // 因此成功分支也需检查提示，避免误报"已保存"但实际未保存
     const msg = res.stderr.trim() || res.stdout.trim();
+    const noChanges = /No local changes|没有要保存的本地修改/i.test(msg); // i18n-ignore: 解析 git stash 中英文提示（无改动可保存）
     if (res.code !== 0) {
-      return { ok: false, message: /No local changes|没有要保存的本地修改/i.test(msg) ? '没有可保存的改动' : msg || 'stash 失败' };
+      // 没有可保存的改动 / stash 失败
+      return { ok: false, message: noChanges ? t('vcs.stashNoChanges') : msg || t('vcs.stashFailed') };
     }
-    if (/No local changes|没有要保存的本地修改/i.test(msg)) {
-      return { ok: false, message: '没有可保存的改动' };
+    if (noChanges) {
+      // 没有可保存的改动
+      return { ok: false, message: t('vcs.stashNoChanges') };
     }
-    return { ok: true, message: '改动已保存到 Stash' };
+    // 改动已保存到 Stash
+    return { ok: true, message: t('vcs.stashSaved') };
   }
 
   /** 恢复 stash */
   async stashPop(index: number): Promise<VcsResult> {
     // -c core.quotepath=false：恢复输出的中文文件名不做八进制转义
     const res = await this.exec(['-c', 'core.quotepath=false', 'stash', 'pop', `stash@{${index}}`], { timeoutMs: 60_000 });
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '恢复失败（可能有冲突）' };
-    return { ok: true, message: `已恢复 stash@{${index}}` };
+    // 恢复失败（可能有冲突）
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.stashPopFailed') };
+    // 已恢复 stash@{index}
+    return { ok: true, message: t('vcs.stashPopped', { index }) };
   }
 
   /** 丢弃 stash */
   async stashDrop(index: number): Promise<VcsResult> {
     const res = await this.exec(['stash', 'drop', `stash@{${index}}`]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '丢弃失败' };
-    return { ok: true, message: `已丢弃 stash@{${index}}` };
+    // 丢弃失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.stashDropFailed') };
+    // 已丢弃 stash@{index}
+    return { ok: true, message: t('vcs.stashDropped', { index }) };
   }
 
   // ============ 仓库创建 / 克隆 / 远程 ============
@@ -1129,15 +1244,19 @@ export class GitVcs {
   /** git init 初始化仓库（git init <dir>，路径参数，无需 cd；dir 不存在会自动创建） */
   async init(dir: string): Promise<VcsResult> {
     const res = await this.exec(['init', dir], { timeoutMs: 30_000 });
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || 'git init 失败' };
-    return { ok: true, message: `仓库已初始化: ${dir}` };
+    // git init 失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitInitFailed') };
+    // 仓库已初始化: {dir}
+    return { ok: true, message: t('vcs.repoInitialized', { dir }) };
   }
 
   /** git clone 克隆远程仓库到目标目录 */
   async clone(url: string, dir: string): Promise<VcsResult> {
     const res = await this.exec(['clone', url, dir], { timeoutMs: 600_000 });
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '克隆失败' };
-    return { ok: true, message: `已克隆到 ${dir}` };
+    // 克隆失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.cloneFailed') };
+    // 已克隆到 {dir}
+    return { ok: true, message: t('vcs.clonedTo', { dir }) };
   }
 
   /** 远程列表 */
@@ -1159,15 +1278,19 @@ export class GitVcs {
   /** 添加远程 */
   async remoteAdd(name: string, url: string): Promise<VcsResult> {
     const res = await this.exec(['remote', 'add', name, url]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '添加远程失败' };
-    return { ok: true, message: `已添加远程 ${name}` };
+    // 添加远程失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.remoteAddFailed') };
+    // 已添加远程 {name}
+    return { ok: true, message: t('vcs.remoteAddedName', { name }) };
   }
 
   /** 移除远程 */
   async remoteRemove(name: string): Promise<VcsResult> {
     const res = await this.exec(['remote', 'remove', name]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '移除远程失败' };
-    return { ok: true, message: `已移除远程 ${name}` };
+    // 移除远程失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.remoteRemoveFailed') };
+    // 已移除远程 {name}
+    return { ok: true, message: t('vcs.remoteRemoved', { name }) };
   }
 
   // ============ 提交前检查（远程对比） ============
@@ -1255,7 +1378,8 @@ export class GitVcs {
   /** git blame --porcelain：逐行标注提交/作者 */
   async blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]> {
     const res = await this.exec(['blame', '--porcelain', pathRel], { timeoutMs: 60_000, decode: 'auto' });
-    if (res.code !== 0) throw new Error(`git blame 失败: ${res.stderr.trim()}`);
+    // git blame 失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.gitBlameFailed', { err: res.stderr.trim() }));
     const out: { rev: string; author: string; date: string; line: number; text: string }[] = [];
     const lines = res.stdout.split('\n');
     let i = 0;
@@ -1280,7 +1404,9 @@ export class GitVcs {
         out.push({
           rev: m[1].slice(0, 7),
           author,
-          date: time ? new Date(time * 1000).toLocaleDateString('zh-CN') : '',
+          // 日期格式跟随界面语言（原本写死 'zh-CN'，英文界面下也显示中文格式 —— 这类"代码里的 locale 常量"
+          // 检查脚本扫不到，因为源码里没有中文字面量）
+          date: time ? new Date(time * 1000).toLocaleDateString(getLang() === 'zh' ? 'zh-CN' : 'en-US') : '',
           line: Number(m[2]),
           text,
         });
@@ -1296,11 +1422,12 @@ export class GitVcs {
   async cleanList(): Promise<string[]> {
     // -c core.quotepath=false：中文文件名不做八进制转义（与 status 一致，否则显示 \346\226\260…）
     const res = await this.exec(['-c', 'core.quotepath=false', 'clean', '-ndx'], { timeoutMs: 60_000 });
-    if (res.code !== 0) throw new Error(`git clean 预览失败: ${res.stderr.trim()}`);
+    // git clean 预览失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.gitCleanPreviewFailed', { err: res.stderr.trim() }));
     return res.stdout
       .split('\n')
       .filter(Boolean)
-      .map((l) => l.replace(/^(Would remove |将删除 |即将删除 )/, ''));
+      .map((l) => l.replace(/^(Would remove |将删除 |即将删除 )/, '')); // i18n-ignore: 解析 git clean 中英文输出前缀
   }
 
   /** git clean -fdx：删除未跟踪文件（危险，前端必须确认）；paths 非空时只清理指定路径，否则全量 */
@@ -1308,8 +1435,11 @@ export class GitVcs {
     const args = ['clean', '-fdx'];
     if (paths && paths.length) args.push('--', ...paths);
     const res = await this.exec(args, { timeoutMs: 120_000 });
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '清理失败' };
-    return { ok: true, message: `已清理 ${paths?.length ?? '全部'} 项未跟踪文件` };
+    // 清理失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.cleanupFailed') };
+    const n = paths?.length;
+    // 已清理全部未跟踪文件 / 已清理 {n} 项未跟踪文件
+    return { ok: true, message: n === undefined ? t('vcs.cleanedAll') : t('vcs.cleanedCount', { n }) };
   }
 
   // ============ 忽略文件 ============
@@ -1323,9 +1453,11 @@ export class GitVcs {
       if (!content.endsWith('\n') && content) content += '\n';
       content += pattern + '\n';
       fs.writeFileSync(gitignore, content);
-      return { ok: true, message: `已加入忽略: ${pattern}` };
+      // 已加入忽略: {pattern}
+      return { ok: true, message: t('vcs.ignoreAddedPattern', { pattern }) };
     } catch (err) {
-      return { ok: false, message: `写入 .gitignore 失败: ${(err as Error).message}` };
+      // 写入 .gitignore 失败: {err}
+      return { ok: false, message: t('vcs.writeGitignoreFailed', { err: (err as Error).message }) };
     }
   }
 }

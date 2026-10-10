@@ -10,6 +10,7 @@
  *     并附「当前 N 个文件未提交」—— 让用户知道这一下会丢什么
  */
 import React, { useEffect, useRef, useState } from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { ConfirmModal } from '../ui/prompt.js';
@@ -136,7 +137,8 @@ const ENTRIES_MAX = 50;
 const OUT_MAX = 4000;
 
 function clip(s: string): string {
-  return s.length > OUT_MAX ? `${s.slice(0, OUT_MAX)}\n…（输出过长，仅保留前 ${OUT_MAX} 字符）` : s;
+  // …（输出过长，仅保留前 {n} 字符）
+  return s.length > OUT_MAX ? `${s.slice(0, OUT_MAX)}\n${t('term.outputTruncated', { n: OUT_MAX })}` : s;
 }
 
 /** 读本次会话的记录：服务重启过（实例标识变了）就把旧的丢掉，从头开始 */
@@ -180,20 +182,27 @@ export function TerminalModal(props: {
   const repoName = (props.repoRoot ?? '').replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? '';
   /** 标题里显示**完整磁盘路径**（用户要求：一眼知道这仓库在本机哪里）。
    *  记录前缀仍用 `仓库名/相对路径` 的短形式 —— 完整路径太长，会把命令挤到看不见。 */
-  const fullPath = props.repoRoot ? `${props.repoRoot}${cwd ? '/' + cwd : ''}` : cwd || '仓库根';
+  // 仓库根
+  const fullPath = props.repoRoot ? `${props.repoRoot}${cwd ? '/' + cwd : ''}` : cwd || t('term.repoRoot');
   /** 按仓库类型给示例/提示（SVN 项目里提示 git 命令会误导 —— 用户实报） */
   const isSvn = props.repoType === 'svn';
   const binName = isSvn ? 'svn' : 'git';
   const examples: [string, string][] = isSvn
     ? [
-        ['svn info', '看工作副本信息'],
-        ['svn status', '看工作区状态'],
-        ['svn log -l 10', '看最近 10 条提交'],
+        // 看工作副本信息
+        ['svn info', t('term.ex.svnInfo')],
+        // 看工作区状态
+        ['svn status', t('term.ex.status')],
+        // 看最近 10 条提交
+        ['svn log -l 10', t('term.ex.svnLog')],
       ]
     : [
-        ['git log --oneline -10', '看最近提交'],
-        ['git status', '看工作区状态'],
-        ['git branch -m 旧名 新名', '重命名分支'],
+        // 看最近提交
+        ['git log --oneline -10', t('term.ex.gitLog')],
+        // 看工作区状态
+        ['git status', t('term.ex.status')],
+        // git branch -m 旧名 新名 / 重命名分支
+        [t('term.ex.gitRenameCmd'), t('term.ex.gitRename')],
       ];
   const [entries, setEntries] = useState<Entry[]>([]);
   // 打开时读记录（含"服务是否重启过"的校验）—— modal 每次打开都是重新挂载，跑一次就够
@@ -281,7 +290,8 @@ export function TerminalModal(props: {
         } catch {
           /* 拿不到就不显示条数，不影响确认 */
         }
-        setCfm({ cmd, reason: r.reason ?? '这是危险操作', changed });
+        // 这是危险操作
+        setCfm({ cmd, reason: r.reason ?? t('term.danger.reason'), changed });
         return;
       }
       pushEntry({
@@ -290,11 +300,12 @@ export function TerminalModal(props: {
         stdout: r.stdout,
         stderr: r.stderr,
         ok: r.ok,
-        note: r.aborted ? '已中断' : r.timedOut ? '超过 30 秒，已终止' : undefined,
+        // 已中断 / 超过 30 秒，已终止
+        note: r.aborted ? t('term.noteAborted') : r.timedOut ? t('term.noteTimeout') : undefined,
       });
       props.onChanged?.(); // 失败也算跑过：命令可能已经改了工作区/index（如 add 成功、commit 失败）
     } catch (e) {
-      // 中断时 api() 会把 AbortError 转成 ApiError('已取消')（见 api.ts:150），
+      // 中断时 api() 会把 AbortError 转成 ApiError（cancelled=true，消息随语言，见 api.ts），
       // 所以这里拿不到 AbortError —— 直接显示它的措辞，与推送/更新被取消时的提示保持一致
       pushEntry({ cmd, dir: cwd, stdout: '', stderr: '', note: (e as Error).message, ok: false });
       props.onChanged?.(); // 中断同样可能改了一半（如 git 改完文件才被 Ctrl+C）：不能还显示旧状态
@@ -344,14 +355,13 @@ export function TerminalModal(props: {
     }
   };
 
-  const mono = 'var(--code-font, "JetBrains Mono", Consolas, monospace)';
-
   return (
     <>
       <ModalShell
         title={
           <>
-            终端
+            {/* 终端 */}
+            {t('term.title')}
             {/* 执行目录显示在标题旁（用户要求）：一眼看到命令会在哪跑 */}
             <span
               className="dim small"
@@ -363,10 +373,12 @@ export function TerminalModal(props: {
               <button
                 className="mini"
                 style={{ marginLeft: 10, fontWeight: 400 }}
-                title="把执行目录切回仓库根（已经跑过的记录保留，只影响后面的命令）"
+                // 把执行目录切回仓库根（已经跑过的记录保留，只影响后面的命令）
+                title={t('term.backToRootTitle')}
                 onClick={() => setCwd('')}
               >
-                回根目录
+                {/* 回根目录 */}
+                {t('term.backToRoot')}
               </button>
             )}
           </>
@@ -377,12 +389,14 @@ export function TerminalModal(props: {
         foot={
           <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             <span className="dim small">
-              只支持 git / svn · Enter 执行 · ↑↓ 历史 · Ctrl+C 中断
+              {/* 只支持 git / svn · Enter 执行 · ↑↓ 历史 · Ctrl+C 中断 */}
+              {t('term.footHint')}
             </span>
             <span style={{ display: 'flex', gap: 8 }}>
               {entries.length > 0 && (
                 <button
-                  title="清掉上面这些执行记录（本次会话内的）"
+                  // 清掉上面这些执行记录（本次会话内的）
+                  title={t('term.clearTitle')}
                   onClick={() => {
                     setEntries([]);
                     try {
@@ -392,10 +406,12 @@ export function TerminalModal(props: {
                     }
                   }}
                 >
-                  清空记录
+                  {/* 清空记录 */}
+                  {t('term.clear')}
                 </button>
               )}
-              <button onClick={props.onClose}>关闭</button>
+              {/* 关闭 */}
+              <button onClick={props.onClose}>{t('common.close')}</button>
             </span>
           </div>
         }
@@ -413,7 +429,8 @@ export function TerminalModal(props: {
         >
           {!entries.length && (
             <div className="dim">
-              <div>输入要执行的 {binName} 命令，例如：</div>
+              {/* 输入要执行的 {bin} 命令，例如： */}
+              <div>{t('term.emptyIntro', { bin: binName })}</div>
               <div style={{ margin: '12px 0' }}>
                 {examples.map(([cmd, desc]) => (
                   <div key={cmd} style={{ display: 'flex', gap: 18, lineHeight: 1.9 }}>
@@ -422,7 +439,8 @@ export function TerminalModal(props: {
                   </div>
                 ))}
               </div>
-              <div>不支持管道 / 重定向 / 串联；需要交互的命令（如 git rebase -i）请用系统终端。</div>
+              {/* 不支持管道 / 重定向 / 串联；需要交互的命令（如 git rebase -i）请用系统终端。 */}
+              <div>{t('term.emptyGuard')}</div>
             </div>
           )}
           {entries.map((e, i) => (
@@ -432,7 +450,8 @@ export function TerminalModal(props: {
                   前缀用暗色、命令用主题色，两者区分开（用户实报"颜色不要和命令一样"） */}
               <div style={{ color: 'var(--accent)' }}>
                 <span style={{ color: 'var(--dim)' }}>
-                  {repoName || '仓库'}
+                  {/* 仓库 */}
+                  {repoName || t('term.repoFallback')}
                   {e.dir ? `/${e.dir}` : ''}
                 </span>{' '}
                 $ {e.cmd}
@@ -451,11 +470,15 @@ export function TerminalModal(props: {
               {e.note && <div style={{ color: e.rejected ? 'var(--dim)' : 'var(--warn)' }}>■ {e.note}</div>}
               {/* 成功但没输出的命令（如 git branch -m）也要给个回执，否则用户不知道成没成 */}
               {!e.note && !e.stdout.trim() && !e.stderr.trim() && (
-                <div style={{ color: e.ok ? 'var(--ok)' : 'var(--warn)' }}>{e.ok ? '✓ 完成（无输出）' : '■ 命令没有输出'}</div>
+                <div style={{ color: e.ok ? 'var(--ok)' : 'var(--warn)' }}>
+                  {/* ✓ 完成（无输出） / ■ 命令没有输出 */}
+                  {e.ok ? t('term.doneNoOutput') : t('term.noOutput')}
+                </div>
               )}
             </div>
           ))}
-          {busy && <div className="dim">…执行中（Ctrl+C 可中断）</div>}
+          {/* …执行中（Ctrl+C 可中断） */}
+          {busy && <div className="dim">{t('term.running')}</div>}
         </div>
 
         {/* 输入行 */}
@@ -479,13 +502,16 @@ export function TerminalModal(props: {
             onBlur={() => setCmdPreview(false)}
           />
           <button className="primary" disabled={busy || !input.trim()} onClick={submit}>
-            执行
+            {/* 执行 */}
+            {t('term.run')}
           </button>
         </div>
         {/* 命令预览（教学/透明层，与工具栏确认框的 confirmCmd 同一思路）：让人看清"回车后会真正执行什么" */}
         {cmdPreview && input.trim() && (
           <div className="dim small mono" style={{ marginTop: 6 }}>
-            将执行：{input.trim().split(/\s+/)[0] === 'git' ? 'git --no-pager ' : 'svn --non-interactive '}
+            {/* 将执行： */}
+            {t('term.preview')}
+            {input.trim().split(/\s+/)[0] === 'git' ? 'git --no-pager ' : 'svn --non-interactive '}
             {input.trim().replace(/^\S+\s*/, '')}
           </div>
         )}
@@ -493,17 +519,18 @@ export function TerminalModal(props: {
 
       {cfm && (
         <ConfirmModal
-          title="⚠ 危险命令"
+          // ⚠ 危险命令
+          title={t('term.danger.title')}
           danger
-          confirmLabel="仍要执行"
+          // 仍要执行
+          confirmLabel={t('term.danger.confirm')}
           width={520}
           message={
             <>
               <div style={{ marginBottom: 8 }}>{cfm.reason}</div>
               <div className="dim small">
-                {cfm.changed > 0
-                  ? `当前有 ${cfm.changed} 个文件未提交。`
-                  : '当前工作区没有未提交的改动。'}
+                {/* 当前有 {n} 个文件未提交。 / 当前工作区没有未提交的改动。 */}
+                {cfm.changed > 0 ? t('term.danger.changed', { n: cfm.changed }) : t('term.danger.clean')}
               </div>
             </>
           }

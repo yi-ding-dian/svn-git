@@ -67,7 +67,7 @@ export interface VcsResult {
   warnings?: string[];
 }
 
-// 状态码中文说明定义收敛于 src/shared/types.ts（前后端单一来源）
+// 状态码说明（i18n，取值时按当前语言算）定义收敛于 src/shared/types.ts（前后端单一来源）
 export { CODE_DESC } from '../shared/types.js';
 
 /** 忽略预案（svn）：这条「加入忽略」最终会写成什么——供弹窗在确认前如实展示，避免「填了 A 却写入 B」 */

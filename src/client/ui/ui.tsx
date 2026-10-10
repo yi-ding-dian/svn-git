@@ -34,8 +34,11 @@ export function ClickTip(props: {
   onHide: () => void;
 }) {
   useEffect(() => {
-    const t = setTimeout(props.onHide, props.duration ?? 1500);
-    return () => clearTimeout(t);
+    // 局部变量名 timer：与 i18n 的 t() 区分开，避免同名混淆（本文件暂无文案，防将来引入 t() 时踩坑）
+    const timer = setTimeout(props.onHide, props.duration ?? 1500);
+    return () => clearTimeout(timer);
+    // 只跟 msg 计时：onHide/duration 每次渲染都是新引用，入依赖会让计时器反复重置（toast 永不消失）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.msg]); // msg 变化时重新计时
   return (
     <div

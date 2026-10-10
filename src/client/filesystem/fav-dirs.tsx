@@ -1,5 +1,6 @@
 /** 常用文件夹管理弹窗：查看/移除/重新预加载（预加载后进入目录命中缓存秒开） */
 import React from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { IconOk } from '../ui/icons.js';
 
@@ -18,27 +19,31 @@ export function FavDirsModal(props: {
 }) {
   return (
     <ModalShell
-      title="⭐ 常用文件夹"
+      // ⭐ 常用文件夹
+      title={t('fs.fav.title')}
       width={520}
       minWidth={440}
       onClose={props.onClose}
       foot={
         <>
-          <button onClick={props.onClose}>关闭</button>
+          {/* 关闭 */}
+          <button onClick={props.onClose}>{t('common.close')}</button>
           {props.favs.length > 0 && (
             <button className="primary" disabled={props.preload?.running} onClick={props.onPreloadAll}>
-              {props.preload?.running ? '预加载中…' : '全部重新预加载'}
+              {/* 预加载中… / 全部重新预加载 */}
+              {props.preload?.running ? t('fs.fav.preloading') : t('fs.fav.preloadAll')}
             </button>
           )}
         </>
       }
     >
       <div className="dim small" style={{ marginBottom: 8, lineHeight: 1.8 }}>
-            右键文件夹 →「加入常用文件夹」后，该文件夹下所有子目录会在后台递归预加载并缓存，
-            之后点击里面的任何内容都秒开（本机保存，仅当前电脑生效）。
+            {/* 右键文件夹 →「加入常用文件夹」后，该文件夹下所有子目录会在后台递归预加载并缓存，之后点击里面的任何内容都秒开（本机保存，仅当前电脑生效）。 */}
+            {t('fs.fav.hint')}
           </div>
           {props.favs.length === 0 && (
-            <div className="dim" style={{ padding: '12px 0' }}>还没有常用文件夹</div>
+            // 还没有常用文件夹
+            <div className="dim" style={{ padding: '12px 0' }}>{t('fs.fav.empty')}</div>
           )}
           <div className="vcs-list" style={{ border: '1px solid var(--border)', borderRadius: 8, minHeight: 120, overflow: 'auto' }}>
             {props.favs.map((f) => (
@@ -51,18 +56,21 @@ export function FavDirsModal(props: {
                 >
                   {f.path}
                 </span>
-                <button className="mini" onClick={() => props.onRemove(f.path)}>移除</button>
+                {/* 移除 */}
+                <button className="mini" onClick={() => props.onRemove(f.path)}>{t('fs.fav.remove')}</button>
               </div>
             ))}
           </div>
           {props.preload && (
             <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>
               {props.preload.running
-                ? `⏳ 正在后台预加载：${props.preload.done}/${props.preload.total}（${props.preload.cur}）`
+                // ⏳ 正在后台预加载：{done}/{total}（{cur}）
+                ? t('fs.fav.progress', { done: props.preload.done, total: props.preload.total, cur: props.preload.cur })
                 : (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                     <IconOk size={12} />
-                    后台预加载完成（{props.preload.done} 个目录）
+                    {/* 后台预加载完成（{n} 个目录） */}
+                    {t('fs.fav.done', { n: props.preload.done })}
                   </span>
                 )}
             </div>

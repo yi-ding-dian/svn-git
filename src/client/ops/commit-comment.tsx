@@ -1,5 +1,6 @@
 /** 提交注释输入块（提交弹窗共用）：标签 + 多行输入 + Ctrl+Enter 提交 */
 import React from 'react';
+import { t } from '../../shared/i18n/index.js';
 
 /** 提交注释输入块（多个提交弹窗共用）：标签 + 多行输入 + Ctrl+Enter 提交 */
 export function CommitCommentBox(props: {
@@ -13,7 +14,8 @@ export function CommitCommentBox(props: {
   return (
     <>
       <div className="cmt-label">
-        📝 提交注释 <span className="dim" style={{ fontWeight: 400 }}>（必填）</span>
+        {/* 📝 提交注释 / （必填） */}
+        {t('ops.commitComment.label')} <span className="dim" style={{ fontWeight: 400 }}>{t('ops.commitComment.required')}</span>
       </div>
       <textarea
         className="cmt-text"

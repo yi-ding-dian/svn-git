@@ -5,8 +5,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
+import { t } from '../shared/i18n/index.js';
 import { parseAppCommand, launchDetached } from './util.js';
-import type { InstallTool, OpenWithApp, Platform } from './types.js';
+import type { InstallTool, Platform } from './types.js';
 
 /** 内置（可能是第三方改写过的 .desktop）的本地化名选择：Name[zh_CN] > 系统 locale > 短码 > en > 默认名 */
 function pickLocaleName(names: Record<string, string>, baseName: string): string {
@@ -101,7 +102,8 @@ function detectDistro(): { name: string; manager: string; install: string[]; man
     case 'arch':
       return { name: 'Arch', manager: 'pacman', install: ['sudo', '-n', 'pacman', '-S', '--noconfirm', 'git', 'subversion'], manual: `sudo pacman -S --noconfirm ${arg}` };
     default:
-      return { name: id || '未知发行版', manager: 'apt', install: ['sudo', '-n', 'apt-get', 'install', '-y', 'git', 'subversion'], manual: `sudo apt-get install -y ${arg}` };
+      // 未知发行版
+      return { name: id || t('plat.distroUnknown'), manager: 'apt', install: ['sudo', '-n', 'apt-get', 'install', '-y', 'git', 'subversion'], manual: `sudo apt-get install -y ${arg}` };
   }
 }
 
@@ -146,15 +148,18 @@ export const linux: Platform = {
   },
 
   openDefault(abs, rel) {
-    return launchDetached(['xdg-open', abs], `已用系统默认程序打开: ${rel}`);
+    // 已用系统默认程序打开: {rel}
+    return launchDetached(['xdg-open', abs], t('plat.openedDefault', { rel }));
   },
 
   async openWithApp(abs, exec, rel) {
     if (!exec) return this.openDefault(abs, rel);
     try {
       const cmd = parseAppCommand(exec, abs);
-      if (!cmd.length) throw new Error('Exec 为空');
-      return await launchDetached(cmd, `已用 ${cmd[0]} 打开: ${rel}`);
+      // Exec 为空
+      if (!cmd.length) throw new Error(t('plat.execEmpty'));
+      // 已用 {app} 打开: {rel}
+      return await launchDetached(cmd, t('plat.openedWith', { app: cmd[0]!, rel }));
     } catch (e) {
       return { ok: false, message: (e as Error).message };
     }
@@ -172,7 +177,8 @@ export const linux: Platform = {
 
   openUrl(url) {
     const p = spawn('xdg-open', [url], { stdio: 'ignore', detached: true });
-    p.on('error', (e) => console.error(`[svngit] 打开浏览器失败(xdg-open): ${e.message}`));
+    // [svngit] 打开浏览器失败({cmd}): {msg}
+    p.on('error', (e) => console.error(t('plat.openUrlFail', { cmd: 'xdg-open', msg: e.message })));
     p.unref();
   },
 
@@ -218,11 +224,14 @@ export const linux: Platform = {
         }
       }
       // Icon 用绝对路径（部分桌面环境按主题名查找不稳定；绝对路径各环境通用）
+      // Name/Comment 是系统菜单里给用户看的文案（随界面语言）；其余键名/路径/命令是协议字段，不改
       const desktop = [
         '[Desktop Entry]',
         'Type=Application',
-        'Name=svn-git文件版本管理',
-        'Comment=SVN/Git 状态检测与操作工具',
+        // svn-git文件版本管理
+        `Name=${t('plat.desktopName')}`,
+        // SVN/Git 状态检测与操作工具
+        `Comment=${t('plat.desktopComment')}`,
         `Exec="${exePath}" %U`,
         `Icon=${iconRel}`,
         'Terminal=false',
@@ -233,9 +242,10 @@ export const linux: Platform = {
       // 刷新菜单/图标缓存（工具存在则执行，失败忽略——部分发行版无该命令）
       spawnSync('update-desktop-database', [appsDir], { stdio: 'ignore', timeout: 15_000 });
       spawnSync('gtk-update-icon-cache', ['-f', path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')], { stdio: 'ignore', timeout: 15_000 });
-      return { ok: true, message: `已安装到系统应用菜单${iconOk ? '' : '（图标未找到，菜单项显示默认图标）'}（注销/重登后系统菜单刷新生效）` };
+      return { ok: true, message: t(iconOk ? 'plat.installedMenu' : 'plat.installedMenuNoIcon') };
     } catch (e) {
-      return { ok: false, message: `安装失败: ${(e as Error).message}` };
+      // 安装失败: {msg}
+      return { ok: false, message: t('plat.installFail', { msg: (e as Error).message }) };
     }
   },
 
@@ -245,9 +255,11 @@ export const linux: Platform = {
       const icon = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'svngit.png');
       if (fs.existsSync(desktop)) fs.rmSync(desktop);
       if (fs.existsSync(icon)) fs.rmSync(icon);
-      return { ok: true, message: '已从系统应用菜单卸载' };
+      // 已从系统应用菜单卸载
+      return { ok: true, message: t('plat.uninstalledMenu') };
     } catch (e) {
-      return { ok: false, message: `卸载失败: ${(e as Error).message}` };
+      // 卸载失败: {msg}
+      return { ok: false, message: t('plat.uninstallFail', { msg: (e as Error).message }) };
     }
   },
 
@@ -258,24 +270,28 @@ export const linux: Platform = {
     const install = distro.install; // ['sudo','-n',<manager>,...]
     const manual = distro.manual; // 手动命令全文
     const sudoOk = await run('sudo', ['-n', 'true'], { timeoutMs: 10_000 });
-    send({ line: `检测 root 权限… ${sudoOk.code === 0 ? '✓ 可用' : '✗ 需要密码（请用下方手动命令）'}` });
-    send({ line: `发行版: ${distro.name}（${distro.manager}）` });
+    send({ line: t(sudoOk.code === 0 ? 'plat.sudoOk' : 'plat.sudoNeedPassword') });
+    // 发行版: {name}（{manager}）
+    send({ line: t('plat.distro', { name: distro.name, manager: distro.manager }) });
     if (sudoOk.code !== 0) {
       send({ done: true, code: 1, manual });
       done();
       return;
     }
-    send({ line: `开始安装: ${pkgs.join(' ')}…` });
+    // 开始安装: {pkgs}…
+    send({ line: t('plat.installStart', { pkgs: pkgs.join(' ') }) });
     const child = spawn(install[0]!, install.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.on('data', (d: Buffer) => send({ line: d.toString() }));
     child.stderr.on('data', (d: Buffer) => send({ line: d.toString() }));
     child.on('error', (e) => {
-      send({ line: `启动失败: ${e.message}` });
+      // 启动失败: {msg}
+      send({ line: t('plat.launchFail', { msg: e.message }) });
       send({ done: true, code: 1, manual: `sudo apt-get install -y ${pkgs.join(' ')}` });
       done();
     });
     child.on('close', (code) => {
-      send({ line: code === 0 ? '✅ 安装完成' : `❌ 安装失败（退出码 ${code}）` });
+      // ✅ 安装完成 / ❌ 安装失败（退出码 {code}）
+      send({ line: code === 0 ? t('plat.installDone') : t('plat.installFailed', { code: String(code) }) });
       send({ done: true, code: code ?? 1 });
       done();
     });

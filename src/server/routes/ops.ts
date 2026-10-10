@@ -7,13 +7,17 @@ import {
 } from './util.js';
 import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile, invalidateSvnIgnoreMap } from '../../vcs/ignore.js';
 import type { Ctx } from './util.js';
+import { t } from '../../shared/i18n/index.js';
 import { detectTextEncoding, decodeText, encodeText, type TextEncoding } from '../../shared/text.js';
 
-/** git 忽略三处去向（展示名与写入目标）——仓库 .gitignore / 全局 excludesFile / .git/info/exclude */
+/** git 忽略三处去向（展示名与写入目标）——仓库 .gitignore / 全局 excludesFile / .git/info/exclude。
+ *  值写成**函数**：语言可切换，模块顶层求值会把展示名固化成首次加载时的语言。 */
 const GIT_IGNORE_WHERE = {
-  gitignore: '仓库 .gitignore',
-  global: '全局忽略（~/.gitignore_global）',
-  exclude: '.git/info/exclude',
+  // 仓库 .gitignore
+  gitignore: () => t('srv.gitIgnoreWhere.gitignore'),
+  // 全局忽略（~/.gitignore_global）
+  global: () => t('srv.gitIgnoreWhere.global'),
+  exclude: () => '.git/info/exclude', // 路径名（非展示文案），不翻
 } as const;
 type GitIgnoreTarget = keyof typeof GIT_IGNORE_WHERE;
 
@@ -79,7 +83,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         // 路径越界校验：paths 为相对仓库根路径，path.resolve 归一化后 inRepoRoot 检查（防 ../ 穿越与绝对路径指向仓库外）
         const bad = paths.find((p) => !inRepoRoot(repo.root, path.resolve(repo.root, p)));
         if (bad) {
-          sendJson(res, 400, { error: `路径超出工作副本范围: ${bad}` });
+          // 路径超出工作副本范围: {path}
+          sendJson(res, 400, { error: t('srv.pathOutOfWc', { path: bad }) });
           return true;
         }
         let result: { ok: boolean; message: string };
@@ -89,7 +94,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           const stagedOnly = Array.isArray(body.stagedOnly) ? (body.stagedOnly as unknown[]).map(String) : [];
           const badStaged = stagedOnly.find((sp) => !inRepoRoot(repo.root, path.resolve(repo.root, sp)));
           if (badStaged) {
-            sendJson(res, 400, { error: `路径超出工作副本范围: ${badStaged}` });
+            // 路径超出工作副本范围: {path}
+            sendJson(res, 400, { error: t('srv.pathOutOfWc', { path: badStaged }) });
             return true;
           }
           result = await vcs.commit(paths, msg, stagedOnly);
@@ -98,7 +104,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           const dir = String(body.path ?? '');
           // update 的 dir 同样校验（空串 = 仓库根，通过）
           if (!inRepoRoot(repo.root, path.resolve(repo.root, dir))) {
-            sendJson(res, 400, { error: '路径超出工作副本范围' });
+            sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
             return true;
           }
           // 前端取消更新（请求断开）→ 终止 svn/git 子进程。
@@ -109,14 +115,17 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             if (!res.writableEnded) ac.abort();
           });
           result = repo.type === 'git'
-          ? (await vcs.pull?.(ac.signal)) ?? { ok: false, message: '当前仓库不支持拉取' }
-          : (await vcs.update?.(dir || undefined, ac.signal)) ?? { ok: false, message: '当前仓库不支持更新' };
+          // 当前仓库不支持拉取
+          ? (await vcs.pull?.(ac.signal)) ?? { ok: false, message: t('srv.pullUnsupported') }
+          // 当前仓库不支持更新
+          : (await vcs.update?.(dir || undefined, ac.signal)) ?? { ok: false, message: t('srv.updateUnsupported') };
           // 更新成功后自动恢复缺失文件（磁盘删除但版本库还在 → 拉回，消除 ! 标识）
           if (result.ok) {
             try {
               const missing = await vcs.restoreMissing();
               if (missing.length > 0) {
-                result = { ...result, message: `${result.message}；已恢复 ${missing.length} 个缺失文件` };
+                // {msg}；已恢复 {n} 个缺失文件
+                result = { ...result, message: t('srv.restoredMissing', { msg: result.message, n: missing.length }) };
               }
             } catch {
               /* 恢复失败不阻断更新结果 */
@@ -124,7 +133,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
         } else if (p === '/api/revert') result = await vcs.revert(paths);
         else if (p === '/api/delete') result = body.keep === true ? await vcs.removeKeep(paths) : await vcs.remove(paths);
-        else result = (await vcs.push?.()) ?? { ok: false, message: MSG_UNSUPPORTED_OP };
+        else result = (await vcs.push?.()) ?? { ok: false, message: MSG_UNSUPPORTED_OP() };
         if (result.ok) invalidateStatusCache(repo.root); // 状态改变 → 失效 30s 缓存,否则新文件过滤仍显示旧 ?/M
         sendJson(res, 200, {
           ...(result as object),
@@ -143,7 +152,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           // 路径越界校验：resolve/propset-ignore 的 path 是相对仓库根路径
           const rel = String(body.path ?? '');
           if (!inRepoRoot(repo.root, path.resolve(repo.root, rel))) {
-            sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+            sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
             return true;
           }
           // resolve/propset-ignore 改变状态码（C→干净、?→I），缓存失效由 runVcs 统一
@@ -153,14 +162,16 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               : vcs.propSetIgnore?.(rel, String(body.pattern ?? ''))
           );
         }
-        sendJson(res, 400, { error: '未知操作' });
+        // 未知操作
+        sendJson(res, 400, { error: t('srv.unknownAction') });
         return true;
       }
 
       if (p === '/api/git-clean') {
         const { repo, vcs } = vcsOf();
         if (repo.type !== 'git') {
-          sendJson(res, 400, { error: '仅 Git 仓库支持' });
+          // 仅 Git 仓库支持
+          sendJson(res, 400, { error: t('srv.gitOnly') });
           return true;
         }
         if (req.method === 'GET') {
@@ -180,7 +191,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const dir = String(url.searchParams.get('dir') ?? '').replace(/\/$/, '');
         const code = String(url.searchParams.get('code') ?? '');
         if (!code || !inRepoRoot(repo.root, path.join(repo.root, dir))) {
-          sendJson(res, 400, { error: '参数不合法' });
+          // 参数不合法
+          sendJson(res, 400, { error: t('srv.invalidParams') });
           return true;
         }
         const items = (await getStatusCached(repo, false)) as { path: string; code: string }[];
@@ -209,10 +221,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const relPath = String(body.path ?? '');
         const rev = String(body.rev ?? '');
         if (!relPath || !rev || !inRepoRoot(repo.root, path.resolve(repo.root, relPath))) {
-          sendJson(res, 400, { error: '参数不合法' });
+          // 参数不合法
+          sendJson(res, 400, { error: t('srv.invalidParams') });
           return true;
         }
-        return runVcs(ctx, () => vcs.restoreToRev?.(relPath, rev) ?? { ok: false, message: MSG_UNSUPPORTED_OP });
+        return runVcs(ctx, () => vcs.restoreToRev?.(relPath, rev) ?? { ok: false, message: MSG_UNSUPPORTED_OP() });
       }
 
       if (p === '/api/fs-delete' && req.method === 'POST') {
@@ -221,20 +234,23 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean) : [];
         if (paths.length === 0) {
-          sendJson(res, 400, { error: '缺少路径' });
+          // 缺少路径
+          sendJson(res, 400, { error: t('srv.missingPath') });
           return true;
         }
         const rootAbs = path.resolve(repo.root);
         if (paths.some((p) => !inRepoRoot(repo.root, path.join(repo.root, p)) || path.resolve(repo.root, p) === rootAbs)) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         try {
           for (const p of paths) fs.rmSync(path.join(repo.root, p), { recursive: true, force: true });
           invalidateStatusCache(repo.root); // 磁盘文件集变化（? 项被删），防状态缓存/过滤树显示旧文件
-          sendJson(res, 200, { ok: true, message: `已删除磁盘文件 ${paths.length} 项` });
+          // 已删除磁盘文件 {n} 项
+          sendJson(res, 200, { ok: true, message: t('srv.fsDeleted', { n: paths.length }) });
         } catch (e) {
-          sendJson(res, 500, { error: `删除失败: ${(e as Error).message}` });
+          // 删除失败: {msg}
+          sendJson(res, 500, { error: t('srv.deleteFailed', { msg: (e as Error).message }) });
         }
         return true;
       }
@@ -248,16 +264,18 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const content = String(body.content ?? '');
         const abs = path.resolve(repo.root, rel);
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         // 二进制不给写：编辑入口只对文本预览开，这里再挡一道（防止接口被直接调用时把图片写成文本）
         if (isBinaryFile(rel)) {
-          sendJson(res, 400, { error: '二进制文件不支持文本编辑' });
+          // 二进制文件不支持文本编辑
+          sendJson(res, 400, { error: t('srv.binaryNoEdit') });
           return true;
         }
         if (!fs.existsSync(abs)) {
-          sendJson(res, 404, { error: '文件不存在（可能已被删除或移走）' });
+          // 文件不存在（可能已被删除或移走）
+          sendJson(res, 404, { error: t('srv.fileGone') });
           return true;
         }
         // 超限文件的守卫不在这里 —— 挪进了 writeTextKeepEncoding（所有写回路径的唯一入口），
@@ -268,7 +286,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         invalidateStatusCache(repo.root); // 保存后状态会变（干净 → M），缓存要失效
-        sendJson(res, 200, { ok: true, message: `已保存 ${rel}` });
+        // 已保存 {path}
+        sendJson(res, 200, { ok: true, message: t('srv.savedFile', { path: rel }) });
         return true;
       }
 
@@ -280,25 +299,29 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const rel = String(body.path ?? '').trim().replace(/\/+$/, '');
         const isDir = p === '/api/new-dir';
-        const what = isDir ? '文件夹' : '文件';
+        // 文件夹 / 文件
+        const what = isDir ? t('srv.folder') : t('srv.file');
         if (!rel) {
-          sendJson(res, 400, { error: `${what}名为空` });
+          // {what}名为空
+          sendJson(res, 400, { error: t('srv.nameEmpty', { what }) });
           return true;
         }
         const name = rel.slice(rel.lastIndexOf('/') + 1);
         if (name === '.' || name === '..' || /[/\\]/.test(name)) {
-          sendJson(res, 400, { error: `${what}名不能含路径分隔符` });
+          // {what}名不能含路径分隔符
+          sendJson(res, 400, { error: t('srv.nameHasSep', { what }) });
           return true;
         }
         const abs = path.resolve(repo.root, rel);
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         // 已存在就直接说清楚：recursive 模式下 mkdir 对已存在的目录**不报错**，
         // 不先查一下的话，输入一个已有名字会得到"已新建"的成功提示（误导）
         if (fs.existsSync(abs)) {
-          sendJson(res, 400, { error: `已存在同名文件或文件夹：${name}` });
+          // 已存在同名文件或文件夹：{name}
+          sendJson(res, 400, { error: t('srv.nameExists', { name }) });
           return true;
         }
         try {
@@ -306,7 +329,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           if (isDir) fs.mkdirSync(abs);
           else fs.writeFileSync(abs, '', { flag: 'wx' });
           invalidateStatusCache(repo.root); // 新建条目状态是 '?'，缓存要失效
-          sendJson(res, 200, { ok: true, message: `已新建${what}: ${rel}` });
+          // 已新建{what}: {rel}
+          sendJson(res, 200, { ok: true, message: t('srv.created', { what, rel }) });
         } catch (e) {
           // EEXIST / EACCES 等原样回给用户，比"新建失败"有用
           sendJson(res, 500, { error: (e as Error).message });
@@ -320,11 +344,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const from = String(body.from ?? '');
         const to = String(body.to ?? '');
-        if (!from || !to) { sendJson(res, 400, { error: '路径为空' }); return true; }
-        if (from === to) { sendJson(res, 400, { error: '新旧路径相同' }); return true; }
+        // 路径为空
+        if (!from || !to) { sendJson(res, 400, { error: t('srv.pathEmpty') }); return true; }
+        // 新旧路径相同
+        if (from === to) { sendJson(res, 400, { error: t('srv.samePath') }); return true; }
         // from 存在可正常 realpath；to 可能尚未存在（新名字目录也可能未建），用 realpathSafe 逐级解析
         if (!inRepoRoot(repo.root, path.resolve(repo.root, from)) || !inRepoRoot(repo.root, realpathSafe(path.resolve(repo.root, to)))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         const result = await vcs.move(from, to);
@@ -342,24 +368,29 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const from = String(body.from ?? '');
         const to = String(body.to ?? '');
-        if (!from || !to) { sendJson(res, 400, { error: '路径为空' }); return true; }
-        if (from === to) { sendJson(res, 400, { error: '新旧路径相同' }); return true; }
+        // 路径为空
+        if (!from || !to) { sendJson(res, 400, { error: t('srv.pathEmpty') }); return true; }
+        // 新旧路径相同
+        if (from === to) { sendJson(res, 400, { error: t('srv.samePath') }); return true; }
         const fromAbs = path.resolve(repo.root, from);
         const toAbs = path.resolve(repo.root, to);
         if (!inRepoRoot(repo.root, fromAbs) || !inRepoRoot(repo.root, realpathSafe(toAbs))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         if (fs.existsSync(toAbs)) {
-          sendJson(res, 400, { error: '目标已存在' }); // renameSync 会静默覆盖，先预检拒绝
+          // 目标已存在
+          sendJson(res, 400, { error: t('srv.targetExists') }); // renameSync 会静默覆盖，先预检拒绝
           return true;
         }
         try {
           fs.renameSync(fromAbs, toAbs);
           invalidateStatusCache(repo.root); // ?/I 路径变化，旧缓存中路径失效
-          sendJson(res, 200, { ok: true, message: `已重命名 ${from} → ${to}（磁盘，不影响版本库）` });
+          // 已重命名 {from} → {to}（磁盘，不影响版本库）
+          sendJson(res, 200, { ok: true, message: t('srv.fsRenamed', { from, to }) });
         } catch (e) {
-          sendJson(res, 500, { error: `重命名失败: ${(e as Error).message}` });
+          // 重命名失败: {msg}
+          sendJson(res, 500, { error: t('srv.renameFailed', { msg: (e as Error).message }) });
         }
         return true;
       }
@@ -367,14 +398,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       if (p === '/api/svn-lock' && req.method === 'POST') {
         const { repo, vcs } = vcsOf();
         if (repo.type !== 'svn') {
-          sendJson(res, 400, { error: '仅 SVN 仓库支持' });
+          // 仅 SVN 仓库支持
+          sendJson(res, 400, { error: t('srv.svnOnly') });
           return true;
         }
         const body = await readBody(req);
         const action = String(body.action ?? '');
         const pathRel = String(body.path ?? '');
         if (!inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         const force = Boolean(body.force);
@@ -387,12 +419,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         // 弹窗打开时就展示给用户，避免「填了 A 却写入 B」（svn:ignore 只能按名字作用于某目录的直接子项）
         const { repo, vcs } = vcsOf();
         if (repo.type !== 'svn' || !vcs.ignorePlan) {
-          sendJson(res, 400, { error: '仅 SVN 需要忽略预案' });
+          // 仅 SVN 需要忽略预案
+          sendJson(res, 400, { error: t('srv.svnIgnorePlanOnly') });
           return true;
         }
         const pathRel = url.searchParams.get('path') ?? '';
         if (!inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         sendJson(res, 200, await vcs.ignorePlan(pathRel));
@@ -409,7 +442,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         if (!inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         const parts = pathRel.replace(/^\.\//, '').replace(/\/+$/, '').split('/').filter((s) => s && s !== '.');
@@ -437,7 +470,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         let rules: string[] = [];
         if (repo.type === 'svn') {
           if (!inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-            sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+            sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
             return true;
           }
           const r = await run('svn', ['propget', 'svn:ignore', pathRel || '.'], { cwd: repo.root, timeoutMs: 30_000 });
@@ -455,7 +488,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               const t = l.trim();
               if (!t || t.startsWith('#') || t.startsWith('!')) continue; // 注释与否定行不列
               rules.push(t);
-              sources.push({ pattern: t, where: GIT_IGNORE_WHERE[where] });
+              sources.push({ pattern: t, where: GIT_IGNORE_WHERE[where]() });
             }
           }
           sendJson(res, 200, { rules, sources });
@@ -472,7 +505,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         if (repo.type === 'svn') {
           // 路径越界校验：pathRel 用于 svn propget/propset，传 ../ 可作用于仓库外路径
           if (!inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-            sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+            sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
             return true;
           }
           // propget → 过滤 → propset 回写
@@ -483,7 +516,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             .filter((s) => s && s !== pattern);
           const setRes = await run('svn', ['propset', 'svn:ignore', remaining.join('\n'), pathRel || '.'], { cwd: repo.root, timeoutMs: 30_000 });
           if (setRes.code !== 0) {
-            sendJson(res, 200, { ok: false, message: setRes.stderr.trim() || '删除失败' });
+            // 删除失败
+            sendJson(res, 200, { ok: false, message: setRes.stderr.trim() || t('srv.removeRuleFailed') });
             return true;
           }
           invalidateSvnIgnoreMap(repo.root); // 规则快照缓存失效（否则 60 秒内读到旧规则集）
@@ -497,16 +531,18 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             const left = lines.filter((l) => l.trim() !== pattern);
             if (left.length !== lines.length) {
               writeIgnoreLines(file, left.filter((l) => l.trim()), enc);
-              removedAt = GIT_IGNORE_WHERE[where];
+              removedAt = GIT_IGNORE_WHERE[where]();
               break;
             }
           }
           invalidateStatusCache(repo.root);
-          sendJson(res, 200, { ok: true, message: removedAt ? `已删除规则: ${pattern}（${removedAt}）` : `未找到规则: ${pattern}` });
+          // 已删除规则: {pattern}（{where}） / 未找到规则: {pattern}
+          sendJson(res, 200, { ok: true, message: removedAt ? t('srv.ruleRemovedAt', { pattern, where: removedAt }) : t('srv.ruleNotFound', { pattern }) });
           return true;
         }
         invalidateStatusCache(repo.root);
-        sendJson(res, 200, { ok: true, message: `已删除规则: ${pattern}` });
+        // 已删除规则: {pattern}
+        sendJson(res, 200, { ok: true, message: t('srv.ruleRemoved', { pattern }) });
         return true;
       }
 
@@ -516,7 +552,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const rel = String(body.path ?? '').replace(/^\/+/, '');
         if (!rel) {
-          sendJson(res, 400, { error: '缺少路径' });
+          // 缺少路径
+          sendJson(res, 400, { error: t('srv.missingPath') });
           return true;
         }
         const parts = rel.split('/').filter(Boolean);
@@ -530,7 +567,6 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           const srcFile = srcLine ? path.resolve(repo.root, srcLine.split(':')[0] ?? '') : null;
           if (srcLine && srcFile) {
             // 命中：在来源档追加 !<路径>（目录带 / 与反序列化交给 git 判定：直接追加路径本身）
-            const isLast = parts.length >= 2 || (srcLine === srcLine && rel.includes('/') === false);
             let isDir = false;
             try {
               isDir = fs.statSync(path.join(repo.root, rel)).isDirectory();
@@ -540,14 +576,16 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             appendIgnoreLine(srcFile, isDir ? `!${rel}/` : `!${rel}`);
             invalidateStatusCache(repo.root);
             const where = srcFile === path.join(repo.root, '.gitignore')
-              ? GIT_IGNORE_WHERE.gitignore
+              ? GIT_IGNORE_WHERE.gitignore()
               : String(srcFile).includes('info') && String(srcFile).includes('exclude')
-                ? GIT_IGNORE_WHERE.exclude
-                : GIT_IGNORE_WHERE.global;
-            sendJson(res, 200, { ok: true, message: `已取消忽略: ${rel}（追加否定到 ${where}）` });
+                ? GIT_IGNORE_WHERE.exclude()
+                : GIT_IGNORE_WHERE.global();
+            // 已取消忽略: {path}（追加否定到 {where}）
+            sendJson(res, 200, { ok: true, message: t('srv.unignoredAppended', { path: rel, where }) });
             return true;
           }
-          sendJson(res, 200, { ok: false, message: `未找到忽略 ${rel} 的规则（该文件当前未被任何档忽略）` });
+          // 未找到忽略 {path} 的规则（该文件当前未被任何档忽略）
+          sendJson(res, 200, { ok: false, message: t('srv.unignoreRuleNotFound', { path: rel }) });
           return true;
         }
         // svn：逐级（根→自身）找承载匹配规则的目录，删除该条规则（svn:ignore 不支持否定语法）
@@ -567,7 +605,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
         }
         if (!found) {
-          sendJson(res, 200, { ok: false, message: `未找到忽略 ${rel} 的规则（可能来自全局 ignore，请手动处理）` });
+          // 未找到忽略 {path} 的规则（可能来自全局 ignore，请手动处理）
+          sendJson(res, 200, { ok: false, message: t('srv.unignoreRuleNotFoundGlobal', { path: rel }) });
           return true;
         }
         const getRes = await run('svn', ['propget', 'svn:ignore', found.dir], { cwd: repo.root, timeoutMs: 30_000 });
@@ -577,12 +616,14 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           .filter((s) => s && s !== found!.rule);
         const setRes = await run('svn', ['propset', 'svn:ignore', remaining.join('\n'), found.dir], { cwd: repo.root, timeoutMs: 30_000 });
         if (setRes.code !== 0) {
-          sendJson(res, 200, { ok: false, message: setRes.stderr.trim() || '取消忽略失败' });
+          // 取消忽略失败
+          sendJson(res, 200, { ok: false, message: setRes.stderr.trim() || t('srv.unignoreFailed') });
           return true;
         }
         invalidateSvnIgnoreMap(repo.root); // 同上：本条自己就依赖过缓存找规则，改完必须失效
         invalidateStatusCache(repo.root);
-        sendJson(res, 200, { ok: true, message: `已取消忽略: 删除 ${found.dir === '.' ? '根目录' : found.dir} 的规则「${found.rule}」，同目录匹配该规则的文件将变为未版本化` });
+        // 已取消忽略: 删除 {dir} 的规则「{rule}」，同目录匹配该规则的文件将变为未版本化 / 根目录
+        sendJson(res, 200, { ok: true, message: t('srv.unignoredSvn', { dir: found.dir === '.' ? t('srv.rootDir') : found.dir, rule: found.rule }) });
         return true;
       }
 
@@ -592,12 +633,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const pathRel = String(body.path ?? '');
         const pattern = String(body.pattern ?? '').trim();
         if (!pattern) {
-          sendJson(res, 400, { error: '请填写忽略规则' });
+          // 请填写忽略规则
+          sendJson(res, 400, { error: t('srv.ignoreRuleRequired') });
           return true;
         }
         // svn 分支的 propSetIgnore 作用于 pathRel 目录,须在仓库根内
         if (repo.type === 'svn' && !inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         // 忽略后 ? → I，状态码变化，缓存失效由 runVcs 统一
@@ -605,24 +647,28 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           // git：三向写入（.gitignore / 全局 excludesFile / .git/info/exclude）；target 缺省 .gitignore
           const target = String(body.target ?? 'gitignore') as GitIgnoreTarget;
           if (target !== 'gitignore' && target !== 'global' && target !== 'exclude') {
-            sendJson(res, 400, { error: '未知忽略去向' });
+            // 未知忽略去向
+            sendJson(res, 400, { error: t('srv.unknownIgnoreTarget') });
             return true;
           }
           const files = await gitIgnoreFiles(repo.root, target === 'global'); // global 写入时先确保配置
           const hit = files.find((f) => f.where === target);
           if (!hit) {
-            sendJson(res, 400, { error: '全局忽略未配置，请先点击「加入忽略 → 全局」重新尝试（将自动配置 core.excludesFile）' });
+            // 全局忽略未配置，请先点击「加入忽略 → 全局」重新尝试（将自动配置 core.excludesFile）
+            sendJson(res, 400, { error: t('srv.globalIgnoreUnconfigured') });
             return true;
           }
           // 清除所有档位的取反行（!pattern）后写入：保证 git 当前判定确实忽略（跨档取反会覆盖目标档）
           for (const f of files) removeNegationLine(f.file, pattern);
           if (appendIgnoreLine(hit.file, pattern)) {
             invalidateStatusCache(repo.root);
-            sendJson(res, 200, { ok: true, message: `已加入忽略: ${pattern}（${GIT_IGNORE_WHERE[target]}）` });
+            // 已加入忽略: {pattern}（{where}）
+            sendJson(res, 200, { ok: true, message: t('srv.ignoreAdded', { pattern, where: GIT_IGNORE_WHERE[target]() }) });
           } else {
             // 正规则已存在：由于取反行已清，忽略已生效——提示"已恢复"而非"未写入"
             invalidateStatusCache(repo.root);
-            sendJson(res, 200, { ok: true, message: `规则已存在,已恢复忽略生效: ${pattern}（${GIT_IGNORE_WHERE[target]}）` });
+            // 规则已存在,已恢复忽略生效: {pattern}（{where}）
+            sendJson(res, 200, { ok: true, message: t('srv.ignoreRestored', { pattern, where: GIT_IGNORE_WHERE[target]() }) });
           }
           return true;
         }

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, currentScopes, vcsOf, repoInfo, START_DIR, MSG_PATH_OUT_OF_BOUNDS, INSTANCE_ID, type Ctx } from './util.js';
+import { t } from '../../shared/i18n/index.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { res, url } = ctx;
@@ -81,7 +82,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         // Git 信息：分支 / 远程 / 上游 / 最近提交
         const { vcs, repo } = vcsOf();
         if (repo.type !== 'git') {
-          sendJson(res, 400, { error: '非 Git 仓库' });
+          // 非 Git 仓库
+          sendJson(res, 400, { error: t('srv.notGitRepo') });
           return true;
         }
         sendJson(res, 200, await vcs.gitInfo?.());
@@ -101,7 +103,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const pathRel = url.searchParams.get('path') || undefined;
         // 路径越界校验：svn log 会把 ../ 解析到仓库外的其他工作副本
         if (pathRel && !inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         // limit 缺省 200（首屏）；显式 limit=0 → 全量。offset=已加载条数（git --skip 续拉）；afterRev=已加载最老版本（svn -r rev-1:1 续拉）
@@ -138,11 +140,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const pathRel = url.searchParams.get('path') || undefined;
         // 路径越界校验：svn diff 会把 ../ 解析到仓库外的其他工作副本
         if (pathRel && !inRepoRoot(repo.root, path.resolve(repo.root, pathRel))) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         if (pathRel && isBinaryFile(pathRel)) {
-          sendJson(res, 200, { ok: false, output: '', error: `二进制文件（${pathRel}），不支持文本对比` });
+          // 二进制文件（{path}），不支持文本对比
+          sendJson(res, 200, { ok: false, output: '', error: t('srv.binaryNoDiff', { path: pathRel }) });
           return true;
         }
         const a = url.searchParams.get('a') || undefined;

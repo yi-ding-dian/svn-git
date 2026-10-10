@@ -1,5 +1,6 @@
 /** 文件系统视图纯工具：状态判断/菜单项组装/排序过滤/树扁平化（fs 拆分批次 1，原 fileSystem/index.tsx 模块级 helper） */
 import React from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { IconRename } from '../ui/icons.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
@@ -7,19 +8,26 @@ import type { CtxMenuItem } from '../ui/context-menu.js';
 export type Filter = 'changed' | 'new' | 'deleted';
 export type Mode = 'list' | 'tree' | 'browse';
 
-/** 还原菜单按状态语义化命名：A=取消添加 / D=撤销删除 / M·C·R=还原（extra 为后缀，如"目录"） */
-export function revertName(code: string, extra = ''): { label: string; title: string } {
-  if (code === 'A') return { label: `取消添加${extra}`, title: '取消添加到版本库的调度，文件保留磁盘（变回未版本化 ?）' };
-  if (code === 'D') return { label: `撤销删除${extra}`, title: '撤销删除，文件恢复到版本库内容（本地文件找回）' };
-  if (code === 'M' || code === 'C') return { label: `还原${extra}`, title: '放弃本地修改，回到版本库版本（改动不可恢复）' };
-  return { label: `还原${extra}`, title: '' };
+/** 还原菜单按状态语义化命名：A=取消添加 / D=撤销删除 / M·C·R=还原（isDir 时用带"目录"的写法） */
+export function revertName(code: string, isDir = false): { label: string; title: string } {
+  // 取消添加目录 / 取消添加 / 取消添加到版本库的调度，文件保留磁盘（变回未版本化 ?）
+  if (code === 'A') return { label: isDir ? t('fs.revert.cancelAddDir') : t('fs.revert.cancelAdd'), title: t('fs.revert.cancelAddTitle') };
+  // 撤销删除目录 / 撤销删除 / 撤销删除，文件恢复到版本库内容（本地文件找回）
+  if (code === 'D') return { label: isDir ? t('fs.revert.undoDeleteDir') : t('fs.revert.undoDelete'), title: t('fs.revert.undoDeleteTitle') };
+  // 还原目录 / 还原 / 放弃本地修改，回到版本库版本（改动不可恢复）
+  if (code === 'M' || code === 'C') return { label: isDir ? t('fs.revert.revertDir') : t('fs.revert.revert'), title: t('fs.revert.revertTitle') };
+  // 还原目录 / 还原
+  return { label: isDir ? t('fs.revert.revertDir') : t('fs.revert.revert'), title: '' };
 }
 
 /** 多选还原动态命名：全部 A → 取消添加（N 项）；全部 D → 撤销删除（N 项）；混合/其余 → 还原（N 项）+ 分类说明 */
 export function multiRevertName(codes: string[], n: number): { label: string; title: string } {
-  if (codes.every((c) => c === 'A')) return { label: `取消添加（${n} 项）`, title: '取消添加到版本库的调度，文件保留磁盘（变回未版本化 ?）' };
-  if (codes.every((c) => c === 'D')) return { label: `撤销删除（${n} 项）`, title: '撤销删除，文件恢复到版本库内容（本地文件找回）' };
-  return { label: `还原（${n} 项）`, title: '对勾选项执行还原（A=取消添加 / D=撤销删除 / M=放弃本地修改）' };
+  // 取消添加（{n} 项） / 取消添加到版本库的调度，文件保留磁盘（变回未版本化 ?）
+  if (codes.every((c) => c === 'A')) return { label: t('fs.revert.cancelAddN', { n }), title: t('fs.revert.cancelAddTitle') };
+  // 撤销删除（{n} 项） / 撤销删除，文件恢复到版本库内容（本地文件找回）
+  if (codes.every((c) => c === 'D')) return { label: t('fs.revert.undoDeleteN', { n }), title: t('fs.revert.undoDeleteTitle') };
+  // 还原（{n} 项） / 对勾选项执行还原（A=取消添加 / D=撤销删除 / M=放弃本地修改）
+  return { label: t('fs.revert.revertN', { n }), title: t('fs.revert.multiTitle') };
 }
 
 /** 磁盘存在且可改名（renameItem 内部按状态分流：?/I 走磁盘改名，其余走 svn/git move）：
@@ -45,11 +53,14 @@ export function renameItem(
   const fsOnly = code === '?' || code === 'I';
   return {
     icon: <IconRename />,
-    label: '重命名',
+    // 重命名
+    label: t('fs.rename.title'),
     // 未版本化的改名只是纯磁盘动作（fs-move），没有版本库交互，弹窗纯属多余 → 名字就地改
     title: fsOnly
-      ? '就地改名（不在版本库，纯磁盘操作；回车或点空白处确认，Esc 取消）'
-      : `重命名此${isDir ? '文件夹' : '文件'}（本地改名，提交后生效）`,
+      // 就地改名（不在版本库，纯磁盘操作；回车或点空白处确认，Esc 取消）
+      ? t('fs.rename.inlineTitle')
+      // 重命名此文件夹（本地改名，提交后生效） / 重命名此文件（本地改名，提交后生效）
+      : isDir ? t('fs.rename.thisFolder') : t('fs.rename.thisFile'),
     // 命令预览只显示文件名（完整路径在弹窗确认按钮上）
     cmd: fsOnly ? undefined : cmdOfRepo(repoType, 'move', { from: rel.split('/').pop() ?? '', to: '…' }),
     action: () => (fsOnly ? onInlineRename(rel) : onAction('move', [rel])),

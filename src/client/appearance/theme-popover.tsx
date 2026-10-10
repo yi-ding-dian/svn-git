@@ -10,19 +10,21 @@
  *  关闭：点遮罩 / Esc / 关闭时取消未保存的预览（onPreview(null) 回到正式主题）。
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { THEMES } from '../shell/header.js';
+import { THEMES, type ThemeDef } from '../shell/header.js';
 import { IconPalette } from '../ui/icons.js';
-import { type MyTheme, deriveThemeVars, THEME_VAR_KEYS, toHex } from '../shared/theme.js';
+import { type MyTheme, toHex } from '../shared/theme.js';
+import { t, type I18nKey } from '../../shared/i18n/index.js';
 
 
-/** 自定义面板暴露给用户的 6 个颜色（其余变量自动推导） */
-const EDITABLE: { key: 'bg' | 'panel' | 'border' | 'text' | 'dim' | 'accent'; label: string }[] = [
-  { key: 'bg', label: '背景' },
-  { key: 'panel', label: '面板' },
-  { key: 'border', label: '边框' },
-  { key: 'text', label: '文字' },
-  { key: 'dim', label: '次要文字' },
-  { key: 'accent', label: '强调色' },
+/** 自定义面板暴露给用户的 6 个颜色（其余变量自动推导）。
+ *  labelKey 存 i18n key、渲染时才 t() —— 模块顶层求值会冻在首次语言。 */
+const EDITABLE: { key: 'bg' | 'panel' | 'border' | 'text' | 'dim' | 'accent'; labelKey: I18nKey }[] = [
+  { key: 'bg', labelKey: 'look.color.bg' },
+  { key: 'panel', labelKey: 'look.color.panel' },
+  { key: 'border', labelKey: 'look.color.border' },
+  { key: 'text', labelKey: 'look.color.text' },
+  { key: 'dim', labelKey: 'look.color.dim' },
+  { key: 'accent', labelKey: 'look.color.accent' },
 ];
 
 
@@ -78,8 +80,8 @@ export function ThemePopover(props: Props) {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const light = useMemo(() => THEMES.filter((t) => t.group === 'light'), []);
-  const dark = useMemo(() => THEMES.filter((t) => t.group === 'dark'), []);
+  const light = useMemo(() => THEMES.filter((th) => th.group === 'light'), []);
+  const dark = useMemo(() => THEMES.filter((th) => th.group === 'dark'), []);
 
   /** 改某个色：立即预览 */
   const edit = (k: string, v: string) => {
@@ -88,11 +90,12 @@ export function ThemePopover(props: Props) {
     props.onPreview(next);
   };
 
-  /** 内置主题色卡（浅色/深色共用） */
-  const chip = (t: { key: string; name: string; color: string }) => (
-    <button key={t.key} className={`theme-chip ${props.theme === t.key ? 'active' : ''}`} title={t.name} onClick={() => props.onPick(t.key)}>
-      <span className="theme-dot" style={{ background: t.color }} />
-      <span className="theme-chip-name">{t.name}</span>
+  /** 内置主题色卡（浅色/深色共用）；回调参数名用 th 避开 i18n 的 t。
+   *  名字取 `nameKey`（渲染时才 t()）：THEMES 是模块级常量，直接存文案会冻在首次语言 */
+  const chip = (th: ThemeDef) => (
+    <button key={th.key} className={`theme-chip ${props.theme === th.key ? 'active' : ''}`} title={t(th.nameKey)} onClick={() => props.onPick(th.key)}>
+      <span className="theme-dot" style={{ background: th.color }} />
+      <span className="theme-chip-name">{t(th.nameKey)}</span>
     </button>
   );
 
@@ -107,29 +110,33 @@ export function ThemePopover(props: Props) {
         }}
       />
       <div ref={ref} className="ctx-menu theme-pop" style={{ left: pos.left, top: pos.top }}>
-        <div className="theme-pop-group">浅色</div>
+        {/* 浅色 */}
+        <div className="theme-pop-group">{t('look.group.light')}</div>
         <div className="theme-pop-grid">{light.map(chip)}</div>
-        <div className="theme-pop-group">深色</div>
+        {/* 深色 */}
+        <div className="theme-pop-group">{t('look.group.dark')}</div>
         <div className="theme-pop-grid">{dark.map(chip)}</div>
 
         {props.myThemes.length > 0 && (
           <>
-            <div className="theme-pop-group">我的主题</div>
+            {/* 我的主题 */}
+            <div className="theme-pop-group">{t('look.myThemes')}</div>
             <div className="theme-pop-grid">
-              {props.myThemes.map((t) => (
+              {props.myThemes.map((th) => (
                 <button
-                  key={t.key}
-                  className={`theme-chip ${props.theme === t.key ? 'active' : ''}`}
-                  title={`${t.name}（右键删除）`}
-                  onClick={() => props.onPick(t.key)}
+                  key={th.key}
+                  className={`theme-chip ${props.theme === th.key ? 'active' : ''}`}
+                  // {name}（右键删除）
+                  title={t('look.myThemes.deleteHint', { name: th.name })}
+                  onClick={() => props.onPick(th.key)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    props.onDelete(t.key);
+                    props.onDelete(th.key);
                   }}
                 >
-                  <span className="theme-dot" style={{ background: t.panel, borderColor: t.accent }} />
-                  <span className="theme-chip-name">{t.name}</span>
+                  <span className="theme-dot" style={{ background: th.panel, borderColor: th.accent }} />
+                  <span className="theme-chip-name">{th.name}</span>
                 </button>
               ))}
             </div>
@@ -138,20 +145,22 @@ export function ThemePopover(props: Props) {
 
         <div className="ctx-sep" />
         <button className="theme-custom-toggle" onClick={() => setCustomOpen((v) => !v)}>
-          <IconPalette /> 自定义配色 {customOpen ? '▾' : '▸'}
+          {/* 自定义配色 */}
+          <IconPalette /> {t('look.custom.toggle')} {customOpen ? '▾' : '▸'}
         </button>
         {customOpen && (
           <div className="theme-custom">
             {EDITABLE.map((f) => (
               <label key={f.key} className="theme-color-row">
                 <input type="color" value={draft[f.key]} onChange={(e) => edit(f.key, e.target.value)} />
-                <span>{f.label}</span>
+                <span>{t(f.labelKey)}</span>
                 <span className="dim small mono">{draft[f.key]}</span>
               </label>
             ))}
             <div className="row" style={{ gap: 6, marginTop: 8 }}>
               {/* type="text" 不能漏：全局输入框样式挂在 input[type=text] 上，漏了就落成浏览器默认样式 */}
-              <input type="text" placeholder="主题名称" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+              {/* 主题名称 */}
+              <input type="text" placeholder={t('look.custom.namePlaceholder')} value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
               <button
                 className="mini"
                 disabled={!name.trim()}
@@ -161,10 +170,12 @@ export function ThemePopover(props: Props) {
                   props.onClose();
                 }}
               >
-                保存
+                {/* 保存 */}
+                {t('common.save')}
               </button>
             </div>
-            <div className="dim small" style={{ marginTop: 4 }}>改色即时预览；保存后出现在「我的主题」，右键可删。</div>
+            {/* 改色即时预览；保存后出现在「我的主题」，右键可删。 */}
+            <div className="dim small" style={{ marginTop: 4 }}>{t('look.custom.hint')}</div>
           </div>
         )}
       </div>

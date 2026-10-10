@@ -8,6 +8,7 @@ import { ConfirmModal, InfoModal } from '../ui/prompt.js';
 import { ClickTip } from '../ui/ui.js';
 import { autoSizeForText } from '../shared/utils.js';
 import { renderMarkdown } from '../shared/markdown.js';
+import { t } from '../../shared/i18n/index.js';
 
 /** 二进制/图片等不支持差异查看的文件扩展名（双击查看差异前过滤） */
 const BINARY_EXT = new Set([
@@ -153,33 +154,41 @@ export function PushConfirmModal(props: {
   return (
     <div className="modal-mask">
       <ResizableModal width={680} minWidth={520}>
-        <h3>🔄 确认推送（{unpushed.length} 个未推送提交）</h3>
+        {/* 🔄 确认推送（{n} 个未推送提交） */}
+        <h3>{t('ops.push.title', { n: unpushed.length })}</h3>
         <div className="body" style={{ maxHeight: '60vh', overflow: 'auto' }}>
           {/* 推送条件 */}
           <div style={{ marginBottom: 10 }}>
             {loading ? (
-              <div className="dim small">⏳ 检查远程状态…</div>
+              // ⏳ 检查远程状态…
+              <div className="dim small">{t('ops.push.checking')}</div>
             ) : pf ? (
               pf.behind > 0 ? (
                 <div className="error" style={{ marginBottom: 0 }}>
-                  ⚠ 远程有 <b>{pf.behind}</b> 个新提交，当前分支落后。直接推送会被拒绝，建议先「更新」拉取合并。
+                  {/* ⚠ 远程有 {n} 个新提交，当前分支落后。直接推送会被拒绝，建议先「更新」拉取合并。 */}
+                  {t('ops.push.behind', { n: pf.behind })}
                 </div>
               ) : (
-                <div className="small" style={{ color: 'var(--ok)' }}>✅ 远程状态正常（无新提交），可以推送</div>
+                // ✅ 远程状态正常（无新提交），可以推送
+                <div className="small" style={{ color: 'var(--ok)' }}>{t('ops.push.upToDate')}</div>
               )
             ) : (
-              <div className="dim small">远程状态检查失败，可尝试直接推送</div>
+              // 远程状态检查失败，可尝试直接推送
+              <div className="dim small">{t('ops.push.checkFailed')}</div>
             )}
             {pf && pf.conflictRisk.length > 0 && (
               <div className="error" style={{ margin: '8px 0 0' }}>
-                ⚠ 以下文件双方都有修改，推送后拉取时可能冲突：
-                {pf.conflictRisk.map((f) => f.path).join('、')}
+                {/* ⚠ 以下文件双方都有修改，推送后拉取时可能冲突： */}
+                {t('ops.push.conflictRisk')}
+                {pf.conflictRisk.map((f) => f.path).join(t('common.listSep'))}
               </div>
             )}
           </div>
           {/* 未推送提交列表（类似历史界面，只含未推送） */}
-          <div className="dim small" style={{ marginBottom: 6 }}>未推送提交（点击展开变更文件）：</div>
-          {unpushed.length === 0 && !loading && <div className="dim" style={{ padding: 8 }}>没有未推送的提交</div>}
+          {/* 未推送提交（点击展开变更文件）： */}
+          <div className="dim small" style={{ marginBottom: 6 }}>{t('ops.push.unpushedList')}</div>
+          {/* 没有未推送的提交 */}
+          {unpushed.length === 0 && !loading && <div className="dim" style={{ padding: 8 }}>{t('ops.push.noUnpushed')}</div>}
           <div className="vcs-list" style={{ border: '1px solid var(--border)', borderRadius: 8 }}>
             {unpushed.map((l, i) => (
               <div key={l.rev}>
@@ -191,7 +200,7 @@ export function PushConfirmModal(props: {
                     e.preventDefault();
                     setMenu({ x: e.clientX, y: e.clientY, index: i });
                   }}
-                  title={`${fullMsgs[l.rev] ?? l.msg}\n${i === 0 ? '（未推送的最新提交，右键可修改注释/撤销）' : '（右键菜单仅对最近一次提交生效）'}`}
+                  title={`${fullMsgs[l.rev] ?? l.msg}\n${t(i === 0 ? 'ops.push.tipHead' : 'ops.push.tipOther')}`}
                 >
                   <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.6)', flexShrink: 0 }} />
                   <span className="mono small" style={{ flexShrink: 0 }}>{l.rev}</span>
@@ -203,11 +212,13 @@ export function PushConfirmModal(props: {
                   >
                     {l.msg}
                   </span>
-                  <span className="small dim" style={{ flexShrink: 0 }}>{l.changed.length} 文件 {expanded === l.rev ? '▾' : '▸'}</span>
+                  {/* {n} 文件 */}
+                  <span className="small dim" style={{ flexShrink: 0 }}>{t('ops.push.filesCount', { n: l.changed.length })} {expanded === l.rev ? '▾' : '▸'}</span>
                 </div>
                 {expanded === l.rev && (
                   <div style={{ padding: '2px 10px 8px 44px', background: 'var(--panel2)' }}>
-                    {l.changed.length === 0 && <div className="dim small">无文件变更</div>}
+                    {/* 无文件变更 */}
+                    {l.changed.length === 0 && <div className="dim small">{t('ops.push.noFileChanges')}</div>}
                     {l.changed.map((c) => {
                       const text = isTextFile(c.path);
                       return (
@@ -215,7 +226,8 @@ export function PushConfirmModal(props: {
                           key={c.path}
                           className="small mono"
                           style={{ padding: '1px 0', cursor: props.onDiff && text ? 'pointer' : 'default' }}
-                          title={text ? `${c.path}\n双击查看差异` : `${c.path}\n（图片/二进制文件不支持查看差异）`}
+                          // 双击查看差异 / （图片/二进制文件不支持查看差异）
+                          title={text ? `${c.path}\n${t('ops.rowTip.diff')}` : `${c.path}\n${t('ops.push.binaryTip')}`}
                           onDoubleClick={(ev) => {
                             ev.preventDefault();
                             if (props.onDiff && text) props.onDiff(c.path, l.rev);
@@ -236,9 +248,11 @@ export function PushConfirmModal(props: {
           )}
         </div>
         <div className="foot">
-          <button onClick={props.onCancel}>取消</button>
+          {/* 取消 */}
+          <button onClick={props.onCancel}>{t('common.cancel')}</button>
           <button className="primary" disabled={unpushed.length === 0} onClick={props.onConfirm} title={`${cmdOf('git push')}`}>
-            确认推送（{unpushed.length}）
+            {/* 确认推送（{n}） */}
+            {t('ops.push.confirm', { n: unpushed.length })}
           </button>
         </div>
       </ResizableModal>
@@ -251,7 +265,8 @@ export function PushConfirmModal(props: {
           items={[
             {
               icon: '✏️',
-              label: '修改注释',
+              // 修改注释
+              label: t('ops.push.editMsg'),
               action: () => {
                 // 所有未推送提交都可改注释：HEAD 走 amend，其余走 reword（重写注释、代码不变）
                 const it = unpushed[menu.index]!;
@@ -268,11 +283,13 @@ export function PushConfirmModal(props: {
             { sep: true },
             {
               icon: '↩',
-              label: '撤销提交',
+              // 撤销提交
+              label: t('ops.push.undoCommit'),
               danger: true,
               action: () => {
                 if (menu.index === 0) setResetCfm(true);
-                else setInfoTip(`仅支持撤销最近一次提交。此项之前还有 ${menu.index} 个更新提交，需先逐一撤销前面的提交后，此项才可操作`);
+                // 仅支持撤销最近一次提交。此项之前还有 {n} 个更新提交，需先逐一撤销前面的提交后，此项才可操作
+                else setInfoTip(t('ops.push.onlyHead', { n: menu.index }));
               },
             },
           ]}
@@ -283,22 +300,27 @@ export function PushConfirmModal(props: {
       {amendOf && (
         <div className="modal-mask">
           <ResizableModal width={autoSizeForText(amendMsg).width} minWidth={420}>
-            <h3>✏️ 修改提交注释</h3>
+            {/* ✏️ 修改提交注释 */}
+            <h3>{t('ops.push.amendTitle')}</h3>
             <div className="body">
               <div className="dim small" style={{ marginBottom: 6 }}>
-                提交 {amendOf.rev} · {amendOf.date.slice(0, 16)} · {amendOf.author}
+                {/* 提交 {rev} */}
+                {t('ops.push.commitRev', { rev: amendOf.rev })} · {amendOf.date.slice(0, 16)} · {amendOf.author}
               </div>
               {/* 编写 / 预览 切换（GitHub 评论框同款）：预览用与历史详情完全相同的渲染（含 breaks），
                   所见即所得 —— 不然得提交完去历史里才知道渲染成什么样 */}
               <div className="row" style={{ gap: 6, marginBottom: 6, alignItems: 'center' }}>
                 <button className={`mini ${amendPreview ? '' : 'primary'}`} onClick={() => setAmendPreview(false)}>
-                  编写
+                  {/* 编写 */}
+                  {t('common.write')}
                 </button>
                 <button className={`mini ${amendPreview ? 'primary' : ''}`} onClick={() => setAmendPreview(true)}>
-                  预览
+                  {/* 预览 */}
+                  {t('common.preview')}
                 </button>
                 <span className="dim small" style={{ marginLeft: 'auto' }}>
-                  {amendPreview ? '渲染效果（与历史里显示的一致）' : '支持 Markdown：**加粗**、- 列表、`代码`…'}
+                  {/* 渲染效果（与历史里显示的一致） / 支持 Markdown：**加粗**、- 列表、`代码`… */}
+                  {amendPreview ? t('ops.push.previewHint') : t('ops.push.mdHint')}
                 </span>
               </div>
               {amendPreview ? (
@@ -314,7 +336,8 @@ export function PushConfirmModal(props: {
                 <textarea
                   className="mono"
                   rows={autoSizeForText(amendMsg).rows}
-                  title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
+                  // 完整提交说明（第一行为标题，空行后为正文），可直接编辑
+                  title={t('ops.push.amendTextTip')}
                   style={{ width: '100%', flex: 1, minHeight: 120 }}
                   value={amendMsg}
                   onChange={(e) => setAmendMsg(e.target.value)}
@@ -329,13 +352,15 @@ export function PushConfirmModal(props: {
             </div>
             <div className="foot">
               {/* 取消时一并清掉错误提示：否则会残留在下方，看起来像又是新报的错 */}
-              <button onClick={() => { setAmendOf(null); setNotice(''); setNoticeErr(false); }} disabled={busy}>取消</button>
+              {/* 取消 */}
+              <button onClick={() => { setAmendOf(null); setNotice(''); setNoticeErr(false); }} disabled={busy}>{t('common.cancel')}</button>
               <button
                 className="primary"
                 disabled={busy || !amendMsg.trim()}
                 onClick={(e) => void doAmend(e.clientX, e.clientY)}
               >
-                确认修改
+                {/* 确认修改 */}
+                {t('ops.push.amendConfirm')}
               </button>
             </div>
           </ResizableModal>
@@ -344,14 +369,12 @@ export function PushConfirmModal(props: {
       {/* 撤销提交二次确认 */}
       {resetCfm && unpushed[0] && (
         <ConfirmModal
-          title="↩ 撤销最近一次提交"
-          message={
-            <>
-              将撤销最近一次提交 <span className="mono">{unpushed[0]!.rev}</span>。这次提交的改动会回到
-              <b>暂存区</b>（提交之后新改的内容不受影响），可以重新勾选文件再次提交。确认撤销?
-            </>
-          }
-          confirmLabel="撤销"
+          // ↩ 撤销最近一次提交
+          title={t('ops.push.resetTitle')}
+          // 将撤销最近一次提交 {rev}。这次提交的改动会回到暂存区（提交之后新改的内容不受影响），可以重新勾选文件再次提交。确认撤销?
+          message={t('ops.push.resetMsg', { rev: unpushed[0]!.rev })}
+          // 撤销
+          confirmLabel={t('ops.push.undo')}
           danger
           onConfirm={() => void doReset()}
           onCancel={() => setResetCfm(false)}
@@ -359,7 +382,8 @@ export function PushConfirmModal(props: {
       )}
       {/* 非 HEAD 提交操作说明弹窗 */}
       {infoTip && (
-        <InfoModal title="⚠ 无法操作此项" message={infoTip} onClose={() => setInfoTip('')} />
+        // ⚠ 无法操作此项
+        <InfoModal title={t('ops.push.cannotTitle')} message={infoTip} onClose={() => setInfoTip('')} />
       )}
       {/* 修改注释成功提示：跟随鼠标点击处 */}
       {clickTip && <ClickTip x={clickTip.x} y={clickTip.y} msg={clickTip.msg} onHide={() => setClickTip(null)} />}

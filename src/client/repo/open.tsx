@@ -1,10 +1,11 @@
 /** 打开项目：目录浏览选择仓库（启动页 / 打开项目模态框共用） */
 import React, { useEffect, useRef, useState } from 'react';
-import { translateVcsError, baseName } from '../shared/utils.js';
+import { baseName } from '../shared/utils.js';
 import { get, post, type BrowseResult, type RepoInfo } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { GridIcon } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
+import { t } from '../../shared/i18n/index.js';
 import { CreateRepoDialog, GetRepoDialog } from './repo-create.js';
 
 /** svnadmin 版本库存储目录特征（format 文件 + db/conf/hooks 等）：不是工作副本，需要打开同名 -wc */
@@ -79,7 +80,8 @@ export function OpenBrowser(props: {
       await post.open(data.repo.root ?? dir);
       const info = await get.info();
       if (info.type) props.onOpened(info);
-      else props.onToast('打开失败', true);
+      // 打开失败
+      else props.onToast(t('repo.open.failed'), true);
     } catch (e) {
       props.onToast((e as Error).message, true);
     }
@@ -87,33 +89,37 @@ export function OpenBrowser(props: {
 
   /** 输入/拖入的路径：仓库 → 直接进入；目录 → 跳转浏览；否则提示 */
   const openPath = async (p: string) => {
-    const t = p.trim();
-    if (!t) return;
+    const path = p.trim(); // 局部变量名避开 i18n 的 t()
+    if (!path) return;
     setError('');
     try {
-      const r = await get.browse(t);
+      const r = await get.browse(path);
       // SVN 版本库存储目录自身（svnadmin 特征）：优先于任何"向上识别"（如嵌套在 git 仓库内），引导进入同名 -wc
       if (isSvnBareDir(r.entries)) {
-        setDir(t);
+        setDir(path);
         setPathInput('');
-        setSvnBare(t);
-        props.onToast(`检测到 SVN 版本库存储目录: ${t}`);
+        setSvnBare(path);
+        // 检测到 SVN 版本库存储目录: {path}
+        props.onToast(t('repo.open.detectedBare', { path }));
         return;
       }
       if (r.repo) {
         // 直接进入仓库
-        await post.open(r.repo.root ?? t);
+        await post.open(r.repo.root ?? path);
         const info = await get.info();
         if (info.type) props.onOpened(info);
-        else props.onToast('打开失败', true);
+        // 打开失败
+        else props.onToast(t('repo.open.failed'), true);
         return;
       }
       // 目录：切换到浏览，并明确提示未识别到仓库（引导从下方文件列表继续找）
-      setDir(t);
+      setDir(path);
       setPathInput('');
       setSvnBare(null);
-      setError('当前目录未识别到 SVN/Git 仓库，请重新选择，或从下方文件列表中选择包含仓库的目录');
-      props.onToast(`已切换到目录: ${t}`);
+      // 当前目录未识别到 SVN/Git 仓库，请重新选择，或从下方文件列表中选择包含仓库的目录
+      setError(t('repo.open.notRepo'));
+      // 已切换到目录: {path}
+      props.onToast(t('repo.open.switchedDir', { path }));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -139,7 +145,8 @@ export function OpenBrowser(props: {
       return;
     }
     // ③ 均不可用（Firefox/新版浏览器）：自动打开系统目录选择器，一步到位
-    setError('当前浏览器不支持拖拽路径识别，已自动打开系统目录选择，请选择项目目录');
+    // 当前浏览器不支持拖拽路径识别，已自动打开系统目录选择，请选择项目目录
+    setError(t('repo.open.dragUnsupported'));
     void pickDir();
   };
 
@@ -148,7 +155,8 @@ export function OpenBrowser(props: {
     try {
       const r = await get.pickDir();
       if (r.path) void openPath(r.path);
-      else if (r.unsupported) setError('当前运行环境不支持系统目录选择，请手动输入路径');
+      // 当前运行环境不支持系统目录选择，请手动输入路径
+      else if (r.unsupported) setError(t('repo.open.pickUnsupported'));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -167,7 +175,8 @@ export function OpenBrowser(props: {
       {/* 最近项目（点击直接打开） */}
       {history.length > 0 && (
         <>
-          <div className="dim small" style={{ marginBottom: 6 }}>最近项目（点击打开）</div>
+          {/* 最近项目（点击打开） */}
+          <div className="dim small" style={{ marginBottom: 6 }}>{t('repo.recent.title')}</div>
           <div className={`list recent-list${showAllRecent ? ' expanded' : ''}`} style={{ maxWidth: 640, marginBottom: 12 }}>
             {(showAllRecent ? history.slice(0, RECENT_EXPANDED) : history.slice(0, RECENT_COLLAPSED)).map((h) => (
               <div
@@ -175,8 +184,10 @@ export function OpenBrowser(props: {
                 className={`recent-item${props.invalidPaths?.[h.path] ? ' invalid' : ''}`}
                 title={
                   props.invalidPaths?.[h.path]
-                    ? `${h.path}（打不开，目录已删除或不是工作副本）`
-                    : `${h.path}\n点击打开 · 右键删除`
+                    // {path}（打不开，目录已删除或不是工作副本）
+                    ? t('repo.recent.invalidTip', { path: h.path })
+                    // {path}\n点击打开 · 右键删除
+                    : t('repo.recent.itemTip', { path: h.path })
                 }
                 onClick={() => void openPath(h.path)}
                 onContextMenu={(e) => {
@@ -191,14 +202,17 @@ export function OpenBrowser(props: {
                 {/* 悬浮显形的移除按钮：单击即移除（stopPropagation 防止触发本行的"点击打开"） */}
                 <button
                   className={`recent-remove${props.invalidPaths?.[h.path] ? ' always' : ''}`}
-                  title="从最近项目中移除（不影响仓库本身）"
-                  aria-label={`移除 ${h.path}`}
+                  // 从最近项目中移除（不影响仓库本身）
+                  title={t('repo.recent.removeTip')}
+                  // 移除 {path}
+                  aria-label={t('repo.recent.removeAria', { path: h.path })}
                   onClick={(e) => {
                     e.stopPropagation();
                     void post
                       .historyRemove(h.path)
                       .then((r) => setHistory(r.items))
-                      .catch(() => props.onToast('移除失败', true));
+                      // 移除失败
+                      .catch(() => props.onToast(t('repo.recent.removeFailed'), true));
                   }}
                 >
                   ×
@@ -209,10 +223,12 @@ export function OpenBrowser(props: {
             {!showAllRecent && history.length > RECENT_COLLAPSED && (
               <div
                 className="recent-more"
-                title={`展开其余 ${history.length - RECENT_COLLAPSED} 个项目`}
+                // 展开其余 {n} 个项目
+                title={t('repo.recent.expandTip', { n: history.length - RECENT_COLLAPSED })}
                 onClick={() => setShowAllRecent(true)}
               >
-                …（{history.length - RECENT_COLLAPSED} 条）
+                {/* …（{n} 条） */}
+                {t('repo.recent.expandCount', { n: history.length - RECENT_COLLAPSED })}
               </div>
             )}
             {/* 最近项目右键菜单：删除 / 取消 */}
@@ -228,31 +244,36 @@ export function OpenBrowser(props: {
                     ? [
                         {
                           icon: '🗑',
-                          label: '删除',
+                          // 删除
+                          label: t('common.delete'),
                           danger: true,
                           action: () => {
                             const p = rmMenu.path;
                             void post
                               .historyRemove(p)
                               .then((r) => setHistory(r.items))
-                              .catch(() => props.onToast('删除失败', true));
+                              // 删除失败
+                              .catch(() => props.onToast(t('repo.recent.delFailed'), true));
                           },
                         },
                       ]
                     : [
                         {
                           icon: '🗑',
-                          label: '删除',
+                          // 删除
+                          label: t('common.delete'),
                           danger: true,
                           action: () => {
                             const p = rmMenu.path;
                             void post
                               .historyRemove(p)
                               .then((r) => setHistory(r.items))
-                              .catch(() => props.onToast('删除失败', true));
+                              // 删除失败
+                              .catch(() => props.onToast(t('repo.recent.delFailed'), true));
                           },
                         },
-                        { icon: '✕', label: '取消' },
+                        // 取消
+                        { icon: '✕', label: t('common.cancel') },
                       ]
                 }
               />
@@ -265,24 +286,29 @@ export function OpenBrowser(props: {
         <input
           type="text"
           style={{ flex: 1 }}
-          placeholder="输入完整项目路径后回车，或将文件夹拖入下方区域识别…"
+          // 输入完整项目路径后回车，或将文件夹拖入下方区域识别…
+          placeholder={t('repo.open.pathPlaceholder')}
           value={pathInput}
           onChange={(e) => setPathInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void openPath(pathInput);
           }}
         />
-        <button onClick={() => void pickDir()} title="打开系统目录选择框">📁 选择目录…</button>
-        <button className="primary" onClick={() => void openPath(pathInput)}>打开</button>
+        {/* 打开系统目录选择框 / 📁 选择目录… */}
+        <button onClick={() => void pickDir()} title={t('repo.open.pickDirTip')}>{t('repo.open.pickDirBtn')}</button>
+        {/* 打开 */}
+        <button className="primary" onClick={() => void openPath(pathInput)}>{t('repo.open.openBtn')}</button>
       </div>
       <div className="dim small" style={{ marginBottom: 8 }}>
-        📁 或将文件夹直接拖入此窗口，自动识别 SVN/Git 仓库
+        {/* 📁 或将文件夹直接拖入此窗口，自动识别 SVN/Git 仓库 */}
+        {t('repo.open.dropHint')}
       </div>
       <div className="breadcrumb">
         {dir}
         {dir !== '/' && (
           <a href="#" onClick={(e) => { e.preventDefault(); goUp(); }}>
-            {' '}← 上级
+            {/* ← 上级 */}
+            {' '}{t('repo.up')}
           </a>
         )}
       </div>
@@ -291,18 +317,22 @@ export function OpenBrowser(props: {
         <div className="repo-enter" style={{ marginBottom: 10 }}>
           <span className="badge svn">SVN</span>
           <span className="info" style={{ flex: 1 }}>
-            <b>{baseName(svnBare)}</b> 是 SVN 版本库存储目录（服务器数据，不能直接编辑）。
-            {' '}请打开它的工作副本进行日常操作：
+            {/* 是 SVN 版本库存储目录（服务器数据，不能直接编辑）。 */}
+            <b>{baseName(svnBare)}</b> {t('repo.bare.isStore')}
+            {/* 请打开它的工作副本进行日常操作： */}
+            {' '}{t('repo.bare.openWcHint')}
           </span>
           <button
             className="primary"
             onClick={() => void openPath(`${svnBare.replace(/\/+$/, '')}-wc`)}
           >
-            进入工作副本 {baseName(svnBare)}-wc →
+            {/* 进入工作副本 {name} → */}
+            {t('repo.bare.enterWc', { name: `${baseName(svnBare)}-wc` })}
           </button>
         </div>
       )}
-      {!data && !error && <div className="loading">⏳ 读取目录…</div>}
+      {/* ⏳ 读取目录… */}
+      {!data && !error && <div className="loading">{t('repo.open.loading')}</div>}
       {data && (
         <>
           {(() => {
@@ -312,20 +342,24 @@ export function OpenBrowser(props: {
               <div className="repo-enter">
                 <span className={`badge ${rp.type!}`}>{rp.type!.toUpperCase()}</span>
                 <span className="info">
-                  {rp.root} — SVN/Git 工作副本
+                  {/* {root} — SVN/Git 工作副本 */}
+                  {t('repo.open.wcLabel', { root: rp.root ?? '' })}
                 </span>
-                <button className="primary" onClick={() => void enter()}>进入此仓库 →</button>
+                {/* 进入此仓库 → */}
+                <button className="primary" onClick={() => void enter()}>{t('repo.open.enterThis')}</button>
               </div>
             );
           })()}
           {/* 文件浏览形式：图标网格，点击目录进入 */}
           <div className="open-grid">
-            {data.entries.length === 0 && <div className="empty" style={{ gridColumn: '1 / -1' }}>空目录</div>}
+            {/* 空目录 */}
+            {data.entries.length === 0 && <div className="empty" style={{ gridColumn: '1 / -1' }}>{t('repo.open.emptyDir')}</div>}
             {data.entries.map((it) => (
               <div
                 key={it.name}
                 className={`open-grid-item ${it.isDir ? 'dir' : ''}`}
-                title={it.isDir ? `双击进入目录 ${it.name}` : it.name}
+                // 双击进入目录 {name}
+                title={it.isDir ? t('repo.open.dblClickDir', { name: it.name }) : it.name}
                 onDoubleClick={() => {
                   if (it.isDir) {
                     setDir((d) => (d === '/' ? `/${it.name}` : `${d}/${it.name}`));
@@ -363,10 +397,13 @@ export function OpenView(props: {
         if (r.type && r.root) {
           props.onOpened(r);
           if (notifyCreated) props.onCreatedRepo?.(r);
-          else props.onToast(`已打开仓库: ${r.root}`);
-        } else props.onToast('打开失败', true);
+          // 已打开仓库: {root}
+          else props.onToast(t('repo.open.opened', { root: r.root }));
+        // 打开失败
+        } else props.onToast(t('repo.open.failed'), true);
       })
-      .catch((e: Error) => props.onToast(`打开失败: ${(e as Error).message}`, true));
+      // 打开失败: {msg}
+      .catch((e: Error) => props.onToast(t('repo.open.failedMsg', { msg: (e as Error).message }), true));
   };
 
   // 新建仓库成功后：自动打开（git=仓库目录；svn=xxx-wc 工作副本，由服务端返回）
@@ -384,12 +421,16 @@ export function OpenView(props: {
     <div className="open-wrap">
       <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <img src="/icon.png" width="30" height="30" alt="logo" style={{ borderRadius: 7 }} />
-        svn-git文件版本管理
+        {/* svn-git文件版本管理 */}
+        {t('repo.home.title')}
       </h1>
-      <div className="sub">浏览并选择 SVN/Git 仓库目录</div>
+      {/* 浏览并选择 SVN/Git 仓库目录 */}
+      <div className="sub">{t('repo.home.sub')}</div>
       <div className="row" style={{ gap: 8, marginBottom: 10 }}>
-        <button className="primary" onClick={() => setShowCreate(true)}>＋ 新建仓库（git init / SVN 建库）…</button>
-        <button className="primary" onClick={() => setShowGet(true)}>⬇ 获取仓库…</button>
+        {/* ＋ 新建仓库（git init / SVN 建库）… */}
+        <button className="primary" onClick={() => setShowCreate(true)}>{t('repo.home.newRepo')}</button>
+        {/* ⬇ 获取仓库… */}
+        <button className="primary" onClick={() => setShowGet(true)}>{t('repo.home.getRepo')}</button>
       </div>
       <OpenBrowser startDir={props.startDir} onOpened={props.onOpened} onToast={props.onToast} />
       {showCreate && (
@@ -420,7 +461,8 @@ export function OpenModal(props: {
   onClose: () => void;
 }) {
   return (
-    <ModalShell title="📂 打开项目" width={600} closeIcon hideFoot onClose={props.onClose}>
+    // 📂 打开项目
+    <ModalShell title={t('repo.open.title')} width={600} closeIcon hideFoot onClose={props.onClose}>
       <OpenBrowser startDir={props.startDir} invalidPaths={props.invalidPaths} onOpened={props.onOpened} onToast={props.onToast} />
     </ModalShell>
   );

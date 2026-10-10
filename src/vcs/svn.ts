@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { XMLParser } from 'fast-xml-parser';
 import { run } from './exec.js';
 import { invalidateSvnIgnoreMap } from './ignore.js';
+import { t } from '../shared/i18n/index.js';
 import type { FileStatus, IgnorePlan, LogEntry, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
 export interface SvnCred {
@@ -80,7 +81,9 @@ export class SvnVcs {
     const s = res.stderr + '\n' + res.stdout;
     if (AUTH_ERR.test(s)) {
       const m = s.match(/E\d{6}|authentication failed|authorization failed/i);
-      return `SVN 认证失败${m ? `（${m[0]}）` : ''}，请检查账号密码（按 o 设置）`;
+      // ⚠️ 英文文案必须含 "authentication failed"：server/routes/util.ts 的 isAuthError() 靠它兜底识别
+      // SVN 认证失败（{code}），请检查账号密码（按 o 设置） / SVN 认证失败，请检查账号密码（按 o 设置）
+      return m ? t('vcs.authFailedCode', { code: m[0] }) : t('vcs.authFailed');
     }
     return null;
   }
@@ -120,7 +123,8 @@ export class SvnVcs {
     if (res.code !== 0) {
       const auth = this.authError(res);
       if (auth) throw new Error(auth);
-      throw new Error(`svn status 失败: ${res.stderr.trim()}`);
+      // svn status 失败: {err}
+      throw new Error(t('vcs.svnStatusFailed', { err: res.stderr.trim() }));
     }
     // 超大工作副本探测：只看**输出大小**，不看耗时也不看文件数——
     // 正常仓库(status 输出 30KB / 0.35s)与超大仓库(11.7MB / 0.96s)在耗时上分不开，
@@ -150,7 +154,8 @@ export class SvnVcs {
     if (res.code !== 0) {
       const auth = this.authError(res);
       if (auth) throw new Error(auth);
-      throw new Error(`svn status 失败: ${res.stderr.trim()}`);
+      // svn status 失败: {err}
+      throw new Error(t('vcs.svnStatusFailed', { err: res.stderr.trim() }));
     }
     return this.parseStatusXml(res.stdout);
   }
@@ -161,8 +166,8 @@ export class SvnVcs {
     const targets = doc?.status?.target ?? [];
     const list: FileStatus[] = [];
     const targetsArr = Array.isArray(targets) ? targets : [targets];
-    for (const t of targetsArr) {
-      const entries = t?.entry;
+    for (const target of targetsArr) {
+      const entries = target?.entry;
       if (!entries) continue;
       const arr = Array.isArray(entries) ? entries : [entries];
       for (const e of arr) {
@@ -250,7 +255,8 @@ export class SvnVcs {
     if (res.code !== 0) {
       const auth = this.authError(res);
       if (auth) throw new Error(auth);
-      throw new Error(`svn log 失败: ${res.stderr.trim()}`);
+      // svn log 失败: {err}
+      throw new Error(t('vcs.svnLogFailed', { err: res.stderr.trim() }));
     }
     return this.parseLogXml(res.stdout);
   }
@@ -285,11 +291,14 @@ export class SvnVcs {
     if (res.code !== 0) {
       const auth = this.authError(res);
       if (res.stderr.includes('W150002')) {
-        return { ok: true, message: '添加完成（已版本化的文件已自动跳过）' };
+        // 添加完成（已版本化的文件已自动跳过）
+        return { ok: true, message: t('vcs.addedSkipped') };
       }
-      return this.fail(auth, res.stderr.trim() || 'svn add 失败');
+      // svn add 失败
+      return this.fail(auth, res.stderr.trim() || t('vcs.svnAddFailed'));
     }
-    return { ok: true, message: res.stderr.trim() || `已添加 ${relPaths.length} 项` };
+    // 已添加 {n} 项
+    return { ok: true, message: res.stderr.trim() || t('vcs.addedCount', { n: relPaths.length }) };
   }
 
   /** svn commit */
@@ -306,20 +315,22 @@ export class SvnVcs {
     const res = await this.exec(args, { timeoutMs: 300_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return this.fail(auth, res.stderr.trim() || 'svn commit 失败');
+      // svn commit 失败
+      return this.fail(auth, res.stderr.trim() || t('vcs.svnCommitFailed'));
     }
     // 中英文兼容提取版本号（英文 "Committed revision 13." / 中文 "提交后的版本为 13。"）
-    const m = res.stdout.match(/Committed revision\s+(\d+)|版本\s*为?\s*r?(\d+)/);
+    const m = res.stdout.match(/Committed revision\s+(\d+)|版本\s*为?\s*r?(\d+)/); // i18n-ignore: 解析 svn commit 输出（中英文报版本号）
     const rev = m?.[1] ?? m?.[2];
-    return { ok: true, message: rev ? `提交成功，版本 r${rev}` : '提交成功' };
+    // 提交成功，版本 r{rev} / 提交成功
+    return { ok: true, message: rev ? t('vcs.commitOkRev', { rev }) : t('vcs.commitOk') };
   }
 
   /** 提取 svn 警告行（中英文：svn: 警告: / svn: warning:），原样保留 */
   private extractWarnings(...texts: string[]): string[] {
-    const re = /^svn:\s*(警告|warning):.*$/gm;
+    const re = /^svn:\s*(警告|warning):.*$/gm; // i18n-ignore: 解析 svn 输出（中文「警告:」/ 英文 warning:）
     const out: string[] = [];
-    for (const t of texts) {
-      for (const m of t.matchAll(re)) out.push(m[0].trimEnd());
+    for (const text of texts) {
+      for (const m of text.matchAll(re)) out.push(m[0].trimEnd());
     }
     return out;
   }
@@ -329,13 +340,13 @@ export class SvnVcs {
     // 英文: "U   file.cpp" / "A   dir/"；中文: "已更新   路径"
     const EN_MAP: Record<string, string> = { U: 'updated', A: 'added', D: 'deleted', C: 'conflicted', G: 'merged', E: 'updated', R: 'replaced' };
     const CN_MAP: Record<string, [string, string]> = {
-      已更新: ['updated', 'U'],
-      已添加: ['added', 'A'],
-      已删除: ['deleted', 'D'],
-      冲突: ['conflicted', 'C'],
-      已合并: ['merged', 'G'],
-      跳过: ['skipped', 'S'],
-      已替换: ['replaced', 'R'],
+      已更新: ['updated', 'U'], // i18n-ignore: 解析 svn update 中文输出（状态词→语义码）
+      已添加: ['added', 'A'], // i18n-ignore: 同上
+      已删除: ['deleted', 'D'], // i18n-ignore: 同上
+      冲突: ['conflicted', 'C'], // i18n-ignore: 同上
+      已合并: ['merged', 'G'], // i18n-ignore: 同上
+      跳过: ['skipped', 'S'], // i18n-ignore: 同上
+      已替换: ['replaced', 'R'], // i18n-ignore: 同上
     };
     const files: { path: string; status: string; code: string }[] = [];
     for (const line of stdout.split('\n')) {
@@ -345,7 +356,7 @@ export class SvnVcs {
         files.push({ path: mEn[2].trim(), status: EN_MAP[c] ?? c, code: c });
         continue;
       }
-      const mCn = line.match(/^(已更新|已添加|已删除|冲突|已合并|跳过|已替换)\s+(.+)$/);
+      const mCn = line.match(/^(已更新|已添加|已删除|冲突|已合并|跳过|已替换)\s+(.+)$/); // i18n-ignore: 解析 svn update 中文输出
       if (mCn && mCn[1] && mCn[2]) {
         const [status, code] = CN_MAP[mCn[1]] ?? [mCn[1], mCn[1].slice(0, 1)];
         files.push({ path: mCn[2].trim(), status, code });
@@ -357,7 +368,7 @@ export class SvnVcs {
   /** 从 update 输出解析当前版本号（中英文），取不到返回 null */
   private revOf(text: string): string | null {
     // 有更新: "更新到版本 3。" / "Updated to revision 3."；已最新: "版本 3。"
-    const m = text.match(/更新到版本\s*(\d+)|Updated to revision\s*(\d+)|版本\s*(\d+)\s*。/);
+    const m = text.match(/更新到版本\s*(\d+)|Updated to revision\s*(\d+)|版本\s*(\d+)\s*。/); // i18n-ignore: 解析 svn update 输出（中英文版本号行）
     return m ? (m[1] ?? m[2] ?? m[3] ?? null) : null;
   }
 
@@ -367,7 +378,8 @@ export class SvnVcs {
     const args = ['update'];
     if (pathRel) args.push(pathRel);
     const res = await this.exec(args, { timeoutMs: 300_000, signal });
-    if (res.aborted) return { ok: false, message: '更新已取消' };
+    // 更新已取消
+    if (res.aborted) return { ok: false, message: t('vcs.updateCancelled') };
     // svn 部分失败时 exit code 可能为 0，错误码出现在输出中（如 E155007）
     if (res.code !== 0 || /svn: E\d{6}/.test(res.stdout + res.stderr)) {
       const errText = res.stdout + res.stderr;
@@ -375,7 +387,8 @@ export class SvnVcs {
       // 自动用 --ignore-externals 重试一次，跳过外部引用先更新普通文件
       if (errText.includes('E205011')) {
         const retry = await this.exec(['update', ...(pathRel ? [pathRel] : []), '--ignore-externals'], { timeoutMs: 300_000, signal });
-        if (retry.aborted) return { ok: false, message: '更新已取消' };
+        // 更新已取消
+        if (retry.aborted) return { ok: false, message: t('vcs.updateCancelled') };
         if (retry.code === 0 && !/svn: E\d{6}/.test(retry.stdout + retry.stderr)) {
           // 第一次失败的输出可能已含普通文件更新行（svn 先更新文件后处理外部定义），合并两次结果按路径去重
           const seen = new Set<string>();
@@ -388,18 +401,25 @@ export class SvnVcs {
           const rev = this.revOf(res.stdout + res.stderr + retry.stdout + retry.stderr);
           const msg =
             files.length > 0
-              ? `更新了 ${files.length} 个文件（外部引用同步失败已跳过）${rev ? `，当前版本 r${rev}` : ''}`
-              : retry.stderr.trim() || `外部引用同步失败已跳过，其余已是最新${rev ? `（当前 r${rev}）` : ''}`;
+              ? rev
+                // 更新了 {n} 个文件（外部引用同步失败已跳过），当前版本 r{rev}
+                ? t('vcs.updateExternalsSkippedRev', { n: files.length, rev })
+                // 更新了 {n} 个文件（外部引用同步失败已跳过）
+                : t('vcs.updateExternalsSkipped', { n: files.length })
+              // 外部引用同步失败已跳过，其余已是最新（当前 r{rev}） / 外部引用同步失败已跳过，其余已是最新
+              : retry.stderr.trim() || (rev ? t('vcs.externalsSkippedLatestRev', { rev }) : t('vcs.externalsSkippedLatest'));
           return { ok: true, message: msg, files, warnings: warnings.length ? warnings : undefined };
         }
         // 重试（跳过外部引用）仍失败：提示原始错误并说明已尝试跳过
         const auth = this.authError(res);
         const errMsg = errText.match(/svn: E\d{6}[^\n]*/)?.[0];
-        return this.fail(auth, `${errMsg ?? (res.stderr.trim() || 'svn update 失败')}（已尝试跳过外部引用仍失败）`);
+        // {err}（已尝试跳过外部引用仍失败） / svn update 失败
+        return this.fail(auth, t('vcs.updateFailedExternalsRetried', { err: errMsg ?? (res.stderr.trim() || t('vcs.svnUpdateFailed')) }));
       }
       const auth = this.authError(res);
       const errMsg = errText.match(/svn: E\d{6}[^\n]*/)?.[0];
-      return this.fail(auth, errMsg ?? (res.stderr.trim() || 'svn update 失败'));
+      // svn update 失败
+      return this.fail(auth, errMsg ?? (res.stderr.trim() || t('vcs.svnUpdateFailed')));
     }
     const files = this.parseUpdateFiles(res.stdout);
     // 更新成功但 svn 输出含警告（如 W205011）时原样带回，界面"有什么提示什么"
@@ -412,10 +432,16 @@ export class SvnVcs {
     }
     const msg =
       files.length > 0
-        ? `更新了 ${files.length} 个文件${rev ? `，当前版本 r${rev}` : ''}`
+        ? rev
+          // 更新了 {n} 个文件，当前版本 r{rev}
+          ? t('vcs.updatedFilesRev', { n: files.length, rev })
+          // 更新了 {n} 个文件
+          : t('vcs.updatedFiles', { n: files.length })
         : rev
-          ? `已是最新版本（当前 r${rev}）`
-          : res.stderr.trim() || '已是最新版本';
+          // 已是最新版本（当前 r{rev}）
+          ? t('vcs.updateLatestRev', { rev })
+          // 已是最新版本
+          : res.stderr.trim() || t('vcs.updateLatest');
     return { ok: true, message: msg, files, warnings: warnings.length ? warnings : undefined };
   }
 
@@ -448,33 +474,41 @@ export class SvnVcs {
       }
       const res = await this.exec(isDir ? ['revert', '--depth', 'infinity', p] : ['revert', p]);
       if (res.code !== 0) {
-        return { ok: false, message: res.stderr.trim() || 'svn revert 失败' };
+        // svn revert 失败
+        return { ok: false, message: res.stderr.trim() || t('vcs.svnRevertFailed') };
       }
     }
-    return { ok: true, message: `已还原 ${relPaths.length} 项` };
+    // 已还原 {n} 项
+    return { ok: true, message: t('vcs.revertedCount', { n: relPaths.length }) };
   }
 
   /** svn delete --keep-local：仅标记从版本库删除,磁盘文件保留（提交后生效,提交前可还原） */
   async removeKeep(relPaths: string[]): Promise<VcsResult> {
     const res = await this.exec(['delete', '--keep-local', ...relPaths]);
-    if (res.code !== 0) return this.fail(this.authError(res), res.stderr.trim() || '从版本库移除失败');
-    return { ok: true, message: `已标记从版本库删除 ${relPaths.length} 项（本地文件保留）` };
+    // 从版本库移除失败
+    if (res.code !== 0) return this.fail(this.authError(res), res.stderr.trim() || t('vcs.removeKeepFailed'));
+    // 已标记从版本库删除 {n} 项（本地文件保留）
+    return { ok: true, message: t('vcs.removeKeepMarked', { n: relPaths.length }) };
   }
 
   /** svn move：本地重命名/移动（提交后生效）；未版本化对象不支持返回失败 */
   async move(from: string, to: string): Promise<VcsResult> {
     const res = await this.exec(['move', from, to]);
-    if (res.code !== 0) return this.fail(this.authError(res), res.stderr.trim() || 'svn move 失败');
-    return { ok: true, message: `已重命名 ${from} → ${to}（提交后生效）` };
+    // svn move 失败
+    if (res.code !== 0) return this.fail(this.authError(res), res.stderr.trim() || t('vcs.svnMoveFailed'));
+    // 已重命名 {from} → {to}（提交后生效）
+    return { ok: true, message: t('vcs.moved', { from, to }) };
   }
 
   /** svn delete（目录默认递归） */
   async remove(relPaths: string[]): Promise<VcsResult> {
     const res = await this.exec(['delete', ...relPaths]);
     if (res.code !== 0) {
-      return { ok: false, message: res.stderr.trim() || 'svn delete 失败' };
+      // svn delete 失败
+      return { ok: false, message: res.stderr.trim() || t('vcs.svnDeleteFailed') };
     }
-    return { ok: true, message: `已标记删除 ${relPaths.length} 项` };
+    // 已标记删除 {n} 项
+    return { ok: true, message: t('vcs.removeMarked', { n: relPaths.length }) };
   }
 
   /** svn cat -r REV：指定版本内容 */
@@ -494,10 +528,12 @@ export class SvnVcs {
   async restoreToRev(relPath: string, rev: string): Promise<VcsResult> {
     const abs = path.join(this.repo.root, relPath);
     const res = await this.exec(['cat', '-r', rev, relPath], { timeoutMs: 60_000, raw: true });
-    if (res.code !== 0 || !res.stdoutBuf) return { ok: false, message: res.stderr.trim() || `svn cat -r ${rev} 失败` };
+    // svn cat -r {rev} 失败
+    if (res.code !== 0 || !res.stdoutBuf) return { ok: false, message: res.stderr.trim() || t('vcs.svnCatRevFailed', { rev }) };
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, res.stdoutBuf);
-    return { ok: true, message: `已将 ${relPath} 还原到 r${rev} 版本（工作区修改，可提交）` };
+    // 已将 {path} 还原到 {rev} 版本（工作区修改，可提交）
+    return { ok: true, message: t('vcs.restoredToRev', { path: relPath, rev: `r${rev}` }) };
   }
 
   /** svn cat：查看版本库内文件内容 */
@@ -544,7 +580,7 @@ export class SvnVcs {
     let expiredCount = 0;
     for (const line of out) {
       if (line.length < 8 || !line.trim()) continue;
-      if (/状态|Status/.test(line)) continue; // 汇总行
+      if (/状态|Status/.test(line)) continue; // i18n-ignore: 解析 svn status -u 汇总行（"版本 26 的状态"/"Status against revision: 26"）
       const c1 = line[0]!;
       const c5 = line[5] ?? ' '; // 锁状态列（实测 index 5：K 自己锁 / O 他人锁）
       const star = line[8] === '*';
@@ -656,8 +692,10 @@ export class SvnVcs {
     try {
       await this.ls(url + '/');
     } catch {
-      const mk = await this.exec(['mkdir', url, '-m', '创建目录'], { timeoutMs: 60_000 });
-      if (mk.code !== 0) throw new Error(mk.stderr.trim() || '创建目录失败');
+      // 创建目录
+      const mk = await this.exec(['mkdir', url, '-m', t('vcs.commitMsg.mkdir')], { timeoutMs: 60_000 });
+      // 创建目录失败
+      if (mk.code !== 0) throw new Error(mk.stderr.trim() || t('vcs.mkdirFailed'));
     }
   }
 
@@ -668,7 +706,8 @@ export class SvnVcs {
     // 目标已存在时 svn copy 会嵌套复制造成污染 → 先校验
     try {
       await this.ls(`${root}/branches/${name}/`);
-      return { ok: false, message: `分支 ${name} 已存在` };
+      // 分支 {name} 已存在
+      return { ok: false, message: t('vcs.branchExists', { name }) };
     } catch {
       /* 不存在，继续 */
     }
@@ -676,37 +715,46 @@ export class SvnVcs {
     try {
       await this.ls(`${root}/trunk/`);
     } catch {
-      return { ok: false, message: '仓库没有 trunk（非标准布局），无法创建分支。请先补建 trunk 目录（svn mkdir）' };
+      // 仓库没有 trunk（非标准布局），无法创建分支。请先补建 trunk 目录（svn mkdir）
+      return { ok: false, message: t('vcs.noTrunkForBranch') };
     }
     try {
       await this.ensureDir(`${root}/branches`);
     } catch (err) {
-      return { ok: false, message: `创建 branches 目录失败: ${(err as Error).message}` };
+      // 创建 branches 目录失败: {err}
+      return { ok: false, message: t('vcs.createBranchesDirFailed', { err: (err as Error).message }) };
     }
-    const res = await this.exec(['copy', `${root}/trunk`, `${root}/branches/${name}`, '-m', `创建分支 ${name}`], { timeoutMs: 120_000 });
+    // 创建分支 {name}
+    const res = await this.exec(['copy', `${root}/trunk`, `${root}/branches/${name}`, '-m', t('vcs.commitMsg.branchCreate', { name })], { timeoutMs: 120_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return this.fail(auth, res.stderr.trim() || '创建分支失败');
+      // 创建分支失败
+      return this.fail(auth, res.stderr.trim() || t('vcs.createBranchFailed'));
     }
-    return { ok: true, message: `已创建分支 ${name}` };
+    // 已创建分支 {name}
+    return { ok: true, message: t('vcs.branchCreated', { name }) };
   }
 
   /** 删除分支（远程删除 branches/<name>，危险操作由前端确认） */
   async branchDelete(name: string): Promise<VcsResult> {
     const root = await this.repoRootUrl();
-    const res = await this.exec(['delete', `${root}/branches/${name}`, '-m', `删除分支 ${name}`], { timeoutMs: 120_000 });
+    // 删除分支 {name}
+    const res = await this.exec(['delete', `${root}/branches/${name}`, '-m', t('vcs.commitMsg.branchDelete', { name })], { timeoutMs: 120_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return this.fail(auth, res.stderr.trim() || '删除分支失败');
+      // 删除分支失败
+      return this.fail(auth, res.stderr.trim() || t('vcs.deleteBranchFailed'));
     }
-    return { ok: true, message: `已删除分支 ${name}` };
+    // 已删除分支 {name}
+    return { ok: true, message: t('vcs.branchDeleted', { name }) };
   }
 
   /** 切换分支：svn switch <root>/branches/<name>；name=trunk/root 时切回主干 */
   /** 切换分支前的改动检查：svn switch 是 update 语义，本地改动尽量保留（可能冲突），只统计数量 */
   async switchCheck(_branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }> {
     const res = await this.exec(['status']);
-    if (res.code !== 0) throw new Error(`svn status 失败: ${res.stderr.trim()}`);
+    // svn status 失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.svnStatusFailed', { err: res.stderr.trim() }));
     const lines = res.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
     const untracked = lines.filter((l) => l.startsWith('?')).length;
     const tracked = lines.length - untracked;
@@ -740,7 +788,8 @@ export class SvnVcs {
       } catch {
         // 无 trunk 时不能 fallback 到仓库根：svn 1.10 要求切换目标与当前 URL 有共同祖先，
         // 子目录工作副本 switch 到根必报 E195012，且提示"已切换到主干"是误报
-        return { ok: false, message: '仓库没有 trunk 目录，无法切回主干（请确认仓库布局或直接切换到其他分支）' };
+        // 仓库没有 trunk 目录，无法切回主干（请确认仓库布局或直接切换到其他分支）
+        return { ok: false, message: t('vcs.noTrunkSwitchBack') };
       }
       target = `${root}/trunk`;
     } else {
@@ -749,12 +798,15 @@ export class SvnVcs {
     const res = await this.exec(['switch', target], { timeoutMs: 300_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return this.fail(auth, res.stderr.trim() || '切换分支失败');
+      // 切换分支失败
+      return this.fail(auth, res.stderr.trim() || t('vcs.switchBranchFailed'));
     }
-    const base = `已切换到${name === 'trunk' || name === 'root' ? '主干' : `分支 ${name}`}`;
+    // 已切换到主干 / 已切换到分支 {name}
+    const base = name === 'trunk' || name === 'root' ? t('vcs.switchedToTrunk') : t('vcs.switchedToBranch', { name });
     // svn switch 遇文本冲突时退出码仍为 0，需从输出识别冲突并提示用户处理
     const out = (res.stdout ?? '') + (res.stderr ?? '');
-    if (/冲突概要|conflict/i.test(out)) return { ok: true, message: `${base}；⚠ 切换时产生冲突，请打开冲突视图处理冲突文件` };
+    // {msg}；⚠ 切换时产生冲突，请打开冲突视图处理冲突文件
+    if (/冲突概要|conflict/i.test(out)) return { ok: true, message: t('vcs.switchConflict', { msg: base }) }; // i18n-ignore: 「冲突概要」是 svn switch 的中文输出标记（解析用，非文案）
     return { ok: true, message: base };
   }
 
@@ -764,12 +816,15 @@ export class SvnVcs {
     const res = await this.exec(['merge', `${root}/branches/${branchName}`], { timeoutMs: 300_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return this.fail(auth, res.stderr.trim() || '合并失败（可能有冲突）');
+      // 合并失败（可能有冲突）
+      return this.fail(auth, res.stderr.trim() || t('vcs.mergeFailedMaybeConflict'));
     }
-    const base = `已合并分支 ${branchName} 的改动`;
+    // 已合并分支 {name} 的改动
+    const base = t('vcs.mergedBranch', { name: branchName });
     // svn merge 遇文本冲突退出码仍为 0，需从输出识别冲突并提示用户处理
     const out = (res.stdout ?? '') + (res.stderr ?? '');
-    if (/冲突概要|conflict/i.test(out)) return { ok: true, message: `${base}；⚠ 合并产生冲突，请打开冲突视图处理冲突文件` };
+    // {msg}；⚠ 合并产生冲突，请打开冲突视图处理冲突文件
+    if (/冲突概要|conflict/i.test(out)) return { ok: true, message: t('vcs.mergeConflict', { msg: base }) }; // i18n-ignore: 「冲突概要」是 svn merge 的中文输出标记（解析用，非文案）
     return { ok: true, message: base };
   }
 
@@ -790,7 +845,8 @@ export class SvnVcs {
     // 目标已存在时 svn copy 会嵌套复制造成污染 → 先校验
     try {
       await this.ls(`${root}/tags/${name}/`);
-      return { ok: false, message: `标签 ${name} 已存在` };
+      // 标签 {name} 已存在
+      return { ok: false, message: t('vcs.tagExists', { name }) };
     } catch {
       /* 不存在，继续 */
     }
@@ -804,25 +860,32 @@ export class SvnVcs {
     try {
       await this.ensureDir(`${root}/tags`);
     } catch (err) {
-      return { ok: false, message: `创建 tags 目录失败: ${(err as Error).message}` };
+      // 创建 tags 目录失败: {err}
+      return { ok: false, message: t('vcs.createTagsDirFailed', { err: (err as Error).message }) };
     }
-    const res = await this.exec(['copy', from, `${root}/tags/${name}`, '-m', `创建标签 ${name}`], { timeoutMs: 120_000 });
+    // 创建标签 {name}
+    const res = await this.exec(['copy', from, `${root}/tags/${name}`, '-m', t('vcs.commitMsg.tagCreate', { name })], { timeoutMs: 120_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return this.fail(auth, res.stderr.trim() || '创建标签失败');
+      // 创建标签失败
+      return this.fail(auth, res.stderr.trim() || t('vcs.createTagFailed'));
     }
-    return { ok: true, message: `已创建标签 ${name}` };
+    // 已创建标签 {name}
+    return { ok: true, message: t('vcs.tagCreated', { name }) };
   }
 
   /** 删除远程标签（svn delete URL，危险操作由前端确认） */
   async tagDelete(name: string): Promise<VcsResult> {
     const root = await this.repoRootUrl();
-    const res = await this.exec(['delete', `${root}/tags/${name}`, '-m', `删除标签 ${name}`], { timeoutMs: 120_000 });
+    // 删除标签 {name}
+    const res = await this.exec(['delete', `${root}/tags/${name}`, '-m', t('vcs.commitMsg.tagDelete', { name })], { timeoutMs: 120_000 });
     if (res.code !== 0) {
       const auth = this.authError(res);
-      return this.fail(auth, res.stderr.trim() || '删除标签失败');
+      // 删除标签失败
+      return this.fail(auth, res.stderr.trim() || t('vcs.deleteTagFailed'));
     }
-    return { ok: true, message: `已删除标签 ${name}` };
+    // 已删除标签 {name}
+    return { ok: true, message: t('vcs.tagDeleted', { name }) };
   }
 
   // ============ 清理 / 冲突解决 / 忽略 ============
@@ -830,15 +893,19 @@ export class SvnVcs {
   /** svn cleanup：清理中断操作遗留的锁 */
   async cleanup(): Promise<VcsResult> {
     const res = await this.exec(['cleanup']);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '清理失败' };
-    return { ok: true, message: '清理完成' };
+    // 清理失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.cleanupFailed') };
+    // 清理完成
+    return { ok: true, message: t('vcs.cleanupDone') };
   }
 
   /** svn resolve：解决冲突（accept: working/mine-full/theirs-full/base） */
   async resolve(pathRel: string, accept: string): Promise<VcsResult> {
     const res = await this.exec(['resolve', '--accept=' + accept, pathRel]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '解决冲突失败' };
-    return { ok: true, message: `已解决: ${pathRel}（${accept}）` };
+    // 解决冲突失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.resolveFailed') };
+    // 已解决: {path}（{accept}）
+    return { ok: true, message: t('vcs.resolved', { path: pathRel, accept }) };
   }
 
   /** svn info 判定该相对路径是否**已纳入版本控制的目录**（属性只能挂在这种节点上） */
@@ -869,12 +936,15 @@ export class SvnVcs {
     const cur = await this.exec(['propget', 'svn:ignore', at], { timeoutMs: 30_000 });
     const rules = (cur.code === 0 ? cur.stdout.split('\n') : []).map((s) => s.trim()).filter(Boolean);
     if (rules.includes(pattern)) {
-      return { ok: true, message: `已设置忽略: ${at} → ${pattern}（规则已存在）` };
+      // 已设置忽略: {at} → {pattern}（规则已存在）
+      return { ok: true, message: t('vcs.ignoreSetExists', { at, pattern }) };
     }
     const res = await this.exec(['propset', 'svn:ignore', [...rules, pattern].join('\n'), at]);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '设置忽略失败' };
+    // 设置忽略失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.ignoreFailed') };
     invalidateSvnIgnoreMap(this.repo.root); // 规则快照缓存必须失效，否则紧接着的读拿到旧值
-    return { ok: true, message: `已设置忽略: ${at} → ${pattern}` };
+    // 已设置忽略: {at} → {pattern}
+    return { ok: true, message: t('vcs.ignoreSet', { at, pattern }) };
   }
 
   /** 忽略规则的落点：承载规则的目录 `host` + 目标相对 host 的**第一段**（= host 的直接子项名）。
@@ -895,7 +965,8 @@ export class SvnVcs {
   async ignorePlan(pathRel: string): Promise<IgnorePlan> {
     const rel = pathRel === '.' ? '' : pathRel.replace(/\/+$/, '');
     const h = await this.ignoreHost(rel);
-    if (!h) throw new Error('仓库中没有已纳入版本控制的目录可承载 svn:ignore 属性');
+    // 仓库中没有已纳入版本控制的目录可承载 svn:ignore 属性
+    if (!h) throw new Error(t('vcs.ignoreNoVersionedDir'));
     return {
       target: h.host,
       rule: h.direct ? (rel.split('/').pop() ?? '') : h.firstSeg,
@@ -917,7 +988,8 @@ export class SvnVcs {
   async propSetIgnore(pathRel: string, pattern: string): Promise<VcsResult> {
     const rel = pathRel === '.' ? '' : pathRel.replace(/\/+$/, '');
     const h = await this.ignoreHost(rel);
-    if (!h) return { ok: false, message: '无法设置忽略：仓库中没有已纳入版本控制的目录可承载 svn:ignore 属性' };
+    // 无法设置忽略：仓库中没有已纳入版本控制的目录可承载 svn:ignore 属性
+    if (!h) return { ok: false, message: t('vcs.ignoreCannotNoVersionedDir') };
     // 目标在未版本化目录里时，规则只能按「host 的直接子项名」匹配。用户没改默认值（还是条目名）
     // 就写入退化成的那一段；若他改成了别的（如 *.log），那是明确意图，照写。
     const entryName = rel.split('/').pop() ?? '';
@@ -927,7 +999,8 @@ export class SvnVcs {
     if (rule !== pattern) {
       return {
         ok: true,
-        message: `已设置忽略: ${h.host || '.'} → ${rule}（svn 的忽略规则不能带路径，已忽略整个 ${rule} 目录）`,
+        // 已设置忽略: {at} → {rule}（svn 的忽略规则不能带路径，已忽略整个 {rule} 目录）
+        message: t('vcs.ignoreSetDegraded', { at: h.host || '.', rule }),
       };
     }
     return r;
@@ -941,8 +1014,10 @@ export class SvnVcs {
     if (force) args.push('--force');
     args.push(pathRel);
     const res = await this.exec(args);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '锁定失败' };
-    return { ok: true, message: `已锁定: ${pathRel}` };
+    // 锁定失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.lockFailed') };
+    // 已锁定: {path}
+    return { ok: true, message: t('vcs.locked', { path: pathRel }) };
   }
 
   /** svn unlock：解锁文件 */
@@ -951,14 +1026,17 @@ export class SvnVcs {
     if (force) args.push('--force');
     args.push(pathRel);
     const res = await this.exec(args);
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || '解锁失败' };
-    return { ok: true, message: `已解锁: ${pathRel}` };
+    // 解锁失败
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.unlockFailed') };
+    // 已解锁: {path}
+    return { ok: true, message: t('vcs.unlocked', { path: pathRel }) };
   }
 
   /** svn blame：逐行标注版本/作者 */
   async blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]> {
     const res = await this.exec(['blame', pathRel], { timeoutMs: 60_000, decode: 'auto' });
-    if (res.code !== 0) throw new Error(`svn blame 失败: ${res.stderr.trim()}`);
+    // svn blame 失败: {err}
+    if (res.code !== 0) throw new Error(t('vcs.svnBlameFailed', { err: res.stderr.trim() }));
     const out: { rev: string; author: string; date: string; line: number; text: string }[] = [];
     for (const line of res.stdout.split('\n')) {
       const m = line.match(/^\s*(\d+)\s+(\S+)\s+(.*)$/);
@@ -975,7 +1053,8 @@ export class SvnVcs {
     if (res.code !== 0) {
       const auth = this.authError(res);
       if (auth) throw new Error(auth);
-      throw new Error(`svn list 失败: ${res.stderr.trim()}`);
+      // svn list 失败: {err}
+      throw new Error(t('vcs.svnListFailed', { err: res.stderr.trim() }));
     }
     const doc = this.xml.parse(res.stdout);
     const lists = doc?.lists?.list ?? [];

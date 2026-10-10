@@ -2,6 +2,7 @@
  *  解析与 patch 拼接在 vcs/hunks.ts 的纯函数里（可单测），本模块只做参数校验与转发。
  */
 import { sendJson, readBody, vcsOf } from './util.js';
+import { t } from '../../shared/i18n/index.js';
 import type { Ctx } from './util.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
@@ -11,12 +12,14 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     // 读取某文件的逐块差异（供 hunk 勾选弹窗渲染）
     const { vcs, repo } = vcsOf();
     if (repo.type !== 'git') {
-      sendJson(res, 400, { error: '仅 git 仓库支持' });
+      // 仅 Git 仓库支持
+      sendJson(res, 400, { error: t('srv.gitOnly') });
       return true;
     }
     const rel = String(url.searchParams.get('path') ?? '').trim();
     if (!rel) {
-      sendJson(res, 400, { error: '缺少 path 参数' });
+      // 缺少 path 参数
+      sendJson(res, 400, { error: t('srv.missingPathParam') });
       return true;
     }
     try {
@@ -47,18 +50,21 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     // 把选中的块应用到暂存区（部分提交的基础）
     const { vcs, repo } = vcsOf();
     if (repo.type !== 'git') {
-      sendJson(res, 400, { error: '仅 git 仓库支持' });
+      // 仅 Git 仓库支持
+      sendJson(res, 400, { error: t('srv.gitOnly') });
       return true;
     }
     const body = await readBody(req);
     const rel = String(body.path ?? '').trim();
     const hunks = Array.isArray(body.hunks) ? body.hunks.map(Number).filter((n) => Number.isInteger(n)) : [];
     if (!rel || hunks.length === 0) {
-      sendJson(res, 400, { error: '参数不完整' });
+      // 参数不完整
+      sendJson(res, 400, { error: t('srv.incompleteParams') });
       return true;
     }
     const expectBlob = typeof body.expectBlob === 'string' ? body.expectBlob : undefined;
-    sendJson(res, 200, (await vcs.stageHunks?.(rel, hunks, expectBlob)) ?? { ok: false, message: '当前仓库类型不支持' });
+    // 当前仓库类型不支持
+    sendJson(res, 200, (await vcs.stageHunks?.(rel, hunks, expectBlob)) ?? { ok: false, message: t('srv.repoTypeUnsupported') });
     return true;
   }
 

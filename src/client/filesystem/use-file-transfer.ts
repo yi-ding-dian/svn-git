@@ -11,6 +11,7 @@
  *    工作副本会变成「原路径 missing + 新路径 unversioned」的脏状态，还得手动收拾，重命名历史也断了。
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { post, uploadFile } from '../shared/api.js';
 
 // ============================ 拖入上传 ============================
@@ -165,7 +166,8 @@ export function useDropUpload(opts: {
         }
         onDone(okCount, failed, saved);
       } catch (e) {
-        onDone(0, [`预检失败：${(e as Error).message}`], []);
+        // 预检失败：{msg}
+        onDone(0, [t('fs.drop.precheckFailed', { msg: (e as Error).message })], []);
       } finally {
         setProgress(null);
         busy.current = false;
@@ -266,15 +268,16 @@ export async function moveItemsTo(
   // 已经在目标目录里的（如全选后原地粘贴/拖回原处）：不算失败，但也无事可做
   const moving = items.filter((i) => toRel(i.name) !== i.rel);
   if (moving.length === 0) {
-    onToast('这些条目已经在目标目录里了');
+    // 这些条目已经在目标目录里了
+    onToast(t('fs.move.alreadyThere'));
     return 'noop';
   }
   const { conflicts } = await post.uploadCheck(dest, moving.map((i) => i.name));
   if (conflicts.length > 0) {
-    onToast(
-      `目标已存在同名：${conflicts.slice(0, 3).join('、')}${conflicts.length > 3 ? ' 等' : ''}，请先改名或删除后再移动`,
-      true,
-    );
+    //  等
+    const list = conflicts.slice(0, 3).join(t('common.listSep')) + (conflicts.length > 3 ? t('fs.andMore') : '');
+    // 目标已存在同名：{list}，请先改名或删除后再移动
+    onToast(t('fs.move.exists', { list }), true);
     return 'blocked';
   }
   const failed: string[] = [];
@@ -293,8 +296,10 @@ export async function moveItemsTo(
   }
   onToast(
     failed.length === 0
-      ? `已移动 ${ok} 项到 ${dest || '仓库根目录'}`
-      : `移动完成 ${ok} 项，失败 ${failed.length} 项：${failed.slice(0, 2).join('；')}`,
+      // 已移动 {n} 项到 {dest} / 仓库根目录
+      ? t('fs.move.moved', { n: ok, dest: dest || t('fs.repoRootDir') })
+      // 移动完成 {ok} 项，失败 {n} 项：{list}
+      : t('fs.move.movedFailed', { ok, n: failed.length, list: failed.slice(0, 2).join(t('common.listSepSemi')) }),
     failed.length > 0,
   );
   return failed.length > 0 ? 'blocked' : 'ok';
@@ -321,13 +326,15 @@ export function useCopyPaste(opts: {
   /** 入剪贴板（复制 / 剪切）。只收条目，不做任何磁盘操作 —— 真正的动作在粘贴时发生。 */
   const take = (mode: 'copy' | 'cut', items: ClipItem[]) => {
     if (items.length === 0) {
-      optsRef.current.onToast('没有可搬运的条目：先在文件/目录上单击选中（Ctrl 可多选），再复制或剪切', true);
+      // 没有可搬运的条目：先在文件/目录上单击选中（Ctrl 可多选），再复制或剪切
+      optsRef.current.onToast(t('fs.clip.none'), true);
       return;
     }
     setClip({ mode, items, repoRoot: optsRef.current.repoRoot });
     const n = items.length;
     optsRef.current.onToast(
-      mode === 'copy' ? `已复制 ${n} 项，到目标目录按 Ctrl+V 粘贴` : `已剪切 ${n} 项，到目标目录按 Ctrl+V 粘贴`,
+      // 已复制 {n} 项，到目标目录按 Ctrl+V 粘贴 / 已剪切 {n} 项，到目标目录按 Ctrl+V 粘贴
+      mode === 'copy' ? t('fs.clip.copied', { n }) : t('fs.clip.cut', { n }),
     );
   };
 
@@ -338,7 +345,8 @@ export function useCopyPaste(opts: {
     const { dir, repoRoot, onToast, onDone, askConflict } = optsRef.current;
     if (c.repoRoot !== repoRoot) {
       setClip(null);
-      onToast('剪贴板来自另一个项目，已清空（路径对不上）', true);
+      // 剪贴板来自另一个项目，已清空（路径对不上）
+      onToast(t('fs.clip.otherRepo'), true);
       return;
     }
     const dest = destDirArg ?? dir;
@@ -395,14 +403,19 @@ export function useCopyPaste(opts: {
         }
       }
       const okCount = c.items.length - failed.length;
-      let msg = `已复制 ${okCount} 项到 ${dest || '仓库根目录'}`;
-      if (failed.length > 0) msg += `，失败 ${failed.length} 项：${failed.slice(0, 2).join('；')}`;
-      else if (addedCount > 0) msg += '，已加入版本库';
-      else if (fresh.length === 0) msg += '（源未纳入版本控制，副本保持未版本化）';
+      // 已复制 {n} 项到 {dest} / 仓库根目录
+      let msg = t('fs.clip.pasted', { n: okCount, dest: dest || t('fs.repoRootDir') });
+      // ，失败 {n} 项：{list}
+      if (failed.length > 0) msg += t('fs.clip.failedSuffix', { n: failed.length, list: failed.slice(0, 2).join(t('common.listSepSemi')) });
+      // ，已加入版本库
+      else if (addedCount > 0) msg += t('fs.clip.addedToVcs');
+      // （源未纳入版本控制，副本保持未版本化）
+      else if (fresh.length === 0) msg += t('fs.clip.unversioned');
       onToast(msg, failed.length > 0);
       onDone();
     } catch (e) {
-      onToast(`粘贴失败：${(e as Error).message}`, true);
+      // 粘贴失败：{msg}
+      onToast(t('fs.clip.pasteFailed', { msg: (e as Error).message }), true);
     } finally {
       busy.current = false;
     }

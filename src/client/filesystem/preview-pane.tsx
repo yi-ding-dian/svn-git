@@ -6,6 +6,7 @@
  *    其余键吞掉不让列表响应），与列表联动的焦点/滚动/跨行跳转定位逻辑保留在 FsView。
  *  - 错误分两级回调：文本读取失败（致命，退回列表）与展示类错误（图片加载失败，仅红条提示）。 */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
@@ -84,9 +85,11 @@ export function PreviewPane(props: Props) {
       void post
         .openWith(props.target.rel, exec)
         .then((x) => {
-          if (!x.ok) props.onError(x.message || '打开失败');
+          // 打开失败
+          if (!x.ok) props.onError(x.message || t('fs.pv.openFailedShort'));
         })
-        .catch((e: Error) => props.onError(`打开失败: ${e.message}`));
+        // 打开失败: {msg}
+        .catch((e: Error) => props.onError(t('fs.menu.openFailed', { msg: e.message })));
     };
     const items: CtxMenuItem[] = [
       // 第一项：工具内直接改（改完就能提交，不用切出去）。
@@ -95,17 +98,21 @@ export function PreviewPane(props: Props) {
       //     内容看着像正常汉字、改完保存却把原编码毁掉；真 GBK 与猜错的在探测层**无法区分**。
       //  ② 超限文件：正文是占位符不是真内容，保存会把占位符写进文件。
       // 两种都只走下面的外部程序（它们认编码更准、也不受我们的大小限制）。
-      ...(fileEnc || fileTruncated ? [] : [{ label: '✎ 直接编辑', action: startEdit }, { sep: true } as CtxMenuItem]),
+      // ✎ 直接编辑
+      ...(fileEnc || fileTruncated ? [] : [{ label: t('fs.pv.editHere'), action: startEdit }, { sep: true } as CtxMenuItem]),
       // 想用外部编辑器时再往下选。**不替用户自动选默认程序**：不少系统上 .md/.txt 默认关联的是
       // 浏览器或只读预览器，直接点下去等于什么也改不了
       {
         icon: <IconExternal />,
-        label: '用系统默认程序打开',
+        // 用系统默认程序打开
+        label: t('fs.pv.openDefaultApp'),
         // 不给内联编辑时得说明原因，别让用户以为是功能坏了
         title: fileTruncated
-          ? '文件过大（超过 5MB），未读取全文，不支持内联编辑；请用外部程序打开'
+          // 文件过大（超过 5MB），未读取全文，不支持内联编辑；请用外部程序打开
+          ? t('fs.pv.tooLargeNoEdit')
           : fileEnc
-            ? `该文件是 ${fileEnc} 编码，不支持内联编辑（怕改坏原编码）`
+            // 该文件是 {enc} 编码，不支持内联编辑（怕改坏原编码）
+            ? t('fs.pv.encNoEdit', { enc: fileEnc })
             : undefined,
         action: () => run(''),
       },
@@ -115,7 +122,8 @@ export function PreviewPane(props: Props) {
       ...(chooseOpen
         ? [
             { sep: true } as CtxMenuItem,
-            { icon: <IconExternal />, label: '选择其他应用…', action: () => run(chooseOpen!) },
+            // 选择其他应用…
+            { icon: <IconExternal />, label: t('fs.menu.chooseApp'), action: () => run(chooseOpen!) },
           ]
         : []),
     ];
@@ -130,7 +138,8 @@ export function PreviewPane(props: Props) {
   const previewRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   /** 顶部说明文案（与旧 openFile 打开时生成的 note 一致；img 目标无说明） */
-  const note = target.img ? undefined : target.code === '?' ? '未版本化文件（原文）' : '无差异 — 文件原文';
+  // 未版本化文件（原文） / 无差异 — 文件原文
+  const note = target.img ? undefined : target.code === '?' ? t('fs.pv.unversioned') : t('fs.pv.noDiff');
   /** 非 UTF-8 文件（GBK 等）的编码提示：不提示的话，用户会以为文件本来就是 UTF-8 */
   const [fileEnc, setFileEnc] = useState('');
   /** 超大文件（>5MB）：正文是"（文件过大，未读取全文）"**占位符**而非真内容，
@@ -163,7 +172,8 @@ export function PreviewPane(props: Props) {
       .cat(target.rel)
       .then((r) => {
         if (cancelled) return;
-        if (!r.ok) throw new Error(r.error ?? '读取失败');
+        // 读取失败
+        if (!r.ok) throw new Error(r.error ?? t('fs.pv.readFailed'));
         setFileEnc(r.encoding ?? '');
         setFileTruncated(!!r.truncated);
         eolRef.current = r.output.includes('\r\n') ? '\r\n' : '\n'; // 记下原文行尾
@@ -183,11 +193,13 @@ export function PreviewPane(props: Props) {
     // 纵深防御：菜单里已经不给非 UTF-8 这一项了，这里再挡一道
     // （fileEnc 要等内容读完才有，万一它在菜单渲染之后才到，菜单里会短暂出现这一项）
     if (fileEnc) {
-      props.onError(`该文件是 ${fileEnc} 编码，不支持内联编辑（怕改坏原编码）；请用外部程序打开`);
+      // 该文件是 {enc} 编码，不支持内联编辑（怕改坏原编码）；请用外部程序打开
+      props.onError(t('fs.pv.encNoEditFull', { enc: fileEnc }));
       return;
     }
     if (fileTruncated) {
-      props.onError('文件过大（超过 5MB），未读取全文，不支持内联编辑；请用外部程序打开');
+      // 文件过大（超过 5MB），未读取全文，不支持内联编辑；请用外部程序打开
+      props.onError(t('fs.pv.tooLargeNoEdit'));
       return;
     }
     setDraft(text ?? '');
@@ -200,20 +212,23 @@ export function PreviewPane(props: Props) {
       .writeFile(props.target.rel, content)
       .then((r) => {
         if (!r.ok) {
-          props.onError(r.message || '保存失败');
+          // 保存失败
+          props.onError(r.message || t('fs.pv.saveFailed'));
           return;
         }
         setEditing(false);
         setReloadKey((k) => k + 1);
-        props.onSaved?.(r.message || '已保存');
+        // 已保存
+        props.onSaved?.(r.message || t('fs.pv.saved'));
       })
-      .catch((e: Error) => props.onError(`保存失败: ${e.message}`));
+      // 保存失败: {msg}
+      .catch((e: Error) => props.onError(t('fs.pv.saveFailedMsg', { msg: e.message })));
   };
 
   /** md-render 容器点击：目标是图片则放大查看 */
   const onMdRenderClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const t = e.target as HTMLElement;
-    if (t.tagName === 'IMG') setImgViewer((t as HTMLImageElement).src);
+    const el = e.target as HTMLElement;
+    if (el.tagName === 'IMG') setImgViewer((el as HTMLImageElement).src);
   };
   useEffect(() => {
     if (!imgViewer) return;
@@ -300,6 +315,9 @@ export function PreviewPane(props: Props) {
     } catch (err) {
       props.onError((err as Error).message);
     }
+    // 规则沿 target 追溯到 props 才报 missing 'props'；依赖里 target.rel / props.onError 已是精确字段。
+    // 补 props 本身会让每次父渲染都重建本回调，故按字段声明。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blameMode, target.rel, props.onError]);
 
   return (
@@ -308,8 +326,10 @@ export function PreviewPane(props: Props) {
         <span className="dim">{target.name}</span>
         {note && <span className="small" style={{ color: 'var(--accent)' }}>ℹ {note}</span>}
         {fileEnc && (
-          <span className="small dim" title="该文件不是 UTF-8 编码，预览按此编码解码显示；保存时会按原编码写回">
-            🈚 按 {fileEnc.toUpperCase()} 解码
+          // 该文件不是 UTF-8 编码，预览按此编码解码显示；保存时会按原编码写回
+          <span className="small dim" title={t('fs.pv.encTip')}>
+            {/* 🈚 按 {enc} 解码 */}
+            {t('fs.pv.decodedAs', { enc: fileEnc.toUpperCase() })}
           </span>
         )}
         {searchActive ? (
@@ -317,7 +337,8 @@ export function PreviewPane(props: Props) {
             <input
               autoFocus
               type="text"
-              placeholder="搜索代码…"
+              // 搜索代码…
+              placeholder={t('fs.pv.searchPlaceholder')}
               value={searchQ}
               onChange={(e) => {
                 setSearchQ(e.target.value);
@@ -330,12 +351,15 @@ export function PreviewPane(props: Props) {
               style={{ width: 200 }}
             />
             <span className="dim small">
-              {searchQ.trim() && matches.length > 0 ? `${matchIdx + 1}/${matches.length}` : searchQ.trim() ? '无匹配' : ''}
+              {/* 无匹配 */}
+              {searchQ.trim() && matches.length > 0 ? `${matchIdx + 1}/${matches.length}` : searchQ.trim() ? t('fs.pv.noMatch') : ''}
             </span>
-            <button className="mini" onClick={goNextMatch}>下一个 ↓</button>
+            {/* 下一个 ↓ */}
+            <button className="mini" onClick={goNextMatch}>{t('fs.pv.next')}</button>
           </span>
         ) : (
-          <button className="mini" onClick={() => setSearchActive(true)}>🔍 搜索 (/)</button>
+          // 🔍 搜索 (/)
+          <button className="mini" onClick={() => setSearchActive(true)}>{t('fs.pv.searchBtn')}</button>
         )}
         {!editing && (
           <>
@@ -345,35 +369,44 @@ export function PreviewPane(props: Props) {
           onClick={() => void toggleBlame()}
           title={
             target.code === '?' || target.code === 'I'
-              ? '未版本化/忽略的文件没有提交历史，无法追溯'
-              : '逐行标注提交/作者'
+              // 未版本化/忽略的文件没有提交历史，无法追溯
+              ? t('fs.pv.blameDisabled')
+              // 逐行标注提交/作者
+              : t('fs.pv.blameTitle')
           }
         >
-          📜 追溯
+          {/* 📜 追溯 */}
+          {t('fs.pv.blame')}
         </button>
         {isMd && (
           <button
             className={`mini ${mdTheme !== 'follow' ? 'primary' : ''}`}
-            title="md 阅读主题：只改文档区配色，界面主题不受影响"
+            // md 阅读主题：只改文档区配色，界面主题不受影响
+            title={t('fs.pv.mdThemeTitle')}
             onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
               setMdThemePop({ x: r.left, y: r.bottom + 4 });
             }}
           >
-            🎨 主题{mdTheme === 'follow' ? '' : ` · ${mdThemeName(mdTheme)}`}
+            {/* 🎨 主题 / 🎨 主题 · {name} */}
+            {mdTheme === 'follow' ? t('fs.pv.themeBtn') : t('fs.pv.themeBtnNamed', { name: mdThemeName(mdTheme) })}
           </button>
         )}
         <span className="grow" />
         <button
           className={`mini ${full ? 'primary' : ''}`}
           onClick={() => setFull((v) => !v)}
-          title={full ? '退出全屏（Esc）' : '铺满窗口阅读长文，Esc 退出'}
+          // 退出全屏（Esc） / 铺满窗口阅读长文，Esc 退出
+          title={full ? t('fs.pv.exitFullTitle') : t('fs.pv.fullTitle')}
         >
-          ⛶ {full ? '退出全屏' : '全屏浏览'}
+          {/* 退出全屏 / 全屏浏览 */}
+          ⛶ {full ? t('fs.pv.exitFull') : t('fs.pv.full')}
         </button>
         {isMd && (
-          <button className="mini" onClick={() => setMdPreview((v) => !v)} title="Markdown 渲染预览">
-            {mdPreview ? '📄 查看原文' : '👁 预览'}
+          // Markdown 渲染预览
+          <button className="mini" onClick={() => setMdPreview((v) => !v)} title={t('fs.pv.mdPreviewTitle')}>
+            {/* 📄 查看原文 / 👁 预览 */}
+            {mdPreview ? t('fs.pv.viewRaw') : t('fs.pv.previewToggle')}
           </button>
         )}
         {/* 编辑：用系统默认程序打开（openWith 传空 exec = 默认程序）。
@@ -383,9 +416,11 @@ export function PreviewPane(props: Props) {
           <button
             className="mini"
             onClick={(ev) => void openEditMenu(ev)}
-            title="选择用哪个程序打开来编辑这个文件；改完回到这里按「刷新」即可看到变更"
+            // 选择用哪个程序打开来编辑这个文件；改完回到这里按「刷新」即可看到变更
+            title={t('fs.pv.editTitle')}
           >
-            ✎ 编辑
+            {/* ✎ 编辑 */}
+            {t('fs.pv.edit')}
           </button>
         )}
           </>
@@ -393,17 +428,23 @@ export function PreviewPane(props: Props) {
         {editing ? (
           <>
             <span className="dim small">
-              编辑中{fileEnc ? ` · 按 ${fileEnc} 保存` : ''}
-              {eolRef.current === '\r\n' ? ' · 保持 CRLF 行尾' : ''}
+              {/* 编辑中 · 按 {enc} 保存 / 编辑中 */}
+              {fileEnc ? t('fs.pv.editingEnc', { enc: fileEnc }) : t('fs.pv.editing')}
+              {/* 保持 CRLF 行尾 */}
+              {eolRef.current === '\r\n' ? ` · ${t('fs.pv.keepCrlf')}` : ''}
             </span>
             <span className="grow" />
-            <button className="mini primary" onClick={saveEdit}>💾 保存</button>
-            <button className="mini" onClick={() => setEditing(false)}>取消</button>
+            {/* 💾 保存 */}
+            <button className="mini primary" onClick={saveEdit}>{t('fs.pv.saveBtn')}</button>
+            {/* 取消 */}
+            <button className="mini" onClick={() => setEditing(false)}>{t('common.cancel')}</button>
           </>
         ) : (
           <>
-            <span className="dim small">{full ? 'Esc 退出全屏 · ' : ''}← 键返回列表 · / 搜索</span>
-            <button className="mini" onClick={props.onClose}>← 返回列表</button>
+            {/* Esc 退出全屏 ·  / ← 键返回列表 · / 搜索 */}
+            <span className="dim small">{full ? t('fs.pv.hintFull') : ''}{t('fs.pv.hint')}</span>
+            {/* ← 返回列表 */}
+            <button className="mini" onClick={props.onClose}>{t('fs.pv.back')}</button>
           </>
         )}
         {editMenu && (
@@ -444,14 +485,16 @@ export function PreviewPane(props: Props) {
               src={`/api/file?path=${encodeURIComponent(target.rel)}`}
               alt={target.name}
               style={{ maxWidth: '100%', maxHeight: 'calc(100% - 40px)', objectFit: 'contain', borderRadius: 6, cursor: 'zoom-in' }}
-              onError={(e) => props.onError(`图片读取失败: ${(e.target as HTMLImageElement).alt}`)}
+              // 图片读取失败: {name}
+              onError={(e) => props.onError(t('fs.pv.imgFailed', { name: (e.target as HTMLImageElement).alt }))}
             />
           </div>
         ) : text === null ? (
           // 文本读取中（旧实现读完才进入预览；抽组件后先挂载面板壳、内容异步加载，失败由 onOpenError 退回列表）
           <div className="loading">
             <div className="spinner" style={{ width: 24, height: 24 }} />
-            <div style={{ marginTop: 8 }}>正在加载…</div>
+            {/* 正在加载… */}
+            <div style={{ marginTop: 8 }}>{t('fs.loading')}</div>
           </div>
         ) : mdPreview && target.name.toLowerCase().endsWith('.md') ? (
           <div
@@ -526,7 +569,8 @@ export function PreviewPane(props: Props) {
             zIndex: 500,
           }}
           onClick={() => setImgViewer(null)}
-          title="点击关闭（ESC）"
+          // 点击关闭（ESC）
+          title={t('fs.pv.clickClose')}
         >
           <img
             src={imgViewer}

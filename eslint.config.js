@@ -48,7 +48,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/web/**/*.{ts,tsx}'],
+    files: ['src/client/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {
       'react-hooks/rules-of-hooks': 'error',
@@ -57,7 +57,7 @@ export default tseslint.config(
   },
   {
     // 浏览器端：声明全局对象，避免 no-undef 误报
-    files: ['src/web/**/*.{ts,tsx}'],
+    files: ['src/client/**/*.{ts,tsx}'],
     languageOptions: {
       globals: {
         window: 'readonly',

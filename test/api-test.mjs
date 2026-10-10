@@ -191,9 +191,11 @@ try {
     process.env.SVNGIT_REPO_DIR = SVN_DIR;
     const nc = await get('/api/net-check');
     check(
-      'SVN net-check 正常（ok=true, reason=网络正常）',
-      nc.code === 200 && nc.body.ok === true && nc.body.reason === '网络正常',
-      `ok=${nc.body.ok} reason=${nc.body.reason}`
+      // 断言 ok=true 且 reason 为空（= 一切正常、无可说）。**别改成断言某句文案** ——
+      // 那句"网络正常"已随 i18n 移除：前端曾拿它做字符串比较，语言一换就失效（现改为判空，见 routes/host.ts）
+      'SVN net-check 正常（ok=true, reason 为空）',
+      nc.code === 200 && nc.body.ok === true && nc.body.reason === '',
+      `ok=${nc.body.ok} reason=${JSON.stringify(nc.body.reason)}`
     );
     // svn 缺失条目（磁盘删除已跟踪文件/目录 → status '!' missing）→ /api/fs miss 行 + revert 恢复
     {

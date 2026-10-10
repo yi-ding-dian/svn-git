@@ -1,17 +1,33 @@
 /** 前后端共享常量（单一事实源）：server 与 web feeder 均从此导入,避免双份维护 */
-/** 状态码 -> 中文说明 */export const CODE_DESC: Record<string, string> = {
-  M: '已修改',
-  A: '已添加',
-  D: '已删除',
-  '?': '未版本化',
-  '!': '缺失',
-  C: '冲突',
-  R: '已替换/重命名',
-  X: '外部引用',
-  I: '已忽略',
-  U: '已更新',
-  '~': '类型变更',
-  ' ': '无变化',
+import { t } from './i18n/index.js';
+
+/** 状态码 → 界面说明（文件徽标悬浮 / 网格悬浮卡 / 详情面板共用）。
+ *  ⚠️ 值写成函数：模块顶层求值只会算一次，切语言不会跟着变（见 i18n/index.ts 头部说明） */
+export const CODE_DESC: Record<string, () => string> = {
+  // 已修改
+  M: () => t('common.code.modified'),
+  // 已添加
+  A: () => t('common.code.added'),
+  // 已删除
+  D: () => t('common.code.deleted'),
+  // 未版本化
+  '?': () => t('common.code.unversioned'),
+  // 缺失
+  '!': () => t('common.code.missing'),
+  // 冲突
+  C: () => t('common.code.conflict'),
+  // 已替换/重命名
+  R: () => t('common.code.replaced'),
+  // 外部引用
+  X: () => t('common.code.external'),
+  // 已忽略
+  I: () => t('common.code.ignored'),
+  // 已更新
+  U: () => t('common.code.updated'),
+  // 类型变更
+  '~': () => t('common.code.typeChanged'),
+  // 无变化
+  ' ': () => t('common.code.none'),
 };
 
 /** 二进制文件扩展名（Office/PDF/图片/压缩包/可执行等,不支持文本对比）——server/wc 与前端共用 */

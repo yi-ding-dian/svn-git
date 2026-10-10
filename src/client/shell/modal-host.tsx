@@ -35,6 +35,7 @@ import { OpenModal } from '../repo/open.js';
 import { IconOk } from '../ui/icons.js';
 import { pathAutoWidth, translateVcsError } from '../shared/utils.js';
 import { RECENT_LIMIT, type View } from './sidebar.js';
+import { t } from '../../shared/i18n/index.js';
 
 /** 文件操作类型（App 的 runOp 参数；定义在此供双方引用，避免 app ↔ modal-host 循环依赖） */
 export type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'fs-delete' | 'push' | 'move' | 'fs-move';
@@ -43,9 +44,11 @@ export type Op = 'add' | 'commit' | 'update' | 'revert' | 'delete' | 'fs-delete'
 export function onboardText(r: RepoInfo): string {
   const root = r.root ?? '';
   if (r.type === 'svn') {
-    return `✅ 已创建并打开 SVN 仓库：版本库 ${root.replace(/-wc$/, '')}（存储），工作副本 ${root}（已打开，日常操作都在这里）。下一步：在文件列表右键「添加到版本库」→「提交」。`;
+    // ✅ 已创建并打开 SVN 仓库：版本库 {repo}（存储），工作副本 {wc}（已打开，日常操作都在这里）。下一步：在文件列表右键「添加到版本库」→「提交」。
+    return t('shell.onboard.svn', { repo: root.replace(/-wc$/, ''), wc: root });
   }
-  return `✅ 已创建 Git 仓库并打开：${root}。下一步：添加文件到版本库 → 提交 → 推送。`;
+  // ✅ 已创建 Git 仓库并打开：{root}。下一步：添加文件到版本库 → 提交 → 推送。
+  return t('shell.onboard.git', { root });
 }
 
 export interface UpdateResult {
@@ -214,16 +217,21 @@ export function ModalHost(props: ModalHostProps) {
           <div className="modal" style={{ width: 380 }}>
             <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
               <div className="spinner" />
-              <div style={{ marginTop: 14, fontWeight: 600 }}>正在推送…</div>
+              {/* 正在推送… */}
+              <div style={{ marginTop: 14, fontWeight: 600 }}>{t('shell.busy.push')}</div>
               {repo?.url && (
-                <div className="mono small dim" style={{ marginTop: 6 }} title="推送目标仓库">
+                // 推送目标仓库
+                <div className="mono small dim" style={{ marginTop: 6 }} title={t('shell.push.target')}>
                   📤 {repo.url}
                 </div>
               )}
-              <div className="dim small" style={{ marginTop: 6 }}>视网络情况可能需要一些时间，可随时取消</div>
-              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>已耗时 {updateElapsed}s</div>
+              {/* 视网络情况可能需要一些时间，可随时取消 */}
+              <div className="dim small" style={{ marginTop: 6 }}>{t('shell.push.hint')}</div>
+              {/* 已耗时 {n}s */}
+              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>{t('shell.elapsed', { n: updateElapsed })}</div>
               <button className="mini danger" style={{ marginTop: 18 }} onClick={cancelPush}>
-                取消推送
+                {/* 取消推送 */}
+                {t('shell.push.cancel')}
               </button>
             </div>
           </div>
@@ -235,11 +243,15 @@ export function ModalHost(props: ModalHostProps) {
           <div className="modal" style={{ width: 380 }}>
             <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
               <div className="spinner" />
-              <div style={{ marginTop: 14, fontWeight: 600 }}>正在更新…</div>
-              <div className="dim small" style={{ marginTop: 6 }}>视仓库大小和网络情况可能需要一些时间，可随时取消</div>
-              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>已耗时 {updateElapsed}s</div>
+              {/* 正在更新… */}
+              <div style={{ marginTop: 14, fontWeight: 600 }}>{t('shell.busy.update')}</div>
+              {/* 视仓库大小和网络情况可能需要一些时间，可随时取消 */}
+              <div className="dim small" style={{ marginTop: 6 }}>{t('shell.update.hint')}</div>
+              {/* 已耗时 {n}s */}
+              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>{t('shell.elapsed', { n: updateElapsed })}</div>
               <button className="mini danger" style={{ marginTop: 18 }} onClick={cancelUpdate}>
-                取消更新
+                {/* 取消更新 */}
+                {t('shell.update.cancel')}
               </button>
             </div>
           </div>
@@ -397,10 +409,12 @@ export function ModalHost(props: ModalHostProps) {
                   loadHistory();
                   setView('browse'); // 新仓库直接进入文件浏览视图（创建时可能停在历史/差异视图）
                   setOnboard(onboardText(r));
-                  showToast(`已打开仓库: ${r.root}`);
+                  // 已打开仓库: {root}
+                  showToast(t('shell.repo.opened', { root: r.root ?? '' }));
                 }
               })
-              .catch((e: Error) => showToast(`创建完成，但打开失败: ${(e as Error).message}`, true));
+              // 创建完成，但打开失败: {msg}
+              .catch((e: Error) => showToast(t('shell.repo.createOpenFailed', { msg: (e as Error).message }), true));
           }}
         />
       )}
@@ -421,10 +435,12 @@ export function ModalHost(props: ModalHostProps) {
                   refresh();
                   loadHistory();
                   setView('browse'); // 获取仓库后直接进入文件浏览视图
-                  showToast(`已打开仓库: ${r.root}`);
+                  // 已打开仓库: {root}
+                  showToast(t('shell.repo.opened', { root: r.root ?? '' }));
                 }
               })
-              .catch((e: Error) => showToast(`获取完成，但打开失败: ${(e as Error).message}`, true));
+              // 获取完成，但打开失败: {msg}
+              .catch((e: Error) => showToast(t('shell.repo.fetchOpenFailed', { msg: (e as Error).message }), true));
           }}
         />
       )}
@@ -450,7 +466,8 @@ export function ModalHost(props: ModalHostProps) {
               title: (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                   <IconOk size={16} />
-                  提交确认
+                  {/* 提交确认 */}
+                  {t('shell.commit.confirmTitle')}
                 </span>
               ),
               // 宽度自适应最长文件名（与提交弹窗同规则）
@@ -458,11 +475,13 @@ export function ModalHost(props: ModalHostProps) {
               message: (
                 <>
                   <div className="small" style={{ marginBottom: 8 }}>
-                    确认提交以下 <b>{paths.length}</b> 个文件？
+                    {/* 确认提交以下  /  个文件？ */}
+                    {t('shell.commit.confirmMsgA')}<b>{paths.length}</b>{t('shell.commit.confirmMsgB', { n: paths.length })}
                     {stagedOnly.filter((p) => paths.includes(p)).length > 0 && (
                       <span style={{ color: 'var(--accent)' }}>
                         {' '}
-                        其中 {stagedOnly.filter((p) => paths.includes(p)).length} 个只提交选中的部分改动
+                        {/* 其中 {n} 个只提交选中的部分改动 */}
+                        {t('shell.commit.confirmStaged', { n: stagedOnly.filter((p) => paths.includes(p)).length })}
                       </span>
                     )}
                   </div>
@@ -478,13 +497,16 @@ export function ModalHost(props: ModalHostProps) {
                   </div>
                   {msg && (
                     <div className="dim small mt8" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                      注释：{msg}
+                      {/* 注释：{msg} */}
+                      {t('shell.commit.note', { msg })}
                     </div>
                   )}
                 </>
               ),
-              confirmLabel: '确认提交',
-              secondaryLabel: '返回修改',
+              // 确认提交
+              confirmLabel: t('shell.commit.confirmBtn'),
+              // 返回修改
+              secondaryLabel: t('shell.commit.backBtn'),
               // 返回修改：回到「提交修改的文件」弹窗（保留原目录、列表、勾选与注释）
               secondaryAction: () => setModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked: paths, stagedOnly, msg }),
               action: () => void doCommitSelected(paths, msg, stagedOnly),

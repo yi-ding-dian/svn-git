@@ -7,6 +7,7 @@ import { detectRepo } from '../vcs/detect.js';
 import { createAskPass, authTypeOf } from '../vcs/git.js';
 import { loadConfig } from '../config.js';
 import { run } from '../vcs/exec.js';
+import { t } from '../shared/i18n/index.js';
 import { isSafeOrigin, sendJson, readBody, isAuthError, type Ctx } from './routes/util.js';
 import { handle as handleConflicts } from './routes/conflicts.js';
 import { handle as handleBranch } from './routes/branch.js';
@@ -55,7 +56,8 @@ export function startServer(): Promise<ServerHandle> {
       // ---------- API ----------
       // CSRF 防护:全 API 层拦截带非本机 Origin 的请求(任意网页无法触达含副作用端点,如 shutdown/open/env-install)
       if (p.startsWith('/api/') && !isSafeOrigin(req)) {
-        sendJson(res, 403, { error: '拒绝跨站请求' });
+        // 拒绝跨站请求
+        sendJson(res, 403, { error: t('srv.crossSiteRejected') });
         return;
       }
       // 端点域模块（冲突防护 / 分支标签 / 操作类 / 浏览 / 宿主环境 / 历史 / 最近项目 / 配置 / 上传 / 工作副本 / 终端），按序尝试分发
@@ -83,7 +85,8 @@ export function startServer(): Promise<ServerHandle> {
         const dir = String(body.dir ?? '').trim();
         const name = String(body.name ?? '').trim();
         if (!dir || !name) {
-          sendJson(res, 400, { error: '缺少目录或名称' });
+          // 缺少目录或名称
+          sendJson(res, 400, { error: t('srv.missingDirOrName') });
           return;
         }
         const target = path.join(dir, name);
@@ -114,7 +117,8 @@ export function startServer(): Promise<ServerHandle> {
         const url = String(body.url ?? '').trim();
         const name = String(body.name ?? '').trim();
         if (!dir) {
-          sendJson(res, 400, { error: '请填写目录路径' });
+          // 请填写目录路径
+          sendJson(res, 400, { error: t('srv.fillDirPath') });
           return;
         }
         const target = path.join(dir, name);
@@ -137,7 +141,8 @@ export function startServer(): Promise<ServerHandle> {
             /** 克隆上限：网络卡住时别让用户干等（前端同时有 30s 倒计时，两边一致） */
             const CLONE_TIMEOUT_MS = 30_000;
             const isAuthFail = (r: { stderr: string; stdout: string }): boolean =>
-              /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403|没有那个设备或地址/i.test(r.stderr + r.stdout);
+              // 解析 git 输出判断认证失败（含中文 locale 的「没有那个设备或地址」），不是界面文案，禁止翻译
+              /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403|没有那个设备或地址/i.test(r.stderr + r.stdout); // i18n-ignore: 解析 git 输出的匹配表
             /** 克隆**开始前**目标是否已存在：
              *  决定失败后能不能清理 —— 只清"这次克隆刚建出来的"，**绝不动用户已有的目录**。
              *  （曾因为不判这个，把用户已有的整个目录连内容一起删了：重复获取同一位置时
@@ -170,33 +175,40 @@ export function startServer(): Promise<ServerHandle> {
               cleanupTarget(); // 收拾可能留下的半截目录
               result = {
                 ok: false,
-                message: r.timedOut ? `获取超时（超过 ${CLONE_TIMEOUT_MS / 1000} 秒），已停止` : '已取消获取',
+                // 获取超时（超过 {sec} 秒），已停止 / 已取消获取
+                message: r.timedOut ? t('srv.cloneTimeout', { sec: CLONE_TIMEOUT_MS / 1000 }) : t('srv.cloneCancelled'),
               };
             } else if (r.code === 0) {
-              result = { ok: true, message: `已克隆到 ${target}`, repoDir: target };
+              // 已克隆到 {path}
+              result = { ok: true, message: t('srv.clonedTo', { path: target }), repoDir: target };
             } else {
               cleanupTarget(); // 失败也别留半个仓库，否则下次重试会撞"目录已存在"
-              result = { ok: false, message: r.stderr.trim() || '克隆失败', authError: authFail || undefined, authType: authFail ? authTypeOf(url) : undefined };
+              // 克隆失败
+              result = { ok: false, message: r.stderr.trim() || t('srv.cloneFailed'), authError: authFail || undefined, authType: authFail ? authTypeOf(url) : undefined };
             }
           } else {
             // init
             fs.mkdirSync(target, { recursive: true });
             const r = await run('git', ['init', target], { timeoutMs: 60_000 });
-            result = r.code === 0 ? { ok: true, message: `已初始化仓库 ${target}`, repoDir: target } : { ok: false, message: r.stderr.trim() || 'git init 失败' };
+            // 已初始化仓库 {path} / git init 失败
+            result = r.code === 0 ? { ok: true, message: t('srv.initedRepo', { path: target }), repoDir: target } : { ok: false, message: r.stderr.trim() || t('srv.gitInitFailed') };
           }
         } else if (type === 'svn') {
           if (url) {
             // 从远程/本地检出工作副本（成员获取仓库；svn checkout 目标目录名即本地名称）
             const r = await run('svn', ['checkout', '-q', url, target], { timeoutMs: 600_000 });
             result = r.code === 0
-              ? { ok: true, message: `已检出 SVN 工作副本 ${target}`, repoDir: target }
-              : { ok: false, message: r.stderr.trim() || 'svn checkout 失败' };
+              // 已检出 SVN 工作副本 {path}
+              ? { ok: true, message: t('srv.svnCheckedOut', { path: target }), repoDir: target }
+              // svn checkout 失败
+              : { ok: false, message: r.stderr.trim() || t('srv.svnCheckoutFailed') };
           } else {
             // svnadmin create（本地仓库）+ 可选标准布局 + 工作副本
             fs.mkdirSync(target, { recursive: true });
             const r = await run('svnadmin', ['create', target], { timeoutMs: 120_000 });
             if (r.code !== 0) {
-              result = { ok: false, message: r.stderr.trim() || 'svnadmin create 失败' };
+              // svnadmin create 失败
+              result = { ok: false, message: r.stderr.trim() || t('srv.svnadminFailed') };
             } else {
               let wcUrl = `file://${target}`;
               const standard = body.standard !== false;
@@ -204,11 +216,13 @@ export function startServer(): Promise<ServerHandle> {
                 // 标准布局：创建 trunk/branches/tags（svn 分支机制依赖目录约定）
                 const mk = await run(
                   'svn',
-                  ['mkdir', '-q', `${wcUrl}/trunk`, `${wcUrl}/branches`, `${wcUrl}/tags`, '-m', '创建标准布局 trunk/branches/tags'],
+                  // 创建标准布局 trunk/branches/tags
+                  ['mkdir', '-q', `${wcUrl}/trunk`, `${wcUrl}/branches`, `${wcUrl}/tags`, '-m', t('vcs.commitMsg.stdLayout')],
                   { timeoutMs: 60_000 }
                 );
                 if (mk.code !== 0) {
-                  sendJson(res, 200, { ok: false, message: `标准布局创建失败: ${mk.stderr.trim() || '未知'}`, authError: false });
+                  // 标准布局创建失败: {msg} / 未知
+                  sendJson(res, 200, { ok: false, message: t('srv.layoutCreateFailed', { msg: mk.stderr.trim() || t('srv.unknown') }), authError: false });
                   return;
                 }
                 // 工作副本检出 trunk（根下只有布局目录，检出根会把 branches 全部拖进来）
@@ -217,12 +231,15 @@ export function startServer(): Promise<ServerHandle> {
               const wcDir = target + '-wc';
               const c = await run('svn', ['checkout', '-q', wcUrl, wcDir], { timeoutMs: 120_000 });
               result = c.code === 0
-                ? { ok: true, message: `已创建 SVN 仓库 ${target}${standard ? '（标准布局，工作副本检出 trunk）' : ''}（工作副本 ${wcDir}）`, repoDir: wcDir }
-                : { ok: true, message: `已创建 SVN 仓库 ${target}${standard ? '（标准布局）' : ''}（工作副本检出失败: ${c.stderr.trim() || '未知'}）`, repoDir: wcDir };
+                // 已创建 SVN 仓库 {path}{layout}（工作副本 {wc}） / （标准布局，工作副本检出 trunk）
+                ? { ok: true, message: t('srv.createdSvnRepo', { path: target, layout: standard ? t('srv.stdLayoutTrunk') : '', wc: wcDir }), repoDir: wcDir }
+                // 已创建 SVN 仓库 {path}{layout}（工作副本检出失败: {msg}） / （标准布局） / 未知
+                : { ok: true, message: t('srv.createdSvnRepoWcFailed', { path: target, layout: standard ? t('srv.stdLayout') : '', msg: c.stderr.trim() || t('srv.unknown') }), repoDir: wcDir };
             }
           }
         } else {
-          sendJson(res, 400, { error: '未知仓库类型' });
+          // 未知仓库类型
+          sendJson(res, 400, { error: t('srv.unknownRepoType') });
           return;
         }
         sendJson(res, 200, { ...result, authError: false });
@@ -267,7 +284,8 @@ export function startServer(): Promise<ServerHandle> {
     const DEFAULT_PORT = 23456;
     server.once('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
-        console.warn(`端口 ${DEFAULT_PORT} 被占用，改用随机端口`);
+        // 端口 {port} 被占用，改用随机端口
+        console.warn(t('srv.portInUse', { port: DEFAULT_PORT }));
         server.listen(0, '127.0.0.1', onListen);
       } else {
         throw err;

@@ -3,6 +3,7 @@
  */
 import { useCallback, useRef, useState } from 'react';
 import { get, post, type HistoryItem } from '../shared/api.js';
+import { t } from '../../shared/i18n/index.js';
 
 export function useProjectHistory(onError: (msg: string) => void) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -22,7 +23,8 @@ export function useProjectHistory(onError: (msg: string) => void) {
     void post
       .historyRemove(path)
       .then((r) => setHistory(r.items))
-      .catch(() => onErrorRef.current('删除失败'));
+      // 删除失败
+      .catch(() => onErrorRef.current(t('repo.recent.delFailed')));
   }, []);
 
   /** 设置/取消常用项目（侧边栏右键菜单）：星号标记，下次启动优先打开 */
@@ -30,7 +32,8 @@ export function useProjectHistory(onError: (msg: string) => void) {
     void post
       .historyFav(path, fav)
       .then((r) => setHistory(r.items))
-      .catch(() => onErrorRef.current(fav ? '设置常用失败' : '取消常用失败'));
+      // 设置常用失败 / 取消常用失败
+      .catch(() => onErrorRef.current(fav ? t('repo.fav.setFailed') : t('repo.fav.unsetFailed')));
   }, []);
 
   /** 设置/清除备注（侧边栏右键菜单）：显示在时间前；传空串 = 清除备注 */
@@ -38,7 +41,8 @@ export function useProjectHistory(onError: (msg: string) => void) {
     void post
       .historyRemark(path, remark)
       .then((r) => setHistory(r.items))
-      .catch(() => onErrorRef.current(remark ? '备注失败' : '清除备注失败'));
+      // 备注失败 / 清除备注失败
+      .catch(() => onErrorRef.current(remark ? t('repo.remark.setFailed') : t('repo.remark.clearFailed')));
   }, []);
 
   return { history, loadHistory, removeHistory, setFav, setRemark };

@@ -7,6 +7,7 @@ import { platform } from '../../platform/index.js';
 import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, runVcs, writeTextKeepEncoding, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE } from './util.js';
 import { detectTextEncoding } from '../../shared/text.js';
 import { diffChangedLines } from '../../vcs/diff-lines.js';
+import { t } from '../../shared/i18n/index.js';
 import type { Ctx } from './util.js';
 
 
@@ -28,7 +29,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           let ours = '';
           let theirs = '';
           let base = '';
-          let work = binary ? '' : read(abs);
+          const work = binary ? '' : read(abs);
           if (!binary) {
             if (repo.type === 'git') {
               const show = async (stage: string): Promise<string> => {
@@ -86,7 +87,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const { vcs, repo } = vcsOf();
         const rel = url.searchParams.get('path') ?? '';
         if (!rel) {
-          sendJson(res, 400, { error: '缺少路径' });
+          // 缺少路径
+          sendJson(res, 400, { error: t('srv.missingPath') });
           return true;
         }
         let theirsDiff = '';
@@ -177,14 +179,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const abs = path.join(repo.root, rel);
         // 路径越界校验：manual 模式会 fs.writeFileSync(abs) 写仓库外文件
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS });
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
         // 防误操作：非冲突状态执行 ours/theirs 会静默覆盖本地修改
         if (repo.type === 'git' && mode !== 'manual') {
           const u = await run('git', ['ls-files', '-u', rel], { cwd: repo.root, timeoutMs: 15_000 });
           if (u.code !== 0 || !u.stdout.trim()) {
-            sendJson(res, 200, { ok: false, message: `${rel} 当前不是冲突状态，无法采用本地/对方` });
+            // {path} 当前不是冲突状态，无法采用本地/对方
+            sendJson(res, 200, { ok: false, message: t('srv.notInConflict', { path: rel }) });
             return true;
           }
         }
@@ -199,13 +202,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             const side = mode === 'ours' ? '--ours' : '--theirs';
             const co = await run('git', ['checkout', side, rel], { cwd: repo.root, timeoutMs: 30_000 });
             if (co.code !== 0) {
-              sendJson(res, 200, { ok: false, message: co.stderr.trim() || '取用失败' });
+              // 取用失败
+              sendJson(res, 200, { ok: false, message: co.stderr.trim() || t('srv.takeFailed') });
               return true;
             }
           }
           const added = await vcs.add([rel]);
           // git add 为纯本地操作（无网络认证），authErrorOf 恒 false——与原固定 authError:false 等价
-          return runVcs(ctx, () => (added.ok ? { ok: true, message: `已解决: ${rel}（${mode === 'ours' ? '采用本地' : mode === 'theirs' ? '采用对方' : '手动编辑'}）` } : added));
+          // 已解决: {path}（{how}） / 采用本地 / 采用对方 / 手动编辑
+          return runVcs(ctx, () => (added.ok ? { ok: true, message: t('srv.resolved', { path: rel, how: mode === 'ours' ? t('srv.takeOurs') : mode === 'theirs' ? t('srv.takeTheirs') : t('srv.manualEdit') }) } : added));
         }
         if (mode === 'manual') {
           const w = writeTextKeepEncoding(abs, content);
@@ -226,11 +231,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const rel = String(body.path ?? '');
         const abs = path.join(repo.root, rel);
         if (!inRepoRoot(repo.root, abs)) {
-          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE });
+          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
           return true;
         }
         if (!fs.existsSync(abs)) {
-          sendJson(res, 404, { error: '文件不存在' });
+          // 文件不存在
+          sendJson(res, 404, { error: t('srv.fileNotFound') });
           return true;
         }
         await platform.revealPath(abs);

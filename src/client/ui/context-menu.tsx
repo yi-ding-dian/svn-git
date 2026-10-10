@@ -23,6 +23,8 @@ export interface CtxMenuItem {
   action?: () => void;
   /** 二级子菜单（悬浮/点击右侧展开,如「打开方式」） */
   submenu?: CtxMenuItem[];
+  /** 不显示右侧 ▶ 箭头（子菜单照常展开）——给「语言」这类展开方式不言自明的项用 */
+  noArrow?: boolean;
   /** 可拖拽的唯一键（按住可拖出菜单，如工具栏定制） */
   dndKey?: string;
   /** 拖拽开始（mousedown，配合 dndKey；仅按住拖动用途，普通点击动作不受影响） */
@@ -120,7 +122,7 @@ export function ContextMenu(props: {
             >
               <span className="ctx-icon">{it.icon}</span>
               <span>{it.label}</span>
-              {it.submenu && <span className="ctx-arrow">▶</span>}
+              {it.submenu && !it.noArrow && <span className="ctx-arrow">▶</span>}
             </div>
           )
         )}

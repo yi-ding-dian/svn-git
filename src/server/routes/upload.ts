@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type http from 'node:http';
 import { sendJson, readBody, vcsOf, inRepoRoot, MSG_PATH_OUT_OF_BOUNDS } from './util.js';
+import { t } from '../../shared/i18n/index.js';
 import type { Ctx } from './util.js';
 
 /** dir/path 拼成绝对路径并校验落在仓库根内；越界或不合法返回 null。
@@ -83,7 +84,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     for (const rel of paths) {
       const abs = targetOf(repo.root, dir, rel);
       if (!abs) {
-        sendJson(res, 403, { error: MSG_PATH_OUT_OF_BOUNDS });
+        sendJson(res, 403, { error: MSG_PATH_OUT_OF_BOUNDS() });
         return true;
       }
       if (fs.existsSync(abs)) conflicts.push(rel);
@@ -100,7 +101,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const mode = url.searchParams.get('mode') ?? 'overwrite';
     const abs0 = targetOf(repo.root, dir, rel);
     if (!abs0) {
-      sendJson(res, 403, { error: MSG_PATH_OUT_OF_BOUNDS });
+      sendJson(res, 403, { error: MSG_PATH_OUT_OF_BOUNDS() });
       return true;
     }
 
@@ -108,7 +109,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     if (fs.existsSync(abs)) {
       if (mode === 'skip') {
         req.resume(); // 丢弃 body 也要读完，否则连接不干净
-        sendJson(res, 200, { ok: true, skipped: true, savedAs: rel, message: '已跳过（同名文件已存在）' });
+        // 已跳过（同名文件已存在）
+        sendJson(res, 200, { ok: true, skipped: true, savedAs: rel, message: t('srv.uploadSkipped') });
         return true;
       }
       if (mode === 'rename') abs = uniquePath(abs);
@@ -117,10 +119,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     try {
       await pipeToFile(req, abs);
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: `写入失败: ${(e as Error).message}` });
+      // 写入失败: {msg}
+      sendJson(res, 500, { ok: false, error: t('srv.writeFailed', { msg: (e as Error).message }) });
       return true;
     }
-    sendJson(res, 200, { ok: true, savedAs: path.relative(repo.root, abs), message: '已上传' });
+    // 已上传
+    sendJson(res, 200, { ok: true, savedAs: path.relative(repo.root, abs), message: t('srv.uploaded') });
     return true;
   }
 
@@ -137,26 +141,29 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const rel = String(body.path ?? '') || path.basename(src);
 
     if (!src || !path.isAbsolute(src) || !fs.existsSync(src)) {
-      sendJson(res, 400, { error: '源路径无效或不存在' });
+      // 源路径无效或不存在
+      sendJson(res, 400, { error: t('srv.srcInvalid') });
       return true;
     }
     const abs0 = targetOf(repo.root, dir, rel);
     if (!abs0) {
-      sendJson(res, 403, { error: MSG_PATH_OUT_OF_BOUNDS });
+      sendJson(res, 403, { error: MSG_PATH_OUT_OF_BOUNDS() });
       return true;
     }
     // 防「复制到自己里面」：目标等于源、或源是目标的祖先，cp 会无限递归
     const realSrc = fs.realpathSync(src);
     const dst = path.resolve(abs0);
     if (dst === realSrc || dst.startsWith(realSrc + path.sep)) {
-      sendJson(res, 400, { error: '源与目标位置冲突' });
+      // 源与目标位置冲突
+      sendJson(res, 400, { error: t('srv.srcDstConflict') });
       return true;
     }
 
     let abs = abs0;
     if (fs.existsSync(abs)) {
       if (mode === 'skip') {
-        sendJson(res, 200, { ok: true, skipped: true, savedAs: rel, message: '已跳过（同名已存在）' });
+        // 已跳过（同名已存在）
+        sendJson(res, 200, { ok: true, skipped: true, savedAs: rel, message: t('srv.copySkipped') });
         return true;
       }
       if (mode === 'rename') abs = uniquePath(abs);
@@ -166,10 +173,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       fs.mkdirSync(path.dirname(abs), { recursive: true });
       await fs.promises.cp(src, abs, { recursive: true, force: true });
     } catch (e) {
-      sendJson(res, 500, { ok: false, error: `复制失败: ${(e as Error).message}` });
+      // 复制失败: {msg}
+      sendJson(res, 500, { ok: false, error: t('srv.copyFailed', { msg: (e as Error).message }) });
       return true;
     }
-    sendJson(res, 200, { ok: true, savedAs: path.relative(repo.root, abs), message: '已复制' });
+    // 已复制
+    sendJson(res, 200, { ok: true, savedAs: path.relative(repo.root, abs), message: t('srv.copied') });
     return true;
   }
 

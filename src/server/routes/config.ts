@@ -1,12 +1,35 @@
-/** 配置域端点：全局配置与凭据读写（config / git-auth）+ git 远程地址配置（git-config）。
- * 读写 ~/.config/svngit/config.json（见 src/config.ts）；git-config 为当前仓库 origin 远程设置（非 VCS 写操作，归本域）。 */
+/** 配置域端点：全局配置与凭据读写（config / git-auth）+ git 远程地址配置（git-config）+ 界面语言（lang）。
+ * 读写 ~/.config/svngit/config.json（见 src/config.ts）；git-config 为当前仓库 origin 远程设置（非 VCS 写操作，归本域）。
+ * lang 放在本域：它就是 config.json 的一个字段，且改完要立刻生效（setLang 直接改主进程变量，server/vcs/main 同时切）。 */
 import { sendJson, readBody, vcsOf } from './util.js';
 import { loadConfig, saveConfig } from '../../config.js';
+import { t, setLang, getLang, isLang } from '../../shared/i18n/index.js';
 import type { Ctx } from './util.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
   const p = url.pathname;
+
+  if (p === '/api/lang' && req.method === 'GET') {
+    // 前端首次加载且本地无偏好时用它对齐（有偏好则以本地为准，见 client/shared/use-lang.ts）
+    sendJson(res, 200, { lang: getLang() });
+    return true;
+  }
+
+  if (p === '/api/lang' && req.method === 'POST') {
+    const body = await readBody(req);
+    if (!isLang(body.lang)) {
+      // 语言不受支持
+      sendJson(res, 400, { error: t('srv.lang.invalid') });
+      return true;
+    }
+    setLang(body.lang); // 先切：后续消息立刻用新语言（含本请求之后的一切响应）
+    const cfg = loadConfig();
+    cfg.lang = body.lang;
+    saveConfig(cfg);
+    sendJson(res, 200, { ok: true });
+    return true;
+  }
 
   if (p === '/api/git-auth' && req.method === 'GET') {
     // Git 推送认证信息（不回传密码本体）
@@ -20,13 +43,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const username = String(body.username ?? '').trim();
     const password = String(body.password ?? '');
     if (!username || !password) {
-      sendJson(res, 400, { error: '用户名和密码不能为空' });
+      // 用户名和密码不能为空
+      sendJson(res, 400, { error: t('srv.gitAuthEmpty') });
       return true;
     }
     const cfg = loadConfig();
     cfg.git = { username, password };
     saveConfig(cfg);
-    sendJson(res, 200, { ok: true, message: '推送认证已保存' });
+    // 推送认证已保存
+    sendJson(res, 200, { ok: true, message: t('srv.gitAuthSaved') });
     return true;
   }
   if (p === '/api/config' && req.method === 'GET') {
@@ -52,11 +77,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const body = await readBody(req);
     const url = String(body.remoteUrl ?? '').trim();
     if (!url) {
-      sendJson(res, 400, { error: '远程地址不能为空' });
+      // 远程地址不能为空
+      sendJson(res, 400, { error: t('srv.remoteUrlEmpty') });
       return true;
     }
     if (repo.type !== 'git') {
-      sendJson(res, 400, { error: '非 Git 仓库' });
+      // 非 Git 仓库
+      sendJson(res, 400, { error: t('srv.notGitRepo') });
       return true;
     }
     sendJson(res, 200, await vcs.setRemote?.(url));

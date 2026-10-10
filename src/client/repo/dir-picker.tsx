@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { get, post, type BrowseResult } from '../shared/api.js';
 import { GridIcon, IconOk, IconErr } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
+import { t } from '../../shared/i18n/index.js';
 
 export function DirPicker(props: {
   /** 初始浏览目录（默认 home） */
@@ -33,7 +34,6 @@ export function DirPicker(props: {
   useEffect(() => {
     if (!dir) return;
     load(dir);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dir]);
 
   const goUp = () => setDir((d) => (d === '/' ? '/' : d.slice(0, d.lastIndexOf('/')) || '/'));
@@ -46,12 +46,14 @@ export function DirPicker(props: {
       .mkdir(`${dir}/${name}`)
       .then(() => {
         setCreating(false);
-        setNotice(`已创建 ${name}`);
+        // 已创建 {name}
+        setNotice(t('repo.picker.created', { name }));
         setNoticeErr(false);
         setDir(`${dir}/${name}`); // 创建后默认进入
       })
       .catch((e: Error) => {
-        setNotice(`创建失败: ${e.message}`);
+        // 创建失败: {msg}
+        setNotice(t('repo.picker.createFailed', { msg: e.message }));
         setNoticeErr(true);
       });
   };
@@ -64,12 +66,14 @@ export function DirPicker(props: {
     void post
       .rename(`${dir}/${oldName}`, `${dir}/${name}`)
       .then(() => {
-        setNotice(`已重命名 ${oldName} → ${name}`);
+        // 已重命名 {from} → {to}
+        setNotice(t('repo.picker.renamed', { from: oldName, to: name }));
         setNoticeErr(false);
         load(dir);
       })
       .catch((e: Error) => {
-        setNotice(`重命名失败: ${e.message}`);
+        // 重命名失败: {msg}
+        setNotice(t('repo.picker.renameFailed', { msg: e.message }));
         setNoticeErr(true);
       });
   };
@@ -82,7 +86,8 @@ export function DirPicker(props: {
           {dir}
           {dir !== '/' && (
             <a href="#" onClick={(e) => { e.preventDefault(); goUp(); }}>
-              {' '}← 上级
+              {/* ← 上级 */}
+              {' '}{t('repo.up')}
             </a>
           )}
         </div>
@@ -90,7 +95,8 @@ export function DirPicker(props: {
           <input
             autoFocus
             type="text"
-            placeholder="输入文件夹名称，回车创建"
+            // 输入文件夹名称，回车创建
+            placeholder={t('repo.picker.newPlaceholder')}
             style={{ width: 200, padding: '5px 10px', fontSize: 13 }}
             onChange={(e) => {
               const v = e.currentTarget.value;
@@ -102,7 +108,8 @@ export function DirPicker(props: {
             }}
           />
         ) : (
-          <button className="mini primary" onClick={() => setCreating(true)} title="在当前位置新建文件夹">📁 新建文件夹</button>
+          // 在当前位置新建文件夹 / 📁 新建文件夹
+          <button className="mini primary" onClick={() => setCreating(true)} title={t('repo.picker.newTip')}>{t('repo.picker.newFolder')}</button>
         )}
       </div>
       {error && <div className="error">{error}</div>}
@@ -144,7 +151,8 @@ export function DirPicker(props: {
               <div
                 key={it.name}
                 className="open-grid-item dir"
-                title={`${it.name}/\n双击进入 · 右键重命名`}
+                // {name}/\n双击进入 · 右键重命名
+                title={t('repo.picker.dirTip', { name: it.name })}
                 onDoubleClick={() => setDir((d) => (d === '/' ? `/${it.name}` : `${d}/${it.name}`))}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -157,7 +165,8 @@ export function DirPicker(props: {
             )
           ) : null,
         )}
-        {data && data.entries.filter((e) => e.isDir).length === 0 && <div className="empty" style={{ gridColumn: '1 / -1' }}>空目录（可新建文件夹）</div>}
+        {/* 空目录（可新建文件夹） */}
+        {data && data.entries.filter((e) => e.isDir).length === 0 && <div className="empty" style={{ gridColumn: '1 / -1' }}>{t('repo.picker.emptyDir')}</div>}
       </div>
       {/* 右键菜单：重命名 */}
       {menu && (
@@ -169,21 +178,26 @@ export function DirPicker(props: {
           items={[
             {
               icon: '✏️',
-              label: '重命名',
+              // 重命名
+              label: t('repo.picker.rename'),
               action: () => {
                 const n = menu.name;
                 setRenaming(n);
               },
             },
-            { icon: '✕', label: '取消' },
+            // 取消
+            { icon: '✕', label: t('common.cancel') },
           ]}
         />
       )}
       {/* 底部：当前路径 + 确定/取消（foot 风格：分隔线 + 贴底右对齐） */}
       <div className="foot" style={{ margin: 0, padding: '12px 0 0' }}>
-        <span className="dim small" style={{ flex: 1, wordBreak: 'break-all' }}>当前: {dir}</span>
-        <button onClick={props.onClose}>取消</button>
-        <button className="primary" onClick={() => props.onPick(dir)}>选择此目录</button>
+        {/* 当前: {path} */}
+        <span className="dim small" style={{ flex: 1, wordBreak: 'break-all' }}>{t('repo.picker.current', { path: dir })}</span>
+        {/* 取消 */}
+        <button onClick={props.onClose}>{t('common.cancel')}</button>
+        {/* 选择此目录 */}
+        <button className="primary" onClick={() => props.onPick(dir)}>{t('repo.picker.choose')}</button>
       </div>
     </div>
   );

@@ -19,7 +19,7 @@ export const CMDS: Record<string, string> = {
   g_add: 'git add %paths%',
   g_status: 'git status',
   g_commit: 'git commit -m "%msg%"',
-  g_update: 'git pull（整个仓库）',
+  g_update: 'git pull（整个仓库）', // i18n-ignore: 命令预览（教学用，展示真实命令与注解），按设计保留原样
   g_push: 'git push',
   g_revert: 'git checkout HEAD -- %paths%',
   g_restore_rev: 'git checkout %rev% -- %path%',
@@ -40,20 +40,20 @@ export const CMDS: Record<string, string> = {
   g_stash_push: 'git stash push -u -m "%msg%"',
   g_stash_pop: 'git stash pop stash@{%index%}',
   g_stash_drop: 'git stash drop stash@{%index%}',
-  g_reword: 'git rebase -i（重写提交注释）',
+  g_reword: 'git rebase -i（重写提交注释）', // i18n-ignore: 命令预览（教学用），按设计保留原样
   g_reset_soft: 'git reset --soft HEAD~',
   g_amend: 'git commit --amend',
   g_clean: 'git clean -f',
   g_init: 'git init %dir%',
   g_clone: 'git clone %url% %dir%',
-  s_create: 'svnadmin create %dir% + svn mkdir trunk/branches/tags + svn checkout（检出 trunk 为工作副本）',
+  s_create: 'svnadmin create %dir% + svn mkdir trunk/branches/tags + svn checkout（检出 trunk 为工作副本）', // i18n-ignore: 命令预览（教学用），按设计保留原样
   s_checkout: 'svn checkout %url% %dir%',
-  g_ignore_add: '写入 .gitignore：%pattern%',
-  g_ignore_add_global: '写入全局忽略 ~/.gitignore_global：%pattern%',
-  g_ignore_add_exclude: '写入 .git/info/exclude：%pattern%',
+  g_ignore_add: '写入 .gitignore：%pattern%', // i18n-ignore: 命令预览（教学用，描述规则写到哪），按设计保留原样
+  g_ignore_add_global: '写入全局忽略 ~/.gitignore_global：%pattern%', // i18n-ignore: 同上
+  g_ignore_add_exclude: '写入 .git/info/exclude：%pattern%', // i18n-ignore: 同上
   g_resolve_ours: 'git checkout --ours %path%',
   g_resolve_theirs: 'git checkout --theirs %path%',
-  g_resolve_manual: 'git add %path%（标记已解决后提交）',
+  g_resolve_manual: 'git add %path%（标记已解决后提交）', // i18n-ignore: 命令预览（教学用），按设计保留原样
   g_set_remote: 'git remote set-url origin %url%',
   // ---------------- SVN ----------------
   s_view_history: 'svn log --xml -l 200 %path%',
@@ -63,7 +63,7 @@ export const CMDS: Record<string, string> = {
   s_update: 'svn update %path%',
   s_status: 'svn status',
   s_revert: 'svn revert %paths%',
-  s_restore_rev: 'svn cat -r %rev% %path% > 写回工作区文件',
+  s_restore_rev: 'svn cat -r %rev% %path% > 写回工作区文件', // i18n-ignore: 命令预览（教学用，末尾是动作说明），按设计保留原样
   s_delete: 'svn delete %paths%',
   s_remove_keep: 'svn delete --keep-local %paths%',
   s_move: 'svn move %from% %to%',
@@ -82,7 +82,7 @@ export const CMDS: Record<string, string> = {
 
   // 规则挂到哪儿是**运行时算的**（已版本化目录就用它自己；未版本化条目则上溯最近的已版本化祖先），
   // 写死 %path% 会把未版本化条目显示成 propset 目标——与真实执行不符，故用描述性占位
-  s_ignore_add: 'svn propset svn:ignore "%pattern%" <最近的已版本化目录>',
+  s_ignore_add: 'svn propset svn:ignore "%pattern%" <最近的已版本化目录>', // i18n-ignore: 命令预览（教学用，尖括号是占位说明），按设计保留原样
 };
 
 /** 按仓库类型前缀取模板（git→g_*, svn→s_*）；未知返回 undefined */

@@ -3,6 +3,7 @@
  *  视图刷新通过回调交给调用方（树模式刷根节点 / 列表模式刷当前目录；过滤视图另有自己的 tick）。
  */
 import { useRef, useState } from 'react';
+import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 
 export interface IgnoreAsk {
@@ -93,7 +94,8 @@ export function useIgnoreFlow(opts: {
           optsRef.current.reloadFilter(); // ? 变 I 后应从"仅新文件"列表消失
         }
       })
-      .catch((err: Error) => optsRef.current.onToast(`忽略失败: ${err.message}`));
+      // 忽略失败: {msg}
+      .catch((err: Error) => optsRef.current.onToast(t('fs.ignore.failed', { msg: err.message })));
     closeIgnore();
   };
 
@@ -109,7 +111,8 @@ export function useIgnoreFlow(opts: {
           optsRef.current.reloadFilter(); // I 变回 ? 后应出现在"仅新文件"里
         }
       })
-      .catch((err: Error) => optsRef.current.onToast(`取消忽略失败: ${err.message}`));
+      // 取消忽略失败: {msg}
+      .catch((err: Error) => optsRef.current.onToast(t('fs.ignore.unignoreFailed', { msg: err.message })));
     setUnignoreAsk(null);
   };
 

@@ -4,6 +4,7 @@ import { ResizableModal } from '../shell/modal-shell.js';
 import { pathAutoWidth, useCheckedSet } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { IconOk } from '../ui/icons.js';
+import { t } from '../../shared/i18n/index.js';
 import { CommitCommentBox } from './commit-comment.js';
 
 export function CommitModal(props: {
@@ -21,11 +22,13 @@ export function CommitModal(props: {
 
   const submit = async () => {
     if (!msg.trim()) {
-      setErr('提交信息不能为空');
+      // 提交信息不能为空
+      setErr(t('ops.commit.err.noMessage'));
       return;
     }
     if (checked.size === 0) {
-      setErr('请至少勾选一个文件');
+      // 请至少勾选一个文件
+      setErr(t('ops.err.needFile'));
       return;
     }
     setBusy(true);
@@ -47,7 +50,8 @@ export function CommitModal(props: {
       <ResizableModal width={autoWidth} onEsc={props.onClose}>
         <h3>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>📝 提交</span>
+            {/* 📝 提交 */}
+            <span>{t('ops.commit.title')}</span>
             <span className="dim small" style={{ fontWeight: 400 }}>({props.repoType.toUpperCase()})</span>
           </span>
         </h3>
@@ -56,10 +60,11 @@ export function CommitModal(props: {
           {props.paths.length > 0 && (
             <div className="row" style={{ marginBottom: 8, gap: 10, flexShrink: 0 }}>
               <span className="small dim" style={{ flex: 1 }}>
-                📁 待提交 <b>{checked.size}</b>/{props.paths.length} 个文件
+                {/* 📁 待提交 / 个文件 */}
+                {t('ops.commit.stagedLabel')} <b>{checked.size}</b>/{props.paths.length} {t('ops.commit.fileUnit')}
               </span>
               <button className="mini" onClick={() => setChecked(allChecked ? new Set() : new Set(props.paths))}>
-                {allChecked ? '全不选' : '全选'}
+                {t(allChecked ? 'ops.select.none' : 'ops.select.all')}
               </button>
             </div>
           )}
@@ -82,13 +87,15 @@ export function CommitModal(props: {
             onChange={setMsg}
             onSubmit={() => void submit()}
             rows={5}
-            placeholder="简要说明本次提交内容，如：修复xxx问题、新增xxx功能、重构xxx模块…"
+            // 简要说明本次提交内容，如：修复xxx问题、新增xxx功能、重构xxx模块…
+            placeholder={t('ops.commit.msgPlaceholderLong')}
             autoFocus
           />
           {err && <div className="error mt8">{err}</div>}
         </div>
         <div className="foot">
-          <button onClick={props.onClose} disabled={busy}>取消</button>
+          {/* 取消 */}
+          <button onClick={props.onClose} disabled={busy}>{t('common.cancel')}</button>
           <button
             className="primary"
             onClick={() => void submit()}
@@ -96,11 +103,13 @@ export function CommitModal(props: {
             title={`${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: msg.trim() || '…' }) ?? ''}`}
           >
             {busy ? (
-              '⏳ 提交中…'
+              // ⏳ 提交中…
+              t('ops.commit.busy')
             ) : (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                 <IconOk size={13} />
-                确认提交
+                {/* 确认提交 */}
+                {t('ops.commit.confirm')}
               </span>
             )}
           </button>

@@ -1,5 +1,6 @@
 /** 文件系统视图 · 树形行渲染（fs 拆分批次 3）：列表/树/过滤树三模式共用的行组件（状态徽标/名称描述/行按钮） */
 import React from 'react';
+import { t } from '../../../shared/i18n/index.js';
 import { fmtSize, statusColor } from '../../shared/utils.js';
 import { CodeBadge, DirBadge, TreeConflictBadge } from '../../ui/badges.js';
 import { IconLock, MiniIcon } from '../../ui/icons.js';
@@ -87,7 +88,8 @@ export function TreeRow(props: {
       />
       <span className={`name ${row.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(row.isDir ? row.codes?.[0] : row.code) }}>
         {props.renaming ?? row.name}
-        {row.count ? <span className="count"> （{row.count} 项）</span> : null}
+        {/* （{n} 项） */}
+        {row.count ? <span className="count"> {t('fs.countItems', { n: row.count })}</span> : null}
         {props.desc && (
           <span className="dim small" style={{ marginLeft: 10, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             · {props.desc}
@@ -95,7 +97,8 @@ export function TreeRow(props: {
         )}
         {row.miss && (
           <span className="dim small" style={{ marginLeft: 10 }}>
-            · 已在磁盘上缺失，右键可还原
+            {/* 已在磁盘上缺失，右键可还原 */}
+            · {t('fs.missRowHint')}
           </span>
         )}
       </span>

@@ -5,29 +5,31 @@
 import React, { useEffect, useState } from 'react';
 import { ModalShell } from '../shell/modal-shell.js';
 import { get } from '../shared/api.js';
+import { t, type I18nKey } from '../../shared/i18n/index.js';
 
-/** 界面字体选项（value 为 CSS font-family 字符串；空 = 系统默认） */
-export const UI_FONTS: { label: string; value: string }[] = [
-  { label: '系统默认', value: '' },
-  { label: '微软雅黑', value: '"Microsoft YaHei", sans-serif' },
-  { label: '宋体', value: '"SimSun", serif' },
-  { label: '黑体', value: '"SimHei", sans-serif' },
-  { label: '苹方', value: '"PingFang SC", sans-serif' },
-  { label: '思源黑体', value: '"Noto Sans CJK SC", sans-serif' },
+/** 界面字体选项（value 为 CSS font-family 字符串；空 = 系统默认）。
+ *  labelKey 存 i18n key、渲染时才 t() —— 模块顶层求值会冻在首次语言（见 shared/i18n/index.ts 注释）。 */
+export const UI_FONTS: { labelKey: I18nKey; value: string }[] = [
+  { labelKey: 'look.font.systemDefault', value: '' },
+  { labelKey: 'look.font.yahei', value: '"Microsoft YaHei", sans-serif' },
+  { labelKey: 'look.font.simsun', value: '"SimSun", serif' },
+  { labelKey: 'look.font.simhei', value: '"SimHei", sans-serif' },
+  { labelKey: 'look.font.pingfang', value: '"PingFang SC", sans-serif' },
+  { labelKey: 'look.font.notoSansCJK', value: '"Noto Sans CJK SC", sans-serif' },
   // 楷体/思源宋体/仿宋/圆体：跨平台字体栈（KaiTi=Windows 微软楷体，STKaiti=macOS 华文楷体；Linux 无原生楷体则回退 serif）
-  { label: '楷体', value: '"KaiTi", "楷体", "STKaiti", serif' },
-  { label: '思源宋体', value: '"Noto Serif CJK SC", serif' },
-  { label: '仿宋', value: '"FangSong", "仿宋", "STFangsong", serif' },
-  { label: '圆体', value: '"HYZhongYuanB5", "YouYuan", "幼圆", sans-serif' },
+  { labelKey: 'look.font.kaiti', value: '"KaiTi", "楷体", "STKaiti", serif' }, // i18n-ignore: value 是 CSS font-family 名（系统字体名，翻了就找不到字体）
+  { labelKey: 'look.font.notoSerifCJK', value: '"Noto Serif CJK SC", serif' },
+  { labelKey: 'look.font.fangsong', value: '"FangSong", "仿宋", "STFangsong", serif' }, // i18n-ignore: 同上，value 是 CSS font-family 名
+  { labelKey: 'look.font.yuanti', value: '"HYZhongYuanB5", "YouYuan", "幼圆", sans-serif' }, // i18n-ignore: 同上，value 是 CSS font-family 名
 ];
 
 /** 代码字体选项（空 = 默认等宽栈） */
-export const CODE_FONTS: { label: string; value: string }[] = [
-  { label: '默认等宽', value: '' },
-  { label: 'JetBrains Mono', value: '"JetBrains Mono", Consolas, monospace' },
-  { label: 'Consolas', value: 'Consolas, monospace' },
-  { label: 'Courier New', value: '"Courier New", monospace' },
-  { label: 'Fira Code', value: '"Fira Code", Consolas, monospace' },
+export const CODE_FONTS: { labelKey: I18nKey; value: string }[] = [
+  { labelKey: 'look.font.monoDefault', value: '' },
+  { labelKey: 'look.font.jetbrainsMono', value: '"JetBrains Mono", Consolas, monospace' },
+  { labelKey: 'look.font.consolas', value: 'Consolas, monospace' },
+  { labelKey: 'look.font.courierNew', value: '"Courier New", monospace' },
+  { labelKey: 'look.font.firaCode', value: '"Fira Code", Consolas, monospace' },
 ];
 
 /** 字号范围（滑块） */
@@ -62,7 +64,7 @@ greet('svngit');`;
  * 原生 <select> 的 option 在 Chromium 下拉面板中悬浮不显示 tooltip，故用自绘。 */
 function FontSelect(props: {
   value: string;
-  options: { label: string; value: string }[];
+  options: { labelKey: I18nKey; value: string }[];
   /** 该字体系统不存在（灰显禁选） */
   unavailable: (v: string) => boolean;
   onPick: (v: string) => void;
@@ -76,7 +78,9 @@ function FontSelect(props: {
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
-  const curLabel = props.options.find((o) => o.value === props.value)?.label ?? '系统默认';
+  const cur = props.options.find((o) => o.value === props.value);
+  // 系统默认
+  const curLabel = cur ? t(cur.labelKey) : t('look.font.systemDefault');
   return (
     <div className="font-select" style={{ position: 'relative', width: '100%' }}>
       <button
@@ -99,8 +103,9 @@ function FontSelect(props: {
             const dis = props.unavailable(o.value);
             return (
               <div
-                key={o.label}
-                title={dis ? `系统没有「${o.label}」字体样式` : undefined}
+                key={o.labelKey}
+                // 系统没有「{name}」字体样式
+                title={dis ? t('look.font.unavailableTip', { name: t(o.labelKey) }) : undefined}
                 onClick={() => {
                   if (!dis) {
                     setOpen(false);
@@ -120,7 +125,7 @@ function FontSelect(props: {
                   color: dis ? 'var(--dim)' : undefined,
                 }}
               >
-                {o.label}
+                {t(o.labelKey)}
               </div>
             );
           })}
@@ -156,11 +161,13 @@ export function FontModal(props: {
   // 选中系统不存在的字体时的提示（字体选项全部显示，不可用字体选中后不生效并提示）
   const unavailable = (v: string) => !familyAvailable(v, systemFonts);
   return (
-    <ModalShell title="🔤 字体设置" width={520} onClose={props.onClose}>
+    // 🔤 字体设置
+    <ModalShell title={t('look.font.title')} width={520} onClose={props.onClose}>
       {/* 字号滑块 */}
       <div style={{ marginBottom: 16 }}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <span className="dim small">字号</span>
+          {/* 字号 */}
+          <span className="dim small">{t('look.font.size')}</span>
           <b>{props.fontSize}px</b>
         </div>
         <input
@@ -177,21 +184,24 @@ export function FontModal(props: {
           <span>{FONT_MAX}px</span>
         </div>
       </div>
-      {/* 界面字体 */}
       <div style={{ marginBottom: 12 }}>
-        <div className="dim small" style={{ marginBottom: 4 }}>界面字体</div>
+        {/* 界面字体 */}
+        <div className="dim small" style={{ marginBottom: 4 }}>{t('look.font.ui')}</div>
         <FontSelect value={props.uiFont} options={UI_FONTS} unavailable={unavailable} onPick={props.setUiFont} />
       </div>
       {/* 代码字体 */}
       <div style={{ marginBottom: 14 }}>
-        <div className="dim small" style={{ marginBottom: 4 }}>代码字体（差异对比 / 代码查看等区域）</div>
+        {/* 代码字体（差异对比 / 代码查看等区域） */}
+        <div className="dim small" style={{ marginBottom: 4 }}>{t('look.font.code')}</div>
         <FontSelect value={props.codeFont} options={CODE_FONTS} unavailable={unavailable} onPick={props.setCodeFont} />
       </div>
       {/* 实时预览（inline 字体直接应用，拖动滑块字号全局即时变化） */}
-      <div className="dim small" style={{ marginBottom: 4 }}>实时预览</div>
+      {/* 实时预览 */}
+      <div className="dim small" style={{ marginBottom: 4 }}>{t('look.font.preview')}</div>
       <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
         <div style={{ fontFamily: props.uiFont || undefined, marginBottom: 8 }}>
-          svn-git 文件版本管理 · AaBbCc · 你好世界 123
+          {/* svn-git 文件版本管理 · AaBbCc · 你好世界 123 */}
+          {t('look.font.previewText')}
         </div>
         <pre
           style={{

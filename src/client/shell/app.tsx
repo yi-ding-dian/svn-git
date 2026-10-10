@@ -15,8 +15,33 @@ import { Sidebar, type View } from './sidebar.js';
 import { IconOk, IconErr } from '../ui/icons.js';
 import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
+import { useLang } from '../shared/use-lang.js';
+import { t, type I18nKey } from '../../shared/i18n/index.js';
+
+/** 短操作进行中提示的文案 key（revert/delete/add 等没有独立进度窗，靠它防"点了没反应"）。
+ *  ⚠️ 存 key 而非文案：模块级常量直接存文案会冻在首次语言，渲染时才 t()。
+ *  放**模块级**而非组件内：对象字面量每次渲染都会重建，放进依赖数组会让 useCallback 每次都失效；
+ *  不进依赖又会被 react-hooks/exhaustive-deps 判为缺失。提到模块级两边都解决（且省一次重建）。 */
+const OP_BUSY_KEY: Record<Op, I18nKey> = {
+  add: 'shell.busy.add',
+  commit: 'shell.busy.commit',
+  update: 'shell.busy.update',
+  revert: 'shell.busy.revert',
+  delete: 'shell.busy.delete',
+  'fs-delete': 'shell.busy.fsDelete',
+  push: 'shell.busy.push',
+  move: 'shell.busy.move',
+  'fs-move': 'shell.busy.fsMove',
+};
+
+/** 用户主动中止（推送/更新时点了取消）：api.ts 抛出的 ApiError 带 `cancelled` 标志，
+ *  据此区分「用户取消」与「真失败」——**不要去比较消息文本**（消息随界面语言变）。 */
+const isCancelled = (e: unknown): boolean => (e as { cancelled?: boolean } | null)?.cancelled === true;
 
 export function App() {
+  // 订阅界面语言，**不接返回值**：这里只为让语言变化时整树重渲染。
+  // （Header 里另有一处拿 changeLang；若只在 Header 订阅，兄弟视图的 t() 不会重算）
+  useLang();
   const [info, setInfo] = useState<RepoInfo | null>(null);
   const repo = info?.type ? info : null;
   const [view, setView] = useState<View>('browse');
@@ -64,8 +89,9 @@ export function App() {
   useEffect(() => {
     if (!toast) return;
     // 成功 1.5s 淡出；失败停留 3 秒（够读完一行报错，又不至于赖着不走）
-    const t = setTimeout(() => setToast(''), toastErr ? 3000 : 1500);
-    return () => clearTimeout(t);
+    // 局部变量名用 timer 而非 t：本文件 import 了 i18n 的 t()，同名会遮蔽
+    const timer = setTimeout(() => setToast(''), toastErr ? 3000 : 1500);
+    return () => clearTimeout(timer);
   }, [toast, toastErr]);
   const [updateResult, setUpdateResult] = useState<{
     dir: string;
@@ -169,14 +195,16 @@ export function App() {
           const root = opened.repo?.root;
           const same = root && h.path.replace(/\/+$/, '') === root;
           if (root && !same) {
-            const msg = `「${h.path}」不是工作副本（目录可能已被删除或改名）。已打开它所属的仓库：${root}`;
+            // 「{path}」不是工作副本（目录可能已被删除或改名）。已打开它所属的仓库：{root}
+            const msg = t('shell.repo.notWC', { path: h.path, root });
             showToast(msg, true);
             setInvalidPaths((prev) => ({ ...prev, [h.path]: msg }));
           } else {
             setInvalidPaths((prev) => { const n = { ...prev }; delete n[h.path]; return n; }); // 路径有效：撤掉标记
           }
         } else {
-          showToast('打开失败：未识别为仓库', true);
+          // 打开失败：未识别为仓库
+          showToast(t('shell.repo.openFailed'), true);
         }
       } catch (e) {
         showToast((e as Error).message, true);
@@ -184,7 +212,7 @@ export function App() {
         setInvalidPaths((prev) => ({ ...prev, [h.path]: (e as Error).message }));
       }
     },
-    [refresh, loadHistory, showToast]
+    [refresh, loadHistory, showToast, setOnboard] // setOnboard 是 useState 的 setter，引用稳定
   );
 
   /** 内容区点击 = "还在用这个项目"：刷新它在最近项目里的时间戳（后端按 path 更新 lastOpened）。
@@ -206,23 +234,12 @@ export function App() {
 
   // 短操作进行中指示（revert/delete/add 无独立进度窗,防"点了没反应"）
   const [opBusy, setOpBusy] = useState<string | null>(null);
-  const OP_BUSY_TEXT: Record<Op, string> = {
-    add: '正在添加到版本库…',
-    commit: '正在提交…',
-    update: '正在更新…',
-    revert: '正在还原…',
-    delete: '正在删除…',
-    'fs-delete': '正在删除磁盘文件…',
-    push: '正在推送…',
-    move: '正在重命名…',
-    'fs-move': '正在重命名磁盘文件…',
-  };
   // 执行操作
   const runOp = useCallback(
     async (op: Op, paths: string[], keep = false): Promise<VcsResult> => {
       let r: VcsResult;
       // update/push 有独立进度窗,不重复显示短条
-      setOpBusy(op === 'add' || op === 'revert' || op === 'delete' || op === 'fs-delete' || op === 'move' || op === 'fs-move' ? OP_BUSY_TEXT[op] : null);
+      setOpBusy(op === 'add' || op === 'revert' || op === 'delete' || op === 'fs-delete' || op === 'move' || op === 'fs-move' ? t(OP_BUSY_KEY[op]) : null);
       try {
         if (op === 'add') r = await post.add(paths);
         else if (op === 'commit') r = await post.commit(paths, '');
@@ -235,7 +252,8 @@ export function App() {
         else r = await post.push();
       } catch (e) {
         // 网络失败等异常:给用户可见反馈,避免 unhandled rejection 后"点了没反应"
-        const msg = (e as Error).message || '操作失败';
+        // 操作失败
+        const msg = (e as Error).message || t('shell.op.failed');
         showToast(msg, true);
         setOpBusy(null);
         return { ok: false, message: msg };
@@ -250,7 +268,7 @@ export function App() {
       if (r.authError) setModal({ type: 'login' });
       return r;
     },
-    [refresh, showToast] // setOpBusy/OP_BUSY_TEXT 为稳定 setter/常量,无需入依赖
+    [refresh, showToast] // setOpBusy 为稳定 setter,无需入依赖（OP_BUSY_KEY 已提到模块级）
   );
 
   // 推送：进度窗口(转圈可取消) + 认证引导（GitHub token / 服务器密码）；定义在 handleAction 之前供其依赖
@@ -277,7 +295,8 @@ export function App() {
           title: (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <IconErr size={16} />
-              推送失败
+              {/* 推送失败 */}
+              {t('shell.push.failedTitle')}
             </span>
           ),
           message: (
@@ -285,14 +304,16 @@ export function App() {
               {r.message}
             </div>
           ),
-          confirmLabel: '知道了',
+          // 知道了
+          confirmLabel: t('ui.modal.gotIt'),
           action: () => setModal(null),
         });
       }
     } catch (e) {
-      const msg = (e as Error).message;
-      // 「已取消」是用户主动中止，不算失败——不标红
-      showToast(msg === '已取消' ? '已取消推送' : `推送失败: ${msg}`, msg !== '已取消');
+      // 用户主动中止（cancelled）不算失败——不标红
+      const cancelled = isCancelled(e);
+      // 已取消推送 / 推送失败: {msg}
+      showToast(cancelled ? t('shell.push.canceled') : t('shell.push.failMsg', { msg: (e as Error).message }), !cancelled);
     } finally {
       setPushing(false);
       pushAbortRef.current = null;
@@ -311,7 +332,8 @@ export function App() {
       // 二进制文件（Word/PDF/图片等）：不支持文本对比，提示而不进入差异视图
       if (path && isBinaryFile(path)) {
         // 用户要的操作没做成——按错误态显示（停留久一点，别一闪而过）
-        showToast('二进制文件，不支持文本对比', true);
+        // 二进制文件，不支持文本对比
+        showToast(t('shell.diff.binary'), true);
         return;
       }
       setDiffFrom(view);
@@ -332,13 +354,17 @@ export function App() {
       const isD = code === 'D';
       setModal({
         type: 'confirm',
-        title: isA ? '取消添加确认' : isD ? '撤销删除确认' : '还原确认',
+        // 取消添加确认 / 撤销删除确认 / 还原确认
+        title: isA ? t('shell.revert.cancelAddTitle') : isD ? t('shell.revert.undoDeleteTitle') : t('shell.revert.title'),
         message: isA ? (
-          <>将<b>取消添加到版本库</b>：<b>{dir}</b> 变回未版本化（?），磁盘文件保留。确认？</>
+          // 将 / 取消添加到版本库 / ： /  变回未版本化（?），磁盘文件保留。确认？
+          <>{t('shell.revert.lead')}<b>{t('shell.revert.cancelAddBold')}</b>{t('shell.revert.sep')}<b>{dir}</b>{t('shell.revert.cancelAddTail')}</>
         ) : isD ? (
-          <>将<b>撤销删除</b>：<b>{dir}</b> 回到版本库内容。确认？</>
+          // 将 / 撤销删除 / ： /  回到版本库内容。确认？
+          <>{t('shell.revert.lead')}<b>{t('shell.revert.undoDeleteBold')}</b>{t('shell.revert.sep')}<b>{dir}</b>{t('shell.revert.undoDeleteTail')}</>
         ) : (
-          <>将放弃对 <b>{dir}</b> 的本地修改，不可恢复。确认还原？</>
+          // 将放弃对  /  的本地修改，不可恢复。确认还原？
+          <>{t('shell.revert.discardLead')}<b>{dir}</b>{t('shell.revert.discardTail')}</>
         ),
         action: () => void runOp('revert', paths),
         confirmCmd: cmdOfRepo(repo?.type ?? null, 'revert', { paths: paths.join(' ') }),
@@ -375,7 +401,8 @@ export function App() {
         }
       }
       if (list.length > 0) {
-        setModal({ type: 'revert-confirm', dir, dirLabel: paths.length > 1 ? `选择的 ${list.length} 项` : dir, items: list });
+        // 选择的 {n} 项
+        setModal({ type: 'revert-confirm', dir, dirLabel: paths.length > 1 ? t('shell.revert.selectedCount', { n: list.length }) : dir, items: list });
         return;
       }
       fallback(items.find((i) => i.path === dir)?.code);
@@ -396,20 +423,26 @@ export function App() {
         } catch (e) {
           // 冲突检查未完成（网络抖动/服务器超时等）：不静默放行——明示本次提交不经过行级冲突拦截
           if (modalRef.current?.type !== back.type) return;
-          const msg = (e as Error).message || '未知错误';
+          // 未知错误
+          const msg = (e as Error).message || t('shell.unknownError');
           setModal({
             type: 'confirm',
-            title: '⚠ 冲突检查未完成',
+            // ⚠ 冲突检查未完成
+            title: t('shell.commitCheck.incompleteTitle'),
             message: (
               <>
-                提交前的冲突检查<b>未能完成</b>（{msg}）。本次提交将<b>不经过行级冲突拦截</b>：
+                {/* 提交前的冲突检查 / 未能完成 / （{msg}）。本次提交将 / 不经过行级冲突拦截 / ： */}
+                {t('shell.commitCheck.incLead')}<b>{t('shell.commitCheck.incBold')}</b>{t('shell.commitCheck.incMid', { msg })}<b>{t('shell.commitCheck.incBold2')}</b>{t('shell.commitCheck.incTail')}
                 <div className="error mt8" style={{ lineHeight: 1.8 }}>
-                  若服务器上有他人修改与你的修改冲突，提交可能失败或覆盖对方修改。请先更新后再提交。
+                  {/* 若服务器上有他人修改与你的修改冲突，提交可能失败或覆盖对方修改。请先更新后再提交。 */}
+                  {t('shell.commitCheck.incWarn')}
                 </div>
               </>
             ),
-            confirmLabel: '仍然提交',
-            secondaryLabel: '取消',
+            // 仍然提交
+            confirmLabel: t('shell.commitCheck.submitAnyway'),
+            // 取消
+            secondaryLabel: t('common.cancel'),
             action: () => setModal(back),
             secondaryAction: () => setModal(null),
           });
@@ -421,30 +454,40 @@ export function App() {
           // ⚠ 行冲突：禁止提交，引导手动处理（备份→删除→更新→手动合并）
           setModal({
             type: 'confirm',
-            title: '⚠ 存在行冲突，禁止提交',
+            // ⚠ 存在行冲突，禁止提交
+            title: t('shell.commitCheck.clashTitle'),
             // 宽度随最长文件名自适应
             width: pathAutoWidth(clash.reduce((m, f) => Math.max(m, f.path.length), 0), 520, 1200),
             message: (
               <>
-                以下文件与服务器版本存在<b>行冲突</b>，请先手动处理后再提交：
+                {/* 以下文件与服务器版本存在 / 行冲突 / ，请先手动处理后再提交： */}
+                {t('shell.commitCheck.clashLeadA')}<b>{t('shell.commitCheck.clashLeadBold')}</b>{t('shell.commitCheck.clashLeadB')}
                 <div className="error mt8" style={{ minHeight: 100, overflow: 'auto' }}>
                   {clash.map((f) => (
                     <div key={f.path} className="mono">
-                      ⚠ {f.path}：{f.lines.map((l) => (l === 0 ? '文件开头' : `第 ${l} 行`)).join('、')} 冲突
+                      {/* ⚠ {path}：{lines} 冲突 / 文件开头 / 第 {n} 行 / 、 */}
+                      {t('shell.commitCheck.clashRow', { path: f.path, lines: f.lines.map((l) => (l === 0 ? t('shell.commitCheck.fileStart') : t('shell.commitCheck.line', { n: l }))).join(t('shell.listSep')) })}
                     </div>
                   ))}
                 </div>
                 <div className="dim small mt8" style={{ lineHeight: 1.8 }}>
-                  处理步骤：
-                  <br />1. 点「查看对比」确认对方改了哪里、你改了哪里
-                  <br />2. <b>先备份你的修改</b>（复制内容保存到本地）
-                  <br />3. 删除该文件，再点「更新」获取服务器最新版本
-                  <br />4. 按冲突位置手动合并两边内容 → 重新提交
+                  {/* 处理步骤： */}
+                  {t('shell.commitCheck.stepsLead')}
+                  {/* 1. 点「查看对比」确认对方改了哪里、你改了哪里 */}
+                  <br />{t('shell.commitCheck.step1')}
+                  {/* 2.  / 先备份你的修改 / （复制内容保存到本地） */}
+                  <br />{t('shell.commitCheck.step2Lead')}<b>{t('shell.commitCheck.step2Bold')}</b>{t('shell.commitCheck.step2Tail')}
+                  {/* 3. 删除该文件，再点「更新」获取服务器最新版本 */}
+                  <br />{t('shell.commitCheck.step3')}
+                  {/* 4. 按冲突位置手动合并两边内容 → 重新提交 */}
+                  <br />{t('shell.commitCheck.step4')}
                 </div>
               </>
             ),
-            confirmLabel: '知道了',
-            secondaryLabel: '查看对比',
+            // 知道了
+            confirmLabel: t('ui.modal.gotIt'),
+            // 查看对比
+            secondaryLabel: t('shell.viewDiff'),
             action: () => setModal(null),
             secondaryAction: () => {
               setModal({ type: 'remote-conflicts', files: clash }); // 带 lines 一起传，弹窗才能标出冲突行
@@ -459,18 +502,21 @@ export function App() {
           if (same.length === 0) return;
           setModal({
             type: 'confirm',
-            title: '⚠ 服务器有新版本',
+            // ⚠ 服务器有新版本
+            title: t('shell.commitCheck.serverNewTitle'),
             // 宽度随最长文件名自适应
             width: pathAutoWidth(same.reduce((m, p) => Math.max(m, p.length), 0), 520, 1200),
             message: (
               <>
-                服务器有 <b>{pf.behind}</b> 个新提交，以下 <b>{same.length}</b> 个待提交文件服务器也有新版本，<b>可能冲突</b>（双击查看差异）：
+                {/* 服务器有  /  个新提交，以下  /  个待提交文件服务器也有新版本， / 可能冲突 / （双击查看差异）： */}
+                {t('shell.commitCheck.serverNewA')}<b>{pf.behind}</b>{t('shell.commitCheck.serverNewB', { n: pf.behind })}<b>{same.length}</b>{t('shell.commitCheck.serverNewC')}<b>{t('shell.commitCheck.serverNewBold')}</b>{t('shell.commitCheck.serverNewD')}
                 <div className="vcs-list" style={{ minHeight: 120, marginTop: 8 }}>
                   {same.map((f) => (
                     <div
                       key={f}
                       className="vcs-row"
-                      title="双击查看差异"
+                      // 双击查看差异
+                      title={t('shell.dblClickDiff')}
                       onDoubleClick={() => {
                         setModal(null);
                         gotoDiff(f);
@@ -479,14 +525,17 @@ export function App() {
                       <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {f}
                       </span>
-                      <span className="dim small nowrap">双击查看差异</span>
+                      {/* 双击查看差异 */}
+                      <span className="dim small nowrap">{t('shell.dblClickDiff')}</span>
                     </div>
                   ))}
                 </div>
               </>
             ),
-            confirmLabel: '继续提交',
-            secondaryLabel: '先更新',
+            // 继续提交
+            confirmLabel: t('shell.commitCheck.continueSubmit'),
+            // 先更新
+            secondaryLabel: t('shell.commitCheck.updateFirst'),
             action: () => setModal(back),
             secondaryAction: () => {
               setModal(null);
@@ -497,6 +546,7 @@ export function App() {
       })();
     },
     // doUpdateDir 为稳定引用，闭包捕获即可（与 handleAction 同模式；不放入依赖避免使用前声明）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [gotoDiff],
   );
 
@@ -516,15 +566,19 @@ export function App() {
         // 磁盘删除（未版本化 ? / 忽略 I 文件/目录）：仅删本地文件、不做版本库操作
         setModal({
           type: 'confirm',
-          title: '删除磁盘文件',
+          // 删除磁盘文件
+          title: t('shell.fsDelete.title'),
           danger: true,
           message: (
             <div>
-              将从<b>磁盘永久删除</b> {paths.length} 项（不在版本库中的文件）。
-              <div style={{ marginTop: 6 }}>不可恢复，确认删除？</div>
+              {/* 将从 / 磁盘永久删除 /  {n} 项（不在版本库中的文件）。 */}
+              {t('shell.fsDelete.lead')}<b>{t('shell.fsDelete.bold')}</b>{t('shell.fsDelete.tail', { n: paths.length })}
+              {/* 不可恢复，确认删除？ */}
+              <div style={{ marginTop: 6 }}>{t('shell.fsDelete.warn')}</div>
             </div>
           ),
-          confirmLabel: '删除磁盘文件',
+          // 删除磁盘文件
+          confirmLabel: t('shell.fsDelete.confirm'),
           action: () => void runOp('fs-delete', paths),
         });
       } else if (op === 'delete') {
@@ -532,16 +586,20 @@ export function App() {
         // 缺失条目（磁盘已删未走移除流程）同走此入口：保持缺失状态，仅从版本库删除记录
         setModal({
           type: 'confirm',
-          title: '从版本库移除',
+          // 从版本库移除
+          title: t('shell.remove.title'),
           message: (
             <div>
-              将<b>从版本库移除</b> {paths.length} 项（<b>磁盘文件不受影响</b>；提交后从版本库删除）。
+              {/* 将 / 从版本库移除 /  {n} 项（ / 磁盘文件不受影响 / ；提交后从版本库删除）。 */}
+              {t('shell.remove.lead')}<b>{t('shell.remove.bold')}</b>{t('shell.remove.tail', { n: paths.length })}<b>{t('shell.remove.bold2')}</b>{t('shell.remove.tail2')}
               <div className="dim small" style={{ marginTop: 6, lineHeight: 1.8 }}>
-                · 提交前可右键「还原」取消移除；版本库历史保留
+                {/* · 提交前可右键「还原」取消移除；版本库历史保留 */}
+                {t('shell.remove.note')}
               </div>
             </div>
           ),
-          confirmLabel: '从版本库移除',
+          // 从版本库移除
+          confirmLabel: t('shell.remove.confirm'),
           action: () => void runOp('delete', paths, true),
           confirmCmd: cmdOfRepo(repo?.type ?? null, 'remove_keep', { paths: paths.join(' ') }),
         });
@@ -552,6 +610,9 @@ export function App() {
         void runOp(op, paths);
       }
     },
+    // confirmRevert 是普通函数（每次渲染都是新引用）、checkCommitBackground 依赖较杂：
+    // 入依赖会让本回调每次渲染都重建，进而牵连依赖它的 handleAction 等。闭包捕获即可。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [runOp, gotoDiff, doPush, repo]
   );
 
@@ -565,7 +626,8 @@ export function App() {
       updateAbortRef.current = ac;
       try {
         const r = await post.update(dir || undefined, ac.signal);
-        setUpdateResult({ dir: dir || '（仓库根）', ok: r.ok, message: r.message, files: r.files, warnings: r.warnings });
+        // （仓库根）
+        setUpdateResult({ dir: dir || t('shell.repoRoot'), ok: r.ok, message: r.message, files: r.files, warnings: r.warnings });
         if (r.ok) {
           refresh();
           checkRemote(); // 更新完成立即刷新远程提示条（否则要等下一轮 2 分钟轮询）
@@ -573,8 +635,9 @@ export function App() {
         }
         if (r.authError) setModal({ type: 'login' });
       } catch (e) {
-        const msg = (e as Error).message;
-        showToast(msg === '已取消' ? '已取消更新' : `更新失败: ${msg}`, msg !== '已取消');
+        const cancelled = isCancelled(e);
+        // 已取消更新 / 更新失败: {msg}
+        showToast(cancelled ? t('shell.update.canceled') : t('shell.update.failMsg', { msg: (e as Error).message }), !cancelled);
       } finally {
         setUpdating(false);
         updateAbortRef.current = null;
@@ -607,7 +670,8 @@ export function App() {
         title: (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <IconErr size={16} />
-            提交失败
+            {/* 提交失败 */}
+            {t('shell.commit.failed')}
           </span>
         ),
         message: (
@@ -617,13 +681,15 @@ export function App() {
             </div>
             {aheadFiles.length > 0 && (
               <>
-                <div className="small mt8">被他人领先提交（{aheadFiles.length} 项）：</div>
+                {/* 被他人领先提交（{n} 项）： */}
+                <div className="small mt8">{t('shell.commit.aheadLead', { n: aheadFiles.length })}</div>
                 <div className="vcs-list" style={{ marginTop: 8 }}>
                   {aheadFiles.map((f) => (
                     <div
                       key={f}
                       className="vcs-row"
-                      title="双击查看差异"
+                      // 双击查看差异
+                      title={t('shell.dblClickDiff')}
                       onDoubleClick={() => {
                         setModal(null);
                         gotoDiff(f);
@@ -632,7 +698,8 @@ export function App() {
                       <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {f}
                       </span>
-                      <span className="dim small nowrap">双击查看差异</span>
+                      {/* 双击查看差异 */}
+                      <span className="dim small nowrap">{t('shell.dblClickDiff')}</span>
                     </div>
                   ))}
                 </div>
@@ -640,9 +707,11 @@ export function App() {
             )}
           </>
         ),
-        confirmLabel: '知道了',
+        // 知道了
+        confirmLabel: t('ui.modal.gotIt'),
         action: () => setModal(null),
-        secondaryLabel: isOutOfDate ? '先更新' : undefined,
+        // 先更新
+        secondaryLabel: isOutOfDate ? t('shell.commitCheck.updateFirst') : undefined,
         secondaryAction: isOutOfDate ? () => { setModal(null); void doUpdateDir(''); } : undefined,
       });
     },
@@ -686,10 +755,13 @@ export function App() {
           const externals = st.items.filter((i) => i.code === 'X' && inScope(i.path)).length;
           showToast(
             unversioned > 0
-              ? `当前目录下没有已版本化的变更；有 ${unversioned} 个未版本化文件（?），需先右键「添加到版本库」才能提交`
+              // 当前目录下没有已版本化的变更；有 {n} 个未版本化文件（?），需先右键「添加到版本库」才能提交
+              ? t('shell.commitSelect.noChangedWithUnversioned', { n: unversioned })
               : externals > 0
-                ? `当前目录下只有外部引用（${externals} 个，链环图标）——它里面是另一个仓库路径的内容，请到那个目录提交`
-                : '当前目录下没有变更文件'
+                // 当前目录下只有外部引用（{n} 个，链环图标）——它里面是另一个仓库路径的内容，请到那个目录提交
+                ? t('shell.commitSelect.onlyExternals', { n: externals })
+                // 当前目录下没有变更文件
+                : t('shell.commitSelect.noChanges')
           );
           return;
         }
@@ -699,9 +771,12 @@ export function App() {
         // 与"提交此文件"一致的提交前安全：行冲突/远程检查后台并行（用户勾选期间完成，关窗则丢弃）
         checkCommitBackground(items.map((i) => i.path), { type: 'commit-select', dir, dirLabel, items, stagedOnly });
       } catch (e) {
-        showToast(`读取变更失败: ${(e as Error).message}`, true);
+        // 读取变更失败: {msg}
+        showToast(t('shell.commitSelect.readFailed', { msg: (e as Error).message }), true);
       }
     },
+    // checkCommitBackground 是 useCallback，引用随其自身依赖变动；入依赖会让本回调频繁重建
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [showToast]
   );
 
@@ -724,7 +799,8 @@ export function App() {
         }
         if (r.authError) setModal({ type: 'login' });
       } catch (e) {
-        showCommitFail(`提交失败: ${(e as Error).message}`, paths);
+        // 提交失败: {msg}
+        showCommitFail(t('shell.commit.failMsg', { msg: (e as Error).message }), paths);
       }
     },
     [refresh, repo?.type, showCommitFail, showToast]
@@ -736,8 +812,9 @@ export function App() {
   useEffect(() => {
     if (!updating && !pushing) return;
     setUpdateElapsed(0);
-    const t = setInterval(() => setUpdateElapsed((s) => s + 1), 1000);
-    return () => clearInterval(t);
+    // 局部变量名用 timer 而非 t：本文件 import 了 i18n 的 t()，同名会遮蔽
+    const timer = setInterval(() => setUpdateElapsed((s) => s + 1), 1000);
+    return () => clearInterval(timer);
   }, [updating, pushing]);
 
   const [diffFrom, setDiffFrom] = useState<View>('browse');
@@ -771,7 +848,8 @@ export function App() {
           style={{ background: 'rgba(88,166,255,.12)', color: 'var(--accent)', borderBottomColor: 'var(--accent)' }}
         >
           <span style={{ flex: 1, minWidth: 0 }}>{onboard}</span>
-          <button className="mini" onClick={() => setOnboard(null)}>知道了</button>
+          {/* 知道了 */}
+          <button className="mini" onClick={() => setOnboard(null)}>{t('ui.modal.gotIt')}</button>
         </div>
       )}
 
@@ -787,19 +865,24 @@ export function App() {
           <span>
             {remoteHint.risk > 0 ? (
               <>
-                ⚠ <b>有 {remoteHint.risk} 个文件你和对方改了同一处，更新时会冲突</b>
-                {remoteHint.behind > 0 ? `（远程 ${remoteHint.behind} 个新提交 · 共 ${remoteFileCount} 个文件）` : ''}
+                {/* 有 {n} 个文件你和对方改了同一处，更新时会冲突 */}
+                ⚠ <b>{t('shell.remote.riskBold', { n: remoteHint.risk })}</b>
+                {/* （远程 {n} 个新提交 /  · 共 {n} 个文件） */}
+                {remoteHint.behind > 0 ? `${t('shell.remote.riskSuffixA', { n: remoteHint.behind })}${t('shell.remote.riskSuffixB', { n: remoteFileCount })}` : ''}
               </>
             ) : (
-              <>🔔 远程有 <b>{remoteHint.behind}</b> 个新提交 · 共 <b>{remoteFileCount}</b> 个文件</>
+              // 🔔 远程有  /  个新提交 · 共  /  个文件
+              <>{t('shell.remote.newA')}<b>{remoteHint.behind}</b>{t('shell.remote.newB', { n: remoteHint.behind })}<b>{remoteFileCount}</b>{t('shell.remote.newC', { n: remoteFileCount })}</>
             )}
-            {remoteHint.locked > 0 ? ` · ${remoteHint.locked} 个文件被他人锁定` : ''}
+            {/*  · {n} 个文件被他人锁定 */}
+            {remoteHint.locked > 0 ? t('shell.remote.lockedSuffix', { n: remoteHint.locked }) : ''}
           </span>
           <span className="grow" />
           {/* 远程新提交涉及的文件总数（remoteLogs 去重；无 logs 时用 updatedFiles 数） */}
           {remoteHint.risk > 0 && (
             <button className="mini" onClick={() => setModal({ type: 'remote-conflicts', files: riskFiles })}>
-              查看对比
+              {/* 查看对比 */}
+              {t('shell.viewDiff')}
             </button>
           )}
           {/* 去查看：弹窗列出新提交涉及的文件，确认后即更新 */}
@@ -808,11 +891,12 @@ export function App() {
             onClick={() =>
               setModal({
                 type: 'confirm',
-                title: `远程有 ${remoteHint.behind} 个新提交 · 共 ${
-                  remoteHint.remoteLogs?.length
+                // 远程有 {n} 个新提交 /  · 共 {n} 个文件
+                title: `${t('shell.remote.titleA', { n: remoteHint.behind })}${t('shell.remote.titleB', {
+                  n: remoteHint.remoteLogs?.length
                     ? new Set(remoteHint.remoteLogs.flatMap((l) => l.changed.map((c) => c.path))).size
-                    : (remoteHint.files?.length ?? 0)
-                } 个文件`,
+                    : (remoteHint.files?.length ?? 0),
+                })}`,
                 // 宽度随最长文件名自适应（与提交确认弹窗同规则）
                 width: pathAutoWidth((remoteHint.files ?? []).reduce((m, p) => Math.max(m, p.length), 0), 520, 1200),
                 message: (
@@ -849,12 +933,14 @@ export function App() {
                             </span>
                           </div>
                         ))}
-                        {(remoteHint.files ?? []).length === 0 && <div className="dim" style={{ padding: 10 }}>（无法获取文件列表）</div>}
+                        {/* （无法获取文件列表） */}
+                        {(remoteHint.files ?? []).length === 0 && <div className="dim" style={{ padding: 10 }}>{t('shell.remote.noFiles')}</div>}
                       </div>
                     )}
                   </>
                 ),
-                confirmLabel: '更新',
+                // 更新
+                confirmLabel: t('shell.tool.update'),
                 confirmCmd: repo?.type === 'svn' ? 'svn update' : 'git pull',
                 action: () => {
                   setModal(null);
@@ -863,7 +949,8 @@ export function App() {
               })
             }
           >
-            去查看
+            {/* 查看对比 */}
+            {t('shell.viewDiff')}
           </button>
         </div>
       )}
@@ -872,15 +959,18 @@ export function App() {
       {envMissing && !modal && (
         <div className="env-banner">
           <span>
-            ⚠ 未检测到{missingSvn ? ' SVN' : ''}{missingGit ? ' Git' : ''}
             {missingSvn && missingGit
-              ? '，无法操作任何版本库'
+              // ⚠ 未检测到 SVN 和 Git，无法操作任何版本库
+              ? t('shell.env.missingBoth')
               : missingSvn
-                ? '，无法操作 SVN 仓库（使用 Git 不受影响）'
-                : '，无法操作 Git 仓库（使用 SVN 不受影响）'}
+                // ⚠ 未检测到 SVN，无法操作 SVN 仓库（使用 Git 不受影响）
+                ? t('shell.env.missingSvn')
+                // ⚠ 未检测到 Git，无法操作 Git 仓库（使用 SVN 不受影响）
+                : t('shell.env.missingGit')}
           </span>
           <span className="grow" />
-          <button className="mini primary" onClick={() => setModal({ type: 'env' })}>查看指引</button>
+          {/* 查看指引 */}
+          <button className="mini primary" onClick={() => setModal({ type: 'env' })}>{t('shell.env.guide')}</button>
         </div>
       )}
 

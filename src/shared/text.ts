@@ -17,6 +17,8 @@
  *  编码方向：Node 只有解码器（TextDecoder），**没有** GB18030 编码器（TextEncoder 忽略参数、永远 UTF-8），
  *  所以用解码器反查出一张「Unicode → GBK 字节」表（实测 23939 条、建表 13ms，惰性建一次）。 */
 
+import { t } from './i18n/index.js';
+
 export type TextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be' | 'gb18030';
 
 // ignoreBOM: true = 保留 BOM 字符本身（命名反直觉，但这是 WHATWG 的定义）。
@@ -135,7 +137,9 @@ export function encodeText(str: string, enc: TextEncoding): Buffer {
     }
     const code = table.get(ch);
     if (code === undefined) {
-      throw new Error(`GBK 无法表示字符「${ch}」(U+${cp.toString(16).toUpperCase().padStart(4, '0')})`);
+      const cpHex = cp.toString(16).toUpperCase().padStart(4, '0');
+      // GBK 无法表示字符「{ch}」(U+{code})
+      throw new Error(t('common.gbkUnencodable', { ch, code: cpHex }));
     }
     if (code > 0xff) out[n++] = code >> 8;
     out[n++] = code & 0xff;
