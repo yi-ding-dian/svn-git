@@ -1,0 +1,1827 @@
+/** 文件夹浏览视图：列表/树/浏览(网格)三模式，支持键盘导航（↑↓ 选择、→/Enter 进入、← 返回） */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry, type FilterTreeNode } from '../shared/api.js';
+import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconRefresh, IconDownload, IconFolder, IconList, IconTree, IconGrid, IconHome, IconUp, IconUpload, IconHistory, IconIgnore, IconStar, IconCopy, IconFile, IconExternal, IconRename, GridIcon, MiniIcon } from '../ui/icons.js';
+import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
+import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
+import { multiRevertName, renameableCode, removableFromRepo, renameItem, joinPaths, filterEntries, relOfName, revertName, type Filter, type Mode, type VisibleRow } from './utils.js';
+import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } from './menus.js';
+import { useFileSearch, FsSearchBox } from './search.js';
+import { useFilterTree } from './filter-tree.js';
+import { useIgnoreFlow } from './use-ignore-flow.js';
+import { useFsKeyboard } from './use-fs-keyboard.js';
+import { useFsLocate } from './use-fs-locate.js';
+import { TreeRow } from './views/rows.js';
+import { GridItem, FileTipCard } from './views/grid.js';
+import { ThumbIcon } from './views/thumb.js';
+import { flashBreadcrumbs } from '../ui/motion.js';
+import { compareName } from '../../shared/types.js';
+import { useDirPreload } from './use-dir-preload.js';
+import { WcNotice } from './wc-notice.js';
+import { useWcConflicts, useConflictLookup, tcState, conflictPaths } from './use-wc-conflicts.js';
+import { useDropUpload, useCopyPaste, moveItemsTo, MOVE_MIME, type ConflictChoice, type ClipItem } from './use-file-transfer.js';
+import { UploadConflictModal } from './upload-conflict.js';
+import { ModuleIndexDialog } from './module-index.js';
+
+/** 磁盘存在且可改名（renameItem 内部按状态分流：?/I 走磁盘改名，其余走 svn/git move）：
+ *  干净 / M / A / C / ? / I（D 已删调度、R/~/U 调度中或磁盘不在 → 均不可改名） */
+/** 有版本库内容（可从版本库移除，非添加/删除调度中）：干净 / M / C（A 添加调度用"还原=取消添加"，D 删除调度不再移除） */
+/** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
+import { IgnoreModal } from './ignore-modal.js';
+import { FavDirsModal } from './fav-dirs.js';
+import { fmtSize, statusColor, translateVcsError, isBinaryFile, isImageFile } from '../shared/utils.js';
+import { cmdOfRepo } from '../shared/cmd-preview.js';
+/** 命令预览: 多路径缩写（前 3 个 + …） */
+import { ModalShell } from '../shell/modal-shell.js';
+import { FormRow } from '../ui/ui.js';
+import { ConfirmModal } from '../ui/prompt.js';
+import { PreviewPane } from './preview-pane.js';
+
+interface Props {
+  tick: number;
+  /** 当前视图是否激活（视图常驻挂载、display 切换；键盘监听只在激活时生效，防止隐藏时按键穿透误改状态） */
+  active: boolean;
+  repoType: 'svn' | 'git';
+  /** 仓库根（切换仓库时重置浏览位置，避免残留上次目录） */
+  repoRoot?: string | null;
+  /** 操作范围(相对仓库根):大仓库打开的子项目,浏览从这里开始 */
+  startRel?: string | null;
+  onAction: (op: 'add' | 'revert' | 'delete' | 'commit' | 'fs-delete' | 'move' | 'fs-move', paths: string[], keep?: boolean) => void;
+  onDiff: (path: string) => void;
+  onLog: (path: string) => void;
+  onCommitSelect: (dir: string, dirLabel: string) => void;
+  onUpdateDir: (dir: string) => void;
+  onToast: (msg: string, err?: boolean) => void;
+  /** 当前浏览目录变化时上报（App 记住"文件夹视图停在哪"，切「历史」时按它过滤） */
+  onDirChange?: (dir: string) => void;
+}
+
+
+
+/** 行操作按钮（带彩色图标，统一尺寸） */
+function ActionBtn(props: {
+  icon: React.ReactNode;
+  label: string;
+  title?: string;
+  danger?: boolean;
+  primary?: boolean;
+  cmd?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`act-btn ${props.danger ? 'danger' : ''} ${props.primary ? 'primary' : ''}`}
+      title={props.cmd ? `${props.title ?? props.label}\n${props.cmd}` : props.title ?? props.label}
+      onClick={props.onClick}
+    >
+      {props.icon}
+      <span>{props.label}</span>
+    </button>
+  );
+}
+
+export function FsView(props: Props) {
+  const [dir, setDir] = useState(props.startRel ?? ''); // 列表模式当前目录(初始 = 操作范围,大仓库子项目)
+  const [data, setData] = useState<FsData | null>(null); // 列表模式数据
+  const [error, setError] = useState('');
+  const [sel, setSel] = useState<FsEntry | null>(null);
+  // 预览目标（文本/图片等实际内容与 md/blame/搜索状态都在 PreviewPane 内；此处只做开关与目标，供目录切换/刷新时关闭）
+  const [preview, setPreview] = useState<{ name: string; rel: string; img?: boolean; code?: string } | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const [filters, setFilters] = useState<Set<Filter>>(new Set());
+  const [mode, setMode] = useState<Mode>('browse');
+  // 树冲突诊断的声明在下面 nodeData 之后：诊断基准要按模式区分（树模式的行 rel 相对仓库根）
+  // 过滤激活时记住原视图（取消过滤恢复）
+  const prevModeRef = useRef<Mode>(mode);
+  type CtxItem = CtxMenuItem; // 右键菜单项（公共类型见 context-menu.tsx）
+  const [ctx, setCtx] = useState<{ x: number; y: number; items: CtxItem[] } | null>(null);
+  // 右键选中锁定：右键后条目保持选中（hover 不清），点击其他地方/菜单关闭才取消
+  const [ctxLocked, setCtxLocked] = useState(false);
+  // 菜单随悬停消失：延迟关闭计时器 + 右键的条目 rel（空白右键为 null，用于判断鼠标是否回到原条目）
+  const ctxHideTimer = useRef<ReturnType<typeof setTimeout>>();
+  const ctxRelRef = useRef<string | null>(null);
+  // 多选：rel 集合（Ctrl 点选 / Shift 范围选 / 浏览模式拖拽框选）；右键项在集合内时菜单作用于整个集合
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const shiftAnchorRef = useRef<string | null>(null); // Shift 范围选择锚点（上次单击项）
+  // 浏览模式拖拽框选：拖拽起点 / 框选矩形（ref 直接操作 DOM，避免 mousemove 高频 re-render 卡顿） / 本次是否发生过拖动（供 click 判断，避免空白点击清空误伤框选结果）
+  const selBoxRef = useRef<HTMLDivElement | null>(null);
+  const selDragRef = useRef<{ startX: number; startY: number } | null>(null);
+  // 框选 mouseup 丢失兜底（松手移出窗口/松开在菜单遮罩上等）：任何 position 清除拖拽状态并隐藏矩形，
+  // 避免"没按左键移动鼠标也画出框选"；grid 内正常松开由 grid 的 onMouseUp 先行处理，此兜底无副作用
+  useEffect(() => {
+    const onWinUp = () => {
+      if (selDragRef.current) {
+        selDragRef.current = null;
+        if (selBoxRef.current) selBoxRef.current.style.display = 'none';
+      }
+    };
+    window.addEventListener('mouseup', onWinUp);
+    return () => window.removeEventListener('mouseup', onWinUp);
+  }, []);
+  const lastWasDragRef = useRef(false);
+  /** 忽略写入去向的中文说明（JSX 用；状态本身在 useIgnoreFlow 里） */
+  const IGNORE_WHERE_LABEL: Record<'gitignore' | 'global' | 'exclude', string> = {
+    gitignore: '仓库 .gitignore（随仓库分发）',
+    global: '全局忽略（仅本机，所有仓库生效）',
+    exclude: '.git/info/exclude（仅本机本仓库）',
+  };
+  const [focusIndex, setFocusIndex] = useState(0);
+  // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
+  const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean; tc?: { state: 'missing' | 'present' | 'unknown'; inner?: boolean; innerCount?: number }; tcItem?: { fromRev?: string; fromAuthor?: string; fromDate?: string } } | null>(null);
+  // 文件搜索（工具栏）：防抖查询 + 结果下拉状态收于 useFileSearch
+  const search = useFileSearch(data?.dir ?? '');
+  // only：显式指定选中集合（拖入上传用）——跳过"按 code 同状态全选"，只选中真正落盘的那几个
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const breadcrumbRef = useRef<HTMLDivElement | null>(null);
+
+  // 树模式状态：展开集合 + 各目录数据
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [nodeData, setNodeData] = useState<Map<string, FsData>>(new Map());
+
+  // 树冲突诊断（需要时才联网问服务器）：横幅与条目角标**共用同一份结果**，不再各查一遍。
+  // 条目级 treeConflicted 来自 /api/fs 的 status（本地就知道），这里只负责补"服务器上还在不在"。
+  //
+  // **基准必须跟视图对齐**：树模式从仓库根长起、行 rel 相对仓库根；列表/网格模式的行 rel 相对 dir。
+  // 混用会让树模式拿错目录的清单去匹配（冲突角标退成灰、点 ⚠ 定位落空——实报过）。
+  const viewDir = mode === 'tree' ? '' : dir;
+  const diag = useWcConflicts((mode === 'tree' ? nodeData.get('') : data) ?? undefined, viewDir, props.tick);
+  const conflictLookup = useConflictLookup(diag, viewDir);
+
+  const loadNode = useCallback((d: string, force = false) => {
+    return get.fs(d, force).then((r: FsData) => {
+      setNodeData((m) => new Map(m).set(d, r));
+    });
+  }, []);
+
+  // 列表/浏览模式加载（进入过的目录走 nodeData 缓存，秒开不重复请求）
+  // 注意：load 必须是稳定引用（用 nodeDataRef 读写缓存），否则 setNodeData → load 重建 → effect 循环 → 抖动
+  const nodeDataRef = useRef(nodeData);
+  nodeDataRef.current = nodeData;
+  const [fsLoading, setFsLoading] = useState(false);
+  // 大目录提示（条目多时提示原因，避免误以为卡死；5 秒后自动消失）
+  const [bigTip, setBigTip] = useState('');
+  const bigTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---------- 常用文件夹：指定 + 后台递归预加载缓存（大仓库秒开） ----------
+  interface FavDir {
+    path: string;
+    name: string;
+    addedAt: number;
+  }
+  const favKey = (root: string) => `svngit:fav-dirs:${root}`;
+  const loadFavs = (root: string): FavDir[] => {
+    try {
+      return JSON.parse(localStorage.getItem(favKey(root)) ?? '[]') as FavDir[];
+    } catch {
+      return [];
+    }
+  };
+  const [favs, setFavs] = useState<FavDir[]>(() => (props.repoRoot ? loadFavs(props.repoRoot) : []));
+  // 模块索引（md 文件说明注入）：仓库相对路径 → 描述；null=未加载/无索引。加载时机：仓库打开时一次性
+  const [moduleIndex, setModuleIndex] = useState<Map<string, string> | null>(null);
+  const [moduleIndexModal, setModuleIndexModal] = useState<{ md: string } | null>(null);
+  const loadModuleIndex = useCallback(() => {
+    get
+      .moduleIndex()
+      .then((r) => {
+        const m = new Map<string, string>();
+        // 父目录先（短路径优先），子目录索引后写入覆盖 → 命中"向上就近/子覆盖父"
+        const dirs = Object.keys(r.indexes).sort((a, b) => a.split('/').length - b.split('/').length);
+        for (const dir of dirs) {
+          for (const e of r.indexes[dir]?.entries ?? []) {
+            m.set(dir ? `${dir}/${e.path}` : e.path, e.desc);
+          }
+        }
+        setModuleIndex(m);
+      })
+      .catch(() => setModuleIndex(null));
+  }, []);
+  useEffect(() => {
+    loadModuleIndex();
+  }, [props.repoRoot, loadModuleIndex]);
+  /** 行 rel → 描述（无索引/无命中返回空串） */
+  const descOf = useCallback((rel: string) => moduleIndex?.get(rel) ?? '', [moduleIndex]);
+  const [favModal, setFavModal] = useState(false);
+  // 预加载引擎（BFS + 并发 6 + 代际停止）抽到 useDirPreload；拉到的目录写进树缓存 nodeData
+  const { preload, preloadDir, resetPreload } = useDirPreload((d, r) => {
+    setNodeData((m) => new Map(m).set(d, r));
+  });
+
+  /** 加入常用文件夹（去重后保存 + 立即预加载） */
+  const addFavDir = (rel: string) => {
+    if (!props.repoRoot) return;
+    const list = loadFavs(props.repoRoot);
+    if (list.some((f) => f.path === rel)) return;
+    const next = [...list, { path: rel, name: rel.split('/').pop() || rel, addedAt: Date.now() }];
+    localStorage.setItem(favKey(props.repoRoot), JSON.stringify(next));
+    setFavs(next);
+    preloadDir(rel);
+    props.onToast(`已加入常用文件夹，正在后台预加载：${rel}`);
+  };
+  /** 移除常用文件夹 */
+  const removeFav = (rel: string) => {
+    if (!props.repoRoot) return;
+    const next = loadFavs(props.repoRoot).filter((f) => f.path !== rel);
+    localStorage.setItem(favKey(props.repoRoot), JSON.stringify(next));
+    setFavs(next);
+  };
+  const load = useCallback(async (targetDir: string, force: boolean) => {
+    const cache = nodeDataRef.current.get(targetDir);
+    if (!force && cache) {
+      setData(cache);
+      setSel(null);
+      setPreview(null);
+      setError('');
+      return;
+    }
+    setFsLoading(true);
+    setError('');
+    try {
+      const r = await get.fs(targetDir, force);
+      setNodeData((m) => new Map(m).set(targetDir, r));
+      setData(r);
+      setSel(null);
+      setPreview(null);
+      // 大目录提示：条目多时告知原因（加载完成后展示 5 秒）
+      const n = r.entries?.length ?? 0;
+      if (n > 200) {
+        setBigTip(`该目录文件较多（共 ${n} 项），首次加载可能需要一点时间`);
+        if (bigTipTimer.current) clearTimeout(bigTipTimer.current);
+        bigTipTimer.current = setTimeout(() => setBigTip(''), 5000);
+      } else {
+        setBigTip('');
+      }
+    } catch (e) {
+      // 目录不存在（ENOENT：上次浏览位置被删除/仓库已切换）→ 自动回到仓库根，避免卡死在错误页
+      if (targetDir && (e as Error).message.includes('ENOENT')) {
+        setDir('');
+        setPendingLocate(null);
+        setError('');
+        return;
+      }
+      setError((e as Error).message);
+    } finally {
+      setFsLoading(false);
+    }
+  }, []);
+
+  // 目录切换：优先缓存
+  useEffect(() => {
+    void load(dir, false);
+  }, [dir, load]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 仓库切换（repoRoot 变化）→ 浏览位置回到操作范围(子项目/根)，清空旧目录缓存
+  useEffect(() => {
+    setDir(props.startRel ?? '');
+    setSel(null);
+    setPreview(null);
+    setNodeData(new Map());
+    // 自动预加载该仓库保存的常用文件夹（仅 svn，git 无需预加载；后台，不阻塞界面）
+    if (props.repoRoot) {
+      resetPreload(); // 停掉旧仓库的预加载 worker，清空队列与已见集合，避免污染新仓库缓存
+      if (props.repoType === 'svn') {
+        const saved = loadFavs(props.repoRoot);
+        setFavs(saved);
+        for (const f of saved) preloadDir(f.path);
+      } else {
+        setFavs([]);
+      }
+    }
+  }, [props.repoRoot]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 刷新（tick 变化）：强制重新拉取
+  useEffect(() => {
+    if (props.tick === 0) return;
+    // 清空全部目录缓存再强刷当前目录：操作可能改动任意目录（如添加 A 目录），
+    // 仅强刷当前目录时其他目录缓存残留旧 ? 状态，再次进入会缓存命中显示旧数据
+    setNodeData(new Map());
+    void load(dir, true);
+  }, [props.tick, load]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 树/浏览模式：初始化 + 刷新时重载根和已展开节点
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  useEffect(() => {
+    if (mode !== 'tree' && mode !== 'browse') return;
+    const dirs = ['', ...expandedRef.current];
+    dirs.forEach((d) => void loadNode(d, true));
+  }, [mode, props.tick, loadNode]);
+
+  // 树模式：扁平化可见行
+  const visibleRows = useMemo<VisibleRow[]>(() => {
+    if (mode !== 'tree') return [];
+    const rows: VisibleRow[] = [];
+    const walk = (d: string, depth: number) => {
+      const nd = nodeData.get(d);
+      if (!nd) return;
+      let list = filterEntries(nd.entries.filter((e) => showHidden || !e.name.startsWith('.')), filters);
+      list = list
+        .slice()
+        .sort((a, b) => Number(b.isDir) - Number(a.isDir) || codeRank(b.code) - codeRank(a.code) || compareName(a.name, b.name));
+      for (const e of list) {
+        const rel = d ? `${d}/${e.name}` : e.name;
+        const open = e.isDir && expanded.has(rel);
+        rows.push({
+          rel,
+          name: e.name,
+          code: e.code,
+          isDir: e.isDir,
+          size: e.size,
+          mtime: e.mtime,
+          count: e.count,
+          codes: e.codes,
+          depth,
+          open,
+          locked: nd.selfLocked?.includes(rel),
+          miss: e.miss,
+          tc: tcState(e, rel, conflictLookup),
+          treeConflicted: e.treeConflicted,
+        });
+        if (e.isDir && open) walk(rel, depth + 1);
+      }
+    };
+    walk('', 0);
+    return rows;
+  }, [nodeData, expanded, showHidden, filters, mode, conflictLookup]);
+
+  // 树模式：展开/收起目录
+  const toggleExpand = useCallback(
+    (rel: string) => {
+      if (!expanded.has(rel)) {
+        setExpanded((s) => new Set(s).add(rel));
+        void loadNode(rel);
+      } else {
+        setExpanded((s) => {
+          const n = new Set(s);
+          n.delete(rel);
+          return n;
+        });
+      }
+    },
+    [expanded, loadNode]
+  );
+
+  // 列表模式条目
+  const listEntries = useMemo(() => {
+    if (!data) return [];
+    let list = filterEntries(data.entries.filter((e) => showHidden || !e.name.startsWith('.')), filters);
+    return list
+      .slice()
+      .sort((a, b) => Number(b.isDir) - Number(a.isDir) || codeRank(b.code) - codeRank(a.code) || compareName(a.name, b.name));
+  }, [data, showHidden, filters]);
+
+  // 过滤树（仅修改/仅新文件/仅删除）：拉取+折叠+扁平行由 useFilterTree 管理
+  const ft = useFilterTree(data?.dir ?? '', filters, props.tick, showHidden);
+  /** 过滤树双击文件 → 跳转到所在文件夹并选中（清除过滤恢复原视图） */
+  const jumpToFile = (rel: string) => {
+    const idx = rel.lastIndexOf('/');
+    const parent = idx >= 0 ? rel.slice(0, idx) : '';
+    setDir(parent);
+    setPendingLocate(null); // 用户主动跳转：取消残留的定位（否则数据变化会被旧定位拽回）
+    setSelected(new Set([rel]));
+    setFocusIndex(0);
+    setFilters(new Set());
+    setMode(prevModeRef.current);
+  };
+
+  /** 树行渲染（树列表与过滤树共用；filtered=true 时目录点击折叠、双击文件跳转）。
+   *  key 必须是 rel：不写 key 时 React 按下标复用行实例，折叠/展开/换过滤后行内组件状态
+   *  （如图片缩略图的"加载失败"标记）会串到别的文件上——顺带修掉的既有隐患 */
+  const renderTreeRow = (row: VisibleRow, i: number, filtered: boolean) => (
+    <TreeRow
+      key={row.rel}
+      row={row}
+      i={i}
+      filtered={filtered}
+      focused={i === focusIndex}
+      multi={selected.has(row.rel)}
+      searchHit={search.searchResults.includes(row.rel)}
+      pulse={pulseRels.includes(row.rel)}
+      clipCut={cutRels.has(row.rel)}
+      dragSrc={dragRels.has(row.rel)}
+      dropHover={drop.hoverDir === row.rel}
+      onDragStart={(ev) => onRowDragStart(ev, row.rel, row.name, row.isDir, row.code)}
+      onDragEnd={onRowDragEnd}
+      renaming={inline?.kind === 'rename' && inline.rel === row.rel ? inlineInput('left', row.name) : undefined}
+      desc={descOf(row.rel)}
+      buttons={rowButtons(row)}
+      locateBadge={locateBadge}
+      rowRef={(el) => {
+        if (el) rowRefs.current.set(row.rel, el);
+        else rowRefs.current.delete(row.rel); // 行卸载（收起/切换模式）时移除，避免残留导致泄漏
+      }}
+      onMouseEnterRow={(ev, r) => {
+        if (!ctxLocked) setFocusIndex(-1);
+        else if (ctxRelRef.current === r.rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
+        // 树行信息已行内展示（名称/描述/大小/时间），不再弹悬浮卡（网格仍保留）
+      }}
+      onMouseLeaveRow={() => {
+        closeCtxSoon();
+        setTip(null);
+      }}
+      onRowClick={(ev, r, idx) => {
+        onRowClick(r.rel, idx, ev, { name: r.name, isDir: r.isDir, code: r.code, size: r.size, mtime: r.mtime, relPath: r.rel } as FsEntry);
+        if (r.isDir && r.miss) {
+          // 缺失目录（树/过滤树共用）：磁盘已不存在，展开/折叠会加载空数据——拦截并提示还原
+          props.onToast('目录已在磁盘上缺失，请右键「还原」恢复', true);
+          return;
+        }
+        if (r.isDir && !ev.ctrlKey && !ev.shiftKey) {
+          if (filtered) {
+            // 过滤树：本地折叠（数据已全量，无需再加载）
+            ft.setCollapsed((s) => {
+              const n = new Set(s);
+              if (n.has(r.rel)) n.delete(r.rel);
+              else n.add(r.rel);
+              return n;
+            });
+          } else {
+            toggleExpand(r.rel); // Ctrl/Shift 时仅选择不展开
+          }
+        }
+      }}
+      onDoubleClick={(r) => {
+        setTip(null); // 双击即关闭悬浮卡片
+        if (r.miss) {
+          props.onToast('文件已在磁盘上缺失，请右键「还原」恢复', true);
+          return;
+        }
+        if (filtered) {
+          if (!r.isDir) jumpToFile(r.rel);
+        } else if (!r.isDir) void openFile(r.name, r.code, r.rel);
+      }}
+      onContextMenu={(ev, r, idx) => onRowContext(ev, { isDir: r.isDir, code: r.code, rel: r.rel, name: r.name, treeConflicted: r.treeConflicted, codes: r.codes }, idx)}
+    />
+  );
+
+  const breadcrumbs = useMemo(() => {
+    if (!data) return [] as { label: string; rel: string }[];
+    const parts = data.dir ? data.dir.split('/') : [];
+    const out = [{ label: data.root.split('/').pop() || '/', rel: '' }];
+    let acc = '';
+    for (const p of parts) {
+      acc = acc ? `${acc}/${p}` : p;
+      out.push({ label: p, rel: acc });
+    }
+    return out;
+  }, [data]);
+
+  const relOf = (e: FsEntry) => (data?.dir ? `${data.dir}/${e.name}` : e.name);
+
+  /** 打开文件：有变更 → diff；无变更/未版本化 → 原文预览（内容由 PreviewPane 自行读取渲染） */
+  const openFile = useCallback(
+    (name: string, code: string, rel: string) => {
+      setTip(null); // 双击打开时关闭悬浮卡片（视图切换后不会再触发 mouseleave,需主动清）
+      // 图片文件：双击直接看图（不读文本/diff,避免二进制乱码与"不支持文本对比"提示）
+      if (isImageFile(rel)) {
+        setPreview({ name, rel, img: true });
+        return;
+      }
+      // 办公文档/压缩包等二进制：双击不打开（diff 无意义、原文会乱码、大文件拖死界面），提示走「打开方式…」
+      if (isBinaryFile(rel)) {
+        props.onToast('二进制文档：右键「打开方式…」用系统程序打开', true);
+        return;
+      }
+      if (code && code !== '?' && code !== 'I') {
+        props.onDiff(rel);
+        return;
+      }
+      // 干净/未版本化/忽略文件：打开原文预览（原 get.cat 读取移到 PreviewPane；读取失败面板回调退回列表）
+      setPreview({ name, rel, code });
+    },
+    [props]
+  );
+
+  type FsOp = 'add' | 'commit' | 'revert' | 'delete';
+  const onAction = (op: FsOp, rel: string, keep?: boolean) => props.onAction(op, [rel], keep);
+
+  // 关闭右键菜单（同时解锁右键选中锁定，并清空"原右键条目"记录，避免残留误判）
+  const closeCtx = () => {
+    if (ctxHideTimer.current) {
+      clearTimeout(ctxHideTimer.current);
+      ctxHideTimer.current = undefined;
+    }
+    ctxRelRef.current = null;
+    setCtx(null);
+    setCtxLocked(false);
+  };
+  // 延迟关闭：鼠标离开条目/菜单后短暂等待（给鼠标移入菜单留时间），移入菜单或回到原条目则取消
+  const closeCtxSoon = () => {
+    if (!ctx) return; // 菜单已关（渲染时闭包），无需再启动计时
+    if (ctxHideTimer.current) return; // 已有计时，不重置（避免条目间快速移动反复刷新）
+    ctxHideTimer.current = setTimeout(closeCtx, 250);
+  };
+  const cancelCtxClose = () => {
+    if (ctxHideTimer.current) {
+      clearTimeout(ctxHideTimer.current);
+      ctxHideTimer.current = undefined;
+    }
+  };
+  // 点击其他地方 / 滚动 → 立即关闭（同时解锁）
+  useEffect(() => {
+    if (!ctx) return;
+    window.addEventListener('click', closeCtx);
+    window.addEventListener('scroll', closeCtx, true);
+    return () => {
+      window.removeEventListener('click', closeCtx);
+      window.removeEventListener('scroll', closeCtx, true);
+      cancelCtxClose();
+    };
+  }, [ctx]);
+
+  // 当前目录下的匹配文件名（网格/列表框选高亮；匹配集来自 useFileSearch）
+  const currentMatchNames = useMemo(() => {
+    if (!data) return new Set<string>();
+    const prefix = data.dir ? data.dir + '/' : '';
+    const set = new Set<string>();
+    for (const p of search.searchResults) {
+      if (p.startsWith(prefix)) {
+        const rest = p.slice(prefix.length);
+        if (rest && !rest.includes('/')) set.add(rest);
+      }
+    }
+    return set;
+  }, [search.searchResults, data]);
+
+  // 定位与脉冲（角标定位 → 展开父链 → 滚动高亮 → 卡片闪烁）抽到 useFsLocate：
+  // 里面含着两处竞态防护（连点令牌、目标不出现时的 3s 兜底），细节见该文件头注释
+  const { pendingLocate, setPendingLocate, pulseRels, locateBadge } = useFsLocate({
+    mode,
+    dir,
+    visibleRows,
+    listEntries,
+    data,
+    rowRefs,
+    loadNode,
+    setExpanded,
+    diag,
+    viewDir,
+    breadcrumbRef,
+    setFocusIndex,
+    setSelected,
+    setDir,
+    relOf,
+  });
+
+  // ---------- 键盘导航 ----------
+  const rows = mode === 'tree' ? visibleRows : listEntries;
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  /** 行的相对仓库根路径：树模式的行自带 rel，列表/网格模式由当前目录 + 名称推出 */
+  const rowRel = (r: (typeof rows)[number]): string => ('rel' in r ? r.rel : relOf(r));
+
+  /** 切视图：把**当前位置**带过去（三种模式共享"当前目录 + 选中项"这个位置）。
+   *  浏览/列表共用 dir 与 selected，切过去天然一致；需要显式转换的只有树：
+   *  - 切到树：展开并定位当前目录（连它自己也展开——用户是"进到"这个目录里的）
+   *  - 从树切走：树里选中的是**目录**就进它；是**文件**就进父目录并选中该文件 */
+  const switchMode = (target: Mode) => {
+    if (target === mode) return;
+    if (target === 'tree') {
+      setMode('tree');
+      if (!dir) return; // 仓库根：树本来就从根摊开，无需定位
+      setPendingLocate({ rel: dir, at: Date.now() });
+      setExpanded((s) => new Set(s).add(dir));
+      void loadNode(dir);
+      return;
+    }
+    if (mode === 'tree') {
+      // 跟随树里的选中项（优先选中集，其次焦点行）：树模式点哪行就是哪行
+      const selRel = [...selected][0];
+      const cur = selRel ? rowsRef.current.find((r) => rowRel(r) === selRel) : rowsRef.current[focusRef.current];
+      if (cur) {
+        const rel = rowRel(cur); // 树模式的行是 VisibleRow，但类型上是 FsEntry | VisibleRow → 统一走 rowRel
+        if (cur.isDir) {
+          setDir(rel); // 目录 → 直接进它
+        } else {
+          // 文件 → 进它的父目录，并选中这个文件（不能"进入文件"）
+          setDir(rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '');
+          setPendingLocate({ rel, at: Date.now() });
+        }
+      }
+    }
+    setMode(target);
+  };
+  const focusRef = useRef(focusIndex);
+  focusRef.current = focusIndex;
+
+  // 键盘导航（↑↓ 选择 · →/Enter 进入 · ← 返回 · Esc 关菜单）抽到 useFsKeyboard；
+  // 焦点越界修正与网格模式下"焦点跟随滚动"也一并搬过去（都只服务键盘）
+  useFsKeyboard({
+    active: props.active,
+    mode,
+    dir,
+    rows,
+    rowsRef,
+    focusIndex,
+    focusRef,
+    gridRef,
+    ctx,
+    preview,
+    closeCtx,
+    toggleExpand,
+    openFile,
+    setFocusIndex,
+    setDir,
+    clearLocate: () => setPendingLocate(null),
+  });
+
+  /** 菜单定位：动态估算菜单尺寸，超出屏幕右/下边界时上移/左移，保证完整显示 */
+  const ctxPos = (e: React.MouseEvent, itemCount: number) => {
+    const itemH = 36; // 每项高度（含分隔线/间距）估算
+    const h = itemCount * itemH + 12;
+    const w = 220;
+    const x = Math.max(4, Math.min(e.clientX, window.innerWidth - w - 8));
+    const y = Math.max(4, Math.min(e.clientY, window.innerHeight - h - 8));
+    return { x, y };
+  };
+
+  /** 条目点击（三视图通用）：无修饰=单选，Ctrl=切换选中，Shift(列表/树)=锚点范围选择 */
+  const onRowClick = (rel: string, i: number, ev: React.MouseEvent, e: FsEntry) => {
+    setFocusIndex(i);
+    if (ev.ctrlKey || ev.metaKey) {
+      // Ctrl：切换该项选中
+      setSelected((prev) => {
+        const s = new Set(prev);
+        if (s.has(rel)) s.delete(rel);
+        else s.add(rel);
+        return s;
+      });
+      shiftAnchorRef.current = rel;
+    } else if (ev.shiftKey && shiftAnchorRef.current) {
+      // Shift：锚点 → 当前 范围选择（列表/树）
+      const rels =
+        mode === 'tree'
+          ? (visibleRows as unknown as { rel: string }[]).map((r) => r.rel)
+          : listEntries.map((e) => relOf(e));
+      const a = rels.indexOf(shiftAnchorRef.current);
+      const b = rels.indexOf(rel);
+      if (a >= 0 && b >= 0) {
+        const s = new Set<string>();
+        for (let k = Math.min(a, b); k <= Math.max(a, b); k++) s.add(rels[k]!);
+        setSelected(s);
+      } else {
+        setSelected(new Set([rel]));
+        shiftAnchorRef.current = rel;
+      }
+    } else {
+      // 单击：单选（替换）
+      setSelected(new Set([rel]));
+      shiftAnchorRef.current = rel;
+    }
+    setSel(e);
+  };
+
+  // 切换目录后清空多选（rel 相对新目录已失效）；树模式 dir 不变，不受影响
+  useEffect(() => {
+    setSelected(new Set());
+    shiftAnchorRef.current = null;
+  }, [dir]);
+
+  /** 打开系统文件管理器（复用 /api/reveal：Linux xdg-open 打开目录） */
+  const openInFm = (rel: string) => {
+    void post
+      .reveal(rel)
+      .then(() => props.onToast('已打开文件管理器'))
+      .catch((err: Error) => props.onToast(`打开失败: ${err.message}`, true));
+  };
+
+  // 右键菜单服务：菜单项动作所需数据/回调（menus.tsx 纯构建 items,不直接碰组件状态）
+  const menuSvc = (): MenuServices => ({
+    repoType: props.repoType,
+    dir: data?.dir ?? '',
+    root: data?.root,
+    favs,
+    setIgnoreTarget,
+    ignoreFile,
+    setIgnoreModal,
+    setUnignoreAsk,
+    setModuleIndexModal,
+    viewHistory,
+    openFile,
+    svnLock,
+    onAction: props.onAction,
+    onDiff: props.onDiff,
+    onLog: props.onLog,
+    onUpdateDir: props.onUpdateDir,
+    onCommitSelect: props.onCommitSelect,
+    onToast: props.onToast,
+    openInFm,
+    removeFav,
+    addFavDir,
+    menuPatchItems,
+    clip: clipFlow.clip,
+    copyItems: (items) => clipFlow.take('copy', items),
+    cutItems: (items) => clipFlow.take('cut', items),
+    pasteInto: (dest) => void clipFlow.paste(dest),
+    mode,
+    startCreate: (type) => {
+      setSelected(new Set()); // 焦点已转到即将生成的条目上，清掉旧选中免得看着像"还选着上一个"
+      setInlineText('');
+      cancelInlineRef.current = false;
+      setInline({ kind: 'new', type });
+    },
+    startRename: (rel) => {
+      setSelected(new Set([rel])); // 就地改名时保持该条目选中（一看就知道在改哪个）
+      setInlineText(rel.split('/').pop() ?? '');
+      cancelInlineRef.current = false;
+      setInline({ kind: 'rename', rel });
+    },
+  });
+  /** 「打开方式」异步取到程序列表后替换菜单第 owIdx 项的子菜单（菜单已关闭则安全跳过） */
+  const menuPatchItems = (owIdx: number, subs: CtxMenuItem[]) => {
+    setCtx((cur) =>
+      cur && cur.items[owIdx]?.label === '打开方式…'
+        ? { ...cur, items: cur.items.map((it, i) => (i === owIdx ? { ...it, submenu: subs } : it)) }
+        : cur
+    );
+  };
+
+  const onBlankContext = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setTip(null); // 空白右键同样关闭悬浮卡片
+    cancelCtxClose();
+    ctxRelRef.current = null; // 空白右键：任何条目都不算"原条目"，鼠标离开即关
+    setCtxLocked(false); // 空白右键不锁定任何条目（防止前一次右键的锁定残留）
+    const items = buildBlankItems(menuSvc());
+    setCtx({ ...ctxPos(e, items.length), items });
+  };
+
+  // 无历史记录提示：点击位置显示，1 秒后淡出
+  const [noHist, setNoHist] = useState<{ x: number; y: number } | null>(null);
+  const noHistTimer = useRef<ReturnType<typeof setTimeout>>();
+  const showNoHistory = (x: number, y: number) => {
+    setNoHist({ x, y });
+    if (noHistTimer.current) clearTimeout(noHistTimer.current);
+    noHistTimer.current = setTimeout(() => setNoHist(null), 1200);
+  };
+
+  /** 查看历史：有记录 → 打开历史视图；无记录 → 点击位置提示 */
+  const viewHistory = (rel: string, ev: React.MouseEvent) => {
+    void (async () => {
+      try {
+        const r = await get.log(rel);
+        if (r.logs.length > 0) props.onLog(rel);
+        else showNoHistory(ev.clientX, ev.clientY);
+      } catch {
+        props.onLog(rel);
+      }
+    })();
+  };
+
+  /** 条目右键菜单：按 文件/目录 + 状态 + 仓库类型 动态生成可用操作；右键同时选中该条目并锁定 */
+  const onRowContext = (e: React.MouseEvent, t: { isDir: boolean; code: string; rel: string; name: string; treeConflicted?: boolean; codes?: string[] }, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setTip(null); // 右键即关闭悬浮卡片,避免与右键菜单重叠
+    cancelCtxClose(); // 清掉上次的延迟关闭计时
+    ctxRelRef.current = t.rel; // 记录右键条目：鼠标回到它（或移入菜单）时菜单保持
+    setFocusIndex(index);
+    setSel({ name: t.name, isDir: t.isDir, code: t.code, size: 0, mtime: '', relPath: t.rel } as FsEntry);
+    setCtxLocked(true);
+    const svc = menuSvc();
+    // 多选：右键项已在选中集合内 → 菜单作用于整个集合（按状态合并操作，不误伤）
+    if (selected.has(t.rel) && selected.size > 1) {
+      // treeConflicted/codes 要带上：多选菜单里树冲突项要单独成组（提交必被拒，得先二选一）
+      const rows =
+        mode === 'tree'
+          ? (visibleRows as unknown as { rel: string; name: string; isDir: boolean; code: string; treeConflicted?: boolean; codes?: string[] }[]).map((r) => ({
+              rel: r.rel,
+              isDir: r.isDir,
+              code: r.code,
+              name: r.name,
+              treeConflicted: r.treeConflicted,
+              codes: r.codes,
+            }))
+          : listEntries.map((e) => ({ rel: relOf(e), isDir: e.isDir, code: e.code, name: e.name, treeConflicted: e.treeConflicted, codes: e.codes }));
+      const byRel = new Map(rows.map((r) => [r.rel, r]));
+      const tArr = [...selected].map((rel) => byRel.get(rel)).filter((x): x is (typeof rows)[number] => !!x);
+      const items = buildMultiItems(tArr, svc);
+      setCtx({ ...ctxPos(e, items.length), items });
+      return;
+    }
+    // 单选（原有逻辑）：右键不在选中集合时，清空多选只留右键项
+    setSelected(new Set([t.rel]));
+    const items = buildRowItems(t, e, svc);
+    setCtx({ ...ctxPos(e, items.length), items });
+  };
+
+  // 忽略流程（状态 + 提交逻辑）抽到 useIgnoreFlow；三个弹窗的 JSX 仍在下方渲染。
+  // 这里的两个回调是惰性的（只在用户点确认忽略时才执行），故可引用下方定义的 load/loadNode/ft。
+  const {
+    ignoreModal,
+    setIgnoreModal,
+    ignoreAsk,
+    ignorePattern,
+    setIgnorePattern,
+    ignorePlan,
+    ignoreTarget,
+    setIgnoreTarget,
+    unignoreAsk,
+    setUnignoreAsk,
+    ignoreFile,
+    closeIgnore,
+    doIgnore,
+    doUnignore,
+  } = useIgnoreFlow({
+    onToast: props.onToast,
+    reloadDir: () => (mode === 'tree' ? loadNode('', true) : void load(dir, true)),
+    reloadFilter: () => ft.setFilterTreeTick((t) => t + 1),
+    repoType: props.repoType,
+  });
+
+  /** 列表/浏览模式共用的条目行渲染 */
+  // 拖入上传：落点 = 文件区（当前目录）或文件夹行/格子（该文件夹）。
+  // 冲突时弹窗问策略：用 promise 把弹窗结果交回给 hook（弹窗状态只服务本视图，不进全局 modal-host）
+  const [conflictAsk, setConflictAsk] = useState<{ conflicts: string[]; resolve: (c: ConflictChoice | null) => void } | null>(null);
+  const askConflict = useCallback(
+    (conflicts: string[]) => new Promise<ConflictChoice | null>((resolve) => setConflictAsk({ conflicts, resolve })),
+    [],
+  );
+  const drop = useDropUpload({
+    dir,
+    askConflict,
+    /** 项目内拖拽落在目录上 → 移动过去（规则与剪切粘贴同一套：版本化走 svn move / git mv） */
+    onMoveDrop: (destDir) => {
+      const items = dragItemsRef.current;
+      dragItemsRef.current = [];
+      // 松开在非文件夹上 = 用户自己放弃了这次拖拽：静默结束，不弹提示（拖没拖动他看得见）
+      if (destDir === null) return;
+      if (items.length === 0) return;
+      void (async () => {
+        const outcome = await moveItemsTo(items, destDir, props.onToast);
+        if (outcome !== 'ok') return;
+        // 移动同时改了两个目录（源与目标）→ 清空全部目录缓存再刷当前目录，与剪切粘贴同一处理
+        setNodeData(new Map());
+        if (mode === 'tree') loadNode('', true);
+        else void load(dir, true);
+      })();
+    },
+    onDone: useCallback(
+      async (okCount: number, failed: string[], saved: string[]) => {
+        if (okCount > 0) {
+          // 落地改变了目录内容：重载当前目录（树模式重载根节点）。
+          // 列表/网格必须等刷新完成再定位：否则 pendingLocate 会拿旧列表找行号，找不到就超时放弃
+          if (mode === 'tree') loadNode('', true);
+          else await load(dir, true);
+        }
+        // 只能选中当前目录下的：拖进子文件夹的那些不在本视图里，改用文案告诉用户它们去哪了
+        const parentOf = (r: string) => (r.includes('/') ? r.slice(0, r.lastIndexOf('/')) : '');
+        const here = saved.filter((r) => parentOf(r) === dir);
+        if (here.length > 0) {
+          // 数据就绪后由 pendingLocate effect 完成选中 + 滚动到首个 + 脉冲闪烁
+          setPendingLocate({ rel: here[0]!, at: Date.now(), only: here });
+        }
+        const elsewhere = saved.length - here.length;
+        const picked = here.length > 0 ? '，已选中并定位' : '';
+        const sub = elsewhere > 0 ? `，另有 ${elsewhere} 个在子文件夹里` : '';
+        props.onToast(
+          failed.length
+            ? `已复制 ${okCount} 个${picked}${sub}；${failed.length} 个失败：${failed.slice(0, 3).join('、')}${failed.length > 3 ? ' 等' : ''}`
+            : `已复制 ${okCount} 个文件${picked}${sub}`,
+          failed.length > 0, // 有失败项就按错误态显示（停留久一点，也提醒去处理）
+        );
+      },
+      [mode, dir, load, loadNode], // eslint-disable-line react-hooks/exhaustive-deps
+    ),
+  });
+
+  /** 文件剪贴板（复制 / 剪切 / 粘贴）：冲突策略复用拖入上传那个弹窗；落点缺省 = 当前浏览目录 */
+  const clipFlow = useCopyPaste({
+    dir,
+    repoRoot: data?.root ?? '',
+    askConflict,
+    onToast: props.onToast,
+    onDone: useCallback(() => {
+      // 搬运一次动两个目录（剪切的源目录也变了）→ 清空全部目录缓存再强刷当前目录。
+      // 只刷当前目录的话，回上级会缓存命中、看到已经搬走的旧条目（与 tick 刷新同一套处理）
+      setNodeData(new Map());
+      // 树模式重载根节点，其余重载当前目录
+      if (mode === 'tree') loadNode('', true);
+      else void load(dir, true);
+    }, [mode, dir, load, loadNode]), // eslint-disable-line react-hooks/exhaustive-deps
+  });
+
+  // 剪贴板快捷键（Ctrl+C / Ctrl+X / Ctrl+V）：**单独一个监听**。
+  // clipFlow 到这里才定义，塞进上面那个键盘 effect 会踩 TDZ，也会把它的依赖搅成一团；
+  // 这里用 ref 取最新值，依赖只留 active，不必每次渲染重挂监听。
+  // ⚠ rowRel 也必须走 ref：它内部的 relOf 读的是 data（当前目录），只依赖 active 的 effect
+  //    会把它锁死在挂载那一刻的闭包上（那时 data 还是 null，算出的 rel 少了目录前缀，与 selected 对不上）
+  const clipKeyRef = useRef({ clipFlow, selected, preview, ctx, rowRel });
+  clipKeyRef.current = { clipFlow, selected, preview, ctx, rowRel };
+  useEffect(() => {
+    if (!props.active) return; // 视图隐藏时不响应（与其他键盘监听同一口径）
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 输入框内不拦截
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k !== 'c' && k !== 'x' && k !== 'v') return;
+      const { clipFlow: cf, selected: sel, preview: pv, ctx: cx, rowRel: rr } = clipKeyRef.current;
+      if (cx || pv) return; // 菜单开着/预览打开：让它们先处理各自的按键
+      const list = rowsRef.current;
+      if (list.length === 0) return;
+      e.preventDefault();
+      if (k === 'v') {
+        void cf.paste(); // 粘贴到当前浏览目录
+        return;
+      }
+      // 多选优先，没有多选就作用于当前焦点行
+      const picked = (sel.size > 0 ? list.filter((r) => sel.has(rr(r))) : [list[focusRef.current] ?? list[0]!]).map((r) => ({
+        rel: rr(r),
+        name: r.name,
+        isDir: r.isDir,
+        code: r.code,
+      }));
+      cf.take(k === 'c' ? 'copy' : 'cut', picked);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [props.active]);
+
+  /** 剪贴板里「剪切中」的条目：行渲染成半透明，提示它们下次粘贴就会从这里消失
+   *  （与系统文件管理器一致；复制不做标记——原件还在，粘完不变） */
+  const cutRels = useMemo(
+    () => new Set(clipFlow.clip?.mode === 'cut' ? clipFlow.clip.items.map((i) => i.rel) : []),
+    [clipFlow.clip],
+  );
+
+  /** 应用内拖拽移动：拖起时把要搬的条目记在这里。
+   *  拖拽期间浏览器不让读 dataTransfer 的内容（只在 drop 时才能读），所以拖了哪些只能自己记。 */
+  const dragItemsRef = useRef<ClipItem[]>([]);
+  /** 正在被拖的条目：整批一起变淡，让"我拖着的是一整批"一眼可见（浏览器默认只淡化鼠标按住的那一行） */
+  const [dragRels, setDragRels] = useState<Set<string>>(new Set());
+  /** 自定义拖拽图像（多点拖动时跟随鼠标的「N 项」卡片）；浏览器在下一帧才取快照，所以挂到 body 上、dragend 再摘 */
+  const dragGhostRef = useRef<HTMLElement | null>(null);
+  /** 拖起一行/一格：拖的是选中集合里的一员就整批搬，否则只搬它自己 */
+  const onRowDragStart = (ev: React.DragEvent, rel: string, name: string, isDir: boolean, code: string) => {
+    const picked: ClipItem[] =
+      selected.has(rel) && selected.size > 1
+        ? rowsRef.current.filter((r) => selected.has(rowRel(r))).map((r) => ({ rel: rowRel(r), name: r.name, isDir: r.isDir, code: r.code }))
+        : [{ rel, name, isDir, code }];
+    dragItemsRef.current = picked;
+    setDragRels(new Set(picked.map((i) => i.rel)));
+    // 拖动期间不挂悬浮卡：卡片是拖起来之前悬停弹出来的，不关掉它会一直停在原处挡路
+    // （HTML5 拖拽期间浏览器抑制鼠标事件，卡片既不会更新也不会自动消失）
+    setTip(null);
+    ev.dataTransfer.effectAllowed = 'move';
+    // 必须 setData，否则部分浏览器不触发 drop；值只在 drop 时读得到，
+    // 这里主要靠这个 MIME 让投放区分出「项目内拖拽」和「外部文件拖入」
+    ev.dataTransfer.setData(MOVE_MIME, picked.map((i) => i.rel).join('\n'));
+    // 多个条目才换图像：只拖一条时，浏览器默认给的那一行就是最好的提示
+    if (picked.length > 1) {
+      const ghost = document.createElement('div');
+      ghost.className = 'drag-ghost';
+      ghost.textContent = `移动 ${picked.length} 项`;
+      document.body.appendChild(ghost);
+      ev.dataTransfer.setDragImage(ghost, 18, 14);
+      dragGhostRef.current = ghost;
+    }
+  };
+  const onRowDragEnd = () => {
+    dragItemsRef.current = []; // 拖到窗口外松手不会触发 drop，这里兜底清掉
+    setDragRels(new Set());
+    dragGhostRef.current?.remove();
+    dragGhostRef.current = null;
+  };
+
+  // 上报当前目录：切「历史」视图时按它过滤
+  const onDirChangeRef = useRef(props.onDirChange);
+  onDirChangeRef.current = props.onDirChange;
+  useEffect(() => {
+    onDirChangeRef.current?.(dir);
+  }, [dir]);
+
+  /** 「新建文件夹」输入栏：null = 未开启；字符串 = 正在输入的名字（列表/网格上方的一条，回车创建） */
+  /** 就地编辑：新建（列表/网格里"长"出一个条目）或重命名（把某个条目的名字换成输入框）。
+   *  重命名只对**未版本化**条目走这条路——那只是纯磁盘改名（fs-move），没有版本库交互，
+   *  弹窗纯属多余；已版本化的改名是 svn move / git mv，仍走确认弹窗。 */
+  const [inline, setInline] = useState<{ kind: 'new'; type: 'dir' | 'file' } | { kind: 'rename'; rel: string } | null>(null);
+  const [inlineText, setInlineText] = useState('');
+  /** Esc 取消时置位：onBlur 也会触发，避免"取消"又被当成确认 */
+  const cancelInlineRef = useRef(false);
+
+  const cancelInline = () => {
+    cancelInlineRef.current = true;
+    setInline(null);
+    setInlineText('');
+  };
+
+  /** 确认就地编辑：回车或点击别处（失焦）时调用；**名字留空 = 悄悄取消**（不当错误提示） */
+  const commitInline = async () => {
+    const cur = inline;
+    const text = inlineText.trim();
+    setInline(null);
+    setInlineText('');
+    if (!cur || !text) return;
+    if (/[/\\]/.test(text)) {
+      props.onToast('名字不能包含 / 或 \\', true);
+      return;
+    }
+    const isRename = cur.kind === 'rename';
+    const oldRel = isRename ? cur.rel : '';
+    const oldName = isRename ? (oldRel.split('/').pop() ?? '') : '';
+    if (isRename && text === oldName) return; // 名字没动：安静收场，不必跑一趟
+    const parent = isRename ? (oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : '') : dir;
+    const rel = parent ? `${parent}/${text}` : text;
+    try {
+      let r: { ok?: boolean; message?: string };
+      if (isRename) r = await post.fsMove(oldRel, rel);
+      else if (cur.type === 'dir') r = await post.newDir(rel);
+      else r = await post.newFile(rel);
+      setNodeData(new Map()); // 改动了当前目录 → 清缓存再刷（与其他写操作一致）
+      await load(dir, true);
+      setPendingLocate({ rel, at: Date.now() }); // 选中并定位到刚落地的条目
+      if (isRename) {
+        props.onToast(`已重命名为 ${text}`);
+      } else {
+        // git 不跟踪目录本身：空文件夹不会出现在提交里，不提醒的话用户会以为建失败了
+        // （空**文件**没这问题，git 会照常显示为未跟踪）
+        props.onToast(
+          cur.type === 'dir' && props.repoType === 'git'
+            ? `${r.message ?? `已新建 ${rel}`}（空目录不会被 Git 提交，放个文件进去才会出现在变更里）`
+            : (r.message ?? `已新建 ${rel}`),
+        );
+      }
+    } catch (e) {
+      props.onToast(`${isRename ? '重命名' : '新建'}失败：${(e as Error).message}`, true); // 同名已存在等原样带出来
+    }
+  };
+
+  /** 就地编辑的输入框（新建条目与重命名共用同一份行为）：
+   *  回车确认 / 失焦（点空白处）确认 / Esc 取消 —— 三者都不能打架 */
+  const inlineInput = (align: 'left' | 'center', placeholder: string) => (
+    <input
+      className="inline-edit-input"
+      // 输入框自身禁止拖拽：行的 draggable 会把它上面的"拖选文字"变成"拖拽条目"（HTML5 拖拽优先于文本选择）
+      draggable={false}
+      autoFocus
+      value={inlineText}
+      placeholder={placeholder}
+      style={{ textAlign: align }}
+      onChange={(e) => setInlineText(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void commitInline();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          cancelInline();
+        }
+      }}
+      onBlur={() => {
+        if (cancelInlineRef.current) {
+          cancelInlineRef.current = false; // Esc 取消触发的失焦：什么都不做
+          return;
+        }
+        void commitInline();
+      }}
+    />
+  );
+
+  const renderEntryRow = (e: FsEntry, i: number) => {
+    const rel = relOf(e);
+    const focused = i === focusIndex;
+    const multi = selected.has(rel);
+    const locked = data?.selfLocked?.includes(rel);
+    const isMatch = currentMatchNames.has(e.name);
+    // 树冲突角标（本地已有标记 + 服务器诊断上色）
+    const tc = tcState(e, rel, conflictLookup);
+    return (
+      <div
+        key={rel}
+        data-dir-rel={e.isDir ? rel : undefined} /* 拖入落点：容器按事件委托读它 */
+        className={`tree-row ${isMatch ? 'search-hit' : ''}${pulseRels.includes(rel) ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}${drop.hoverDir === rel ? ' dir-drop-hover' : ''}${cutRels.has(rel) ? ' clip-cut' : ''}${dragRels.has(rel) ? ' drag-src' : ''}`}
+        draggable={!(inline?.kind === 'rename' && inline.rel === rel)} /* 正在就地改名时不拖：否则没法用鼠标选名字里的字 */
+        onDragStart={(ev) => onRowDragStart(ev, rel, e.name, e.isDir, e.code)}
+        onDragEnd={onRowDragEnd}
+        style={{
+          background: focused || multi ? 'var(--panel2)' : undefined,
+          outline: focused ? '1px solid var(--accent)' : multi ? '1px solid var(--accent)' : undefined,
+        }}
+        onMouseEnter={() => {
+          if (!ctxLocked) setFocusIndex(-1);
+          else if (ctxRelRef.current === rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
+        }}
+        onMouseLeave={() => {
+          closeCtxSoon();
+          setTip(null);
+        }}
+        onClick={(ev) => {
+          onRowClick(rel, i, ev, e);
+          // 缺失目录：磁盘已不存在，进入会 ENOENT——拦截并提示还原
+          if (e.isDir && e.miss) {
+            props.onToast('目录已在磁盘上缺失，请右键「还原」恢复', true);
+            return;
+          }
+          if (e.isDir && !ev.ctrlKey && !ev.shiftKey) {
+            setDir(rel); // Ctrl/Shift 时仅选择不进入
+            setPendingLocate(null); // 点击进入目录：取消残留定位
+          }
+        }}
+        onDoubleClick={() => {
+          setTip(null); // 双击即关闭悬浮卡片
+          if (e.miss) {
+            props.onToast('文件已在磁盘上缺失，请右键「还原」恢复', true);
+            return;
+          }
+          if (!e.isDir) void openFile(e.name, e.code, rel);
+        }}
+        onContextMenu={(ev) => onRowContext(ev, { isDir: e.isDir, code: e.code, rel, name: e.name, treeConflicted: e.treeConflicted, codes: e.codes }, i)}
+      >
+        {/* 有树冲突就只显示 ⚠（字母与网格的变更数让位，明细见悬浮卡/右键菜单）；⚠ 可点击定位 */}
+        {tc ? (
+          <TreeConflictBadge state={tc.state} inner={tc.inner} innerCount={tc.innerCount} onClick={() => locateBadge(rel, 'TC')} />
+        ) : e.isDir ? (
+          <DirBadge codes={e.codes} />
+        ) : (
+          <CodeBadge code={e.code} />
+        )}
+        <span className="arrow">{e.isDir ? '▸' : ''}</span>
+        {locked && <IconLock size={13} />}
+        {/* 图标位：图片=该图自己的缩略图，其余=类型小图标（与树模式 TreeRow 保持逐像素一致） */}
+        <ThumbIcon
+          rel={rel}
+          name={e.name}
+          size={e.size}
+          mtime={e.mtime}
+          isDir={e.isDir}
+          miss={e.miss}
+          box="1.15em"
+          fallback={<MiniIcon isDir={e.isDir} name={e.name} />}
+        />
+        <span
+          className={`name ${e.isDir ? 'dir' : 'file'}`}
+          style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}
+          // 重命名标出来源：列表里只显示新名字，光看名字看不出从哪移过来的
+          title={e.origPath ? `从 ${e.origPath} 移动/重命名而来` : undefined}
+        >
+          {inline?.kind === 'rename' && inline.rel === rel ? inlineInput('left', e.name) : e.name}
+          {e.count ? <span className="count"> （{e.count} 项）</span> : null}
+          {descOf(rel) && (
+            <span className="dim small" style={{ marginLeft: 10, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              · {descOf(rel)}
+            </span>
+          )}
+          {e.miss && (
+            <span className="dim small" style={{ marginLeft: 10 }}>
+              · 已在磁盘上缺失，右键可还原
+            </span>
+          )}
+        </span>
+        {rowButtons({ ...e, rel })}
+        {!e.isDir && <span className="dim small nowrap">{fmtSize(e.size)}</span>}
+        {!e.isDir && <span className="dim small nowrap" style={{ width: 110 }}>{e.mtime}</span>}
+      </div>
+    );
+  };
+
+  /** svn 锁定/解锁 */
+  const svnLock = (rel: string, action: 'lock' | 'unlock') => {
+    void post
+      .svnLock(action, rel)
+      .then((r) => props.onToast(r.message, !r.ok))
+      .catch((err: Error) => props.onToast((err as Error).message, true));
+  };
+
+  const rowButtons = (e: { code: string; isDir: boolean; rel: string; name: string; miss?: boolean }) => (
+    <span className="actions" onClick={(ev) => ev.stopPropagation()}>
+      {/* diff 仅限版本化文件（文件夹无 diff；未版本化/干净文件无差异可看；缺失文件磁盘无内容） */}
+      {e.code !== '' && e.code !== '?' && !e.isDir && !e.miss && (
+        <ActionBtn icon={<IconDiff />} label="diff" title="查看差异" cmd={cmdOfRepo(props.repoType, 'diff', { path: e.rel })} onClick={() => props.onDiff(e.rel)} />
+      )}
+      {/* 缺失条目：还原（svn revert / git checkout 拉回） */}
+      {e.code === '!' && (
+        <ActionBtn icon={<IconRevert />} label="还原" title="文件已在磁盘上缺失，还原从版本库恢复" cmd={cmdOfRepo(props.repoType, 'revert', { paths: e.rel })} onClick={() => onAction('revert', e.rel)} />
+      )}
+      {e.code === '?' && (
+        <>
+          <ActionBtn icon={<IconPlus />} label="添加" cmd={cmdOfRepo(props.repoType, 'add', { paths: e.rel })} onClick={() => onAction('add', e.rel)} />
+          <ActionBtn icon={<IconEyeOff />} label="忽略" title="加入忽略" cmd={cmdOfRepo(props.repoType, 'ignore_add', { path: e.rel, pattern: '…' })} onClick={() => ignoreFile(e)} />
+        </>
+      )}
+      {e.isDir && e.code && e.code !== '?' && !e.miss && (
+        <ActionBtn icon={<IconCommit />} label="提交" title="提交此目录修改" cmd={cmdOfRepo(props.repoType, 'commit', { msg: '…' })} onClick={() => props.onAction('commit', [e.rel])} />
+      )}
+      {(e.code === 'M' || e.code === 'A' || e.code === 'D' || e.code === 'R') && (
+        <>
+          <ActionBtn icon={<IconRevert />} label="还原" cmd={cmdOfRepo(props.repoType, 'revert', { paths: e.rel })} onClick={() => onAction('revert', e.rel)} />
+          <ActionBtn icon={<IconClean />} label="从版本库移除" cmd={cmdOfRepo(props.repoType, 'remove_keep', { paths: e.rel })} onClick={() => onAction('delete', e.rel, true)} />
+        </>
+      )}
+      {!e.isDir && e.code !== '?' && !e.miss && props.repoType === 'svn' && (
+        <>
+          <ActionBtn icon={<IconLock />} label="锁定" onClick={() => svnLock(e.rel, 'lock')} />
+          <ActionBtn icon={<IconUnlock />} label="解锁" onClick={() => svnLock(e.rel, 'unlock')} />
+        </>
+      )}
+      {!e.isDir && e.code !== '?' && <ActionBtn icon={<IconClock />} label="历史" onClick={() => props.onLog(e.rel)} />}
+    </span>
+  );
+
+  return (
+    <div style={{ display: 'flex', gap: 14, height: '100%', minHeight: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        {/* 工具栏 */}
+        <div className="row" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+          {/* 导航：回到根目录 */}
+          <button
+            className="mini tool-btn"
+            disabled={!data?.dir}
+            onClick={() => {
+              setDir('');
+              setPendingLocate(null); // 手动导航：取消残留定位
+              if (mode === 'tree') setExpanded(new Set());
+              setFocusIndex(0);
+            }}
+            title="回到项目根目录"
+          >
+            <IconHome /> 根目录
+          </button>
+          {/* 刷新已由顶部工具栏全局刷新覆盖（tick 机制连带重载本视图），不重复提供 */}
+          <button className="mini tool-btn" onClick={() => setShowHidden((s) => !s)} title="显示/隐藏隐藏文件">
+            {showHidden ? <IconEye /> : <IconEyeOff />} {showHidden ? '隐藏' : '隐藏文件'}
+          </button>
+          <span className="row" style={{ gap: 4 }}>
+            {(['changed', 'new', 'deleted'] as Filter[]).map((f) => (
+              <button
+                key={f}
+                className={`mini tool-btn ${filters.has(f) ? 'primary' : ''}`}
+                onClick={() => {
+                  const willActive = !filters.has(f);
+                  const next = new Set(filters);
+                  if (next.has(f)) next.delete(f);
+                  else next.add(f);
+                  setFilters(next);
+                  if (willActive) {
+                    // 激活过滤 → 切树视图展示过滤树
+                    if (filters.size === 0) prevModeRef.current = mode;
+                    setMode('tree');
+                  } else if (next.size === 0) {
+                    // 全部取消 → 恢复原视图
+                    setMode(prevModeRef.current);
+                  }
+                }}
+                title={f === 'changed' ? '只看有修改的文件' : f === 'new' ? '只看未添加的新文件（树视图，双击文件跳转）' : '只看已删除的文件'}
+              >
+                {f === 'changed' ? <IconDiff /> : f === 'new' ? <IconPlus /> : <IconClean />}
+                {f === 'changed' ? '仅修改' : f === 'new' ? '仅新文件' : '仅删除'}
+              </button>
+            ))}
+            {filters.size > 0 && (
+              <button className="mini" onClick={() => { setFilters(new Set()); setMode(prevModeRef.current); }}>全部</button>
+            )}
+          </span>
+          <span className="row" style={{ gap: 4, marginLeft: 4 }}>
+            <button className={`mini tool-btn ${mode === 'list' ? 'primary' : ''}`} onClick={() => switchMode('list')} title="列表视图">
+              <IconList /> 列表
+            </button>
+            <button
+              className={`mini tool-btn ${mode === 'tree' ? 'primary' : ''}`}
+              onClick={() => switchMode('tree')}
+              title="树视图"
+            >
+              <IconTree /> 树
+            </button>
+            <button className={`mini tool-btn ${mode === 'browse' ? 'primary' : ''}`} onClick={() => switchMode('browse')} title="文件浏览器视图">
+              <IconGrid /> 浏览
+            </button>
+            {props.repoType === 'svn' && (
+              <button className={`mini tool-btn ${favs.length > 0 ? 'primary' : ''}`} onClick={() => setFavModal(true)} title="常用文件夹：指定后后台预加载缓存，进入秒开">
+                ⭐ 常用{favs.length > 0 ? `(${favs.length})` : ''}
+              </button>
+            )}
+          </span>
+          {/* 上一级：浏览按钮右侧、搜索框左侧，带间隔 */}
+          <button
+            className="mini tool-btn"
+            disabled={!data?.dir}
+            onClick={() => {
+              const up = dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : '';
+              setDir(up);
+              setFocusIndex(0);
+              if (mode === 'tree') setPendingLocate({ rel: up, at: 0 });
+              else setPendingLocate(null); // 列表/浏览：取消残留定位（树模式用新定位替换）
+            }}
+            title="上一级"
+            style={{ marginLeft: 12 }}
+          >
+            <IconUp /> 上级
+          </button>
+          <FsSearchBox search={search} onPick={(rel, at) => setPendingLocate({ rel, at })} />
+          <span className="dim small">（{rows.length} 项 · 键盘: ↑↓ 选择 · →/Enter 进入 · ← 返回 · 空白处右键菜单）</span>
+        </div>
+        {/* 面包屑导航（所有模式，从仓库根开始） */}
+        <div className="breadcrumb" ref={breadcrumbRef} style={{ marginBottom: 8, overflowX: 'auto', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {breadcrumbs.map((b, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && <span style={{ margin: '0 4px', color: 'var(--dim)' }}>›</span>}
+              <a
+                href="#"
+                data-rel={b.rel}
+                onClick={(e) => {
+                  e.preventDefault();
+                  // 树模式：展开父链并高亮 + 同步当前位置；列表/浏览：直接跳转
+                  if (mode === 'tree') {
+                    setDir(b.rel);
+                    setPendingLocate({ rel: b.rel, at: 0 });
+                  } else {
+                    setDir(b.rel);
+                    setPendingLocate(null); // 列表/浏览：直接跳转并取消残留定位
+                    setFocusIndex(0);
+                  }
+                }}
+                style={{ color: i === breadcrumbs.length - 1 ? 'var(--accent)' : 'var(--dim)' }}
+              >
+                {b.label}
+              </a>
+            </React.Fragment>
+          ))}
+        </div>
+        {error && (
+          <div className="error" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{error}</span>
+            <button className="mini" style={{ flexShrink: 0 }} onClick={() => setError('')} title="关闭错误提示">✕</button>
+          </div>
+        )}
+        {bigTip && <div className="fs-big-tip">⚠ {bigTip}</div>}
+        {/* 工作副本异常（锁定/不完整/缺失）与树冲突：提示与修法见 wc-notice.tsx，
+            诊断结果（diag）来自上层，与条目角标共用同一份 */}
+        <WcNotice flags={data ?? undefined} diag={diag} />
+        {/* 拖入上传：悬停提示落点 / 上传进度 / 同名冲突确认 */}
+        {drop.dragging && <div className="fs-drop-hint">松开即复制到 {dir ? `${dir}/` : '仓库根目录'}</div>}
+        {drop.progress && (
+          <div className="fs-drag-bar">
+            <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
+            <span>
+              正在上传 {drop.progress.done}/{drop.progress.total}…
+            </span>
+          </div>
+        )}
+        {conflictAsk && (
+          <UploadConflictModal
+            conflicts={conflictAsk.conflicts}
+            dir={dir}
+            onChoose={(m) => {
+              conflictAsk.resolve(m);
+              setConflictAsk(null);
+            }}
+          />
+        )}
+        {/* 树模式首次加载 */}
+        {mode === 'tree' && nodeData.size === 0 && !error && (
+          <div className="loading">
+            <div className="spinner" style={{ width: 24, height: 24 }} />
+            <div style={{ marginTop: 8 }}>正在加载…</div>
+          </div>
+        )}
+        {/* 列表/浏览模式：加载中转圈提示条（切换目录/首次加载都有反馈，不再干等） */}
+        {(mode === 'list' || mode === 'browse') && fsLoading && !error && (
+          <div className="fs-loading-bar">
+            <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
+            <span>{data ? '正在加载目录…' : '正在加载…'}</span>
+          </div>
+        )}
+        {/* 常用文件夹后台预加载进度 */}
+        {preload && (
+          <div className="fs-preload-bar">
+            <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
+            <span>
+              {preload.running
+                ? `正在后台预加载常用文件夹：${preload.done}/${preload.total}（${preload.cur}）`
+                : `✅ 常用文件夹后台预加载完成（${preload.done} 个目录），进入秒开`}
+            </span>
+          </div>
+        )}
+        {/* 树模式扁平化行 */}
+        {mode === 'tree' && !preview && (
+          <div
+            {...drop.fileAreaProps}
+            className={`list${drop.dragging ? ' fs-drop-active' : ''}`}
+            style={{ overflow: 'auto', flex: 1 }}
+            onContextMenu={onBlankContext}
+            onClick={(ev) => {
+              if (ev.target === ev.currentTarget) {
+                setSelected(new Set()); // 空白处点击清空多选
+                setFocusIndex(-1); // 同时清除焦点选中高亮
+              }
+            }}
+          >
+            {/* 过滤激活：渲染过滤树（树列表同款行样式，仅数据过滤；目录可折叠，双击文件跳转） */}
+            {filters.size > 0 ? (
+              ft.filterTree && ft.filterTree.length === 0 ? (
+                <div className="empty">没有符合条件的文件</div>
+              ) : (
+                ft.filterRows.map((row, i) => renderTreeRow(row, i, true))
+              )
+            ) : (
+              <>
+                {visibleRows.length === 0 && !error && <div className="empty">空文件夹（← 上级 · 空白处右键菜单）</div>}
+                {visibleRows.map((row, i) => renderTreeRow(row, i, false))}
+              </>
+            )}
+          </div>
+        )}
+        {/* 列表模式 */}
+        {mode === 'list' && !preview && (
+          <div
+            {...drop.fileAreaProps}
+            className={`list${drop.dragging ? ' fs-drop-active' : ''}`}
+            style={{ overflow: 'auto', flex: 1 }}
+            onContextMenu={onBlankContext}
+            onClick={(ev) => {
+              if (ev.target === ev.currentTarget) {
+                setSelected(new Set()); // 空白处点击清空多选
+                setFocusIndex(-1); // 同时清除焦点选中高亮
+              }
+            }}
+          >
+            {listEntries.length === 0 && !error && (
+              <div className="empty">
+                {filters.size > 0
+                  ? filters.has('deleted')
+                    ? '该目录下没有已删除的文件'
+                    : filters.has('new') && filters.has('changed')
+                      ? '该目录下没有修改或未版本化的文件'
+                      : filters.has('new')
+                        ? '该目录下没有未版本化的新文件'
+                        : '该目录下没有修改的文件'
+                  : '空文件夹（← 返回上级 · 空白处右键菜单）'}
+              </div>
+            )}
+            {inline?.kind === 'new' && (
+              /* 就地新建的行同样给"选中"样式（与 TreeRow 被选中时一致）：编辑中的就是它 */
+              <div className="tree-row new-entry" style={{ background: 'var(--panel2)', outline: '1px solid var(--accent)' }}>
+                <span className="arrow" />
+                <MiniIcon isDir={inline.type === 'dir'} name="" />
+                {inlineInput('left', inline.type === 'dir' ? '文件夹名' : '文件名')}
+              </div>
+            )}
+            {listEntries.map((e, i) => renderEntryRow(e, i))}
+          </div>
+        )}
+        {/* 浏览模式：文件管理器图标网格 */}
+        {mode === 'browse' && !preview && (
+          <div
+            {...drop.fileAreaProps}
+            className={`grid-view${drop.dragging ? ' fs-drop-active' : ''}`}
+            onContextMenu={onBlankContext}
+            ref={(el) => {
+              if (el) gridRef.current = el;
+            }}
+            onMouseDown={(ev) => {
+              // 空白处按下启动框选（点击条目由条目自身处理）；仅左键——右键按下会打开菜单，
+              // 若也启动框选，菜单打开后无按键移动鼠标就会画出"幽灵框选"
+              if (ev.button !== 0 || (ev.target as HTMLElement).closest('.grid-item')) return;
+              lastWasDragRef.current = false; // 消费上次可能残留的拖拽标记（mouseup 丢失时），避免吞掉本次空白点击的清空
+              selDragRef.current = { startX: ev.clientX, startY: ev.clientY };
+            }}
+            onMouseMove={(ev) => {
+              const d = selDragRef.current;
+              if (!d) return;
+              const dx = ev.clientX - d.startX;
+              const dy = ev.clientY - d.startY;
+              if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return; // 未达到拖动阈值
+              lastWasDragRef.current = true;
+              // 矩形直接改 DOM 样式，不 setState（避免 mousemove 每帧全量 re-render）
+              const el = selBoxRef.current;
+              if (el) {
+                el.style.display = 'block';
+                el.style.left = `${Math.min(d.startX, ev.clientX)}px`;
+                el.style.top = `${Math.min(d.startY, ev.clientY)}px`;
+                el.style.width = `${Math.abs(dx)}px`;
+                el.style.height = `${Math.abs(dy)}px`;
+              }
+            }}
+            onMouseUp={(ev) => {
+              const d = selDragRef.current;
+              if (d) {
+                if (lastWasDragRef.current) {
+                  // 与框选矩形相交的条目全部选中（矩形内无条目时清空）
+                  const rect = {
+                    left: Math.min(d.startX, ev.clientX),
+                    top: Math.min(d.startY, ev.clientY),
+                    right: Math.max(d.startX, ev.clientX),
+                    bottom: Math.max(d.startY, ev.clientY),
+                  };
+                  const s = new Set<string>();
+                  rowRefs.current.forEach((el, rel) => {
+                    const r = el.getBoundingClientRect();
+                    if (r.left < rect.right && r.right > rect.left && r.top < rect.bottom && r.bottom > rect.top) s.add(rel);
+                  });
+                  setSelected(s);
+                  shiftAnchorRef.current = s.size > 0 ? [...s][s.size - 1]! : null;
+                }
+                selDragRef.current = null;
+                if (selBoxRef.current) selBoxRef.current.style.display = 'none';
+              }
+            }}
+            onClick={(ev) => {
+              if (ev.target !== ev.currentTarget) return;
+              if (lastWasDragRef.current) {
+                lastWasDragRef.current = false; // 刚框选过，忽略本次空白点击，避免清空框选结果
+                return;
+              }
+              setSelected(new Set()); // 空白处点击清空多选
+              setFocusIndex(-1); // 同时清除焦点选中高亮
+            }}
+          >
+            {listEntries.length === 0 && !error && (
+              <div className="empty">
+                {filters.size > 0
+                  ? filters.has('deleted')
+                    ? '该目录下没有已删除的文件'
+                    : filters.has('new') && filters.has('changed')
+                      ? '该目录下没有修改或未版本化的文件'
+                      : filters.has('new')
+                        ? '该目录下没有未版本化的新文件'
+                        : '该目录下没有修改的文件'
+                  : '空文件夹（← 返回上级 · 空白处右键菜单）'}
+              </div>
+            )}
+            {/* 就地新建的卡片：图标在上、名字输入框在下（与网格条目同构） */}
+            {inline?.kind === 'new' && (
+              <div className="grid-item new-entry selected">
+                <span className="grid-icon-wrap">
+                  <GridIcon isDir={inline.type === 'dir'} name="" />
+                </span>
+                {inlineInput('center', inline.type === 'dir' ? '文件夹名' : '文件名')}
+              </div>
+            )}
+            {listEntries.map((e, i) => {
+              const rel = relOf(e);
+              return (
+                <GridItem
+                  key={rel}
+                  entry={e}
+                  rel={rel}
+                  focused={i === focusIndex}
+                  multi={selected.has(rel)}
+                  searchHit={currentMatchNames.has(e.name)}
+                  pulse={pulseRels.includes(rel)}
+                  clipCut={cutRels.has(rel)}
+                  dragSrc={dragRels.has(rel)}
+                  dropHover={drop.hoverDir === rel}
+                  onDragStart={(ev) => onRowDragStart(ev, rel, e.name, e.isDir, e.code)}
+                  onDragEnd={onRowDragEnd}
+                  renaming={inline?.kind === 'rename' && inline.rel === rel ? inlineInput('center', e.name) : undefined}
+                  locked={data?.selfLocked?.includes(rel) ?? false}
+                  tc={tcState(e, rel, conflictLookup)}
+                  rowRef={(el) => {
+                    if (el) rowRefs.current.set(rel, el);
+                    else rowRefs.current.delete(rel); // 行卸载（切换模式/目录刷新）时移除，避免残留导致泄漏
+                  }}
+                  onMouseEnter={(ev) => {
+                    if (!ctxLocked) setFocusIndex(-1);
+                    else if (ctxRelRef.current === rel) cancelCtxClose(); // 鼠标回到右键的条目，保持菜单
+                    // 拖拽/框选进行中一律不弹卡片：挡路，而且此刻要看的是落点/选区。
+                    //  - 项目内拖拽、外部文件拖入：浏览器拖拽期间本来就不发鼠标事件，这里挡住的是"拖起来前那一瞬"
+                    //  - **框选**（空白处按住左键拖选择框）：走的是普通鼠标事件，**一路都会触发 mouseenter**，
+                    //    不挡的话拖框经过哪个文件就弹哪个（用户实报带截图）
+                    if (dragRels.size > 0 || drop.dragging || drop.hoverDir !== null || selDragRef.current) {
+                      setTip(null);
+                      return;
+                    }
+                    // 悬浮提示: 目录带状态字母显示彩色徽标;文件始终显示信息卡片（含大小/时间/状态）
+                    setTip({
+                      x: ev.clientX, y: ev.clientY, name: e.name, isDir: e.isDir,
+                      size: e.size, mtime: e.mtime, code: e.code, codes: e.codes, count: e.count,
+                      miss: e.miss,
+                      tc: tcState(e, rel, conflictLookup),
+                      tcItem: e.treeConflicted ? conflictLookup(rel).item : undefined,
+                    });
+                  }}
+                  onMouseLeave={() => {
+                    closeCtxSoon();
+                    setTip(null);
+                  }}
+                  onClick={(ev) => onRowClick(rel, i, ev, e)}
+                  onDoubleClick={() => {
+                    setTip(null); // 双击即关闭悬浮卡片
+                    if (e.miss) {
+                      props.onToast(e.isDir ? '目录已在磁盘上缺失，请右键「还原」恢复' : '文件已在磁盘上缺失，请右键「还原」恢复', true);
+                      return;
+                    }
+                    if (e.isDir) {
+                      setDir(rel);
+                      setPendingLocate(null); // 双击进入目录：取消残留定位
+                    } else void openFile(e.name, e.code, rel);
+                  }}
+                  onContextMenu={(ev) => onRowContext(ev, { isDir: e.isDir, code: e.code, rel, name: e.name, treeConflicted: e.treeConflicted, codes: e.codes }, i)}
+                  locateBadge={(relf, code) => void locateBadge(relf, code)}
+                />
+              );
+            })}
+            {/* 拖拽框选矩形（常驻，样式由 mousemove 直接改，避免 setState 高频 re-render） */}
+            <div
+              ref={selBoxRef}
+              style={{
+                display: 'none',
+                position: 'fixed',
+                left: 0,
+                top: 0,
+                border: '1.5px solid var(--accent)',
+                background: 'rgba(88,166,255,.15)',
+                zIndex: 200,
+                pointerEvents: 'none',
+              }}
+            />
+          </div>
+        )}
+        {/* 文件预览（文本/图片/md/blame + 搜索均在 PreviewPane 内；文本读取失败时面板回调退回列表） */}
+        {preview && (
+          <PreviewPane
+            target={preview}
+            active={props.active}
+            onClose={() => setPreview(null)}
+            onError={(msg) => setError(msg)}
+            onOpenError={(msg) => {
+              setError(msg);
+              setPreview(null); // 文本读取失败：红条提示并退回列表（对应旧 openFile 读取失败后的终态）
+            }}
+            onSaved={(msg) => {
+              // 内联编辑保存后：文件状态会从干净变成 M（或未版本化项内容变了），列表必须重拉；
+              // 树模式同样要重载（带展开状态的节点）
+              props.onToast(msg);
+              setNodeData(new Map());
+              if (mode === 'tree') loadNode('', true);
+              else void load(dir, true);
+            }}
+          />
+        )}
+      </div>
+      {/* 详情面板（列表模式） */}
+      {mode === 'list' && sel && !preview && (
+        <div style={{ width: 240, flexShrink: 0 }}>
+          <div className="panel">
+            <div className="panel-title">文件详情</div>
+            <div className="panel-body">
+              <div className="detail-name">{sel.name}</div>
+              <div className="dim small" style={{ wordBreak: 'break-all' }}>{relOf(sel)}</div>
+              <table className="detail-table">
+                <tbody>
+                  <tr><td>状态</td><td>{sel.code ? `${CODE_DESC[sel.code] ?? sel.code} (${sel.code})` : '无变更'}</td></tr>
+                  <tr><td>大小</td><td>{fmtSize(sel.size)}</td></tr>
+                  <tr><td>修改时间</td><td>{sel.mtime}</td></tr>
+                  <tr><td>类型</td><td>{sel.isDir ? '文件夹' : '文件'}</td></tr>
+                </tbody>
+              </table>
+              <div className="row mt16" style={{ flexWrap: 'wrap', gap: 6 }}>
+                {sel.code !== '' && sel.code !== '?' && <button className="mini" onClick={() => props.onDiff(relOf(sel))}>查看 diff</button>}
+                {sel.code === '?' && <button className="mini" onClick={() => onAction('add', relOf(sel))}>添加到版本库</button>}
+                {(sel.code === 'M' || sel.code === 'A' || sel.code === 'D') && (
+                  <>
+                    <button className="mini" onClick={() => onAction('revert', relOf(sel))}>还原</button>
+                    <button className="mini" onClick={() => onAction('delete', relOf(sel), true)}>从版本库移除</button>
+                  </>
+                )}
+                <button className="mini" onClick={() => props.onLog(relOf(sel))}>历史记录</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 无历史记录提示（点击位置，1 秒后淡出） */}
+      {noHist && (
+        <div className="no-hist-tip" style={{ left: noHist.x, top: noHist.y }}>
+          没有历史记录
+        </div>
+      )}
+
+      {/* 忽略设置弹窗 */}
+      {ignoreModal && (
+        <IgnoreModal
+          dir={ignoreModal.dir}
+          onClose={() => setIgnoreModal(null)}
+          onChanged={() => {
+            ft.setFilterTreeTick((t) => t + 1); // 忽略规则增删 → ?/I 互换，过滤视图重拉
+            if (mode === 'tree') loadNode('', true);
+            else void load(dir, true);
+          }}
+          onToast={props.onToast}
+        />
+      )}
+      {/* 加入忽略输入弹窗（替代 window.prompt） */}
+      {ignoreAsk && (
+        <ModalShell
+          title={`⚠ 加入忽略（写入 ${
+            props.repoType === 'git'
+              ? IGNORE_WHERE_LABEL[ignoreTarget]
+              : // svn 的规则是属性，只能挂在已加入版本库的目录上（未版本化条目会挂到最近的这种上级目录）
+                'svn:ignore 属性 · 挂在最近的已加入版本库的目录，提交后随仓库分发'
+          }）`}
+          width={440}
+          onClose={closeIgnore}
+          foot={
+            <>
+              <button onClick={closeIgnore}>取消</button>
+              {/* svn 预案没回来前先别让用户确认：预填的还是条目名，此时提交会与展示的落点不符 */}
+              <button className="primary" disabled={!ignorePattern.trim() || ignorePlan === 'loading'} onClick={doIgnore}>
+                加入忽略
+              </button>
+            </>
+          }
+        >
+          <div className="dim small" style={{ marginBottom: 8, wordBreak: 'break-all' }}>
+            加入忽略规则（默认当前文件名）：<span className="mono">{ignoreAsk.rel}</span>
+          </div>
+          {ignorePlan && ignorePlan !== 'loading' && (
+            <div className="small" style={{ marginBottom: 8, wordBreak: 'break-all', color: ignorePlan.degraded ? 'var(--warn)' : undefined }}>
+              {ignorePlan.degraded ? (
+                <>
+                  ⚠ svn 的忽略规则不能带路径：<span className="mono">{ignoreAsk.rel}</span> 所在目录尚未加入版本库，
+                  只能忽略整个 <span className="mono">{ignorePlan.rule}</span>（写入{' '}
+                  <span className="mono">{ignorePlan.target || '仓库根目录'}</span>
+                  ）。想只忽略这一个，请先把该目录「添加到版本库」。
+                </>
+              ) : (
+                <>
+                  规则将写入：<span className="mono">{ignorePlan.target || '仓库根目录'}</span>
+                </>
+              )}
+            </div>
+          )}
+          <FormRow label="规则">
+            <input
+              type="text"
+              placeholder="如 *.log 或 目录名/"
+              value={ignorePattern}
+              onChange={(e) => setIgnorePattern(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && ignorePattern.trim() && ignorePlan !== 'loading') doIgnore();
+              }}
+              autoFocus
+            />
+          </FormRow>
+        </ModalShell>
+      )}
+
+      {/* 取消忽略确认弹窗：变回未版本化(?)后可右键「添加到版本库」 */}
+      {unignoreAsk && (
+        <ConfirmModal
+          title="取消忽略"
+          message={
+            <div style={{ lineHeight: 1.7 }}>
+              <div className="dim small mono" style={{ wordBreak: 'break-all' }}>
+                {unignoreAsk.rel}（{unignoreAsk.isDir ? '目录' : '文件'}）
+              </div>
+              {props.repoType === 'git' ? (
+                <div style={{ marginTop: 8 }}>
+                  将向 <span className="mono">.gitignore</span> 追加否定规则，该项将变为未版本化（<b>?</b>），之后可右键「添加到版本库」。
+                  {unignoreAsk.isDir && (
+                    <div className="dim" style={{ marginTop: 6 }}>若匹配的是父目录规则，该目录下其他文件将按剩余规则重新判定。</div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  将删除匹配的忽略规则，该项将变为未版本化（<b>?</b>），之后可右键「添加到版本库」。
+                  <div className="dim" style={{ marginTop: 6 }}>同目录下匹配该规则的其他文件也会一起变为未版本化（?）。</div>
+                </div>
+              )}
+            </div>
+          }
+          confirmLabel="取消忽略"
+          onConfirm={doUnignore}
+          onCancel={() => setUnignoreAsk(null)}
+        />
+      )}
+
+      {/* md 文件说明注入弹窗 */}
+      {moduleIndexModal && (
+        <ModuleIndexDialog
+          dir={data?.dir ?? ''}
+          dirLabel={data?.dir ?? '（仓库根）'}
+          md={moduleIndexModal.md}
+          onClose={() => setModuleIndexModal(null)}
+          onDone={loadModuleIndex}
+          onToast={props.onToast}
+        />
+      )}
+
+      {/* 常用文件夹管理弹窗 */}
+      {favModal && (
+        <FavDirsModal
+          favs={favs}
+          preload={preload}
+          onRemove={removeFav}
+          onPreloadAll={() => {
+            for (const f of favs) preloadDir(f.path);
+          }}
+          onClose={() => setFavModal(false)}
+        />
+      )}
+
+      {/* 右键菜单：延迟关闭/悬停保持逻辑在此控制（onMouseEnter/onMouseLeave 透传给菜单） */}
+      {ctx && (
+        <ContextMenu
+          x={ctx.x}
+          y={ctx.y}
+          items={ctx.items}
+          onClose={closeCtx}
+          onMouseEnter={cancelCtxClose} // 鼠标移入菜单 → 取消延迟关闭
+          onMouseLeave={closeCtxSoon} // 鼠标移出菜单 → 延迟关闭
+        />
+      )}
+      <FileTipCard tip={tip} />
+    </div>
+  );
+}

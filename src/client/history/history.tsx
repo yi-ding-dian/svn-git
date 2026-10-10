@@ -1,0 +1,739 @@
+/** 历史视图：提交列表 + 变更文件详情，点击查看 diff；未推送提交显示绿灯可修改注释/撤销 */
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { get, post, type LogEntry } from '../shared/api.js';
+import { isBinaryFile, autoSizeForText } from '../shared/utils.js';
+import { DiffRender } from '../ui/diff-render.js';
+import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
+import { ConfirmModal, InfoModal } from '../ui/prompt.js';
+import { ResizableModal } from '../shell/modal-shell.js';
+import { ClickTip } from '../ui/ui.js';
+import { IconOk, IconErr } from '../ui/icons.js';
+import { cmdOfRepo } from '../shared/cmd-preview.js';
+import { renderMarkdown } from '../shared/markdown.js';
+
+interface Props {
+  path?: string;
+  tick: number;
+  repoType?: 'svn' | 'git';
+  /** 提交操作（修改注释/撤销提交）后通知父级刷新文件状态 */
+  onChanged?: () => void;
+  /** 返回按钮：退出历史视图回到文件浏览 */
+  onBack: () => void;
+}
+
+export function HistoryView(props: Props) {
+  const [logs, setLogs] = useState<LogEntry[] | null>(null);
+  const [error, setError] = useState('');
+  const [sel, setSel] = useState<LogEntry | null>(null);
+  const [diffOf, setDiffOf] = useState<{ rev: string; prev?: string; path?: string } | null>(null);
+  const [diffText, setDiffText] = useState('');
+  const [diffLoading, setDiffLoading] = useState(false);
+  /** 未推送提交（长 hash 列表，来自后端） */
+  const [unpushed, setUnpushed] = useState<string[]>([]);
+  /** 本地重载计数（修改注释/撤销提交后刷新） */
+  const [reloadKey, setReloadKey] = useState(0);
+  /** 提交总数（git 精确秒回；svn 不探测=0）——用于「已全部加载」判断与标题（已加载/总数） */
+  const [total, setTotal] = useState(0);
+  /** svn 无总数时：某批不足 200 条 = 追完（exhausted），"加载更多"按钮消失 */
+  const [exhausted, setExhausted] = useState(false);
+  /** 追加加载中（防连点重复） */
+  const [loadingMore, setLoadingMore] = useState(false);
+  /** 「更多」下拉菜单位置（600/1200/全部 选项） */
+  const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
+  /** 追加期间的计数动画：显示值小步进（+10）逼近真实 logs.length，加载完成立即归位 */
+  const [shownLen, setShownLen] = useState(0);
+  useEffect(() => {
+    if (!loadingMore) {
+      setShownLen(logs?.length ?? 0);
+      return;
+    }
+    const target = logs?.length ?? 0;
+    if (shownLen >= target) return;
+    const t = setTimeout(() => setShownLen((s) => Math.min(target, s + 10)), 150);
+    return () => clearTimeout(t);
+  }, [loadingMore, shownLen, logs]);
+  /** 分批追加的每批条数 */
+  const PAGE = 200;
+  // 虚拟滚动：历史行高固定（CSS 34 + gap 2），只渲染视口附近行，几千条也顺滑
+  const ROW_H = 36;
+  const [scrollTop, setScrollTop] = useState(0);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  /** 操作成功提示 */
+  const [notice, setNotice] = useState('');
+  const [noticeErr, setNoticeErr] = useState(false);
+  /** 右键菜单位置（仅 HEAD 未推送行可弹出） */
+  const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);
+  /** 非 HEAD 未推送提交右键操作的说明弹窗 */
+  const [infoTip, setInfoTip] = useState('');
+  /** 修改注释弹窗：当前提交 */
+  const [amendOf, setAmendOf] = useState<LogEntry | null>(null);
+  /** 修改注释弹窗的「预览」态（false = 编写）：预览用与历史详情同一套 md 渲染，所见即所得 */
+  const [amendPreview, setAmendPreview] = useState(false);
+  const [amendMsg, setAmendMsg] = useState('');
+  /** 修改注释弹窗自己的错误提示：父级 notice 在弹窗外的列表区，点确认失败时会以为"没反应" */
+  const [amendNotice, setAmendNotice] = useState('');
+  /** 撤销提交二次确认 */
+  const [resetCfm, setResetCfm] = useState(false);
+  /** 详情面板「变更文件」行的右键菜单（未推送提交时提供撤销提交；带该文件路径供"查看差异"） */
+  const [fileMenu, setFileMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  /** 详情面板提交说明是否展开（长说明默认折叠，避免占满面板挤掉变更文件列表） */
+  const [msgExpanded, setMsgExpanded] = useState(false);
+  /** 提交完整说明缓存（rev → 标题+正文）：悬浮提示用（列表接口只带 %s 标题） */
+  const [fullMsgs, setFullMsgs] = useState<Record<string, string>>({});
+  /** 已请求过完整说明的 rev：翻页/重载时只拉新增，避免重复请求 */
+  const msgRequested = useRef<Set<string>>(new Set());
+  // 拉取提交完整说明（悬浮提示用）：失败静默降级为标题，并允许下次重试
+  useEffect(() => {
+    if (props.repoType !== 'git') return; // svn 无「完整说明（%B）」概念，不请求（否则后端按"仅 git 支持"返回 400）
+    const revs = (logs ?? []).map((l) => l.rev).filter((r) => !msgRequested.current.has(r));
+    if (revs.length === 0) return;
+    revs.forEach((r) => msgRequested.current.add(r));
+    let cancelled = false;
+    post
+      .commitMessages(revs)
+      .then((r) => {
+        if (!cancelled) setFullMsgs((prev) => ({ ...prev, ...r.messages }));
+      })
+      .catch(() => {
+        revs.forEach((r) => msgRequested.current.delete(r));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [logs]);
+  /** 还原到指定版本：待确认的提交（rev）；还原对象 = 当前查看路径（props.path） */
+  const [restoreOf, setRestoreOf] = useState<{ rev: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  /** 跟随鼠标提示（修改注释成功显示在点击处） */
+  const [clickTip, setClickTip] = useState<{ x: number; y: number; msg: string } | null>(null);
+
+  // 模糊过滤：按消息/作者/版本号（大小写不敏感），实时过滤提交列表
+  const [filterQ, setFilterQ] = useState('');
+  const visibleLogs = useMemo(() => {
+    if (!logs) return [];
+    const q = filterQ.trim().toLowerCase();
+    if (!q) return logs;
+    return logs.filter(
+      (l) => l.msg.toLowerCase().includes(q) || l.author.toLowerCase().includes(q) || l.rev.toLowerCase().includes(q),
+    );
+  }, [logs, filterQ]);
+
+  // 左右栏比例拖拽（列表 / 详情，与 diff 界面同一套逻辑）
+  const [leftRatio, setLeftRatio] = useState(38);
+  const dragState = useRef<{ startX: number; startRatio: number } | null>(null);
+  const startDrag = (e: React.MouseEvent) => {
+    dragState.current = { startX: e.clientX, startRatio: leftRatio };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      if (!dragState.current) return;
+      const delta = ((e.clientX - dragState.current.startX) / window.innerWidth) * 100;
+      setLeftRatio(Math.min(80, Math.max(20, dragState.current.startRatio + delta)));
+    };
+    const up = () => {
+      dragState.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLogs(null);
+    setError('');
+    setNotice('');
+    setNoticeErr(false);
+    setSel(null);
+    setDiffOf(null);
+    setUnpushed([]);
+    get
+      .log(props.path, PAGE)
+      .then((r) => {
+        if (!cancelled) {
+          setLogs(r.logs);
+          setTotal(r.total ?? 0);
+          setExhausted(r.logs.length < PAGE); // svn 小仓库：首批不足一批 = 已全部；git 由 total 判断
+          setUnpushed(r.unpushed ?? []);
+          if (r.logs.length > 0) setSel(r.logs[0]!);
+        }
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.path, props.tick, reloadKey]);
+
+  /** 追加加载：一批 200 条追加到列表底部（滚动/选中/详情不动，可继续浏览）。
+   *  target>0 = 追加至该条数；target=0 = 循环追加直到追完。本批不足 200 = 已全部（svn 据此隐藏按钮）。按 rev 去重防连点重复 */
+  const loadMore = async (target: number) => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      let merged = [...(logs ?? [])];
+      while (true) {
+        if (target > 0 && merged.length >= target) break;
+        const oldest = merged.length > 0 ? merged[merged.length - 1]!.rev : undefined;
+        const r = await get.log(props.path, PAGE, merged.length, oldest);
+        const newOnes = r.logs.filter((l) => !merged.some((m) => m.rev === l.rev));
+        if (r.logs.length === 0 || newOnes.length === 0) {
+          setExhausted(true);
+          break;
+        }
+        merged = [...merged, ...newOnes];
+        setLogs(merged);
+        if (newOnes.length < PAGE) {
+          setExhausted(true);
+          break;
+        }
+      }
+    } catch (e) {
+      setNoticeErr(true);
+      setNotice((e as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  /** 未推送 hash 集合（短 7 位比对）+ 第一条未推送（HEAD）下标 */
+  const unpushedSet = new Set(unpushed.map((h) => h.slice(0, 7)));
+  const headIdx = logs ? logs.findIndex((l) => unpushedSet.has(l.rev)) : -1;
+
+  // 详情面板的提交说明：长说明默认折叠（超过 6 行），点击展开/收起。切到别的提交时回到折叠态
+  const detailMsg = sel ? (fullMsgs[sel.rev] ?? sel.msg) : '';
+  const detailMsgLines = detailMsg ? detailMsg.split('\n').length : 0;
+  const detailMsgLong = detailMsgLines > 6;
+  const detailMsgOpen = msgExpanded || !detailMsgLong;
+  useEffect(() => {
+    setMsgExpanded(false);
+  }, [sel?.rev]);
+
+  /** 修改注释确认（HEAD 用 amend；其余未推送提交用 reword 重写注释，代码内容不变） */
+  const doAmend = async (x: number, y: number) => {
+    if (!amendOf) return;
+    const msg = amendMsg.trim();
+    if (!msg) return;
+    setBusy(true);
+    try {
+      const isHead = logs && logs[headIdx] ? amendOf.rev === logs[headIdx]!.rev : false;
+      const r = isHead ? await post.gitAmend(msg) : await post.gitReword(amendOf.rev, msg);
+      if (r.ok) {
+        setClickTip({ x, y, msg: r.message }); // 成功提示显示在鼠标点击处
+        setNotice(''); // 清除上一次失败的红色 notice,避免成功与错误信息并存
+        setNoticeErr(false);
+        setAmendOf(null);
+        setReloadKey((k) => k + 1);
+        props.onChanged?.();
+      } else {
+        setNoticeErr(true);
+        setNotice(r.message); // 失败信息显示在标题栏下方
+        setAmendNotice(r.message); // 同时显示在注释弹窗内，不让用户以为"点了没反应"
+      }
+    } catch (e) {
+      setNoticeErr(true);
+      setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 还原到指定版本：覆盖当前工作区（成功后刷新历史与文件状态） */
+  const doRestore = async (rev: string) => {
+    if (!props.path) return;
+    setRestoreOf(null);
+    let r;
+    try {
+      r = await post.restoreVersion(props.path, rev);
+    } catch (e) {
+      r = { ok: false, message: (e as Error).message };
+    }
+    setNoticeErr(!r.ok);
+    setNotice(r.ok ? r.message : `还原失败: ${r.message}`);
+    if (r.ok) {
+      setReloadKey((k) => k + 1); // 工作区变化：重载历史（diff 状态刷新）
+      props.onChanged?.();
+    }
+  };
+
+  /** 撤销提交确认 */
+  const doReset = async () => {
+    setBusy(true);
+    try {
+      const r = await post.gitReset();
+      if (r.ok) {
+        setNoticeErr(false);
+        setNotice(r.message);
+        setResetCfm(false);
+        setReloadKey((k) => k + 1);
+        props.onChanged?.();
+      } else {
+        setNoticeErr(true);
+        setNotice(r.message);
+      }
+    } catch (e) {
+      setNoticeErr(true);
+      setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const showDiff = async (rev: string, prev: string | undefined, path?: string) => {
+    setDiffOf({ rev, prev, path });
+    setDiffLoading(true);
+    try {
+      // 二进制文件（Word/PDF/图片等）：文本对比无意义，直接提示
+      if (path && isBinaryFile(path)) {
+        setDiffText('该文件为二进制文件（Word 文档 / PDF / 图片等），不支持文本对比');
+        return;
+      }
+      const r = await get.show(rev, path);
+      setDiffText(r.output || r.error || '(无差异)');
+    } catch (e) {
+      setDiffText(`读取失败: ${(e as Error).message}`);
+    } finally {
+      setDiffLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', gap: 14, height: '100%', minHeight: 0 }}>
+      <div style={{ width: `${leftRatio}%`, flex: '0 0 auto', display: 'flex', flexDirection: 'column', minWidth: 220 }}>
+        <div className="row dim" style={{ marginBottom: 8, gap: 8 }}>
+          历史: {props.path ? <span>{props.path}</span> : '全部提交'}
+          {!filterQ && logs && (
+            <span className="small" style={{ color: 'var(--dim)' }}>
+              （{loadingMore ? shownLen : logs.length}{total > (loadingMore ? shownLen : logs.length) ? `/${total}` : ''}）
+            </span>
+          )}
+          {filterQ && <span className="small" style={{ color: 'var(--warn)' }}>{visibleLogs.length}/{logs?.length ?? 0}</span>}
+          {/* 「更多」单按钮：点击下拉选择 600/1200/全部（追加式加载到列表底部） */}
+          {logs && !exhausted && ((total > 0 && logs.length < total) || (total === 0 && logs.length >= PAGE)) && (
+            <button
+              className="mini"
+              disabled={loadingMore}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setMoreMenu({ x: r.left, y: r.bottom + 4 });
+              }}
+              title="追加更多提交到列表底部（加载期间可继续浏览）"
+            >
+              {loadingMore ? '⏳ 加载中…' : '更多'}
+            </button>
+          )}
+          {logs && exhausted && total === 0 && logs.length >= PAGE && (
+            <span className="dim small">已全部加载</span>
+          )}
+          <span className="grow" />
+          {/* 模糊过滤：按消息/作者/版本号实时过滤提交列表 */}
+          <input
+            type="text"
+            placeholder="🔍 过滤提交（消息/作者/版本号）…"
+            value={filterQ}
+            onChange={(e) => setFilterQ(e.target.value)}
+            style={{ width: 220, fontSize: 12 }}
+          />
+        </div>
+        {error && <div className="error">{error}</div>}
+        {notice && (
+          <div className="row" style={{ alignItems: 'center', gap: 6, color: noticeErr ? 'var(--err)' : 'var(--ok)', margin: '4px 0' }}>
+            {noticeErr ? <IconErr /> : <IconOk />}
+            <span style={{ wordBreak: 'break-all' }}>{notice}</span>
+          </div>
+        )}
+        {!logs && !error && <div className="loading">⏳ 读取提交记录…</div>}
+        {logs && logs.length === 0 && !error && <div className="empty">暂无提交记录</div>}
+        {logs && logs.length > 0 && (
+          <div
+            ref={listRef}
+            className="list"
+            style={{ overflow: 'auto', flex: 1, gap: 0 }}
+            onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+          >
+            {visibleLogs.length === 0 && <div className="empty">没有匹配的提交</div>}
+            {/* 虚拟滚动：track 撑出总高度（flexShrink:0 防被容器压缩），只渲染可视区附近的 40 行 */}
+            <div style={{ height: visibleLogs.length * ROW_H, position: 'relative', flexShrink: 0 }}>
+              {(() => {
+                const start = Math.max(0, Math.floor(scrollTop / ROW_H) - 5);
+                const n = Math.min(visibleLogs.length - start, 40);
+                return visibleLogs.slice(start, start + n).map((l, k) => {
+                  const i = start + k;
+                  const isUnpushed = unpushedSet.has(l.rev);
+                  // 只有第一条未推送（HEAD）可右键操作：amend/reset 只作用于最近一次提交
+                  const opable = isUnpushed && logs.indexOf(l) === headIdx;
+                  return (
+                    <div
+                      key={l.rev}
+                      className="list-item"
+                      title={fullMsgs[l.rev] ?? l.msg}
+                      style={{
+                        background: sel === l ? 'var(--panel2)' : undefined,
+                        position: 'absolute',
+                        top: i * ROW_H,
+                        left: 0,
+                        right: 0,
+                        height: ROW_H - 2,
+                        boxSizing: 'border-box',
+                        marginBottom: 2,
+                      }}
+                      onClick={() => {
+                        setSel(l);
+                        setDiffOf(null);
+                      }}
+                      onContextMenu={
+                        isUnpushed || props.path
+                          ? (e) => {
+                              e.preventDefault();
+                              setMenu({ x: e.clientX, y: e.clientY, index: logs.indexOf(l) });
+                            }
+                          : undefined
+                      }
+                    >
+                      <span className="rev">{l.rev}</span>
+                      <span className="date">{l.date.slice(0, 16)}</span>
+                      <span className="author">{l.author}</span>
+                      <span className="msg">{l.msg}</span>
+                      <span className="stat">{l.changed.length}</span>
+                      {isUnpushed && (
+                        <span className="unpushed" title={`未推送：本地领先远程 ${unpushed.length} 个提交`}>
+                          <span className="unpushed-dot" />
+                          {opable && <span className="unpushed-n">{unpushed.length}</span>}
+                        </span>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="sb-resizer" onMouseDown={startDrag} title="拖动调整左右栏宽度" />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+        {!sel && <div className="empty">选择提交查看详情</div>}
+        {sel && !diffOf && (
+          <>
+            {/* 返回按钮行：与左栏标题栏同一水平线（marginBottom/高度一致，视觉同行）。
+                按钮 lineHeight 固定 16px：中文字体 normal 行高约 20px 会让按钮实高 28px，
+                超出本行 24px 上限→上溢部分被面板 overflow:hidden 裁掉上边框 */}
+            <div className="row" style={{ marginBottom: 8, height: 24, alignItems: 'center', flexShrink: 0 }}>
+              <button className="mini" style={{ lineHeight: '16px' }} onClick={props.onBack}>← 返回</button>
+              <span className="grow" />
+            </div>
+            <div className="row" style={{ marginBottom: 10, flexShrink: 0 }}>
+              <span className="rev" style={{ fontSize: 15 }}>{sel.rev}</span>
+              <span className="dim">{sel.author} · {sel.date}</span>
+              <span className="grow" />
+            </div>
+            {/* 提交说明：优先用完整说明（%B，保留换行/分段），未拉到前回退列表里的 %s 标题。
+                长说明默认只显示一行（全文常有几十行，展开会挤掉下面的变更文件列表），点击一行或按钮展开。
+                展开时整块封顶面板一半高度（maxHeight 的百分比相对的是本块，能解析是因为外层是确定高度的
+                flex 栏：那个 marginBottom 容器自身是 flex item，包含块 = 面板，故要把 maxHeight 放在
+                这一层；放在里面那层会被当成"包含块高度 auto"而失效），超出部分在说明区内滚动。
+                展开态点击正文**不收起**：正文要滚动、要选中复制，点一下就缩回去太容易误触，收起只认按钮 */}
+            <div
+              style={{
+                marginBottom: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                maxHeight: detailMsgOpen ? '50%' : undefined,
+                flexShrink: 0, // 空间不够时只让下面的变更文件列表收缩，说明块保持自己的封顶高度
+              }}
+            >
+              <div
+                className="md-render commit-msg-md dim"
+                onClick={() => detailMsgLong && !detailMsgOpen && setMsgExpanded(true)}
+                title={detailMsgLong && !detailMsgOpen ? '点击展开全文' : undefined}
+                style={{
+                  // 折叠态只露一行：高度按 .md-render 的行高（1.75）算，首段的 margin 由 CSS 去掉
+                  maxHeight: detailMsgOpen ? undefined : '1.75em',
+                  // 展开：超出封顶高度时本区内部滚动；折叠：裁掉一行以外的内容
+                  overflow: detailMsgOpen ? 'auto' : 'hidden',
+                  minHeight: 0, // 允许在 flex 栏里收缩到内容高度以下，滚动条才出得来
+                  cursor: detailMsgLong && !detailMsgOpen ? 'pointer' : undefined,
+                }}
+                // 提交信息按 md 渲染（breaks: 单换行也换行，纯文本写的注释不会粘成一段）。
+                // 与 reword 弹窗的「预览」用同一套渲染 —— 所见即所得；老提交里那些 ** 也就地变成粗体，
+                // 不用改写历史（用户报的正是"历史里星号原样露出"）
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(detailMsg, { breaks: true }) }}
+              />
+              {detailMsgLong && (
+                // alignSelf: flex-start —— 外层是 flex 栏，默认 stretch 会把按钮拉成通栏宽（应是内容宽的小按钮）
+                <button
+                  className="mini"
+                  style={{ marginTop: 4, flexShrink: 0, alignSelf: 'flex-start' }}
+                  onClick={() => setMsgExpanded((v) => !v)}
+                >
+                  {detailMsgOpen ? '收起 ▲' : `展开全文（共 ${detailMsgLines} 行）▼`}
+                </button>
+              )}
+            </div>
+            <div className="small dim" style={{ marginBottom: 6, flexShrink: 0 }}>变更文件（点击查看 diff）：</div>
+            {/* flex: 0 1 auto（不是 1）—— 列表**不撑满**剩余空间：文件少时高度=内容高度，
+                「查看完整 diff」就跟在列表下面；文件多时它才收缩出滚动条，那行仍钉在面板底部。
+                配套：本节其它兄弟都加 flexShrink:0，让收缩只发生在列表身上 */}
+            <div className="changed" style={{ overflow: 'auto', flex: '0 1 auto', minHeight: 0 }}>
+              {sel.changed.map((c) => (
+                <div
+                  key={c.path}
+                  className="changed-row"
+                  // 整行可点 → 整行手型（原先只有路径文字那个 span 是手型，行内其它地方是箭头，不一致；
+                  // 不能加在 .changed-row 类上：tag/stash 等弹窗复用该类做不可点的静态行）
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => void showDiff(sel.rev, undefined, c.path)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setFileMenu({ x: e.clientX, y: e.clientY, path: c.path });
+                  }}
+                >
+                  <span className={`act ${c.action}`}>{c.action}</span>
+                  <span className="mono">{c.path}</span>
+                </div>
+              ))}
+              {sel.changed.length === 0 && <div className="dim">无文件变更</div>}
+            </div>
+            {/* 「查看完整 diff」放在滚动容器**外面**并钉在底部：它曾是列表最后一行，
+                变更文件一多就跟着滚走、滚到一半时点不到（用户截图指出） */}
+            <div
+              className="changed-row"
+              style={{ flexShrink: 0, cursor: 'pointer' }}
+              onClick={() => void showDiff(sel.rev, undefined)}
+            >
+              <span className="act" style={{ color: 'var(--accent)' }}>▸</span>
+              <span style={{ color: 'var(--accent)' }}>查看本次提交完整 diff</span>
+            </div>
+          </>
+        )}
+        {diffOf && (
+          <>
+            <div className="row" style={{ marginBottom: 8 }}>
+              <span className="dim">
+                差异: {diffOf.rev}{diffOf.path ? ` — ${diffOf.path}` : ''}
+              </span>
+              <span className="grow" />
+              <button className="mini" style={{ lineHeight: '16px' }} onClick={() => setDiffOf(null)}>← 返回</button>
+            </div>
+            {diffLoading ? <div className="loading">⏳ 计算差异…</div> : <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DiffRender text={diffText} /></div>}
+          </>
+        )}
+      </div>
+      {/* 未推送提交右键菜单（仅第一条=HEAD 可操作；其余项提示先撤销前面的提交） */}
+      {/* 「更多」下拉：追加到 600/1200/全部（按批 200 循环追加） */}
+      {moreMenu && (
+        <ContextMenu
+          x={moreMenu.x}
+          y={moreMenu.y}
+          mask
+          items={[
+            { icon: '⏬', label: '追加到 600 条', action: () => { setMoreMenu(null); void loadMore(600); } },
+            { icon: '⏬', label: '追加到 1200 条', action: () => { setMoreMenu(null); void loadMore(1200); } },
+            { icon: '⏬', label: total > 0 ? `加载全部提交（共 ${total} 条）` : '加载全部提交', action: () => { setMoreMenu(null); void loadMore(0); } },
+          ]}
+          onClose={() => setMoreMenu(null)}
+        />
+      )}
+      {menu && logs && logs[menu.index] && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          mask
+          items={[
+            ...(props.path
+              ? [
+                  {
+                    icon: '↩',
+                    label: '还原此版本',
+                    title: `还原 ${props.path} 到提交 ${logs[menu.index]!.rev.slice(0, 7)} 的版本内容（覆盖当前工作区，还原后为一次本地修改）`,
+                    cmd: cmdOfRepo(props.repoType ?? 'git', 'restore_rev', { rev: logs[menu.index]!.rev, path: props.path }),
+                    action: () => setRestoreOf({ rev: logs[menu.index]!.rev }),
+                  },
+                ]
+              : []),
+            ...(unpushedSet.has(logs[menu.index]!.rev)
+              ? [
+                  {
+                    icon: '✏️',
+                    label: '修改注释',
+                    cmd: menu.index === headIdx ? cmdOfRepo('git', 'amend', { msg: '…' }) : cmdOfRepo('git', 'reword'),
+                    action: () => {
+                      // 所有未推送提交都可改注释：HEAD 走 amend，其余走 reword（重写注释、代码不变）
+                      const it = logs[menu.index]!;
+                      setAmendOf(it);
+                      setAmendPreview(false); // 每次打开都从「编写」进（预览态是上次留下的会莫名其妙）
+                      setAmendMsg(it.msg); // 先回显标题（列表只带标题），完整说明异步补上，避免此前只编辑标题导致正文被覆盖丢失
+                      setAmendNotice('');
+                      void get
+                        .commitMessage(it.rev)
+                        .then((r) => setAmendMsg(r.message))
+                        .catch(() => {});
+                    },
+                  },
+                  { sep: true },
+                  {
+                    icon: '↩',
+                    label: '撤销提交',
+                    danger: true,
+                    cmd: cmdOfRepo('git', 'reset_soft'),
+                    action: () => {
+                      if (menu.index === headIdx) setResetCfm(true);
+                      else setInfoTip(`仅支持撤销最近一次提交。此项之前还有 ${headIdx - menu.index} 个更新提交，需先逐一撤销前面的提交后，此项才可操作`);
+                    },
+                  },
+                ]
+              : []),
+          ]}
+          onClose={() => setMenu(null)}
+        />
+      )}
+      {/* 详情面板「变更文件」右键：未推送的提交才提供「撤销提交」（含命令预览与二次确认，与提交行右键同一套） */}
+      {fileMenu && sel && (
+        <ContextMenu
+          x={fileMenu.x}
+          y={fileMenu.y}
+          mask
+          items={[
+            {
+              icon: '🔍',
+              label: '查看此文件差异',
+              cmd: cmdOfRepo('git', 'diff_versions', { a: `${sel.rev}^`, b: sel.rev, path: fileMenu.path }),
+              action: () => {
+                const p = fileMenu.path;
+                setFileMenu(null);
+                void showDiff(sel.rev, undefined, p);
+              },
+            },
+            ...(unpushedSet.has(sel.rev)
+              ? [
+                  { sep: true },
+                  {
+                    icon: '↩',
+                    label: '撤销提交',
+                    danger: true,
+                    cmd: cmdOfRepo('git', 'reset_soft'),
+                    title: '撤销这次提交，改动保留在工作区（可重新勾选提交）；仅未推送的提交可撤销',
+                    action: () => {
+                      const rev = sel.rev;
+                      setFileMenu(null);
+                      if (rev === logs?.[headIdx]?.rev) setResetCfm(true);
+                      else setInfoTip('仅支持撤销最近一次提交（HEAD）。这次提交之前还有更新的提交，需先逐一撤销它们。');
+                    },
+                  },
+                ]
+              : []),
+          ]}
+          onClose={() => setFileMenu(null)}
+        />
+      )}
+      {/* 修改注释弹窗 */}
+      {amendOf && (
+        <div className="modal-mask">
+          {/* 尺寸按注释长度自适应：长说明不再被固定 480px 宽 + 8 行高挤到只能滚动看 */}
+          <ResizableModal width={autoSizeForText(amendMsg).width} minWidth={420}>
+            <h3>✏️ 修改提交注释</h3>
+            <div className="body">
+              <div className="dim small" style={{ marginBottom: 6 }}>
+                提交 {amendOf.rev} · {amendOf.date.slice(0, 16)} · {amendOf.author}
+              </div>
+              {/* 编写 / 预览 切换（GitHub 评论框同款）：预览用与历史详情完全相同的渲染（含 breaks），
+                  所见即所得 —— 不然得提交完去历史里才知道渲染成什么样 */}
+              <div className="row" style={{ gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                <button className={`mini ${amendPreview ? '' : 'primary'}`} onClick={() => setAmendPreview(false)}>
+                  编写
+                </button>
+                <button className={`mini ${amendPreview ? 'primary' : ''}`} onClick={() => setAmendPreview(true)}>
+                  预览
+                </button>
+                <span className="dim small" style={{ marginLeft: 'auto' }}>
+                  {amendPreview ? '渲染效果（与历史里显示的一致）' : '支持 Markdown：**加粗**、- 列表、`代码`…'}
+                </span>
+              </div>
+              {amendPreview ? (
+                <div
+                  className="md-render"
+                  style={{
+                    flex: 1, minHeight: 120, overflow: 'auto',
+                    border: '1px solid var(--border)', borderRadius: 6, background: 'var(--panel2)',
+                  }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(amendMsg, { breaks: true }) }}
+                />
+              ) : (
+                <textarea
+                  className="mono"
+                  rows={autoSizeForText(amendMsg).rows}
+                  title="完整提交说明（第一行为标题，空行后为正文），可直接编辑"
+                  style={{ width: '100%', flex: 1, minHeight: 120 }}
+                  value={amendMsg}
+                  onChange={(e) => setAmendMsg(e.target.value)}
+                  autoFocus
+                />
+              )}
+              {amendNotice && (
+                <div className="error small" style={{ marginTop: 6, wordBreak: 'break-all' }}>
+                  {amendNotice}
+                </div>
+              )}
+            </div>
+            <div className="foot">
+              {/* 取消时一并清掉错误提示：否则会让用户以为操作失败了却不知道原因 */}
+              <button onClick={() => { setAmendOf(null); setNotice(''); setNoticeErr(false); }} disabled={busy}>取消</button>
+              <button
+                className="primary"
+                disabled={busy || !amendMsg.trim()}
+                onClick={(e) => void doAmend(e.clientX, e.clientY)}
+                title={`${cmdOfRepo('git', 'amend', { msg: amendMsg.trim() || '…' }) ?? ''}`}
+              >
+                确认修改
+              </button>
+            </div>
+          </ResizableModal>
+        </div>
+      )}
+      {/* 撤销提交二次确认 */}
+      {resetCfm && logs && headIdx >= 0 && (
+        <ConfirmModal
+          title="↩ 撤销最近一次提交"
+          message={
+            <>
+              将撤销最近一次提交 <span className="mono">{logs[headIdx]!.rev}</span>。这次提交的改动会回到
+              <b>暂存区</b>（提交之后新改的内容不受影响），可以重新勾选文件再次提交。确认撤销?
+            </>
+          }
+          confirmLabel="撤销"
+          danger
+          onConfirm={() => void doReset()}
+          onCancel={() => setResetCfm(false)}
+        />
+      )}
+      {restoreOf && props.path && (
+        <ConfirmModal
+          title="↩ 还原到指定版本"
+          message={
+            <>
+              将把 <b>{props.path}</b> 还原到提交 <span className="mono">{restoreOf.rev.slice(0, 7)}</span> 的版本内容：
+              覆盖当前工作区（还原后为一次本地修改，可再次提交）。确认？
+            </>
+          }
+          confirmLabel="还原此版本"
+          onConfirm={() => void doRestore(restoreOf.rev)}
+          onCancel={() => setRestoreOf(null)}
+          confirmCmd={cmdOfRepo(props.repoType ?? 'git', 'restore_rev', { rev: restoreOf.rev, path: props.path })}
+        />
+      )}
+      {/* 非 HEAD 未推送提交操作说明弹窗 */}
+      {infoTip && (
+        <InfoModal title="⚠ 无法操作此项" message={infoTip} onClose={() => setInfoTip('')} />
+      )}
+      {/* 修改注释成功提示：跟随鼠标点击处 */}
+      {clickTip && <ClickTip x={clickTip.x} y={clickTip.y} msg={clickTip.msg} onHide={() => setClickTip(null)} />}
+    </div>
+  );
+}

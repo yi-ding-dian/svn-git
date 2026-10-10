@@ -1,7 +1,7 @@
 /** Web 前端入口 */
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './app.js';
+import { App } from './shell/app.js';
 
 /** 开发模式标记（esbuild define 注入：dev 构建为 true，生产为 false） */
 declare const __DEV__: boolean;
