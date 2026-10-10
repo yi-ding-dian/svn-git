@@ -29,6 +29,9 @@ export const CMDS: Record<string, string> = {
   g_branch_list: 'git branch -a',
   g_branch_create: 'git branch %name% %base?%',
   g_branch_switch: 'git checkout %name%',
+  // 切远程分支且本地还没有同名分支时，真实执行的是"建本地跟踪分支"（见 vcs/git.ts branchSwitch）：
+  // 直接 `git checkout origin/xxx` 会进游离 HEAD，所以这里显示的命令也必须带 -b
+  g_branch_switch_remote: 'git checkout -b %name% %remote%',
   g_branch_merge: 'git merge %name%',
   g_branch_delete: 'git branch -d %name%',
   g_branch_remote_delete: 'git push origin --delete %name%',

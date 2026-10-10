@@ -48,8 +48,13 @@ export function UploadConflictModal(props: {
                 <span className="dim small" style={{ flexShrink: 0 }}>
                   →
                 </span>
+                {/* type="text" 必须有：全局输入框样式挂在 input[type=text] 上，不写就落成浏览器默认样式
+                    （白底 / 2px inset 灰边框 / 无内边距 / 12px 字 18px 高 —— 又小又土，且聚焦时那条 2px
+                    边框会被 input:focus 染成主题色，看着像个错误框）。small 类同理会被 input[type=text]
+                    的字号覆盖，索性不写（与终端输入框同一套写法） */}
                 <input
-                  className="mono small"
+                  type="text"
+                  className="mono"
                   style={{ flex: 1, minWidth: 0 }}
                   value={names[c] ?? ''}
                   onChange={(e) => setNames((s) => ({ ...s, [c]: e.target.value }))}

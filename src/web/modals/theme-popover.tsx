@@ -226,7 +226,8 @@ export function ThemePopover(props: Props) {
               </label>
             ))}
             <div className="row" style={{ gap: 6, marginTop: 8 }}>
-              <input placeholder="主题名称" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+              {/* type="text" 不能漏：全局输入框样式挂在 input[type=text] 上，漏了就落成浏览器默认样式 */}
+              <input type="text" placeholder="主题名称" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
               <button
                 className="mini"
                 disabled={!name.trim()}

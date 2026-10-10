@@ -192,6 +192,17 @@ export function ModalHost(props: ModalHostProps) {
           initialDir={browseDir}
           repoRoot={repo?.root ?? ''}
           repoType={repo?.type ?? ''}
+          // 命令跑完就刷新（与 branches/tags 弹窗同一套）：终端能改的东西最宽 ——
+          // 分支名 / 工作区 / 索引 / 标签都可能被一条命令改掉，refresh() 只管 tick 链上的
+          // （文件列表、未推送数），顶栏 [分支名] 得显式重拉 info（用户实报：`git branch -m`
+          // 成功后顶栏还挂着旧分支名）
+          onChanged={() => {
+            refresh();
+            get
+              .info()
+              .then((r) => setInfo(r))
+              .catch(() => {});
+          }}
           onClose={() => setModal(null)}
         />
       )}

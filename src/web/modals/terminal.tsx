@@ -63,6 +63,7 @@ const ANSI_COLOR: Record<number, string> = {
  *  其余 CSI 序列（如清行的 `\x1b[K`）**一律吃掉** —— 留着会在 pre 里显示成 `^[[K` 这种乱字符。 */
 function renderAnsi(text: string): React.ReactNode {
   const out: React.ReactNode[] = [];
+  // eslint-disable-next-line no-control-regex -- 要匹配的就是 ESC(0x1b) 本身，不用控制字符没法写这个正则
   const re = /\x1b\[[0-9;]*[A-Za-z]/g; // 所有 CSI 加一个结尾字母
   let color: string | undefined;
   let bold = false;
@@ -164,6 +165,11 @@ export function TerminalModal(props: {
   /** 仓库类型（'svn' | 'git' | ''）：决定空状态示例和输入框提示给哪套命令 ——
    *  在 SVN 项目里提示 git 命令会误导（用户实报） */
   repoType?: string;
+  /** 命令**真的执行过**就回调（成功/失败/超时/中断都算）——让宿主重拉界面。
+   *  终端能改的东西比分支弹窗还宽（分支名 / 工作区 / 索引 / 标签），不刷界面就会一直显示旧状态
+   *  （用户实报：`git branch -m master main` 跑成功，顶栏还挂着 `[master]`）。
+   *  **没执行的不调**：被后端拒绝、危险命令待确认 —— 那时压根没跑，刷了是假动作。 */
+  onChanged?: () => void;
   onClose: () => void;
 }) {
   /** 执行目录（相对仓库根；'' = 仓库根）。初值 = 打开终端时文件浏览器停在哪（后端会做越界校验）。
@@ -286,10 +292,12 @@ export function TerminalModal(props: {
         ok: r.ok,
         note: r.aborted ? '已中断' : r.timedOut ? '超过 30 秒，已终止' : undefined,
       });
+      props.onChanged?.(); // 失败也算跑过：命令可能已经改了工作区/index（如 add 成功、commit 失败）
     } catch (e) {
       // 中断时 api() 会把 AbortError 转成 ApiError('已取消')（见 api.ts:150），
       // 所以这里拿不到 AbortError —— 直接显示它的措辞，与推送/更新被取消时的提示保持一致
       pushEntry({ cmd, dir: cwd, stdout: '', stderr: '', note: (e as Error).message, ok: false });
+      props.onChanged?.(); // 中断同样可能改了一半（如 git 改完文件才被 Ctrl+C）：不能还显示旧状态
     } finally {
       setBusy(false);
       abortRef.current = null;

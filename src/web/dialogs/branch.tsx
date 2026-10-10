@@ -306,6 +306,7 @@ export function BranchDialog(props: {
               <br />· <strong className="help-k primary">⇄ 切换</strong>：换到另一个分支工作。未提交的修改能否带过去，取决于目标分支有没有动过那些文件——目标分支没动 → 改动跟着你走；目标分支也改过 → 切换会被拒绝，需先提交或储藏（未跟踪的新文件永远能带过去）
               <br />· <strong className="help-k accent">🔀 合并</strong>：把别的分支的改动搬进当前分支。<strong>先切到目的地分支，再点来源分支的「合并」</strong>（站在哪，哪就是目的地）
               <br />· <strong className="help-k err">✕ 删除</strong>：已合并的分支可删除（内容已进目标分支，不丢失）。主干（main/master）是团队稳定版本，不能删除
+              <br />· 灰色的<strong>远程</strong>行（origin/xxx）= 服务器上那个分支的镜像，不是你本地的分支。本地还没有它时，点「切换」= 新建同名本地分支并自动跟踪它（拉同事的分支就靠这一步）；本地已有同名分支时，按钮会变成「切到本地 xxx」
               <br />
               绿色 ● = 当前所在分支
             </>
@@ -357,6 +358,15 @@ export function BranchDialog(props: {
         {data?.branches.map((b) => {
           // 是否已推送：本地分支能否找到对应的 origin/<名字> 远程项
           const isPushed = data.branches.some((r) => r.remote && r.name === 'origin/' + b.name);
+          // 远程行（origin/xxx；只有 git 有，svn 的 branchList 全是 remote:false）的「切换」实际语义
+          // 取决于本地有没有同名分支（见 vcs/git.ts branchSwitch）：
+          //   本地没有 → 新建本地跟踪分支并切过去（**这才是它的价值**：远程有、本地没有）
+          //   本地已有 → 就是切到那个本地分支，名字是去掉 origin/ 前缀的那部分
+          // 所以本地已有同名分支时按钮要说实情（「切到本地 xxx」）；而本地那个**正是当前分支**时
+          // 点了等于没点——用户实报的困惑场景（点了 origin/main 的切换，只回一句"已切换到 main"），直接不显示
+          const remoteLocal = b.remote ? b.name.split('/').slice(1).join('/') : '';
+          const remoteHasLocal = b.remote ? data.branches.some((r) => !r.remote && r.name === remoteLocal) : false;
+          const remoteIsCurrent = b.remote && remoteLocal === data.current;
           return (
             <div
               key={b.name}
@@ -372,8 +382,21 @@ export function BranchDialog(props: {
               {/* 非当前分支的常规操作；当前分支若未推送也显示「推送到远程」（仅仓库配了远程时） */}
               {(b.name !== data.current || (props.repoType === 'git' && hasRemote && !b.remote && !isPushed)) && (
                 <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                  {b.name !== data.current && (
-                    <button className="mini primary" disabled={busy} onClick={() => confirmSwitch(b.name)} title={cmdOfRepo(props.repoType, 'branch_switch', { name: b.name })}>切换</button>
+                  {b.name !== data.current && !remoteIsCurrent && (
+                    <button
+                      className="mini primary"
+                      disabled={busy}
+                      onClick={() => confirmSwitch(b.name)}
+                      title={
+                        b.remote
+                          ? remoteHasLocal
+                            ? `本地已有分支 ${remoteLocal} —— ${b.name} 对应的就是它\n点此切换到 ${remoteLocal}\n\n${cmdOfRepo(props.repoType, 'branch_switch', { name: remoteLocal })}`
+                            : `本地还没有这个分支\n点此新建本地跟踪分支 ${remoteLocal} 并切换过去\n\n${cmdOfRepo(props.repoType, 'branch_switch_remote', { name: remoteLocal, remote: b.name })}`
+                          : cmdOfRepo(props.repoType, 'branch_switch', { name: b.name })
+                      }
+                    >
+                      {b.remote && remoteHasLocal ? `切到本地 ${remoteLocal}` : '切换'}
+                    </button>
                   )}
                   {props.repoType === 'git' && hasRemote && !b.remote && !isPushed && (
                     <button className="mini btn-accent" disabled={busy} onClick={() => confirmPush(b.name)} title={`该分支尚未推送到远程\n点此将 ${b.name} 推送到远程服务器（origin）`}>⬆ 推送到远程</button>

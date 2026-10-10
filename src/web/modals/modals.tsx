@@ -439,7 +439,6 @@ export function CommitSelectModal(props: {
   onClose: () => void;
   onConfirm: (paths: string[], message: string, stagedOnly: string[]) => void;
 }) {
-  const stagedSet = new Set(props.stagedOnly ?? []);
   const { checked, setChecked, toggle } = useCheckedSet(props.checked ?? props.items.map((i) => i.path));
   const [msg, setMsg] = useState(props.msg ?? '');
   const [err, setErr] = useState('');
