@@ -27,9 +27,9 @@ Categories=Development;
 StartupWMClass=svngit
 EOF
 
-# 图标：优先仓库内 dist/web/icon.png（构建产物），否则 build/icon.png
+# 图标：优先仓库内 dist/client/icon.png（构建产物），否则 build/icon.png
 ROOT="$(dirname "$(dirname "$(readlink -f "$0")")")"
-for c in "$ROOT/dist/web/icon.png" "$ROOT/build/icon.png"; do
+for c in "$ROOT/dist/client/icon.png" "$ROOT/build/icon.png"; do
   if [ -f "$c" ]; then
     cp "$c" "$ICON/svngit.png"
     break

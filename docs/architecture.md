@@ -22,10 +22,10 @@
 
 ```
 ┌─────────────────────────────────────────────┐
-│  Web 前端（src/web/）                        │
+│  Web 前端（src/client/）                     │
 │   React 组件：视图/弹窗/图标库/API 封装      │
 ├─────────────────────────────────────────────┤
-│  HTTP 服务层（src/server.ts + src/routes/）  │
+│  HTTP 服务层（src/server/）                  │
 │   60+ REST API + SSE 流（安装日志）          │
 │   静态文件服务 · 路径安全校验 · 认证错误处理  │
 ├─────────────────────────────────────────────┤
@@ -64,10 +64,10 @@
 - **行级冲突算法**（`src/vcs/diff-lines.ts`）：纯函数解析 unified diff，返回 BASE 侧 `del`（删除行）/ `ins`（插入位置）行号集合——独立模块，6 项单测覆盖
 - **Git 认证重试**（`src/vcs/git.ts`）：推送类操作认证失败时用保存的凭据生成 `GIT_ASKPASS` 脚本（base64 传参、600 权限）自动重试一次；仍失败返回 `authType`（github / server / ssh）供前端分场景引导
 
-### 3.2 HTTP 服务层（src/server.ts + src/routes/）
+### 3.2 HTTP 服务层（src/server/）
 
 - 仅监听 **127.0.0.1 固定端口 23456**（被占用时自动换随机端口；安全：不对外暴露，端口可预期便于收藏）
-- **路由按域拆分**（`src/routes/`，`handle()` 顺序分发，server.ts 约 1300 行）：
+- **路由按域拆分**（`src/server/routes/`，`handle()` 顺序分发，入口 `src/server/index.ts`）：
   - `conflicts.ts`：preflight / conflicts / conflict-detail / merge-check / resolve-conflict / blame / text-diff / reveal
   - `branch.ts`：branches / branch（create/switch/delete/merge/merge-abort/push/remote-delete）/ tags / tag / stash / git-amend / git-reword / git-reset / git-unpushed*
   - `ops.ts`：add / commit / update / revert / delete（keep 软删）/ push / move / fs-move / fs-delete / locate / svn-extra / svn-lock / ignore 系列 / git-clean / unignore
@@ -86,7 +86,7 @@
 - 静态文件带 `Last-Modified`（开发模式热刷新依赖）
 - **最近项目历史**（`~/.config/svngit/history.json`，600 权限）：服务端持久化（浏览器端口随机，localStorage 不可靠），上限 20 条，支持常用标记（fav，启动时优先打开）
 
-### 3.3 Web 前端（src/web/）
+### 3.3 Web 前端（src/client/）
 
 | 模块 | 职责 |
 |---|---|

@@ -29,7 +29,7 @@ run('tsc -w (web check)', 'npx', ['tsc', '-p', 'tsconfig.web.json', '-w', '--pre
 // 2. 前端 esbuild 热构建
 run('esbuild --watch', 'node', ['scripts/build-web.mjs', '--watch'], 600);
 // 3. 后端服务热重启（等待首次编译完成）
-run('node --watch server', 'node', ['--watch', 'dist/main.js'], 4000);
+run('node --watch server', 'node', ['--watch', 'dist/main/index.js'], 4000);
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {

@@ -1,13 +1,13 @@
 /** 操作域端点：add/commit/update/revert/delete/push + svn-extra + 忽略规则 + 锁定/清理 */
 import fs from 'node:fs';
 import path from 'node:path';
-import { run } from '../vcs/exec.js';
+import { run } from '../../vcs/exec.js';
 import {
   sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached, runVcs, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS, writeTextKeepEncoding, isBinaryFile,
 } from './util.js';
-import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile } from '../vcs/ignore.js';
+import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile } from '../../vcs/ignore.js';
 import type { Ctx } from './util.js';
-import { detectTextEncoding, decodeText, encodeText, type TextEncoding } from '../shared/text.js';
+import { detectTextEncoding, decodeText, encodeText, type TextEncoding } from '../../shared/text.js';
 
 /** git 忽略三处去向（展示名与写入目标）——仓库 .gitignore / 全局 excludesFile / .git/info/exclude */
 const GIT_IGNORE_WHERE = {

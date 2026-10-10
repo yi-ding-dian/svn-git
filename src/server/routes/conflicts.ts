@@ -2,11 +2,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { run } from '../vcs/exec.js';
-import { platform } from '../platform/index.js';
+import { run } from '../../vcs/exec.js';
+import { platform } from '../../platform/index.js';
 import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, runVcs, writeTextKeepEncoding, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE } from './util.js';
-import { detectTextEncoding } from '../shared/text.js';
-import { diffChangedLines } from '../vcs/diff-lines.js';
+import { detectTextEncoding } from '../../shared/text.js';
+import { diffChangedLines } from '../../vcs/diff-lines.js';
 import type { Ctx } from './util.js';
 
 

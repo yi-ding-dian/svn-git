@@ -21,7 +21,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { run } from '../vcs/exec.js';
+import { run } from '../../vcs/exec.js';
 import { sendJson, readBody, vcsOf, inRepoRoot, invalidateStatusCache, type Ctx } from './util.js';
 
 /** 命令超时：30 秒（用户定的）。超时只是兜底 —— 长命令随时可以 Ctrl+C 中断 */

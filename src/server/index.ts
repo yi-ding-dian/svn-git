@@ -3,10 +3,10 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { detectRepo } from './vcs/detect.js';
-import { createAskPass, authTypeOf } from './vcs/git.js';
-import { loadConfig } from './config.js';
-import { run } from './vcs/exec.js';
+import { detectRepo } from '../vcs/detect.js';
+import { createAskPass, authTypeOf } from '../vcs/git.js';
+import { loadConfig } from '../config.js';
+import { run } from '../vcs/exec.js';
 import { isSafeOrigin, sendJson, readBody, isAuthError, type Ctx } from './routes/util.js';
 import { handle as handleConflicts } from './routes/conflicts.js';
 import { handle as handleBranch } from './routes/branch.js';
@@ -22,8 +22,9 @@ import { handle as handleUpload } from './routes/upload.js';
 import { handle as handleWc } from './routes/wc.js';
 import { handle as handleTerminal } from './routes/terminal.js';
 
-/** 前端静态目录：开发 = 项目根/dist/web；打包 = asar 内 dist/web */
-const WEB_DIR = path.resolve(import.meta.dirname ?? '.', 'web');
+/** 前端静态目录：开发 = 项目根/dist/client；打包 = asar 内 dist/client。
+ *  编译产物在 dist/server/index.js，所以要**先回一级**再进 client（dirname 是 dist/server/） */
+const WEB_DIR = path.resolve(import.meta.dirname ?? '.', '..', 'client');
 
 export interface ServerHandle {
   port: number;

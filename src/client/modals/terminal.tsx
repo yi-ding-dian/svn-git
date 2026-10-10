@@ -175,7 +175,7 @@ export function TerminalModal(props: {
   /** 执行目录（相对仓库根；'' = 仓库根）。初值 = 打开终端时文件浏览器停在哪（后端会做越界校验）。
    *  「回根目录」只改这个值、**不清已有记录** —— 记录是历史，跟当前在哪跑是两回事。 */
   const [cwd, setCwd] = useState(props.initialDir ?? '');
-  /** 仓库目录名：路径前缀（`svn-git/src/routes`）。只显示相对路径的话，
+  /** 仓库目录名：路径前缀（`svn-git/src/server/routes`）。只显示相对路径的话，
    *  在根目录时写"仓库根"看不出是哪个仓库（用户要求根目录也把名字显出来）。 */
   const repoName = (props.repoRoot ?? '').replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? '';
   /** 标题里显示**完整磁盘路径**（用户要求：一眼知道这仓库在本机哪里）。

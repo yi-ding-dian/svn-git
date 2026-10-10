@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { run } from '../dist/vcs/exec.js';
-import { startServer } from '../dist/server.js';
+import { startServer } from '../dist/server/index.js';
 
 const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svngit-test');
 const REPO = path.join(TEST_BASE, 'upload-repo');

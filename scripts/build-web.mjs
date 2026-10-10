@@ -1,10 +1,10 @@
-/** 前端构建：esbuild bundle + 复制静态文件到 dist/web；--watch 为热构建模式（开发） */
+/** 前端构建：esbuild bundle + 复制静态文件到 dist/client；--watch 为热构建模式（开发） */
 import { build, context } from 'esbuild';
 import fs from 'node:fs';
 
 const WATCH = process.argv.includes('--watch');
 
-fs.mkdirSync('dist/web', { recursive: true });
+fs.mkdirSync('dist/client', { recursive: true });
 
 /** 构建版本戳（YYYYMMDD-HHmm 本地时间）：注入 index.html 静态引用 ?v=，每次构建变化 →
  * 任何浏览器都无法命中旧缓存（配合服务端 Cache-Control: no-store 双保险） */
@@ -16,20 +16,20 @@ const BUILD_TAG = (() => {
 
 /** 复制静态文件 */
 function copyStatic() {
-  fs.copyFileSync('src/web/index.html', 'dist/web/index.html');
-  fs.copyFileSync('src/web/style.css', 'dist/web/style.css');
-  fs.copyFileSync('build/icon.png', 'dist/web/icon.png');
-  fs.copyFileSync('src/preload.cjs', 'dist/preload.cjs'); // Electron preload
+  fs.copyFileSync('src/client/index.html', 'dist/client/index.html');
+  fs.copyFileSync('src/client/style.css', 'dist/client/style.css');
+  fs.copyFileSync('build/icon.png', 'dist/client/icon.png');
+  fs.copyFileSync('src/preload/index.cjs', 'dist/preload.cjs'); // Electron preload
   // index.html 的 %BUILD_TAG% 占位符替换为最新构建戳（每次复制后立即处理）
-  const html = fs.readFileSync('dist/web/index.html', 'utf8').replaceAll('%BUILD_TAG%', BUILD_TAG);
-  fs.writeFileSync('dist/web/index.html', html);
+  const html = fs.readFileSync('dist/client/index.html', 'utf8').replaceAll('%BUILD_TAG%', BUILD_TAG);
+  fs.writeFileSync('dist/client/index.html', html);
 }
 copyStatic();
 
 const OPTIONS = {
-  entryPoints: ['src/web/main.tsx'],
+  entryPoints: ['src/client/main.tsx'],
   bundle: true,
-  outfile: 'dist/web/app.js',
+  outfile: 'dist/client/app.js',
   format: 'iife',
   minify: !WATCH,
   target: ['es2020'],
@@ -40,7 +40,7 @@ const OPTIONS = {
 if (!WATCH) {
   await build(OPTIONS);
   copyStatic();
-  console.log('✅ 前端构建完成: dist/web/');
+  console.log('✅ 前端构建完成: dist/client/');
 } else {
   // 开发热构建：context API + fs.watch 监听源码/静态文件变化 → 重建 + 复制
   const ctx = await context(OPTIONS);
@@ -63,7 +63,7 @@ if (!WATCH) {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => void rebuild(reason), 300);
   };
-  fs.watch('src/web', (ev, name) => {
+  fs.watch('src/client', (ev, name) => {
     if (name) schedule(name);
   });
   fs.watch('build', (ev, name) => {

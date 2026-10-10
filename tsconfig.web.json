@@ -10,5 +10,5 @@
     "esModuleInterop": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/web"]
+  "include": ["src/client", "src/shared"]
 }

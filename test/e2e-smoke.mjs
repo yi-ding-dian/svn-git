@@ -6,7 +6,7 @@
  *
  *  运行方式：npm run test:e2e（需先 npm run build，脚本用 dist/ 起服务）
  *  - 浏览器：复用 ~/.cache/ms-playwright 下已有的 chromium（playwright-core 不下载浏览器）
- *  - 服务：自起 node dist/main.js，端口从启动日志解析（23456 被占用时服务会自动换随机端口）
+ *  - 服务：自起 node dist/main/index.js，端口从启动日志解析（23456 被占用时服务会自动换随机端口）
  *  - 隔离：用 svngit-test/git-repo 作夹具，不碰用户正在用的服务
  */
 import { chromium } from 'playwright-core';
@@ -81,7 +81,7 @@ function startServer() {
   const xdg = path.join(noop, 'xdg-open');
   fs.writeFileSync(xdg, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   return new Promise((resolve, reject) => {
-    const proc = spawn('node', [path.join(ROOT, 'dist', 'main.js')], {
+    const proc = spawn('node', [path.join(ROOT, 'dist', 'main', 'index.js')], {
       cwd: ROOT,
       env: { ...process.env, SVNGIT_DIR: FIXTURE, PATH: `${noop}:${process.env.PATH}` },
     });

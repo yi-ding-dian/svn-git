@@ -3,10 +3,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { makeGitIgnoreChecker } from '../vcs/ignore.js';
-import { compareName } from '../shared/types.js';
-import { detectTextEncoding } from '../shared/text.js';
-import { run } from '../vcs/exec.js';
+import { makeGitIgnoreChecker } from '../../vcs/ignore.js';
+import { compareName } from '../../shared/types.js';
+import { detectTextEncoding } from '../../shared/text.js';
+import { run } from '../../vcs/exec.js';
 import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, readTextFile, MAX_READ_BYTES, TOO_LARGE_PLACEHOLDER, vcsOf, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE, type Ctx } from './util.js';
 
 /** 忽略检测（svn status --no-ignore）的输出上限：超过就不解析。

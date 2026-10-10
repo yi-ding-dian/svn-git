@@ -3,12 +3,12 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { detectRepo } from '../vcs/detect.js';
-import { createVcs, type RepoInfo, type VcsResult } from '../vcs/index.js';
-import { loadConfig } from '../config.js';
-import { BINARY_EXTS } from '../shared/types.js';
-import { detectTextEncoding, decodeText, encodeText } from '../shared/text.js';
-import type { SvnCred } from '../vcs/svn.js';
+import { detectRepo } from '../../vcs/detect.js';
+import { createVcs, type RepoInfo, type VcsResult } from '../../vcs/index.js';
+import { loadConfig } from '../../config.js';
+import { BINARY_EXTS } from '../../shared/types.js';
+import { detectTextEncoding, decodeText, encodeText } from '../../shared/text.js';
+import type { SvnCred } from '../../vcs/svn.js';
 
 /** 路由上下文：req/res 与解析后的 URL 按需传递 */
 export interface Ctx {

@@ -51,7 +51,7 @@ try {
 
 // ---------- 2. 启动服务 ----------
 process.env.SVNGIT_REPO_DIR = REPO;
-const { startServer } = await import('../dist/server.js');
+const { startServer } = await import('../dist/server/index.js');
 const handle = await startServer();
 const base = handle.url;
 console.log('服务已启动:', base);

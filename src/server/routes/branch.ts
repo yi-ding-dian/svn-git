@@ -1,6 +1,6 @@
 /** 版本管理扩展域端点：branches / branch / tags / tag / stash / git 子操作 */
 import { sendJson, readBody, vcsOf, authErrorOf, invalidateStatusCache, runVcs, MSG_UNSUPPORTED_OP } from './util.js';
-import type { VcsResult } from '../vcs/index.js';
+import type { VcsResult } from '../../vcs/index.js';
 import type { Ctx } from './util.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {

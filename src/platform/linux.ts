@@ -199,13 +199,13 @@ export const linux: Platform = {
     try {
       const appsDir = path.join(os.homedir(), '.local', 'share', 'applications');
       fs.mkdirSync(appsDir, { recursive: true });
-      // 图标：运行时资源（dist/web/icon.png 打包在 asar 内，electron fs 兼容读取）拷入 hicolor；
-      // 本文件编译后位于 dist/platform/ → 图标候选：dist/web/icon.png、项目根/build/icon.png
+      // 图标：运行时资源（dist/client/icon.png 打包在 asar 内，electron fs 兼容读取）拷入 hicolor；
+      // 本文件编译后位于 dist/platform/ → 图标候选：dist/client/icon.png、项目根/build/icon.png
       const iconRel = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'svngit.png');
       let iconOk = false;
       const here = import.meta.dirname ?? '.';
       for (const cand of [
-        path.resolve(here, '..', 'web', 'icon.png'),
+        path.resolve(here, '..', 'client', 'icon.png'),
         path.resolve(here, '..', '..', 'build', 'icon.png'),
       ]) {
         try {

@@ -15,22 +15,29 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         let version = '';
         let buildDate = '';
         {
-          const base = import.meta.dirname ?? '.';
-          for (const rel of ['../package.json', '../../package.json']) {
-            try {
-              version = JSON.parse(fs.readFileSync(path.resolve(base, rel), 'utf8')).version ?? '';
-              break;
-            } catch {
-              /* 尝试下一个候选 */
+          // package.json 在项目根、build-info.json 在 dist/ 下，而编译产物位于 dist 下任意深度
+          // （dist/routes、dist/server/routes…）。这里**逐级向上找、不写死层数** ——
+          // 上一版是"候选路径列表"，每拆一次目录就得加一层（拆到 server/routes 后直接失效）
+          const readUp = (name: string): string | null => {
+            let dir = import.meta.dirname ?? '.';
+            for (let i = 0; i < 4; i++) {
+              try {
+                return fs.readFileSync(path.join(dir, name), 'utf8');
+              } catch {
+                dir = path.dirname(dir); // 这层没有，往上走
+              }
             }
+            return null;
+          };
+          try {
+            version = JSON.parse(readUp('package.json') ?? '{}').version ?? '';
+          } catch {
+            /* 读不到就留空 */
           }
-          for (const rel of ['../build-info.json', '../../build-info.json']) {
-            try {
-              buildDate = JSON.parse(fs.readFileSync(path.resolve(base, rel), 'utf8')).buildDate ?? '';
-              break;
-            } catch {
-              /* 尝试下一个候选 */
-            }
+          try {
+            buildDate = JSON.parse(readUp('build-info.json') ?? '{}').buildDate ?? '';
+          } catch {
+            /* 同上 */
           }
         }
         const repo = repoInfo();

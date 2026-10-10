@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { detectRepo } from '../vcs/detect.js';
+import { detectRepo } from '../../vcs/detect.js';
 import { sendJson, readBody, currentScopes, type Ctx } from './util.js';
 
 /** 最近打开的项目历史（服务端持久化：浏览器端口随机，localStorage 不可靠） */

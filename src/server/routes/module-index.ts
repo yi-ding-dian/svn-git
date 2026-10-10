@@ -3,7 +3,7 @@
  * 解析 md 的"目录树与文件说明"代码块（'路径 ← 描述'）与 md 表格（'| 路径 | 描述 |'）两种格式。
  * 作用域 = 注入时选定的仓库相对目录（前端默认当前浏览目录），只对该目录及子树生效。 */
 import fs from 'node:fs';
-import { decodeText } from '../shared/text.js';
+import { decodeText } from '../../shared/text.js';
 import os from 'node:os';
 import path from 'node:path';
 import { sendJson, readBody, repoInfo, type Ctx } from './util.js';
@@ -44,7 +44,7 @@ function saveIndex(idx: IndexFile): void {
 
 /** 解析 md 文本中的路径→描述：
  * ① 树图行　`├── server.ts   ← HTTP 服务骨架…`——**层级感知**：按树形前缀（│├└─ 与空格）列宽维护
- *    父目录栈，`src/ 下 server.ts` 解析为 `src/server.ts`（与文件列表 rel 一致）；目录行（结尾 /）
+ *    父目录栈，如 `src/` 下写 `a.ts` 解析为 `src/a.ts`（与文件列表 rel 一致）；目录行（结尾 /）
  *    参与建栈；无描述目录只建栈不入条目；首行无 ← 的顶层目录当作"文档根头"剥掉（如 svn-git/）
  * ② 表格行　`| server.ts | HTTP 服务骨架… |`（跳过表头/分隔行，路径按原样）
  * ③ 其余行忽略。目录路径尾部 '/' 剥掉。 */

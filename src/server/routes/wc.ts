@@ -10,7 +10,7 @@
 import path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import { sendJson, vcsOf, inRepoRoot, MSG_OUT_OF_SCOPE } from './util.js';
-import { run } from '../vcs/exec.js';
+import { run } from '../../vcs/exec.js';
 import type { Ctx } from './util.js';
 
 /** svn status --xml 解析器（只取本模块要的字段，不引 vcs 层那份带业务映射的） */
@@ -74,7 +74,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
   //    扫描范围与 /api/fs 保持**同一套判据**（isHugeWc）：超大工作副本只扫直接子项（浅扫描，毫秒级），
   //    小仓库保持递归（深层冲突一并列出，横幅才是完整清单）。代价：浅扫描下"某目录内部还有冲突"
   //    在当前层看不出来，要点进那个目录——不递归的必然结果，换来的是大仓库下不会卡住。
-  const { run: runRaw } = await import('../vcs/exec.js');
+  const { run: runRaw } = await import('../../vcs/exec.js');
   const shallow = vcs.isHugeWc?.() ?? false;
   const st = await runRaw('svn', ['status', '--xml', ...(shallow ? ['-N'] : []), '.'], { cwd: abs, timeoutMs: 120_000 });
   const hit = st.code === 0 ? parseConflicts(st.stdout) : [];

@@ -3,10 +3,10 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { createRequire } from 'node:module';
-import { startServer, setPickDirHandler } from './server.js';
-import { detectRepo } from './vcs/detect.js';
-import { platform } from './platform/index.js';
-import { dedupeHistory } from './routes/recent.js';
+import { startServer, setPickDirHandler } from '../server/index.js';
+import { detectRepo } from '../vcs/detect.js';
+import { platform } from '../platform/index.js';
+import { dedupeHistory } from '../server/routes/recent.js';
 
 const require = createRequire(import.meta.url);
 
@@ -35,11 +35,13 @@ async function openUI(url: string) {
       minHeight: 600,
       title: 'svn-git文件版本管理',
       autoHideMenuBar: true,
-      icon: path.join(import.meta.dirname ?? '.', 'web', 'icon.png'),
+      // import.meta.dirname = 编译产物 main/index.js 所在目录（dist/main/）——
+      // icon 和 preload 都在它的上一级（dist/client/、dist/preload.cjs），所以要先 '..'
+      icon: path.join(import.meta.dirname ?? '.', '..', 'client', 'icon.png'),
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: path.join(import.meta.dirname ?? '.', 'preload.cjs'),
+        preload: path.join(import.meta.dirname ?? '.', '..', 'preload.cjs'),
       },
     });
     win.setMenuBarVisibility(false);

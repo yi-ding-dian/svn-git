@@ -5,12 +5,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { detectRepo } from '../vcs/detect.js';
-import { platform } from '../platform/index.js';
-import { BINARY_EXTS, compareName } from '../shared/types.js';
-import { run } from '../vcs/exec.js';
+import { detectRepo } from '../../vcs/detect.js';
+import { platform } from '../../platform/index.js';
+import { BINARY_EXTS, compareName } from '../../shared/types.js';
+import { run } from '../../vcs/exec.js';
 import { inRepoRoot, sendJson, readBody, vcsOf, START_DIR, MSG_PATH_OUT_OF_BOUNDS, type Ctx } from './util.js';
-import type { RepoInfo } from '../vcs/index.js';
+import type { RepoInfo } from '../../vcs/index.js';
 
 /** 系统目录选择器（Electron dialog 注入；纯 node 为 null） */
 let pickDirHandler: (() => Promise<string | null>) | null = null;

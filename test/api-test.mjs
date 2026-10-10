@@ -5,7 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { run } from '../dist/vcs/exec.js';
-import { startServer } from '../dist/server.js';
+import { startServer } from '../dist/server/index.js';
 
 // 测试仓库位置（与 vcs-test.mjs 同一约定）
 const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'svngit-test');
