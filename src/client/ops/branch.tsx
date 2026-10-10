@@ -30,7 +30,7 @@ export function BranchDialog(props: {
   // 是否配置了远程：没有 origin 的本地孤仓库不显示「推送到远程」（推了也会失败）
   const [hasRemote, setHasRemote] = useState(false);
   // 工具风格二次确认
-  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void; confirmLabel?: string; hideCancel?: boolean; confirmCmd?: string } | null>(null);
+  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void; confirmLabel?: string; hideCancel?: boolean; confirmCmd?: string; danger?: boolean } | null>(null);
   /** 新建分支确认（git 非主干带基点选择）：name=目标名；trunkBase=找到的主干基点 */
   const [createCfm, setCreateCfm] = useState<{ name: string; trunkBase?: string } | null>(null);
   /** 基点选择：trunk=基于主干（推荐）、current=基于当前分支（默认保持现状行为） */
@@ -99,6 +99,19 @@ export function BranchDialog(props: {
     void runAction(
       () => post.branch(action, name, force, undefined, base),
       (m, err) => {
+        // 未合并导致删除被拒 → 不干巴巴报错，改弹"强制删除"二次确认。
+        // （确认框文案早就写着"可强制删除"，但 force 从没传下去过，未合并的分支根本删不掉 —— 用户实报）
+        // 两段式：已合并的分支删起来毫无变化，只有真被 git 拒绝时才把"强制"摆上来，并说清后果
+        if (action === 'delete' && err && !force && /没有完全合并|not fully merged/.test(m)) {
+          setCfm({
+            title: '⚠ 分支未完全合并',
+            msg: `${m}\n\n强制删除会永久丢失该分支上未合并的提交，无法恢复。仍要删除吗？`,
+            danger: true,
+            confirmLabel: '强制删除',
+            action: () => act('delete', name, true),
+          });
+          return; // 已转成确认流程，不再走下面的默认报错显示
+        }
         const text = action === 'merge' && err ? `${m} 可在「解决冲突」中用「中止合并」放弃本次合并` : m;
         setMsg(text);
         setMsgErr(Boolean(err));
@@ -431,7 +444,7 @@ export function BranchDialog(props: {
                         onClick={() =>
                           setCfm({
                             title: '删除分支',
-                            msg: `确认删除分支 ${b.name}？未合并的改动会丢失（可强制删除）。`,
+                            msg: `确认删除分支 ${b.name}？未合并的分支会被 git 拒绝，届时可选择强制删除。`,
                             action: () => act('delete', b.name, false),
                           })
                         }
@@ -452,6 +465,7 @@ export function BranchDialog(props: {
         <ConfirmModal
           title={cfm.title}
           message={cfm.msg}
+          danger={cfm.danger}
           confirmLabel={cfm.confirmLabel ?? '确认'}
           hideCancel={cfm.hideCancel}
           confirmCmd={cfm.confirmCmd}
