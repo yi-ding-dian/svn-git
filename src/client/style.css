@@ -1013,6 +1013,21 @@ textarea, input[type=text], input[type=password] {
 }
 textarea:focus, input:focus { outline: none; border-color: var(--accent); }
 textarea { resize: vertical; font-family: inherit; }
+/* ---------- md 目录浮层（预览区右上角「目录」按钮展开的折叠树） ---------- */
+.md-toc { padding: 4px 0; }
+/* 覆盖 .ctx-item 的 10px 间距：三角与标题要贴紧，层级感靠行首缩进（组件里按标题级别算） */
+.md-toc-row { gap: 2px; }
+.md-toc-arrow {
+  width: 14px; flex-shrink: 0; padding: 0; border: 0; background: none;
+  color: var(--dim); font-size: 10px; line-height: 1; cursor: pointer; text-align: center;
+}
+/* hover 时行底色变强调色，三角要跟着转白 —— 它自己有 color，不会继承 .ctx-item:hover 的颜色 */
+.ctx-item:hover .md-toc-arrow { color: #ffffff; }
+.md-toc-text {
+  flex: 1; min-width: 0; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* ---------- Markdown 渲染预览（marked 输出原生标签） ---------- */
 .md-render { padding: 8px 14px; line-height: 1.75; word-break: break-word; }
 /* 历史详情里的提交信息（md 渲染）：复用 .md-render 的元素样式，但去掉预览面板用的内边距

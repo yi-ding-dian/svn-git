@@ -14,6 +14,7 @@ import { IconExternal } from '../ui/icons.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { MdThemePopover, loadMdTheme, saveMdTheme, mdThemeVars, mdThemeName } from './md-theme.js';
+import { MdTocPopover, type TocItem } from './md-toc.js';
 
 /** 预览目标：{文件名, 相对路径, 状态码?, 是否图片?}；文本内容由面板自行加载 */
 export interface PreviewTarget {
@@ -135,6 +136,12 @@ export function PreviewPane(props: Props) {
   const [mdTheme, setMdTheme] = useState(loadMdTheme);
   /** md 主题气泡位置（null = 未打开） */
   const [mdThemePop, setMdThemePop] = useState<{ x: number; y: number } | null>(null);
+  /** 文档目录气泡：只记按钮底边 y（水平位置由浮层自己贴窗口右侧算） */
+  const [tocPop, setTocPop] = useState<{ y: number } | null>(null);
+  /** 目录条目：md 渲染后从 DOM 提取（见下方 effect）；空数组 = 没标题或不在预览态 */
+  const [tocItems, setTocItems] = useState<TocItem[]>([]);
+  /** md 正文容器：提取标题、挂锚点、跳转定位都靠它 */
+  const mdBodyRef = useRef<HTMLDivElement | null>(null);
   const previewRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   /** 顶部说明文案（与旧 openFile 打开时生成的 note 一致；img 目标无说明） */
@@ -148,6 +155,32 @@ export function PreviewPane(props: Props) {
   const isMd = target.name.toLowerCase().endsWith('.md');
   /** md 阅读主题的 inline 变量（只打给 md 的预览容器；「跟随界面」为 undefined 不覆盖） */
   const mdVars = isMd ? mdThemeVars(mdTheme) : undefined;
+
+  /** 文档目录：md 渲染完成后从 **DOM** 提取标题，并给它们挂上锚点 id。
+   *  走 DOM 而不是解析 md 源码 —— 这样条目顺序与文本跟屏幕上看到的完全一致
+   *  （marked 的 renderer 调用次序在引用、列表等嵌套块里可能与源码顺序不同），也不用给 markdown.ts 加参数。
+   *  mdTheme 也要入依赖：切 md 主题会重设 innerHTML，锚点 id 得重新挂。 */
+  useEffect(() => {
+    const el = mdBodyRef.current;
+    if (!el || !mdPreview) {
+      setTocItems([]);
+      return;
+    }
+    const hs = [...el.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')];
+    setTocItems(
+      hs.map((h, i) => {
+        const id = `md-h-${i}`;
+        h.id = id;
+        return { level: Number(h.tagName[1]), text: h.textContent ?? '', id };
+      }),
+    );
+  }, [text, mdPreview, mdTheme]);
+
+  /** 离开预览态（切「查看原文」）时收起目录气泡：此时正文容器已卸载，
+   *  mdBodyRef 变 null，条目点下去也是"完全没反应"。 */
+  useEffect(() => {
+    if (!mdPreview) setTocPop(null);
+  }, [mdPreview]);
 
   // 目标变化（FsView 每次打开都写入新对象）→ 重置内部模式并重新读取内容
   useEffect(() => {
@@ -409,10 +442,25 @@ export function PreviewPane(props: Props) {
             {mdPreview ? t('fs.pv.viewRaw') : t('fs.pv.previewToggle')}
           </button>
         )}
+        {isMd && mdPreview && tocItems.length > 0 && (
+          <button
+            className={`mini ${tocPop ? 'primary' : ''}`}
+            // 文档目录（点击展开 / 收起）
+            title={t('fs.pv.tocTitle')}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setTocPop((v) => (v ? null : { y: r.bottom + 4 })); // 只传底边：浮层自己贴窗口右侧展开
+            }}
+          >
+            {/* ☰ 目录 ({n}) */}
+            ☰ {t('fs.pv.tocCount', { n: tocItems.length })}
+          </button>
+        )}
         {/* 编辑：用系统默认程序打开（openWith 传空 exec = 默认程序）。
             **只给文本**：图片这类没有"文本编辑"的意义（二进制文档更进不到预览——双击时就被拦下了）。
-            改完不回读内容：文件在别的程序手里、什么时候保存我们不知道；用户自己按「刷新」即可。 */}
-        {!target.img && (
+            改完不回读内容：文件在别的程序手里、什么时候保存我们不知道；用户自己按「刷新」即可。
+            **预览态不显示**（用户要求）：目录按钮占这个位置，且看渲染稿时想编辑本就该先切回原文。 */}
+        {!target.img && !mdPreview && (
           <button
             className="mini"
             onClick={(ev) => void openEditMenu(ev)}
@@ -499,6 +547,7 @@ export function PreviewPane(props: Props) {
         ) : mdPreview && target.name.toLowerCase().endsWith('.md') ? (
           <div
             className="md-render"
+            ref={mdBodyRef}
             onClick={onMdRenderClick}
             dangerouslySetInnerHTML={{
               __html: renderMarkdown(text, { baseDir: target.rel.includes('/') ? target.rel.slice(0, target.rel.lastIndexOf('/')) : '' }),
@@ -542,6 +591,15 @@ export function PreviewPane(props: Props) {
           })
         )}
       </div>
+      )}
+      {/* 文档目录气泡：点条目跳到对应标题（不关气泡，方便连续跳）；点遮罩关闭 */}
+      {tocPop && (
+        <MdTocPopover
+          y={tocPop.y}
+          items={tocItems}
+          onJump={(id) => mdBodyRef.current?.querySelector<HTMLElement>(`#${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}
+          onClose={() => setTocPop(null)}
+        />
       )}
       {/* md 阅读主题气泡：选完接着看（不关气泡，可连续试）；Esc / 点遮罩只关气泡，预览留着 */}
       {mdThemePop && (

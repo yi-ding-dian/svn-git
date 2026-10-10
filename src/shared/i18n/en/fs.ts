@@ -425,4 +425,9 @@ export const fs = {
   'fs.search.expand': 'Click to show all matches',
   'fs.search.collapsed': 'Collapse ▲ ({n} item)|Collapse ▲ ({n} items)',
   'fs.search.expandAll': '… {n} match (click to show all)|… {n} matches (click to show all)',
+
+  // ---- Markdown preview: document outline ----
+  'fs.pv.tocCount': 'Contents ({n})',
+  'fs.pv.tocTitle': 'Document outline (click to expand / collapse)',
+  'fs.pv.tocToggle': 'Expand / collapse this section',
 };

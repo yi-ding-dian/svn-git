@@ -425,4 +425,9 @@ export const fs = {
   'fs.search.expand': '点击展开全部匹配',
   'fs.search.collapsed': '收起 ▲（共 {n} 项）',
   'fs.search.expandAll': '… 共 {n} 个匹配（点击展开全部）',
+
+  // ---- md 预览：文档目录（右上角按钮 → 折叠树浮层，点条目跳到对应标题）----
+  'fs.pv.tocCount': '目录 ({n})',
+  'fs.pv.tocTitle': '文档目录（点击展开 / 收起）',
+  'fs.pv.tocToggle': '展开 / 折叠这一节',
 } as const;
