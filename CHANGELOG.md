@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 测试与工程
+- **一键发版脚本** `deploy/release.mjs`（双击入口 `deploy/发布.bat`）：检测工作区/分支/tag 占用 → 问升哪一位与发布说明 → 自动归档 CHANGELOG 的 `[Unreleased]`、`npm version` 提交并打 tag、`git push --follow-tags` 触发 CI、轮询 GitHub API 报出构建结果与产物清单。支持 `--patch|--minor|--major --yes --no-push --no-watch` 供 GUI / CI 非交互调用
+
 ## [1.0.0] - 2026-10-11
 
 首个版本：双引擎 SVN/Git 图形化管理、行级冲突防护闭环、AppImage 交付。
