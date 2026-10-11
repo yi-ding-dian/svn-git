@@ -104,7 +104,7 @@ Windows 产物在本地打包:双击 `deploy/build.bat` 出**免安装单文件 
 
 | 层 | 技术 |
 |---|---|
-| 前端 | React 18 + TypeScript(esbuild 单文件打包,约 500KB) |
+| 前端 | React 18 + TypeScript(esbuild 单文件打包,约 850KB) |
 | 服务 | Node 内置 http(REST API + SSE),仅监听 127.0.0.1 |
 | 桌面外壳 | Electron(可选;纯 node 也能跑,供浏览器访问) |
 | VCS | 包装官方 `svn` / `git` 命令行(`--xml` / `--porcelain` 机器格式) |
@@ -113,36 +113,36 @@ Windows 产物在本地打包:双击 `deploy/build.bat` 出**免安装单文件 
 
 ```
 src/
-├── server.ts          # HTTP 服务层(API + 静态文件 + 路由分发)
-├── main.tsx           # Electron 入口(打包版窗口 / --browser 外部浏览器)
+├── main/              # Electron 入口(打包版窗口 / --browser 外部浏览器)
+├── preload/           # Electron preload
 ├── config.ts          # 配置读写(~/.config/svngit/config.json,600 权限)
-├── preload.cjs        # Electron preload
-├── routes/            # API 路由域模块
-│   ├── ops.ts         #   操作类:add/commit/update/revert/delete/push/重命名/忽略/锁定
-│   ├── branch.ts      #   分支/标签/Stash/提交改写/未推送
-│   ├── conflicts.ts   #   冲突防护:preflight/conflicts/合并预检/Blame
-│   └── util.ts        #   共享工具:路径安全校验/状态缓存/认证判定
+├── server/
+│   ├── index.ts       # HTTP 服务层(API + 静态文件 + 路由分发)
+│   └── routes/        # API 路由域(13 个域模块 + util 共享工具:操作/分支/冲突/浏览/上传/终端/历史/…)
 ├── vcs/               # VCS 抽象层
 │   ├── types.ts       #   统一 Vcs 接口(平台独有能力可选)
 │   ├── index.ts       #   createVcs 工厂
 │   ├── svn.ts         #   SVN 实现(包装 svn 命令行)
 │   ├── git.ts         #   Git 实现(包装 git 命令行)
+│   ├── ignore.ts      #   忽略规则(.gitignore / svn:ignore 的权威判定与写入)
 │   ├── diff-lines.ts  #   行级冲突算法(纯函数)
 │   ├── exec.ts        #   子进程封装(stdin 传密码/超时/取消/输出上限)
 │   └── detect.ts      #   仓库类型识别
-├── platform/          # 平台抽象(win32/linux 双实现:打开方式/图标/环境安装)
-└── web/               # React 前端
-    ├── app.tsx        #   主框架:视图调度/提交预检/冲突拦截/远程监控
-    ├── fs.tsx         #   文件夹浏览(列表/树/网格/多选/过滤树/右键菜单/重命名)
-    ├── history.tsx    #   历史记录(总数/过滤/未推送标记)
-    ├── diff.tsx       #   并排差异对比
-    ├── vcs-dialogs.tsx#   分支/标签/Stash/新建仓库弹窗
-    ├── conflicts.tsx  #   三方冲突解决器
-    ├── cmd-preview.ts #   命令预览模板表
-    ├── motion.tsx     #   角标定位/跳转动画
-    └── …              #   其余组件(弹窗外壳/图标/主题/侧边栏等)
-scripts/               # 构建、开发、截图脚本
-test/                  # 自动化测试(npm test,130 项断言)
+├── platform/          # 平台抽象(win32/linux 双实现:打开方式/图标/环境安装/终端运行)
+├── shared/            # 前后端共享(类型常量 / 中英文案 / 文本编码探测)
+└── client/            # React 前端(按业务域分目录)
+    ├── shell/         #   主框架:视图调度/提交预检/冲突拦截/远程监控/侧边栏
+    ├── filesystem/    #   文件夹浏览:列表/树/网格/多选/过滤树/右键菜单/剪贴板/拖拽上传
+    ├── history/       #   历史记录与并排差异对比
+    ├── conflicts/     #   三方冲突解决器 / 远程冲突
+    ├── ops/           #   提交/推送/分支/标签/Stash 等操作弹窗
+    ├── repo/          #   打开/创建仓库、登录认证、环境安装引导
+    ├── appearance/    #   主题与字体(16 套内置主题 + 自定义「我的主题」)
+    ├── terminal/      #   内置终端
+    └── ui/            #   通用组件:弹窗外壳/图标/右键菜单/差异渲染/角标
+scripts/               # 构建、开发、检查、截图脚本
+deploy/                # 打包与发版(Windows 双击入口 build.bat / release.bat + release.mjs)
+test/                  # 自动化测试(npm test 六个套件 + npm run test:e2e 前端冒烟)
 ```
 
 ### 架构
@@ -172,6 +172,10 @@ svn / git 命令行(系统安装)
 - 文件名搜索(自动定位)、键盘导航(↑↓ 选择、→/Enter 进入、← 返回)、右键上下文菜单、面包屑导航
 - **多选批量操作**:浏览模式矩形框选 / Ctrl 点选,列表与树 Ctrl+Shift 范围选;右键菜单按选中集合的**操作能力分组**(添加 / 提交 / 还原 / 从版本库移除 / 删除磁盘文件 / 复制路径,各自带计数,混选自动拆分不误伤);还原按状态动态命名(全 A =「取消添加」、全 D =「恢复删除」)
 - **文件/文件夹重命名**:右键「重命名」,版本化文件走 `svn move` / `git mv`(提交后生效),未版本化(?/I)文件直接磁盘改名
+- **文件剪贴板**:复制 / 剪切(版本化条目走 `svn move` / `git mv`)→ 到任意目录「粘贴到这里」;剪贴板非空时右键菜单第一项即是粘贴项,紧邻一行「取消复制 / 取消剪切」随时清空(剪切中的条目在列表里半透明标记)
+- **拖拽上传**:把文件/文件夹拖进窗口即上传到当前目录,同名冲突可选覆盖 / 跳过 / 逐个改名;复制进来的版本化副本自动加入版本库
+- **Markdown 预览**:md 文件渲染预览 + 文档目录浮层(点条目跳转),图片与代码高亮,8 档阅读主题(跟随界面 + 白纸 / 羊皮纸 / 护眼绿 / 报纸 / 夜间 / 暗夜蓝 / 高对比)
+- **模块索引**:解析仓库内 md 的「目录树 ← 说明」或「| 路径 | 说明 |」表格,勾选后把说明注入到对应目录的文件列表(作用范围限该目录及子树),浏览代码时每个文件带一句话描述
 - 常用文件夹预加载(SVN:右键加入后后台递归缓存,点击秒开)
 
 ### 历史与差异
@@ -202,10 +206,11 @@ svn / git 命令行(系统安装)
 
 ### 界面与体验
 
-- 六套浅色主题(侧边栏一键切换)、字号与字体设置(⋯ 菜单)、彩色 SVG 图标(不依赖系统 emoji 字体)
+- **16 套内置主题**(浅色 / 深色,侧边栏「⋯」一键切换,即时预览)+「我的主题」自定义 6 色;字号与字体设置;彩色 SVG 图标(不依赖系统 emoji 字体)
 - **弹窗通用可调整大小**:边缘/四角 8 方向拖拽,右上角最大化/还原/关闭
 - 中文本地化、中文文件名/提交信息完整支持
 - SVN 登录管理(账号切换/退出登录)、Git 认证引导(GitHub token / 服务器密码 / SSH 三种场景分引导)、环境检测与安装引导(SSE 实时日志)
+- **终端**:右键脚本「终端运行」(.bat / .cmd / .sh 在系统终端窗口里跑,跑完窗口保留);`Ctrl+\`` 打开内置终端(命令历史随服务会话保留,重启清空)
 - 远程网络状态灯:30 秒检测,最近 3 次结果三态(绿/黄/红),认证失败单独区分,点击圆点手动检测
 
 ---
@@ -213,17 +218,20 @@ svn / git 命令行(系统安装)
 ## 🧪 测试
 
 ```bash
-npm test   # 一键执行全部 130 项断言
+npm test         # 一键执行全部断言(vcs / vcs-extra / diff-lines / diff-parse / api / upload 六个套件)
+npm run test:e2e # 前端冒烟(Playwright 驱动真实浏览器,需先 npm run build)
 ```
 
 | 测试文件 | 覆盖 |
 |---|---|
-| `test/vcs-test.mjs` | VCS 层 47 项(git/svn 状态、提交、还原、重命名等,自动重建测试仓库) |
-| `test/vcs-extra-test.mjs` | 扩展功能 45 项(分支/标签/Stash/忽略/冲突等) |
+| `test/vcs-test.mjs` | VCS 层 50+ 项(git/svn 状态、提交、还原、重命名等,自动重建测试仓库) |
+| `test/vcs-extra-test.mjs` | 扩展功能 50 项(分支/标签/Stash/忽略/冲突等) |
 | `test/diff-lines-test.mjs` | 行级冲突算法 6 项 |
-| `test/api-test.mjs` | HTTP API 集成 32 项(真实服务端到端:越界拦截/CSRF/缓存失效/软删 keep/重命名 API 等) |
+| `test/diff-parse-test.mjs` | 差异解析 15 项 |
+| `test/api-test.mjs` | HTTP API 集成 60+ 项(真实服务端到端:越界拦截/CSRF/缓存失效/软删 keep/重命名/忽略闭环等) |
+| `test/upload-test.mjs` | 上传/复制粘贴 28 项 |
 
-> 测试仓库在项目根 `svngit-test/` 下(vcs-test 会自动重建 SVN 仓库并将 Git 仓库重置到固定基准提交,不依赖外部网络);CI(`.github/workflows/test.yml`)在 push/PR 时自动跑全量测试。
+> 测试仓库在项目根 `svngit-test/` 下(vcs-test 会自动重建 SVN 仓库并将 Git 仓库重置到固定基准提交,不依赖外部网络);CI(`.github/workflows/test.yml`)在 push/PR 时自动跑全量测试。`vcs-*` 两套需要本机已安装 `svn` / `svnadmin`(缺失时会在重建 SVN 测试仓库处直接失败)。
 
 ---
 
