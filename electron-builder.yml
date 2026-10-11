@@ -2,6 +2,8 @@
 appId: com.svngit.tool
 productName: svn-git文件版本管理
 electronVersion: 33.4.11
+# 命名约定：productName 决定用户看到的名称（窗口标题、开始菜单、安装目录），保持中文；
+# 产物文件名（artifactName）一律 ASCII —— 中文名在下载 URL 里会被百分号编码、命令行和传输环节易乱码。
 # 只保留中英文语言包（locales 40M → ~2M，显著减小产物）
 electronLanguages:
   - zh-CN
@@ -9,7 +11,8 @@ electronLanguages:
 # 使用本地 electron 分发，跳过 GitHub 下载（避免网络卡死）
 electronDist: node_modules/electron/dist
 directories:
-  output: dist-appimage
+  # 打包产物（AppImage / Windows exe）与打包脚本同处 deploy/ 下
+  output: deploy/release
   buildResources: build
 files:
   - dist/**/*
@@ -19,6 +22,7 @@ linux:
   icon: build/icon.png
   target:
     - AppImage
+  artifactName: svn-git-${version}.${ext}
   category: Development
   maintainer: svn-git
   synopsis: SVN/Git 状态检测与操作工具
@@ -31,8 +35,14 @@ win:
     - target: nsis
       arch:
         - x64
+    # portable：免安装单文件 exe，双击即跑（对标 Linux 的 AppImage）
+    - target: portable
+      arch:
+        - x64
+portable:
+  artifactName: svn-git-${version}-portable.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  artifactName: ${productName}-${version}-setup.${ext}
+  artifactName: svn-git-${version}-setup.${ext}
   shortcutName: svn-git文件版本管理

@@ -32,12 +32,12 @@
 
 ### 方式一:AppImage(推荐,免装 Node、免装浏览器)
 
-下载 `svn-git文件版本管理-1.0.0.AppImage` 后:
+下载 `svn-git-1.0.0.AppImage` 后:
 
 ```bash
-chmod +x ./svn-git文件版本管理-1.0.0.AppImage   # 首次需要执行权限
-./svn-git文件版本管理-1.0.0.AppImage            # 直接运行
-./svn-git文件版本管理-1.0.0.AppImage /path/to/repo   # 指定仓库目录启动
+chmod +x ./svn-git-1.0.0.AppImage   # 首次需要执行权限
+./svn-git-1.0.0.AppImage            # 直接运行
+./svn-git-1.0.0.AppImage /path/to/repo   # 指定仓库目录启动
 ```
 
 默认启动后弹出**应用窗口**(内置 Electron 渲染引擎,不依赖系统浏览器);关闭窗口即退出。
@@ -45,7 +45,7 @@ chmod +x ./svn-git文件版本管理-1.0.0.AppImage   # 首次需要执行权限
 **使用系统浏览器**:加 `--browser` 参数改用浏览器标签操作:
 
 ```bash
-./svn-git文件版本管理-1.0.0.AppImage --browser
+./svn-git-1.0.0.AppImage --browser
 ```
 
 此时服务在后台运行,用页面右上角「退出应用」停止。
@@ -64,7 +64,7 @@ npm run dist:linux     # 打包 AppImage
 
 ### Windows
 
-Windows 安装包(`.exe`)由 GitHub Actions 在 tag 发布时自动构建(见 `.github/workflows/release.yml`),也可在本地 Windows 执行 `npm run dist:win`。Windows 前置:安装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**(默认不勾选,勾选后才有 svn.exe 并加入 PATH)和 [Git for Windows](https://git-scm.com/)。项目根目录的 `运行.bat` 可在 Windows 下以源码方式一键安装依赖并启动。
+Windows 产物在本地打包:双击 `deploy/打包.bat` 出**免安装单文件 exe**(portable,对标 Linux 的 AppImage),`npm run dist:win` 出**安装包**,产物都在 `deploy/release/`——详见 `deploy/README.md`。安装包另由 GitHub Actions 在 tag 发布时自动构建(见 `.github/workflows/release.yml`)。Windows 前置:安装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**(默认不勾选,勾选后才有 svn.exe 并加入 PATH)和 [Git for Windows](https://git-scm.com/)。项目根目录的 `运行.bat` 可在 Windows 下以源码方式一键安装依赖并启动。
 
 ---
 

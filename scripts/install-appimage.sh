@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # AppImage 安装到系统应用菜单（与工具内「⋯ → 安装到系统应用菜单」等价，供手动/非 AppImage 运行使用）
-# 用法: ./scripts/install-appimage.sh /path/to/svn-git文件版本管理-1.0.0.AppImage
+# 用法: ./scripts/install-appimage.sh /path/to/svn-git-1.0.0.AppImage
 set -euo pipefail
 
 IMAGE="${1:-${APPIMAGE:-}}"

@@ -15,6 +15,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "dist:linux": "npm run build && electron-builder --linux AppImage",
     "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:win-portable": "npm run build && electron-builder --win portable",
     "test": "npm run build && node test/vcs-test.mjs && node test/vcs-extra-test.mjs && node test/diff-lines-test.mjs && node test/diff-parse-test.mjs && node test/api-test.mjs && node test/upload-test.mjs",
     "test:e2e": "node test/e2e-smoke.mjs"
   },
