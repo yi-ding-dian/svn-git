@@ -56,6 +56,14 @@ chmod +x ./svn-git-1.0.0.AppImage   # 首次需要执行权限
 
 ### 方式二:源码运行
 
+一键脚本(装依赖 → 构建 → 启动,浏览器自动打开 http://127.0.0.1:23456):
+
+```bash
+./run.sh               # Linux / macOS
+```
+
+Windows 直接双击项目根的 `run.bat` —— 两边做的是同一件事。手动分步:
+
 ```bash
 npm install
 npm run dev            # 开发模式(热更新,用浏览器访问 http://127.0.0.1:23456)
@@ -64,7 +72,7 @@ npm run dist:linux     # 打包 AppImage
 
 ### Windows
 
-Windows 产物在本地打包:双击 `deploy/打包.bat` 出**免安装单文件 exe**(portable,对标 Linux 的 AppImage),`npm run dist:win` 出**安装包**,产物都在 `deploy/release/`——详见 `deploy/README.md`。安装包另由 GitHub Actions 在 tag 发布时自动构建(见 `.github/workflows/release.yml`)。Windows 前置:安装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**(默认不勾选,勾选后才有 svn.exe 并加入 PATH)和 [Git for Windows](https://git-scm.com/)。项目根目录的 `运行.bat` 可在 Windows 下以源码方式一键安装依赖并启动。
+Windows 产物在本地打包:双击 `deploy/打包.bat` 出**免安装单文件 exe**(portable,对标 Linux 的 AppImage),`npm run dist:win` 出**安装包**,产物都在 `deploy/release/`——详见 `deploy/README.md`。安装包另由 GitHub Actions 在 tag 发布时自动构建(见 `.github/workflows/release.yml`)。Windows 前置:安装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**(默认不勾选,勾选后才有 svn.exe 并加入 PATH)和 [Git for Windows](https://git-scm.com/)。项目根目录的 `run.bat` 可在 Windows 下以源码方式一键安装依赖并启动。
 
 ---
 

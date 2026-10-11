@@ -1,7 +1,7 @@
 /** 文本编码探测与转换：让非 UTF-8 文本（中文项目里常见的 GBK/GB18030 老文件）读得对、写回不损坏。
  *
  *  为什么需要：`cmd.exe` 用系统 ANSI 代码页，中文 Windows 下的 .bat/.cmd 以及老代码通常是 GBK 且无 BOM，
- *  按 UTF-8 读会满屏 `�`（实报：运行.bat）。反过来，写回时若按 UTF-8 落盘，会把用户文件静默改编码。
+ *  按 UTF-8 读会满屏 `�`（实报：run.bat）。反过来，写回时若按 UTF-8 落盘，会把用户文件静默改编码。
  *
  *  **只在服务端使用**（用了 Node 的 Buffer；前端只消费 JSON 字符串，不需要它）。
  *
@@ -106,7 +106,7 @@ function gbkReverse(): Map<string, number> {
       pair[1] = trail;
       const s = gb18030.decode(pair);
       // 同一个字符可能有多组字节解出来（GB18030 有重复映射）：取第一组即可，
-      // 实测真实 GBK 文件（运行.bat）解码再编码字节完全一致，不会产生无意义 diff
+      // 实测真实 GBK 文件（run.bat）解码再编码字节完全一致，不会产生无意义 diff
       if (s.length === 1 && s !== '�' && !m.has(s)) m.set(s, (lead << 8) | trail);
     }
   }

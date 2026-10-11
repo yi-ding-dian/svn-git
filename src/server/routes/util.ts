@@ -190,7 +190,7 @@ export const INSTANCE_ID = `${Date.now().toString(36)}-${Math.random().toString(
 
 /** 读取文本文件：>MAX_READ_BYTES 时读前拦截,返回占位提示,不整读入内存。
  *  编码：先按 UTF-8，不是合法 UTF-8 再按 GB18030（中文项目里的 .bat/老代码常见），
- *  否则按 UTF-8 读会满屏 `�`（实报：运行.bat）。探测细节见 src/shared/text.ts。 */
+ *  否则按 UTF-8 读会满屏 `�`（实报：run.bat）。探测细节见 src/shared/text.ts。 */
 export function  readTextFile(abs: string): string {
   try {
     if (fs.statSync(abs).size > MAX_READ_BYTES) return TOO_LARGE_PLACEHOLDER;

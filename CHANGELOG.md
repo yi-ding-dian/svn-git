@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### 测试与工程
+- **Linux 源码运行脚本 `run.sh`**：补上一直缺的那半 —— Windows 有双击即跑的启动脚本（现名 `run.bat`，原名 `运行.bat`），Linux 只能手动敲 `npm install` + `npm run dev`。两者做的是同一件事（装依赖 → 构建 → 启动），其余入口路径都只留 package.json 一处
 - **一键发版脚本** `deploy/release.mjs`（双击入口 `deploy/发布.bat`）：检测工作区/分支/tag 占用 → 问升哪一位与发布说明 → 自动归档 CHANGELOG 的 `[Unreleased]`、`npm version` 提交并打 tag、`git push --follow-tags` 触发 CI、轮询 GitHub API 报出构建结果与产物清单。支持 `--patch|--minor|--major --yes --no-push --no-watch` 供 GUI / CI 非交互调用
 
 ## [1.0.0] - 2026-10-11
@@ -38,7 +39,7 @@
 - **SVN 网络灯恒报"未配置仓库 URL"**：`detectRepo` 不含 url，net-check 改用 `vcs.info()` 获取
 - **preflight 失败静默放行提交**：冲突检查失败时明示风险弹窗，不再无提示绕过
 - 删除确认文案按实际语义重写（提交前可还原、未跟踪文件不可恢复等）；历史视图错误信息红色区分；失败 toast 停留 5 秒不截断
-- **`运行.bat` 启动的是重构前的旧入口**：服务入口早已从 `dist/main.js` 变为 `dist/main/index.js`，脚本仍指向旧文件——不报错，但静默跑起旧版后端（表现为"很多功能都没有"）。改为 `npm start` 跟随 package.json，并清掉 `dist/` 下的旧产物
+- **启动脚本（`run.bat`，当时叫 `运行.bat`）指向重构前的旧入口**：服务入口早已从 `dist/main.js` 变为 `dist/main/index.js`，脚本仍指向旧文件——不报错，但静默跑起旧版后端（表现为"很多功能都没有"）。改为 `npm start` 跟随 package.json，并清掉 `dist/` 下的旧产物
 
 ### 测试与工程
 - 新增 `npm test`（build + VCS 层 47 + 扩展 45 + diff 算法 6 + **HTTP API 集成 32** = 130 项断言）

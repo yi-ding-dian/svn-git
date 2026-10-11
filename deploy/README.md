@@ -3,6 +3,8 @@
 把项目打成「目标机免装 Node」的分发产物，以及把产物正式发布出去。
 两个打包脚本都会先回到项目根目录（脚本自己 `cd ..`，不用手动切目录），再执行 `npm run build` + `electron-builder`。
 
+> **只想把应用跑起来看看**（不产出分发包）：用项目根的 `run.sh`（Windows 是 `run.bat`）—— 那是源码运行，属于另一件事，所以不在这个目录里。
+
 | 脚本 | 平台 | 产物（落在 `deploy/release/`） |
 |---|---|---|
 | `打包.bat` | Windows | `svn-git-<版本>-portable.exe` — 免安装单文件 exe，约 70MB |
