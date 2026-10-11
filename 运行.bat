@@ -20,7 +20,9 @@ call npm run build
 if errorlevel 1 goto :err_build
 
 echo [3/3] 启动服务 http://127.0.0.1:23456 ,浏览器即将自动打开...
-node dist/main.js
+rem  入口取自 package.json 的 start 脚本,不在此写死 dist 路径
+rem  (重构后入口从 dist/main.js 变成了 dist/main/index.js,写死会跑到旧版本)
+call npm start
 if errorlevel 1 goto :err_run
 
 echo 服务已退出。
