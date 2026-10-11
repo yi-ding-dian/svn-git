@@ -54,6 +54,11 @@ export async function gitCheckIgnore(repoRoot: string, relPaths: string[]): Prom
 /** 路径归一：'' / '.' 都表示仓库根 */
 const normDir = (d: string): string => (!d || d === '.' ? '' : d.replace(/\/+$/, ''));
 
+/** 合批预取的上限：单目录条目数超过 MAX_BATCH_DIR_ENTRIES、或批内路径总数将超过 MAX_BATCH_PATHS 时，
+ *  该目录不参与合批，留给惰性路径按需单跑（行为与合批前一致）——防一个巨目录（build/ 产物）把整批拖垮。 */
+const MAX_BATCH_DIR_ENTRIES = 5000;
+const MAX_BATCH_PATHS = 20_000;
+
 /**
  * 目录级忽略判定器：一个目录只跑一次 `git check-ignore`（批量判该目录下所有条目），之后查内存集合。
  * 渲染一个目录时会被逐条目问很多次，必须缓存住。
@@ -77,7 +82,45 @@ export function makeGitIgnoreChecker(repoRoot: string) {
     cache.set(key, set);
     return set;
   };
+
+  /** 合批预取：把一批目录的忽略判定合并成**一次** `git check-ignore`。
+   *  /api/fs 渲染一个目录时会分别问「本目录 + 祖先链 + 每个子目录（allIgnored 判定）」，
+   *  逐目录各 spawn 一个 git 进程在 Windows 上每次 ~150ms（进程创建 + 杀软实时扫描），
+   *  根目录十几项就是 2s+ —— 这是"进文件夹要等一会儿"的主因；合批后整次请求只多一个进程。
+   *  已缓存的目录跳过；超大目录/超量批次退化为惰性单跑，结果与合批前完全一致。 */
+  const prefetch = async (dirRels: string[]): Promise<void> => {
+    const pending = [...new Set(dirRels.map(normDir))].filter((k) => !cache.has(k));
+    const perDir = new Map<string, string[]>();
+    const paths: string[] = [];
+    for (const key of pending) {
+      let names: string[];
+      try {
+        names = fs.readdirSync(path.join(repoRoot, key || '.'));
+      } catch {
+        cache.set(key, new Set()); // 读不到：与 load 一致，按"无忽略项"缓存
+        continue;
+      }
+      if (names.length > MAX_BATCH_DIR_ENTRIES) continue; // 巨目录：留给惰性路径
+      if (paths.length + names.length > MAX_BATCH_PATHS) break; // 批已够大：其余目录同样留给惰性路径
+      perDir.set(key, names);
+      for (const n of names) paths.push(key ? `${key}/${n}` : n);
+    }
+    if (perDir.size === 0) return;
+    const set = await gitCheckIgnore(repoRoot, paths);
+    for (const [key, names] of perDir) {
+      // 缓存内容与 load() 一致：**完整相对路径**（git 原样返回的全路径），不是裸文件名——
+      // isIgnored/allIgnored 都按全路径查，存裸名会让"目录内全部被忽略"的判定全部落空
+      const ignored = new Set<string>();
+      for (const n of names) {
+        const rel = key ? `${key}/${n}` : n;
+        if (set.has(rel)) ignored.add(rel);
+      }
+      cache.set(key, ignored);
+    }
+  };
+
   return {
+    prefetch,
     /** 该目录下的 name 是否被忽略 */
     isIgnored: async (dirRel: string, name: string): Promise<boolean> => {
       const key = normDir(dirRel);

@@ -249,6 +249,23 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 500, { error: t('srv.readDirFailed', { msg: (err as Error).message }) });
           return true;
         }
+        // 目录/文件分离：提前到这里——下面的忽略合批预取需要子目录清单，
+        // 且必须赶在"祖先链忽略判定"之前完成，否则那里又会逐级各自 spawn 一次 git。
+        const prefix = rel ? rel + '/' : '';
+        const dirs: string[] = [];
+        const files: string[] = [];
+        for (const n of names) {
+          const p = path.join(abs, n);
+          let st: fs.Stats;
+          try {
+            st = fs.statSync(p);
+          } catch {
+            continue;
+          }
+          (st.isDirectory() ? dirs : files).push(n);
+        }
+        dirs.sort(compareName);
+        files.sort(compareName);
         // 目录本身或其任一祖先未版本化 → 内部全部未版本化
         // （svn status 对嵌套未版本化目录可能只标记最外层，深层需沿祖先链判断）
         let unversionedAncestor = false;
@@ -285,6 +302,21 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         // （git：直接问 git —— check-ignore 权威判定，子目录 .gitignore/带路径规则/否定规则全归它算；
         //   svn：status --no-ignore 权威判定）
         const gitIgnore = makeGitIgnoreChecker(repo.root);
+        // git 忽略判定合批：把「本目录 + 祖先链 + 全部子目录」的忽略判定合并成一次 `git check-ignore`
+        // （见 ignore.ts 的 prefetch）。不合批时每个子目录各 spawn 一个 git 进程，Windows 上每次 ~150ms，
+        // 根目录十几项就是 2s+——这是"进文件夹要等一会儿"的主因。svn 的忽略走下方 status --no-ignore 集合。
+        if (repo.type === 'git') {
+          const targets = ['']; // 祖先链（含仓库根）：isIgnoredEntry 逐级判定用
+          if (rel) {
+            let acc = '';
+            for (const part of rel.split('/')) {
+              acc = acc ? `${acc}/${part}` : part;
+              targets.push(acc);
+            }
+          }
+          for (const d of dirs) targets.push(prefix + d);
+          await gitIgnore.prefetch(targets);
+        }
         // svn 忽略族：`svn status --no-ignore` 单次全量取 ignored 路径集合（规则来源一律权威：
         // svn:ignore 属性 / 客户端 global-ignores / 服务器端——注意 svn status --xml 默认不含
         // ignored 条目，必须用 plain 文本解析；被忽略目录整体标 I，其内部条目由祖先链判定）
@@ -335,21 +367,6 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             }
           }
         }
-        const prefix = rel ? rel + '/' : '';
-        const dirs: string[] = [];
-        const files: string[] = [];
-        for (const n of names) {
-          const p = path.join(abs, n);
-          let st: fs.Stats;
-          try {
-            st = fs.statSync(p);
-          } catch {
-            continue;
-          }
-          (st.isDirectory() ? dirs : files).push(n);
-        }
-        dirs.sort(compareName);
-        files.sort(compareName);
         for (const d of dirs) {
           const relDir = prefix + d;
           let code = dirSelf ? '?' : '';
