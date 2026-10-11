@@ -42,6 +42,7 @@ export const srv = {
   'srv.cloneTimeout': '获取超时（超过 {sec} 秒），已停止',
   'srv.cloneCancelled': '已取消获取',
   'srv.clonedTo': '已克隆到 {path}',
+  'srv.remnantCleaned': '（已清理上次中断残留的目录）',
   'srv.cloneFailed': '克隆失败',
   'srv.initedRepo': '已初始化仓库 {path}',
   'srv.gitInitFailed': 'git init 失败',

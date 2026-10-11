@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { get, post, type BrowseResult } from '../shared/api.js';
 import { GridIcon, IconOk, IconErr } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
+import { joinPath, parentPath } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 
 export function DirPicker(props: {
@@ -36,20 +37,23 @@ export function DirPicker(props: {
     load(dir);
   }, [dir]);
 
-  const goUp = () => setDir((d) => (d === '/' ? '/' : d.slice(0, d.lastIndexOf('/')) || '/'));
+  // 上一级：Windows 形态下 `\` 与 `/` 都算分隔符（原来只按 `/` 切——纯 `D:\x\y` 路径上
+  // 会切掉最后一个字符、跳到不存在的目录）；到根返回自身，据此隐藏链接
+  const goUp = () => setDir((d) => parentPath(d));
 
   /** 新建确认：创建后自动进入新文件夹 */
   const confirmCreate = (n: string) => {
     const name = n.trim();
     if (!name) return;
+    const target = joinPath(dir, name);
     void post
-      .mkdir(`${dir}/${name}`)
+      .mkdir(target)
       .then(() => {
         setCreating(false);
         // 已创建 {name}
         setNotice(t('repo.picker.created', { name }));
         setNoticeErr(false);
-        setDir(`${dir}/${name}`); // 创建后默认进入
+        setDir(target); // 创建后默认进入
       })
       .catch((e: Error) => {
         // 创建失败: {msg}
@@ -64,7 +68,7 @@ export function DirPicker(props: {
     setRenaming(null);
     if (!name || name === oldName) return;
     void post
-      .rename(`${dir}/${oldName}`, `${dir}/${name}`)
+      .rename(joinPath(dir, oldName), joinPath(dir, name))
       .then(() => {
         // 已重命名 {from} → {to}
         setNotice(t('repo.picker.renamed', { from: oldName, to: name }));
@@ -84,7 +88,7 @@ export function DirPicker(props: {
       <div className="row" style={{ marginBottom: 10, gap: 8 }}>
         <div className="breadcrumb" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {dir}
-          {dir !== '/' && (
+          {parentPath(dir) !== dir && (
             <a href="#" onClick={(e) => { e.preventDefault(); goUp(); }}>
               {/* ← 上级 */}
               {' '}{t('repo.up')}
@@ -153,7 +157,8 @@ export function DirPicker(props: {
                 className="open-grid-item dir"
                 // {name}/\n双击进入 · 右键重命名
                 title={t('repo.picker.dirTip', { name: it.name })}
-                onDoubleClick={() => setDir((d) => (d === '/' ? `/${it.name}` : `${d}/${it.name}`))}
+                // `..` 是服务端给的上级条目：走 parentPath（否则路径里会留下 `D:\x\..` 这种段）
+                onDoubleClick={() => setDir((d) => (it.name === '..' ? parentPath(d) : joinPath(d, it.name)))}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ x: e.clientX, y: e.clientY, name: it.name });

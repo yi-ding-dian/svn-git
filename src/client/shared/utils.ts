@@ -52,6 +52,47 @@ export function absPath(root: string | undefined, rel: string): string {
   return p ? `${r}${sep}${p}` : r;
 }
 
+/** 拼「父目录 + 名字」成**显示/提交用**的绝对路径：分隔符按父目录形态统一。
+ *
+ *  与 absPath 的区别：那个的 root 来自服务端（本就是平台原生形式，原样保留）；这里的
+ *  `dir` 是**用户手填**的（获取仓库弹窗的「所在目录」），`D:\gitProjects` 和 `D:/gitProjects`
+ *  两种写法都得规整成同一个形态——否则预览会显示成 `D:\gitProjects/snow-apps` 这种混用
+ *  分隔符（用户实报）。Windows 形态（盘符 / UNC）统一用 `\`，其余（Linux / macOS）用 `/`。
+ *  名字部分原样保留：Linux 上 `\` 是合法文件名字符，不能碰。
+ *  只用于绝对路径（表单/目录选择器），不处理相对路径。 */
+export function joinPath(dir: string, name: string): string {
+  const d = dir.trim();
+  if (!d) return name;
+  const win = isWinPath(d);
+  const sep = win ? '\\' : '/';
+  let base = win ? d.replace(/\//g, '\\') : d;
+  // 根（`/`、`D:\`、UNC `\\server\share\`）保留尾分隔符，其余去掉
+  const isRoot = win ? /^[A-Za-z]:\\$/.test(base) || /^\\\\[^\\]*\\[^\\]*\\$/.test(base) : base === '/';
+  if (!isRoot) base = base.replace(/[\\/]+$/, '');
+  return base.endsWith(sep) ? `${base}${name}` : `${base}${sep}${name}`;
+}
+
+/** 取父目录（浏览器端没有 node:path 可用，手写；Windows 形态下 `\` 与 `/` 都算分隔符）。
+ *  到根返回根自身（`/`、`D:\`）——调用方可用 `parentPath(p) === p` 判断"已在根"。
+ *  Linux 上 `\` 是合法文件名字符，只在 Windows 形态（盘符 / UNC）里才当分隔符。 */
+export function parentPath(p: string): string {
+  const win = isWinPath(p);
+  if (win) {
+    const t = p.replace(/\//g, '\\').replace(/\\+$/, ''); // 统一后去尾部（根会退化成 `D:`）
+    if (/^[A-Za-z]:/.test(t)) {
+      if (t.length <= 2) return `${t.slice(0, 2)}\\`; // `D:` → 盘根
+      const i = t.lastIndexOf('\\');
+      return i <= 2 ? `${t.slice(0, 2)}\\` : t.slice(0, i); // `D:\x` → 盘根
+    }
+    const i = t.lastIndexOf('\\'); // UNC：`\\server\share\x` → `\\server\share`
+    return i <= 1 ? t : t.slice(0, i);
+  }
+  const t = p.replace(/\/+$/, '') || '/';
+  if (t === '/') return '/';
+  const i = t.lastIndexOf('/');
+  return i <= 0 ? '/' : t.slice(0, i);
+}
+
 /** 是否为二进制文件（不支持文本对比） */
 export function isBinaryFile(path: string): boolean {
   const name = path.split('/').pop() ?? '';

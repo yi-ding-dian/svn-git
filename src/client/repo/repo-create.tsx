@@ -1,6 +1,6 @@
 /** 新建 / 获取仓库弹窗：新建仓库（CreateRepoDialog，git init / svnadmin create）+ 获取仓库（GetRepoDialog，git clone / svn checkout） */
 import React, { useRef, useState } from 'react';
-import { post, type RepoCheck } from '../shared/api.js';
+import { get, post, type RepoCheck } from '../shared/api.js';
 import { ModalShell, ResizableModal } from '../shell/modal-shell.js';
 import { IconDownload, IconPlus } from '../ui/icons.js';
 import { DirPicker } from './dir-picker.js';
@@ -9,6 +9,7 @@ import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { runAction } from '../shared/vcs-action.js';
 import { ResultLine } from '../ui/result-line.js';
+import { joinPath } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 import { GitPushAuthModal } from './git-auth.js';
 // ==================== 创建 / 克隆仓库 ====================
@@ -131,7 +132,8 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
       </FormRow>
       <div className="dim small" style={{ whiteSpace: 'pre-line' }}>
         {(() => {
-          const base = `${dir.trim().replace(/\/$/, '')}/${name.trim() || '…'}`;
+          // 同获取仓库弹窗：分隔符按「所在目录」的形态统一（避免 `D:\x/new-repo` 这种混用）
+          const base = joinPath(dir, name.trim() || '…');
           // 将创建：Git 仓库 {path}\ngit init 创建，创建后自动打开
           if (type === 'git') return t('repo.create.previewGit', { path: base });
           // 将创建：SVN 版本库 {path}（服务器存储，不能直接编辑）\n并检出工作副本 {wc}（创建后自动打开；日常编辑、添加、提交都在工作副本进行）
@@ -255,24 +257,61 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
   const [authAsk, setAuthAsk] = useState<{ type: 'github' | 'server' | 'ssh'; error: string } | null>(null);
   /** 正在获取时显示已用秒数（网络卡住时用户知道它在动，而不是卡死了） */
   const [elapsed, setElapsed] = useState(0);
+  /** 长时间没有文件落盘 → 提示"网络慢/不稳定"（慢网络下别让用户以为卡死，也别急着取消） */
+  const [slowNet, setSlowNet] = useState(false);
   /** 当前这次获取的取消句柄：关弹窗/超时都靠它把请求连同后端的 git 子进程一起停掉 */
   const abortRef = useRef<AbortController | null>(null);
-  /** 获取上限：与后端一致（超过就停，别让人干等） */
-  const GET_TIMEOUT_S = 30;
+  /** 获取上限：与后端一致（两边都是 10 分钟；大仓库首次克隆常常要几分钟） */
+  const GET_TIMEOUT_S = 600;
+  /** 多久还没有文件落盘就给"网络慢"提示（秒） */
+  const SLOW_HINT_S = 10;
 
   // 二次确认后执行获取
   const doGet = () => {
     setPending(null);
     setBusy(true);
     setElapsed(0);
+    setSlowNet(false);
     abortRef.current?.abort(); // 上一次还挂着的（重试场景）：先取消，免得两个请求打架
     const ac = new AbortController();
     abortRef.current = ac;
     const tick = setInterval(() => setElapsed((n) => n + 1), 1000);
-    // 到点自动停：断开请求 → 后端 abort 掉 git 子进程（两边都是 30s，这里先动）
+    // 到点自动停：断开请求 → 后端 abort 掉 git 子进程（两边都是 600s，这里先动）
     const deadline = setTimeout(() => ac.abort(), GET_TIMEOUT_S * 1000);
+    // ---------- 进度探测：目标目录里有没有真文件落盘 ----------
+    // `/api/browse` 本来就过滤隐藏项（`.git` 天然不算），且目标目录此时不在任何仓库里，
+    // 复用它最省事——不为此新增端点。取第一次读到的条目数当基线（目录还没建出来时是 0），
+    // 之后**多出来**的才算"开始下载文件"（克隆进用户已有的空目录时，基线不为 0）。
+    // 到 SLOW_HINT_S 还没有文件 → 提示网络慢；一旦有文件 → 立刻撤掉提示。
+    const probeTarget = joinPath(dir.trim(), name.trim());
+    let baseline: number | null = null;
+    let filesSeen = false;
+    const probe = setInterval(() => {
+      if (filesSeen) return;
+      void (async () => {
+        let n = 0;
+        try {
+          n = (await get.browse(probeTarget)).entries.filter((e) => e.name !== '..').length;
+        } catch {
+          n = 0; // 目录还没建出来：当 0 处理（首个文件一落盘就会 > 0）
+        }
+        if (baseline === null) {
+          baseline = n;
+          return;
+        }
+        if (n > baseline) {
+          filesSeen = true;
+          setSlowNet(false);
+        }
+      })();
+    }, 2000);
+    const slowTimer = setTimeout(() => {
+      if (!filesSeen) setSlowNet(true);
+    }, SLOW_HINT_S * 1000);
     const done = () => {
       clearInterval(tick);
+      clearInterval(probe);
+      clearTimeout(slowTimer);
       clearTimeout(deadline);
       if (abortRef.current === ac) abortRef.current = null;
     };
@@ -289,7 +328,7 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
           return;
         }
         // 打开服务端返回的仓库路径（git/svn 均为目标目录），没返回时兜底拼路径
-        props.onCreated(r.repoDir ?? `${dir.trim().replace(/\/$/, '')}/${name.trim()}`);
+        props.onCreated(r.repoDir ?? joinPath(dir, name.trim()));
       },
       true // onFailOk：失败时也要拿到 r 才能判断是不是认证问题
     )
@@ -302,20 +341,33 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
       });
   };
 
+  /** 关闭弹窗（含中止在飞的获取）：X / 遮罩 / 底部「关闭」都走它——
+   *  获取中直接关掉不等于停了，必须 abort 让后端把 git / svn 子进程一起收掉 */
+  const closeDialog = () => {
+    abortRef.current?.abort();
+    props.onClose();
+  };
+
   return (
     <ModalShell
       icon={<IconDownload size={16} />}
       // 获取仓库
       title={t('repo.get.title')}
-      onClose={() => {
-        abortRef.current?.abort(); // 关弹窗 = 真的停：断开请求，后端会连带杀掉 git 子进程
-        props.onClose();
-      }}
+      onClose={closeDialog}
       width={540}
       foot={
         <>
-          {/* 关闭 */}
-          <button onClick={props.onClose}>{t('common.close')}</button>
+          {busy ? (
+            // 获取中 → 「取消」出口：断开请求，后端会连带杀掉在跑的 git / svn 进程并清掉半截目录。
+            // （原先只有「关闭」，且它没接 abort——点掉之后进程还在后台跑到超时上限）
+            <button onClick={() => abortRef.current?.abort()} title={t('repo.get.cancelTip')}>
+              {/* 取消 */}
+              {t('common.cancel')}
+            </button>
+          ) : (
+            // 关闭
+            <button onClick={closeDialog}>{t('common.close')}</button>
+          )}
           <button
             className="primary"
             disabled={busy}
@@ -323,8 +375,8 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
             title={
               `${
                 type === 'git'
-                  ? (cmdOfRepo('git', 'clone', { url: url.trim() || '…', dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
-                  : (cmdOfRepo('svn', 'checkout', { url: url.trim() || '…', dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
+                  ? (cmdOfRepo('git', 'clone', { url: url.trim() || '…', dir: joinPath(dir, name.trim() || '…') }) ?? '')
+                  : (cmdOfRepo('svn', 'checkout', { url: url.trim() || '…', dir: joinPath(dir, name.trim() || '…') }) ?? '')
               }`
             }
           >
@@ -387,7 +439,9 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
       </FormRow>
       <div className="dim small" style={{ whiteSpace: 'pre-line' }}>
         {(() => {
-          const base = `${dir.trim().replace(/\/$/, '')}/${name.trim() || '…'}`;
+          // 分隔符按「所在目录」的形态统一（joinPath）：Windows 上父目录是反斜杠、这里又按 `/` 拼，
+          // 会预览成 `D:\gitProjects/snow-apps`（用户实报的混用分隔符）
+          const base = joinPath(dir, name.trim() || '…');
           const u = url.trim() || '…';
           // 将克隆：{url} → {path}\ngit clone 后自动打开
           if (type === 'git') return t('repo.get.previewGit', { url: u, path: base });
@@ -400,6 +454,12 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
         <div className="dim small" style={{ marginTop: 6 }}>
           {/* ⏳ 正在获取…已用 {n} 秒（最多 {max} 秒，超时会自动停止） */}
           {t('repo.get.elapsed', { n: elapsed, max: GET_TIMEOUT_S })}
+        </div>
+      )}
+      {busy && slowNet && (
+        <div className="small" style={{ marginTop: 6, color: 'var(--warn)' }}>
+          {/* 远程网络较慢或不稳定，获取仍在继续，请耐心等待；确认网络不通可点「取消」后换网络/地址重试 */}
+          {t('repo.get.slowNet')}
         </div>
       )}
       {/* 二次确认：目标路径 + 命令 + 风险检测 */}

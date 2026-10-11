@@ -30,6 +30,7 @@ export const srv = {
   'srv.cloneTimeout': 'Fetch timed out (over {sec}s), stopped',
   'srv.cloneCancelled': 'Fetch cancelled',
   'srv.clonedTo': 'Cloned to {path}',
+  'srv.remnantCleaned': ' (cleaned up the leftover directory from the interrupted fetch)',
   'srv.cloneFailed': 'Clone failed',
   'srv.initedRepo': 'Initialized repository {path}',
   'srv.gitInitFailed': 'git init failed',

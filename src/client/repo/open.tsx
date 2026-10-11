@@ -1,6 +1,6 @@
 /** 打开项目：目录浏览选择仓库（启动页 / 打开项目模态框共用） */
 import React, { useEffect, useRef, useState } from 'react';
-import { baseName } from '../shared/utils.js';
+import { baseName, joinPath, parentPath } from '../shared/utils.js';
 import { get, post, type BrowseResult, type RepoInfo } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { GridIcon } from '../ui/icons.js';
@@ -125,7 +125,8 @@ export function OpenBrowser(props: {
     }
   };
 
-  const goUp = () => setDir((d) => (d === '/' ? '/' : d.slice(0, d.lastIndexOf('/')) || '/'));
+  // 上一级：Windows 形态下 `\` 与 `/` 都算分隔符（原来只按 `/` 切，纯 `D:\x\y` 路径上会切错）
+  const goUp = () => setDir((d) => parentPath(d));
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -362,7 +363,8 @@ export function OpenBrowser(props: {
                 title={it.isDir ? t('repo.open.dblClickDir', { name: it.name }) : it.name}
                 onDoubleClick={() => {
                   if (it.isDir) {
-                    setDir((d) => (d === '/' ? `/${it.name}` : `${d}/${it.name}`));
+                    // `..` 走 parentPath（避免留下 `D:\x\..` 段）；其余按父目录形态统一分隔符
+                    setDir((d) => (it.name === '..' ? parentPath(d) : joinPath(d, it.name)));
                   }
                 }}
               >

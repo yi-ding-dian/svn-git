@@ -89,6 +89,8 @@ export const repo = {
   'repo.get.needTargetName': '请填写目标和名称',
   'repo.get.getting': '获取中…',
   'repo.get.get': '获取',
+  'repo.get.cancelTip': '停止本次获取：断开请求，后台的 git / svn 进程会一并终止',
+  'repo.get.slowNet': '远程网络较慢或不稳定，获取仍在继续，请耐心等待；确认网络不通可点「取消」后换网络或地址重试',
   'repo.get.help':
     '两种方式：Git 克隆 = git clone（从地址复制一份到本地）；SVN 检出 = svn checkout（从服务器获取工作副本，目标目录即本地名称）。',
   'repo.get.typeGit': 'Git 克隆',

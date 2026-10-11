@@ -47,6 +47,26 @@ const MIME: Record<string, string> = {
   '.svg': 'image/svg+xml',
 };
 
+/** 获取仓库（克隆/检出）后没清干净的半截目标目录：目标路径 → 我们自己建的（键即路径）。
+ *  用户的"取消后再获取"会撞「目标已存在且非空」——而他什么文件都没拿到（用户实报）。 */
+const leftoverTargets = new Set<string>();
+
+/** 删掉本次获取留下的半截目录，返回是否清干净。
+ *  **必须带重试**：Windows 上 git/svn 刚被 SIGKILL，文件句柄可能还没释放，立刻 rmSync 会
+ *  EBUSY/EPERM——这是时序竞争（实测同一个取消场景，一次清干净、另一次就残留一个 `.git`）。
+ *  rmSync 的 maxRetries/retryDelay 对 EBUSY/EPERM/ENOTEMPTY 有效；清不掉就记进
+ *  leftoverTargets，下次对同一目标发起获取时再试，并且绝不把"清不掉"当成获取失败。 */
+function removeLeftoverTarget(target: string): boolean {
+  try {
+    fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    leftoverTargets.delete(target);
+    return true;
+  } catch {
+    leftoverTargets.add(target);
+    return false;
+  }
+}
+
 export function startServer(): Promise<ServerHandle> {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -122,6 +142,23 @@ export function startServer(): Promise<ServerHandle> {
           return;
         }
         const target = path.join(dir, name);
+        // ---------- 拿目录之前先把残骸处理掉 ----------
+        // 上次同目标的半截克隆没清干净（见 removeLeftoverTarget 的注释）→ 这次开始时再清一遍，
+        // 否则 git/svn 会直接报「目标已存在且非空」，而用户手上根本没有文件（用户实报）。
+        if (leftoverTargets.has(target)) removeLeftoverTarget(target);
+        /** 目标目录里**只有** `.git` / `.svn` 一个条目 = 上次获取中断留下的残骸
+         *  （服务重启后就丢了 leftoverTargets 记录，靠这一手兜底）。
+         *  这种目录克隆/检出必失败，而用户要的正是"克隆到这里"——清掉继续，并在结果里说明。
+         *  **只在"仅此一个条目"时才敢删**：多出任何文件都可能是用户自己的东西，一个字节都不碰。 */
+        let cleanedRemnant = false;
+        if (fs.existsSync(target)) {
+          try {
+            const entries = fs.readdirSync(target);
+            if (entries.length === 1 && (entries[0] === '.git' || entries[0] === '.svn')) cleanedRemnant = removeLeftoverTarget(target);
+          } catch {
+            /* 读不到就按原样交给 git/svn，让它们报自己的错 */
+          }
+        }
         // authError/authType：克隆因认证失败时带给前端，由它引导用户去设置里填 git 凭据
         let result: { ok: boolean; message: string; repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' };
         if (type === 'git') {
@@ -130,7 +167,7 @@ export function startServer(): Promise<ServerHandle> {
             // 认证失败且**存了凭据**时带 GIT_ASKPASS 重试（与 push 同一套机制）；仍失败则带上
             // authType 交给前端，引导用户去设置里填 git 凭据。
             //
-            // **客户端断开要真的停**：用户关掉弹窗（或前端 30s 超时）会 abort 请求，
+            // **客户端断开要真的停**：用户点「取消」/关掉弹窗（或前端 10 分钟超时）会 abort 请求，
             // 这里把它接到子进程上 —— 否则 git 会在后台白跑到 10 分钟，还可能凭空建出目录。
             // ⚠ 必须听 **res** 的 close，不能听 req 的：请求体已被 readBody 读完，
             // req 的 'close' 在那时就已经触发过了（挂上去等于空放，实测克隆照样跑满）。
@@ -138,8 +175,10 @@ export function startServer(): Promise<ServerHandle> {
             const ac = new AbortController();
             const onClose = () => ac.abort();
             res.on('close', onClose);
-            /** 克隆上限：网络卡住时别让用户干等（前端同时有 30s 倒计时，两边一致） */
-            const CLONE_TIMEOUT_MS = 30_000;
+            /** 克隆上限：网络卡住时别让用户干等（前端同时有 10 分钟倒计时，两边一致）。
+             *  原来是 30s——大仓库首次克隆超 30s 很常见，会把正常克隆也掐掉；
+             *  慢网络下前端另有"没文件落盘就提示"的提示条，配合「取消」按钮，不必靠短超时兜底 */
+            const CLONE_TIMEOUT_MS = 600_000;
             const isAuthFail = (r: { stderr: string; stdout: string }): boolean =>
               // 解析 git 输出判断认证失败（含中文 locale 的「没有那个设备或地址」），不是界面文案，禁止翻译
               /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403|没有那个设备或地址/i.test(r.stderr + r.stdout); // i18n-ignore: 解析 git 输出的匹配表
@@ -148,14 +187,11 @@ export function startServer(): Promise<ServerHandle> {
              *  （曾因为不判这个，把用户已有的整个目录连内容一起删了：重复获取同一位置时
              *    clone 报"目标已存在且非空"，那句 cleanup 就把人家目录端了。） */
             const targetExistedBefore = fs.existsSync(target);
-            /** 清掉本次克隆失败残留的半截目录（不清的话重试会报"目标已存在且非空"，掩盖真正原因） */
+            /** 清掉本次克隆失败残留的半截目录（不清的话重试会报"目标已存在且非空"，掩盖真正原因）；
+             *  带重试、清不掉会记进 leftoverTargets（详见 removeLeftoverTarget） */
             const cleanupTarget = () => {
               if (targetExistedBefore) return; // 原本就在的东西，一个字节都不许动
-              try {
-                fs.rmSync(target, { recursive: true, force: true });
-              } catch {
-                /* 清不掉就照原样继续，让 git 报它自己的错 */
-              }
+              removeLeftoverTarget(target);
             };
             let r = await run('git', ['clone', url, target], { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal });
             let authFail = isAuthFail(r);
@@ -169,7 +205,7 @@ export function startServer(): Promise<ServerHandle> {
               authFail = isAuthFail(r);
             }
             res.off('close', onClose);
-            // ⚠ aborted（客户端断开）与 timedOut（自己到 30s 上限）是两个字段，都要判 ——
+            // ⚠ aborted（用户取消/断开）与 timedOut（自己到 10 分钟上限）是两个字段，都要判 ——
             // 只判 aborted 的话，超时会被当成"克隆失败"、把 git 的半截 stderr（"正克隆到…"）当错误抛给用户
             if (r.aborted || r.timedOut) {
               cleanupTarget(); // 收拾可能留下的半截目录
@@ -180,7 +216,7 @@ export function startServer(): Promise<ServerHandle> {
               };
             } else if (r.code === 0) {
               // 已克隆到 {path}
-              result = { ok: true, message: t('srv.clonedTo', { path: target }), repoDir: target };
+              result = { ok: true, message: t('srv.clonedTo', { path: target }) + (cleanedRemnant ? t('srv.remnantCleaned') : ''), repoDir: target };
             } else {
               cleanupTarget(); // 失败也别留半个仓库，否则下次重试会撞"目录已存在"
               // 克隆失败
@@ -196,12 +232,29 @@ export function startServer(): Promise<ServerHandle> {
         } else if (type === 'svn') {
           if (url) {
             // 从远程/本地检出工作副本（成员获取仓库；svn checkout 目标目录名即本地名称）
-            const r = await run('svn', ['checkout', '-q', url, target], { timeoutMs: 600_000 });
-            result = r.code === 0
+            // **客户端断开要真的停**：与 git 克隆同一套（用户点「取消」/关弹窗 → 停掉 svn 并清半截目录）。
+            // 原先这里没接 abort：取消后 svn checkout 会在后台跑到 10 分钟上限，还会留下半个工作副本。
+            const ac = new AbortController();
+            const onClose = () => ac.abort();
+            res.on('close', onClose);
+            const targetExistedBefore = fs.existsSync(target);
+            const r = await run('svn', ['checkout', '-q', url, target], { timeoutMs: 600_000, signal: ac.signal });
+            res.off('close', onClose);
+            if (r.aborted || r.timedOut) {
+              // 只清"这次刚建出来的"：原本就存在的目录一个字节都不许动（同 git 克隆的守卫）
+              if (!targetExistedBefore) removeLeftoverTarget(target);
+              result = {
+                ok: false,
+                // 检出超时，已停止 / 已取消获取
+                message: r.timedOut ? t('srv.cloneTimeout', { sec: 600 }) : t('srv.cloneCancelled'),
+              };
+            } else if (r.code === 0) {
               // 已检出 SVN 工作副本 {path}
-              ? { ok: true, message: t('srv.svnCheckedOut', { path: target }), repoDir: target }
+              result = { ok: true, message: t('srv.svnCheckedOut', { path: target }) + (cleanedRemnant ? t('srv.remnantCleaned') : ''), repoDir: target };
+            } else {
               // svn checkout 失败
-              : { ok: false, message: r.stderr.trim() || t('srv.svnCheckoutFailed') };
+              result = { ok: false, message: r.stderr.trim() || t('srv.svnCheckoutFailed') };
+            }
           } else {
             // svnadmin create（本地仓库）+ 可选标准布局 + 工作副本
             fs.mkdirSync(target, { recursive: true });
