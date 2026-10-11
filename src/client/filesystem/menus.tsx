@@ -5,7 +5,7 @@ import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { absPath } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar, IconTerminal } from '../ui/icons.js';
+import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar, IconTerminal, IconErr } from '../ui/icons.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
 import type { Clip, ClipItem } from './use-file-transfer.js';
@@ -49,6 +49,8 @@ export interface MenuServices {
   cutItems: (items: ClipItem[]) => void;
   /** 粘贴到指定目录（缺省 = 当前浏览目录） */
   pasteInto: (destDir?: string) => void;
+  /** 清空剪贴板（不粘贴任何内容）：菜单里的「取消复制 / 取消剪切」 */
+  clearClip: () => void;
 }
 
 /** 剪贴板菜单项：复制 / 剪切（行菜单与多选菜单共用同一份文案与图标） */
@@ -70,7 +72,11 @@ function clipItems(tArr: { rel: string; name: string; isDir: boolean; code: stri
   ];
 }
 
-/** 剪贴板非空时的「粘贴」项（空白区用缺省落点=当前目录，目录行传 destDir）；剪贴板为空返回 [] */
+/** 剪贴板非空时的「粘贴」项 + 「取消复制/剪切」项（空白区用缺省落点=当前目录，目录行传 destDir）；
+ *  剪贴板为空返回 []。
+ *  取消项是刻意加的：剪贴板是应用自己的状态（不是系统剪贴板），复制模式刻意**不清**（可反复粘到
+ *  多个目录，与资源管理器一致），复制后又没有任何持续可见的标记——没有这个出口的话，「粘贴到
+ *  这里」会永远挂在右键菜单第一项，用户想"算了不粘了"时无处可去（用户实报）。 */
 function pasteItem(s: MenuServices, destDir?: string): CtxMenuItem[] {
   const c = s.clip;
   if (!c) return [];
@@ -84,6 +90,14 @@ function pasteItem(s: MenuServices, destDir?: string): CtxMenuItem[] {
     // 移动：{list} / 复制：{list}
     title: c.mode === 'cut' ? t('fs.menu.moveToList', { list: shown }) : t('fs.menu.copyToList', { list: shown }),
     action: () => s.pasteInto(destDir),
+  }, {
+    // 线条叉（与错误提示同一几何；这里语义是"取消/清除"，跟随菜单文字色、不染红）
+    icon: <IconErr />,
+    // 取消复制 / 取消剪切
+    label: c.mode === 'cut' ? t('fs.menu.cancelCut') : t('fs.menu.cancelCopy'),
+    // 清空剪贴板：不粘贴任何内容，本菜单里的「粘贴到这里」随之消失
+    title: t('fs.menu.cancelClipTitle'),
+    action: () => s.clearClip(),
   }];
 }
 

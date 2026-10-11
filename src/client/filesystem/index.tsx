@@ -724,6 +724,7 @@ export function FsView(props: Props) {
     copyItems: (items) => clipFlow.take('copy', items),
     cutItems: (items) => clipFlow.take('cut', items),
     pasteInto: (dest) => void clipFlow.paste(dest),
+    clearClip: () => clipFlow.clear(),
     mode,
     startCreate: (type) => {
       setSelected(new Set()); // 焦点已转到即将生成的条目上，清掉旧选中免得看着像"还选着上一个"

@@ -507,33 +507,37 @@ export function IconExternal({ size = 14 }: IconProps) {
   );
 }
 
-/** 复制完整路径：灰色双页 */
+/** 复制完整路径：双页（后一张石板灰、前一张浅蓝米纸 + 蓝边——与 IconFile 同一套蓝色系）。
+ *  这一组（复制/剪切/粘贴）原来是与主题文字同色的灰线，在右键菜单 hover（强调色底 + 白字）上
+ *  发糊、也没有辨识色；改为与文件夹/文件页同类别的**实底彩色**写法（实底 + 白色细节，
+ *  深浅主题下都立得住）。 */
 export function IconCopy({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
-      <rect x="8" y="8" width="12" height="12" rx="2" stroke="#8b949e" strokeWidth="2" fill="none" />
-      <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="#b1bac4" strokeWidth="2" fill="none" />
+      <rect x="8" y="8" width="12" height="12" rx="2" fill="#6e7681" />
+      <rect x="4.5" y="4.5" width="11.5" height="11.5" rx="2" fill="#dbeafe" stroke="#58a6ff" strokeWidth="1.6" />
     </svg>
   );
 }
 
-/** 剪切：剪刀（与复制同灰度系，凭外形区分） */
+/** 剪切：剪刀（刀刃金属灰、手柄琥珀——两处都带色，16px 下也能与"复制"一眼分开） */
 export function IconCut({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
-      <circle cx="6" cy="6" r="3" stroke="#8b949e" strokeWidth="2" fill="none" />
-      <circle cx="6" cy="18" r="3" stroke="#b1bac4" strokeWidth="2" fill="none" />
       <path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" stroke="#8b949e" strokeWidth="2" strokeLinecap="round" fill="none" />
+      <circle cx="6" cy="6" r="3" stroke="#e0b25c" strokeWidth="2" fill="none" />
+      <circle cx="6" cy="18" r="3" stroke="#e0b25c" strokeWidth="2" fill="none" />
     </svg>
   );
 }
 
-/** 粘贴：带夹板的剪贴板 */
+/** 粘贴：剪贴板（浅蓝板 + 琥珀夹子 + 蓝线条，与复制同一套蓝） */
 export function IconPaste({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
-      <path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2" stroke="#8b949e" strokeWidth="2" strokeLinecap="round" fill="none" />
-      <rect x="9" y="2" width="6" height="4" rx="1" stroke="#b1bac4" strokeWidth="2" fill="none" />
+      <path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2" fill="#dbeafe" stroke="#58a6ff" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M9 12.5h6M9 16h4" stroke="#58a6ff" strokeWidth="1.6" strokeLinecap="round" />
+      <rect x="9" y="2" width="6" height="4" rx="1.2" fill="#e0b25c" />
     </svg>
   );
 }

@@ -422,5 +422,15 @@ export function useCopyPaste(opts: {
     }
   }, []);
 
-  return { clip, take, paste };
+  /** 清空剪贴板（右键菜单里的「取消复制 / 取消剪切」）：不粘贴任何内容，只是丢掉待粘贴状态。
+   *  剪切态顺带清掉行上的半透明标记——cutRels 由 clip 派生，clip 一清标记就跟着没了。 */
+  const clear = useCallback(() => {
+    const c = clipRef.current;
+    if (!c) return;
+    setClip(null);
+    // 已取消复制 / 已取消剪切
+    optsRef.current.onToast(c.mode === 'cut' ? t('fs.clip.cutCanceled') : t('fs.clip.copyCanceled'));
+  }, []);
+
+  return { clip, take, paste, clear };
 }
