@@ -99,6 +99,18 @@ try {
     }
   }
 
+  // ---------- 2.1 /api/run-script 守卫（终端运行） ----------
+  {
+    // 只钉「拒绝」侧三条守卫：越界 / 不存在 / 不支持的类型。正例（真起终端窗口执行）不进 CI——
+    // 无头环境没有终端模拟器，且弹窗不可控。文案不比较：拒绝语按平台不同（win=仅三类 / linux=仅 .sh）。
+    const esc = await post('/api/run-script', { path: '../escape.bat' });
+    check('run-script 越界 400', esc.code === 400, `got=${esc.code}`);
+    const nf = await post('/api/run-script', { path: 'no-such-script.bat' });
+    check('run-script 不存在 404', nf.code === 404, `got=${nf.code}`);
+    const bad = await post('/api/run-script', { path: 'readme.md' });
+    check('run-script 非脚本类型 500 + ok:false', bad.code === 500 && bad.body.ok === false, `got=${bad.code} ${JSON.stringify(bad.body)}`);
+  }
+
   // ---------- 3. CSRF 与 Origin 放行 ----------
   {
     const evil = await post('/api/shutdown', {}, { Origin: 'http://evil.com' });

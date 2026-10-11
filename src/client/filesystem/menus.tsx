@@ -5,7 +5,7 @@ import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { absPath } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar } from '../ui/icons.js';
+import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar, IconTerminal } from '../ui/icons.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
 import type { Clip, ClipItem } from './use-file-transfer.js';
@@ -85,6 +85,29 @@ function pasteItem(s: MenuServices, destDir?: string): CtxMenuItem[] {
     title: c.mode === 'cut' ? t('fs.menu.moveToList', { list: shown }) : t('fs.menu.copyToList', { list: shown }),
     action: () => s.pasteInto(destDir),
   }];
+}
+
+/** 可「终端运行」的脚本扩展名（大小写不敏感；与平台层 runScript 的判定保持一致——那边是服务端兜底） */
+const isRunnableScript = (name: string): boolean => ['.bat', '.cmd', '.sh'].some((ext) => name.toLowerCase().endsWith(ext));
+
+/** 「终端运行」菜单项：在系统外部终端窗口里跑脚本（不是应用内终端面板——那条通道无 TTY，pause/交互式脚本跑不了）。
+ *  与「打开方式」同属系统集成动作，调用方把它排在同一分组里 */
+function runScriptItem(row: { rel: string; name: string }, s: MenuServices): CtxMenuItem {
+  return {
+    icon: <IconTerminal />,
+    // 终端运行
+    label: t('fs.act.runInTerminal'),
+    // 在系统终端窗口中运行该脚本
+    title: t('fs.menu.runInTerminalTitle'),
+    action: () => {
+      void post
+        .runScript(row.rel)
+        // 已在系统终端中运行: {name}
+        .then((x) => s.onToast(x.message ?? t('fs.menu.ranScript', { name: row.name }), !x.ok))
+        // 运行失败: {msg}
+        .catch((er: Error) => s.onToast(t('fs.menu.runFailed', { msg: er.message }), true));
+    },
+  };
 }
 
 /** 空白区右键菜单 */
@@ -481,6 +504,8 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
   //   缺失条目（'!'）磁盘上根本没文件，打开必然失败
   if (!row.isDir && row.code !== '!') {
     items.push({ sep: true });
+    // 终端运行只对脚本文件（.bat/.cmd/.sh）显示，与「打开方式」同组
+    if (isRunnableScript(row.name)) items.push(runScriptItem(row, s));
     const ext = row.name.split('.').pop()!.toLowerCase();
     // 先 push 占位项，程序列表异步取回后按 owIdx 回填它的 submenu。
     // 不能省这一步：组件端要校验 items[owIdx].label === '打开方式…' 才回填，没有占位项就整个静默丢弃

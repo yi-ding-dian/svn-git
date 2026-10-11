@@ -115,6 +115,7 @@ export const fs = {
   'fs.act.copyPath': '复制完整路径',
   'fs.act.copyName': '复制文件名',
   'fs.act.openWith': '打开方式…',
+  'fs.act.runInTerminal': '终端运行',
   'fs.act.commitThisDir': '提交此目录修改…',
   'fs.act.commitThisFile': '提交此文件',
   'fs.act.updateThisDir': '更新此目录',
@@ -167,6 +168,9 @@ export const fs = {
   'fs.menu.none': '无',
   'fs.menu.opened': '已打开',
   'fs.menu.openFailed': '打开失败: {msg}',
+  'fs.menu.runInTerminalTitle': '在系统终端窗口中运行该脚本（跑完窗口保留，不自动关闭）',
+  'fs.menu.ranScript': '已在系统终端中运行: {name}',
+  'fs.menu.runFailed': '运行失败: {msg}',
   'fs.menu.restoreMissingKindTitle': '{kind}已在磁盘上缺失，还原从版本库恢复（{cmd}）',
   'fs.menu.removeRecordOneTitle': '{kind}已在磁盘上缺失；从版本库移除记录（提交后生效，提交前可「还原」取消）',
 

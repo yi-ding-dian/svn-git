@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
 import { t } from '../shared/i18n/index.js';
-import { parseAppCommand, launchDetached } from './util.js';
+import { parseAppCommand, launchDetached, shq } from './util.js';
 import type { InstallTool, Platform } from './types.js';
 
 /** 内置（可能是第三方改写过的 .desktop）的本地化名选择：Name[zh_CN] > 系统 locale > 短码 > en > 默认名 */
@@ -136,6 +136,37 @@ function findLinuxIcon(key: string): { data: Buffer; contentType: string } | nul
   return null;
 }
 
+/** 终端模拟器探测表（按优先级）：各终端「怎么让它运行一条命令」的参数约定不同，逐个适配——
+ *  gnome-terminal / mate-terminal 用 `--`（`-e` 已废弃）；xfce4-terminal 用 `-x`；kitty 直接跟命令；
+ *  其余（x-terminal-emulator / konsole / alacritty / xterm）用 `-e`。 */
+const TERMINALS: { bin: string; run: (cmd: string) => string[] }[] = [
+  { bin: 'x-terminal-emulator', run: (c) => ['-e', 'bash', '-c', c] },
+  { bin: 'gnome-terminal', run: (c) => ['--', 'bash', '-c', c] },
+  { bin: 'konsole', run: (c) => ['-e', 'bash', '-c', c] },
+  { bin: 'xfce4-terminal', run: (c) => ['-x', 'bash', '-c', c] },
+  { bin: 'mate-terminal', run: (c) => ['--', 'bash', '-c', c] },
+  { bin: 'alacritty', run: (c) => ['-e', 'bash', '-c', c] },
+  { bin: 'kitty', run: (c) => ['bash', '-c', c] },
+  { bin: 'xterm', run: (c) => ['-e', 'bash', '-c', c] },
+];
+
+/** PATH 目录里找可执行文件（不依赖 which —— 极简发行版上可能没有该命令） */
+function inPath(bin: string): boolean {
+  return (process.env.PATH ?? '').split(':').some((d) => d !== '' && fs.existsSync(path.join(d, bin)));
+}
+
+/** 找系统终端模拟器并定好启动参数：$TERMINAL（用户显式指定，最高优先）→ 探测表按优先级。
+ *  $TERMINAL 认得出来的按它自己的约定，认不出的按最通用的 `-e`；指定的不可用则继续往下探。 */
+function findTerminal(cmd: string): { bin: string; argv: string[] } | null {
+  const custom = process.env.TERMINAL?.trim();
+  if (custom && (custom.includes('/') ? fs.existsSync(custom) : inPath(custom))) {
+    const known = TERMINALS.find((x) => x.bin === path.basename(custom));
+    return { bin: custom, argv: (known?.run ?? ((c: string) => ['-e', 'bash', '-c', c]))(cmd) };
+  }
+  for (const x of TERMINALS) if (inPath(x.bin)) return { bin: x.bin, argv: x.run(cmd) };
+  return null;
+}
+
 export const linux: Platform = {
   isWindows: false,
   chooseOpenCmd: null,
@@ -163,6 +194,19 @@ export const linux: Platform = {
     } catch (e) {
       return { ok: false, message: (e as Error).message };
     }
+  },
+
+  async runScript(abs, rel) {
+    // Linux 只有 .sh 有执行途径；.bat/.cmd 是 Windows 专属（前端菜单仍会显示菜单项，
+    // 因为前端不知道平台——这里给明确错误，好过静默失败。不提「仅 .bat/.cmd/.sh」：
+    // 用户点的就是这三种之一，那样说自相矛盾）
+    if (path.extname(abs).toLowerCase() !== '.sh') return { ok: false, message: t('plat.winOnlyScript') };
+    // `; exec bash` 让脚本跑完窗口留着（输出看得见，与 Windows 侧 cmd /k 行为对齐）
+    const term = findTerminal(`cd ${shq(path.dirname(abs))} && bash ${shq(abs)}; exec bash`);
+    // 未找到可用的终端模拟器（可设置 $TERMINAL 环境变量）
+    if (!term) return { ok: false, message: t('plat.noTerminal') };
+    // 已在系统终端中运行: {rel}
+    return launchDetached([term.bin, ...term.argv], t('plat.ranScript', { rel }));
   },
 
   resolveAppIcon(key) {

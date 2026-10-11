@@ -429,6 +429,8 @@ export const post = {
   shutdown: () => api<{ ok: boolean }>('/api/shutdown', json({})),
   /** 用指定系统程序打开仓库内文件 */
   openWith: (path: string, exec: string) => api<{ ok: boolean; message: string }>('/api/open-with', json({ path, exec })),
+  /** 在系统外部终端窗口里运行脚本（.bat/.cmd/.sh，右键「终端运行」） */
+  runScript: (path: string) => api<{ ok: boolean; message: string }>('/api/run-script', json({ path })),
   /** 拖入上传：冲突预检（只传相对路径列表，不传文件内容；先探路再决定怎么传） */
   uploadCheck: (dir: string, paths: string[]) => api<{ conflicts: string[] }>('/api/upload-check', json({ dir, paths })),
   /** 打包版拖入快路径：源已在磁盘上（Electron 拿到绝对路径），让后端 fs.cp 直接复制。

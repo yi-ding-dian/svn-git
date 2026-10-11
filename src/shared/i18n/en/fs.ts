@@ -115,6 +115,7 @@ export const fs = {
   'fs.act.copyPath': 'Copy Full Path',
   'fs.act.copyName': 'Copy File Name',
   'fs.act.openWith': 'Open With…',
+  'fs.act.runInTerminal': 'Run in Terminal',
   'fs.act.commitThisDir': 'Commit Changes in This Folder…',
   'fs.act.commitThisFile': 'Commit This File',
   'fs.act.updateThisDir': 'Update This Folder',
@@ -167,6 +168,9 @@ export const fs = {
   'fs.menu.none': 'None',
   'fs.menu.opened': 'Opened',
   'fs.menu.openFailed': 'Open failed: {msg}',
+  'fs.menu.runInTerminalTitle': 'Run this script in a system terminal window (the window stays open when the script finishes)',
+  'fs.menu.ranScript': 'Running in system terminal: {name}',
+  'fs.menu.runFailed': 'Run failed: {msg}',
   'fs.menu.restoreMissingKindTitle': '{kind} is missing on disk; restore it from the repository ({cmd})',
   'fs.menu.removeRecordOneTitle': '{kind} is missing on disk; remove its record from the repository (takes effect after commit; "Revert" before committing to cancel)',
 

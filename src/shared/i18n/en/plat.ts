@@ -10,6 +10,13 @@ export const plat = {
   'plat.openedChooser': 'Opened the system "Open with" chooser: {rel}',
   'plat.openUrlFail': '[svngit] Failed to open the browser ({cmd}): {msg}',
 
+  // ---- Run script in terminal (shared by win32.ts / linux.ts) ----
+  'plat.ranScript': 'Running in system terminal: {rel}',
+  'plat.noBash': 'bash not found (Git for Windows is required to run .sh on Windows)',
+  'plat.noTerminal': 'No terminal emulator found (you can set the $TERMINAL environment variable)',
+  'plat.notScript': 'Unsupported file type (only .bat / .cmd / .sh)',
+  'plat.winOnlyScript': 'Only .sh scripts can run on Linux (.bat / .cmd are Windows-only)',
+
   // ---- System application menu integration (Linux: .desktop + hicolor icon) ----
   /** Value of the .desktop Name= field (app name shown in the system menu) */
   'plat.desktopName': 'svn-git Version Control',

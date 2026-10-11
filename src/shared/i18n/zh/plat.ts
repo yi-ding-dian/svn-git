@@ -15,6 +15,13 @@ export const plat = {
   'plat.openedChooser': '已打开系统「打开方式」选择器: {rel}',
   'plat.openUrlFail': '[svngit] 打开浏览器失败({cmd}): {msg}',
 
+  // ---- 终端运行脚本（win32.ts / linux.ts 共用）----
+  'plat.ranScript': '已在系统终端中运行: {rel}',
+  'plat.noBash': '未找到 bash（Windows 上运行 .sh 需安装 Git for Windows）',
+  'plat.noTerminal': '未找到可用的终端模拟器（可设置 $TERMINAL 环境变量）',
+  'plat.notScript': '不支持的文件类型（仅 .bat / .cmd / .sh）',
+  'plat.winOnlyScript': '仅 .sh 脚本可在 Linux 上运行（.bat / .cmd 是 Windows 专属）',
+
   // ---- 系统应用菜单集成（Linux：生成 .desktop + hicolor 图标）----
   /** .desktop 的 Name= 值（系统菜单里显示的应用名，与 main.title 一致） */
   'plat.desktopName': 'svn-git文件版本管理',

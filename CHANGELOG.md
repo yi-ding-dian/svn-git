@@ -4,7 +4,11 @@
 
 ## [Unreleased]
 
+### 功能增强
+- **文件右键「终端运行」（.bat / .cmd / .sh）**：在系统外部终端窗口里跑脚本，跑完窗口保留（输出看得见）——Windows 上 .bat/.cmd 走 `cmd /k`（新控制台窗口；Win11 默认终端设为 Windows Terminal 时自动落在 WT），.sh 走 Git Bash（`where` 探测并过滤掉 WSL 的 System32 占位启动器——它认不了 `D:/...` 路径，未装 Git for Windows 给明确提示）；Linux（待实测）走终端模拟器探测表（x-terminal-emulator / gnome-terminal / konsole / xfce4-terminal / mate-terminal / alacritty / kitty / xterm，`$TERMINAL` 优先）。经 PowerShell `Start-Process` 中转开新窗口，路径含空格/中文全走单引号字面量，不经 cmd 的引号解析；`/api/run-script` 带越界 / 存在性 / 扩展名三重校验，api-test 补三条拒绝侧回归断言，另有手动端到端脚本 `test/run-script-e2e.mjs`（正例真弹终端窗口，故不进 CI）
+
 ### 修复
+- **「用默认程序打开」在 Windows 上静默失效**（提示"已打开"，实际什么都没发生）：中转的 `powershell -Command` 在 detached（DETACHED_PROCESS，Node `detached:true` 所置）下连命令都不执行就 exit 0 —— Node 只等到 spawn 事件，于是拿到"假成功"，外部无任何报错可查（实测 Win11 + PS 5.1；同一坑也吃掉了新写的「终端运行」首版）。`launchDetached` 加 `detach` 开关（默认 true，其他调用方不受影响），两处 powershell 中转改传 false 并加 windowsHide（不再闪黑框）。对照实测 cmd.exe 在 detached 下无此问题——纯 PowerShell 怪癖
 - **「修改提交注释」报"找不到编辑器"**（Windows）：`GIT_SEQUENCE_EDITOR` / `GIT_EDITOR` 被设成反斜杠路径，而 git 是把编辑器命令交给 **POSIX shell** 执行的 —— shell 把 `\U` `\A` `\1` 当转义吃掉，`C:\Users\...\seq.sh` 变成 `C:Users...seq.sh`，报 `command not found`，reword 直接失败。传给 git 的一律改用正斜杠（MSYS bash 认 `C:/...`；POSIX 上本就是正斜杠，无副作用）
 - **「复制完整路径」在 Windows 拼出 `D:\svn-git/run.bat` 这种混用分隔符**：`root` 是平台原生（反斜杠）、`rel` 是版本库风格（正斜杠），直接 `${root}/${rel}` 拼接所致。抽出 `absPath()` 统一处理，4 处调用点收口 —— 其中文件粘贴那处会把路径回传给服务端，不只是一处显示。分隔符只按「确为 Windows 路径」判定（同 `baseName` 的既有规则），Linux 上含 `\` 的文件名不会被改坏
 

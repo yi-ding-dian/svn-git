@@ -214,6 +214,26 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/run-script' && req.method === 'POST') {
+        // 在系统外部终端窗口里运行仓库内脚本（.bat/.cmd/.sh；平台差异下沉到 src/platform）
+        const { repo } = vcsOf();
+        const body = await readBody(req);
+        const rel = String(body.path ?? '');
+        const abs = path.resolve(repo.root, rel);
+        if (!inRepoRoot(repo.root, abs)) {
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
+          return true;
+        }
+        if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+          // 文件不存在
+          sendJson(res, 404, { error: t('srv.fileNotFound') });
+          return true;
+        }
+        const r = await platform.runScript(abs, rel);
+        sendJson(res, r.ok ? 200 : 500, r.ok ? { ok: true, message: r.message } : { ok: false, error: r.message });
+        return true;
+      }
+
       if (p === '/api/app-menu') {
         // 系统应用菜单集成（AppImage 运行方式）：GET 查状态；POST 安装；DELETE 卸载
         if (req.method === 'GET') {

@@ -6,8 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { run } from '../vcs/exec.js';
 import { t } from '../shared/i18n/index.js';
-import { parseAppCommand, launchDetached } from './util.js';
-import type { InstallTool, OpenWithApp, Platform } from './types.js';
+import { parseAppCommand, launchDetached, shq } from './util.js';
+import type { InstallTool, LaunchResult, OpenWithApp, Platform } from './types.js';
 
 /** reg query 键下所有命名值(解析 REG_ 类型行,值可能含空格保留余下全部) */
 /** reg.exe 输出用系统码页（中文系统=GBK/936），直接按 UTF-8 解会把中文程序名/路径变成乱码。
@@ -157,7 +157,56 @@ function extractWinIcon(exe: string): Buffer | null {
   return null;
 }
 
-/** 启动 openDefault/openWithApp 共用的“detach 启动并等待真正产生进程” */
+/** 「终端运行」支持的脚本扩展名（判定在平台侧：Windows 三种都能跑，Linux 只有 .sh 有执行途径） */
+const SCRIPT_EXTS = new Set(['.bat', '.cmd', '.sh']);
+
+/** 路径 → 正斜杠形式：传给 bash 的路径必须换掉反斜杠，否则会被 bash 当转义符吃掉
+ *  （`C:\Users\...` → `C:Users...`，与 git.ts 给 git 传编辑器路径同一教训——实报过） */
+const fwdSlash = (p: string): string => p.replace(/\\/g, '/');
+
+/** PowerShell 单引号字面量：内部 ' 翻倍（与下面 extractWinIcon 的转义同一套写法） */
+const psq = (s: string): string => `'${s.replace(/'/g, "''")}'`;
+
+/** WSL 的 bash.exe 占位启动器（System32/SysWOW64 下）：只负责转进 WSL 发行版，
+ *  认不了 `D:/...` 这种 Windows 路径。装了 WSL 的机器 where 会先命中它（System32 在 PATH 前列），
+ *  拿它跑 .sh 是假成功（接口报 ok、脚本没跑），按「只支持 Git Bash」的取舍过滤掉 */
+const isWslStub = (p: string): boolean => /[\\/]windows[\\/](system32|syswow64)[\\/]bash\.exe$/i.test(p);
+
+/** 找 .sh 用的 POSIX shell：① PATH 上的 bash.exe（where 探测）② Git for Windows 常见安装路径。
+ *  不探测 WSL：发行版未必装，探测出来跑不了反而更糟（v1 只支持 Git Bash，未找到给明确提示）。
+ *  where 输出按系统码页解码（复用 regToString）：中文用户名路径直接按 UTF-8 解会乱码。 */
+function findBash(): string | null {
+  try {
+    const r = spawnSync('where', ['bash.exe'], { encoding: 'buffer', windowsHide: true });
+    if (r.status === 0) {
+      const p = regToString(r.stdout ?? Buffer.alloc(0))
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .find((s) => s !== '' && !isWslStub(s) && fs.existsSync(s));
+      if (p) return p;
+    }
+  } catch {
+    /* where 不可用：落到常见安装路径 */
+  }
+  const cands = [
+    process.env.ProgramFiles && path.join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe'),
+    process.env['ProgramFiles(x86)'] && path.join(process.env['ProgramFiles(x86)'], 'Git', 'bin', 'bash.exe'),
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'Git', 'bin', 'bash.exe'),
+  ];
+  return cands.find((c): c is string => !!c && fs.existsSync(c)) ?? null;
+}
+
+/** 经 PowerShell Start-Process 起一个**新窗口**的控制台进程（runScript 专用）：
+ *  Start-Process 对控制台程序默认另开新控制台窗口（Win11 默认终端设为 Windows Terminal 时自动落在 WT）；
+ *  参数用单引号字面量传递，路径含空格/中文都按整体走，不经过 cmd 的引号解析。
+ *  windowsHide 只隐藏中转的 powershell 自身，避免闪一下黑框（目标窗口不受影响）；
+ *  detach:false 是必须的——detached 下 powershell 的 -Command 根本不执行（见 launchDetached 注释），
+ *  曾因此整条链「假成功」：接口报已在终端运行，实际没跑。 */
+function winStartProcess(exe: string, args: string[], cwd: string, okMsg: string): Promise<LaunchResult> {
+  const argList = args.length ? ` -ArgumentList ${args.map(psq).join(',')}` : '';
+  const script = `Start-Process -FilePath ${psq(exe)}${argList} -WorkingDirectory ${psq(cwd)}`;
+  return launchDetached(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], okMsg, { windowsHide: true, detach: false });
+}
 
 export const win32: Platform = {
   isWindows: true,
@@ -168,11 +217,14 @@ export const win32: Platform = {
   },
 
   openDefault(abs, rel) {
-    // 系统默认程序：Start-Process 即 ShellExecute，路径含空格也正确
+    // 系统默认程序：Start-Process 即 ShellExecute，路径含空格也正确。
+    // detach:false + windowsHide：同 winStartProcess——detached 下这条命令不会执行（曾长期静默失效，
+    // 「用默认程序打开」报成功却什么都不发生）；不隐藏则会闪一下中转 powershell 的黑框
     return launchDetached(
-      ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', `Start-Process -FilePath '${abs.replace(/'/g, "''")}'`],
+      ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', `Start-Process -FilePath ${psq(abs)}`],
       // 已用系统默认程序打开: {rel}
-      t('plat.openedDefault', { rel })
+      t('plat.openedDefault', { rel }),
+      { windowsHide: true, detach: false }
     );
   },
 
@@ -192,6 +244,26 @@ export const win32: Platform = {
     } catch (e) {
       return { ok: false, message: (e as Error).message };
     }
+  },
+
+  async runScript(abs, rel) {
+    const ext = path.extname(abs).toLowerCase();
+    // 不支持的文件类型（仅 .bat / .cmd / .sh）；前端只对这三种显示菜单项，这里是服务端兜底
+    if (!SCRIPT_EXTS.has(ext)) return { ok: false, message: t('plat.notScript') };
+    const dir = path.dirname(abs);
+    // 已在系统终端中运行: {rel}
+    const okMsg = t('plat.ranScript', { rel });
+    if (ext === '.sh') {
+      const bash = findBash();
+      // 未找到 bash（Windows 上运行 .sh 需安装 Git for Windows）
+      if (!bash) return { ok: false, message: t('plat.noBash') };
+      // `-l` 登录 shell（带上 PATH/profile）；`; exec bash` 让脚本跑完窗口留着——输出看得见，
+      // 与 .bat 侧 cmd /k 的行为对齐（用 `;` 不用 `&&`：脚本报错退出时窗口同样保留）
+      const cmd = `cd ${shq(fwdSlash(dir))} && bash ${shq(fwdSlash(abs))}; exec bash`;
+      return winStartProcess(bash, ['-lc', `"${cmd}"`], dir, okMsg);
+    }
+    // .bat/.cmd：cmd /k —— 新控制台窗口里跑，跑完不关窗（输出看得见）
+    return winStartProcess('cmd.exe', ['/k', `"${abs}"`], dir, okMsg);
   },
 
   resolveAppIcon(key) {
