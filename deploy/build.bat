@@ -11,6 +11,31 @@ rem  注:AppImage 是 Linux 专有格式只能在 Linux 上打,
 rem     Windows 侧的对应产物就是这个 portable 单文件 exe
 rem ============================================
 
+rem --------------------------------------------
+rem  压缩级别:数字越小越快, 产物越大(portable 实测: 1=21 秒/91MB, 3=26 秒/85MB,
+rem  5=1 分半/76MB, 9=3 分半/67MB)。也可直接指定跳过询问: build.bat 5, 或先 set
+rem  ELECTRON_BUILDER_COMPRESSION_LEVEL=5
+rem --------------------------------------------
+if not "%~1"=="" set ELECTRON_BUILDER_COMPRESSION_LEVEL=%~1
+if defined ELECTRON_BUILDER_COMPRESSION_LEVEL goto :level_ready
+
+echo 选择打包压缩级别(数字越小越快, 产物越大):
+echo     1 = 约 21 秒, 91MB
+echo     3 = 约 26 秒, 85MB   [默认]
+echo     5 = 约 1 分半, 76MB
+echo     9 = 约 3 分半, 67MB
+set "LEVEL=3"
+choice /C 1359 /T 20 /D 3 /N /M "请选择 [1/3/5/9] (20 秒不选自动用 3): "
+if errorlevel 5 goto :level_done
+if errorlevel 4 set "LEVEL=9" & goto :level_done
+if errorlevel 3 set "LEVEL=5" & goto :level_done
+if errorlevel 2 set "LEVEL=3" & goto :level_done
+if errorlevel 1 set "LEVEL=1"
+:level_done
+set ELECTRON_BUILDER_COMPRESSION_LEVEL=%LEVEL%
+
+:level_ready
+
 if not exist "node_modules" (
   echo [1/2] 首次打包,先安装依赖 npm install ...
   call npm install

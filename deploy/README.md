@@ -7,7 +7,7 @@
 
 | 脚本 | 平台 | 产物（落在 `deploy/release/`） |
 |---|---|---|
-| `build.bat` | Windows | `svn-git-<版本>-portable.exe` — 免安装单文件 exe，约 70MB |
+| `build.bat` | Windows | `svn-git-<版本>-portable.exe` — 免安装单文件 exe，默认档约 85MB（压缩级别可选，见下文） |
 | `build.sh` | Linux | `svn-git-<版本>.AppImage` — 免安装单文件，约 97MB |
 | （安装包） | Windows | `svn-git-<版本>-setup.exe` — NSIS 安装包，约 70MB |
 
@@ -27,6 +27,14 @@
 npm run dist:win-portable   # 免安装单文件 exe（portable）
 npm run dist:win            # NSIS 安装包（装到 Program Files + 开始菜单快捷方式）
 ```
+
+> **Windows 打包为什么比 Linux 慢**：electron-builder 给 Windows 的 7z 载荷默认用最慢档
+> （`-mx=9`，单线程），243MB 的 Electron 运行时要压 3~4 分钟；Linux 的 AppImage 走
+> mksquashfs 多线程 gzip，所以只要 ~20 秒。
+> `build.bat` 启动时会列出压缩级别让你选（打包阶段实测：`1`≈21 秒/91MB、`3`≈26 秒/85MB、
+> `5`≈1 分半/76MB、`9`≈3 分半/67MB），默认 `3`、20 秒不选自动继续。不想交互就
+> `build.bat 5`，或先 `set ELECTRON_BUILDER_COMPRESSION_LEVEL=5` 再跑。手动执行上面的
+> `npm run dist:win*` 不会带上这些默认值，同样先 `set` 再打包才走得快。
 
 ## Linux：`./build.sh`
 
