@@ -503,15 +503,20 @@ export function AppHeader(props: {
   const [layout, setLayout] = useState<ToolbarLayout>(loadLayout);
   // 系统应用菜单集成状态（AppImage 方式下有「安装/卸载」入口；源码/浏览器运行不显示）
   const [appMenuState, setAppMenuState] = useState<{ appImage: boolean; installed: boolean }>({ appImage: false, installed: false });
-  // 关于弹窗（版本 + 构建日期；打开时拉取 /api/info）
+  // 关于弹窗（版本 + 构建日期 + 构建提交；打开时拉取 /api/info）
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [aboutInfo, setAboutInfo] = useState<{ version: string; buildDate: string }>({ version: '', buildDate: '' });
+  const [aboutInfo, setAboutInfo] = useState<{ version: string; buildDate: string; commit: string; dirty: boolean }>({
+    version: '',
+    buildDate: '',
+    commit: '',
+    dirty: false,
+  });
   const openAbout = () => {
     setMoreMenu(null);
-    setAboutInfo({ version: '', buildDate: '' });
+    setAboutInfo({ version: '', buildDate: '', commit: '', dirty: false });
     void get
       .info()
-      .then((r) => setAboutInfo({ version: r.version ?? '', buildDate: r.buildDate ?? '' }))
+      .then((r) => setAboutInfo({ version: r.version ?? '', buildDate: r.buildDate ?? '', commit: r.commit ?? '', dirty: r.dirty === true }))
       .catch(() => {});
     setAboutOpen(true);
   };
@@ -921,7 +926,15 @@ export function AppHeader(props: {
           ]}
         />
       )}
-      {aboutOpen && <AboutModal version={aboutInfo.version} buildDate={aboutInfo.buildDate} onClose={() => setAboutOpen(false)} />}
+      {aboutOpen && (
+        <AboutModal
+          version={aboutInfo.version}
+          buildDate={aboutInfo.buildDate}
+          commit={aboutInfo.commit}
+          dirty={aboutInfo.dirty}
+          onClose={() => setAboutOpen(false)}
+        />
+      )}
       {/* 退出应用：固定在 ⋯ 左侧的最右位（不纳入拖拽定制，防误移/误隐藏） */}
       {shownKeys.includes('exit') &&
         (() => {

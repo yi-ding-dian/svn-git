@@ -1,6 +1,7 @@
 /** 前端构建：esbuild bundle + 复制静态文件到 dist/client；--watch 为热构建模式（开发） */
 import { build, context } from 'esbuild';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 
 const WATCH = process.argv.includes('--watch');
 
@@ -74,11 +75,32 @@ if (!WATCH) {
   console.log('👀 前端热构建模式运行中（改代码自动重建，浏览器自动刷新）…');
 }
 
-/** 构建信息（版本 + 构建日期）：供「关于」弹窗展示（server /api/info 读取 dist/build-info.json） */
+/** git 探测：拿不到就返回空串（没装 git / 不在仓库里都不能让构建挂掉） */
+function gitOut(args) {
+  try {
+    return execFileSync('git', args, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return '';
+  }
+}
+
+/** 构建信息（版本 + 日期 + 提交）：供「关于」弹窗展示（server /api/info 读取 dist/build-info.json）
+ *
+ *  版本号（package.json）是「发布语义」，构建标识（commit/dirty）是「这个包到底是哪次代码」——
+ *  两者分开：版本号只在发版时人工变（npm version），日常打包靠 commit 区分，同名产物永远能对上代码。
+ */
 function writeBuildInfo() {
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  const info = { version: pkg.version, buildDate: new Date().toISOString().slice(0, 10) };
+  const info = {
+    version: pkg.version,
+    buildDate: new Date().toISOString().slice(0, 10),
+    commit: gitOut(['rev-parse', '--short', 'HEAD']),
+    // 只数已跟踪文件的改动（--untracked-files=no）：与 git describe --dirty 口径一致，
+    // 免得好好的发布包被一个临时未跟踪文件标成脏
+    dirty: gitOut(['status', '--porcelain', '--untracked-files=no']) !== '',
+  };
   fs.writeFileSync('dist/build-info.json', JSON.stringify(info, null, 2) + '\n');
-  console.log(`🕒 构建信息: v${info.version} · ${info.buildDate}`);
+  const stamp = info.commit ? ` · ${info.commit}${info.dirty ? '*' : ''}` : '';
+  console.log(`🕒 构建信息: v${info.version} · ${info.buildDate}${stamp}`);
 }
 writeBuildInfo();

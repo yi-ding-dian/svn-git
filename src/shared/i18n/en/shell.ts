@@ -105,6 +105,7 @@ export const shell = {
   'shell.about.versionFailed': '(read failed)',
   'shell.about.buildDate': 'Build Date: ',
   'shell.about.buildDateMissing': '(not generated; run npm run build to update)',
+  'shell.about.dirty': 'The working tree had uncommitted changes when this build was made (it does not correspond to any single commit)',
 
   // ---- 退出应用（确认框 + 退出后的提示页）----
   'shell.exit.title': 'Quit Application',

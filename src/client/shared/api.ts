@@ -32,6 +32,10 @@ export interface RepoInfo {
   version?: string;
   /** 构建日期（dist/build-info.json，构建脚本写入） */
   buildDate?: string;
+  /** 构建提交（短 hash）：这个包打自哪次代码（dist/build-info.json，构建脚本写入） */
+  commit?: string;
+  /** 构建时工作区是否有未提交的已跟踪改动（同上；有则「关于」里 hash 后带 *） */
+  dirty?: boolean;
   /** 服务实例标识（进程重启即变）：前端用它判断服务是否重启过（终端历史据此作废，见 terminal.tsx） */
   instanceId?: string;
 }

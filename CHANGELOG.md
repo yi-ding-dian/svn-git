@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-11
+
+首个版本：双引擎 SVN/Git 图形化管理、行级冲突防护闭环、AppImage 交付。
+
 ### 安全加固
 - **修复任意文件读取漏洞**：`/api/cat` git 分支磁盘回退可越界读文件（`../` 穿透，实测可读任意文本），server 层 + VCS 层双保险修复（inRepoRoot + realpath 校验）
 - **路径校验升级为 realpath 级**：`inRepoRoot` 两侧 realpath 解析（对不存在路径逐级上溯最长存在前缀），堵住仓库内 symlink 指向仓库外的绕过；`/api/log`、`/api/diff`、`/api/ls` 补校验
@@ -31,16 +35,16 @@
 - **SVN 网络灯恒报"未配置仓库 URL"**：`detectRepo` 不含 url，net-check 改用 `vcs.info()` 获取
 - **preflight 失败静默放行提交**：冲突检查失败时明示风险弹窗，不再无提示绕过
 - 删除确认文案按实际语义重写（提交前可还原、未跟踪文件不可恢复等）；历史视图错误信息红色区分；失败 toast 停留 5 秒不截断
+- **`运行.bat` 启动的是重构前的旧入口**：服务入口早已从 `dist/main.js` 变为 `dist/main/index.js`，脚本仍指向旧文件——不报错，但静默跑起旧版后端（表现为"很多功能都没有"）。改为 `npm start` 跟随 package.json，并清掉 `dist/` 下的旧产物
 
 ### 测试与工程
 - 新增 `npm test`（build + VCS 层 47 + 扩展 45 + diff 算法 6 + **HTTP API 集成 32** = 130 项断言）
 - 新增 `.github/workflows/test.yml`（ubuntu + svn 依赖，push/PR 自动跑全量测试）
 - 新增 `test/api-test.mjs`：真实服务端到端测试（越界拦截 6 项、CSRF、缓存失效、软删 keep、重命名 API、SVN net-check 等）
+- **Windows 免安装单文件 exe**：新增 electron-builder `portable` 目标（对标 Linux 的 AppImage，目标机无需装 Node）；打包脚本收进 `deploy/`（`打包.bat` / `build.sh` / `deploy/README.md`），产物统一落 `deploy/release/`
+- **产物文件名改 ASCII**：`svn-git-<版本>-portable.exe`、`svn-git-<版本>-setup.exe`、`svn-git-<版本>.AppImage`（窗口标题 / 开始菜单等界面名称仍为中文）——中文文件名在下载 URL 里会被百分号编码，命令行与传输环节也易乱码
+- **版本号与构建标识分离**：「关于」弹窗显示 `v1.0.0（72af3ea）`，构建信息带 commit 短 hash 与 dirty 标记。版本号是发布语义、只在发版时人工变更（`npm version`），日常打包靠 hash 就能对上代码，不再每次打包涨号
 
 ### 文档
 - **README / docs 全套文档重写**：对齐当前功能现状（重命名、远程分支删除、仅删除过滤、过滤树跳转、命令预览、历史总数、合并预检、Git 认证引导等）；修正过时描述（侧边栏导航、工具栏按钮位置、状态缓存时长、测试断言数、前端体积、高亮语言数等）
 - **截图全套重截**：docs/screenshots/ 下 git、svn 各 8 张（1280×820，当前界面布局/图标/右键菜单/分支弹窗/配色主题），文件名与 README/docs 引用一致
-
-## [1.0.0]
-
-首个版本：双引擎 SVN/Git 图形化管理、行级冲突防护闭环、AppImage 交付。

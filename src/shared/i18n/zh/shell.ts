@@ -107,6 +107,7 @@ export const shell = {
   'shell.about.versionFailed': '（读取失败）',
   'shell.about.buildDate': '构建日期：',
   'shell.about.buildDateMissing': '（未生成，npm run build 后更新）',
+  'shell.about.dirty': '构建时工作区有未提交的改动（这个包不对应任何一次提交）',
 
   // ---- 退出应用（确认框 + 退出后的提示页）----
   'shell.exit.title': '退出应用',

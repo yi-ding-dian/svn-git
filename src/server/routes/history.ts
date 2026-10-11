@@ -15,6 +15,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         // package.json 相对 misc 编译产物有 1-2 层（dist 或 dist/routes），逐个候选路径尝试
         let version = '';
         let buildDate = '';
+        let commit = '';
+        let dirty = false;
         {
           // package.json 在项目根、build-info.json 在 dist/ 下，而编译产物位于 dist 下任意深度
           // （dist/routes、dist/server/routes…）。这里**逐级向上找、不写死层数** ——
@@ -36,14 +38,18 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             /* 读不到就留空 */
           }
           try {
-            buildDate = JSON.parse(readUp('build-info.json') ?? '{}').buildDate ?? '';
+            // 构建标识：date=哪天构建的；commit=哪次代码（短 hash）；dirty=构建时有未提交的已跟踪改动
+            const b = JSON.parse(readUp('build-info.json') ?? '{}');
+            buildDate = b.buildDate ?? '';
+            commit = b.commit ?? '';
+            dirty = b.dirty === true;
           } catch {
             /* 同上 */
           }
         }
         const repo = repoInfo();
         if (!repo) {
-          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version, buildDate, instanceId: INSTANCE_ID });
+          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version, buildDate, commit, dirty, instanceId: INSTANCE_ID });
           return true;
         }
         const { vcs } = vcsOf();
@@ -73,6 +79,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           home: os.homedir(),
           version,
           buildDate,
+          commit,
+          dirty,
           instanceId: INSTANCE_ID,
         });
         return true;
