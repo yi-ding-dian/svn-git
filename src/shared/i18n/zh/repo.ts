@@ -15,6 +15,8 @@ export const repo = {
   'repo.browse': '📂 浏览',
   'repo.browseTip': '打开文件夹浏览（可新建/重命名文件夹）',
   'repo.confirm.target': '目标路径：{path}',
+  // 浏览器拖拽取不到路径（Firefox 等）：打开项目的浏览器与所在目录选择器共用
+  'repo.browser.dragUnsupported': '当前浏览器不支持拖拽路径识别，已自动打开系统目录选择',
 
   // ---- 启动页（OpenView）----
   'repo.home.title': 'svn-git文件版本管理',
@@ -30,7 +32,6 @@ export const repo = {
   'repo.open.notRepo': '当前目录未识别到 SVN/Git 仓库，请重新选择，或从下方文件列表中选择包含仓库的目录',
   'repo.open.switchedDir': '已切换到目录: {path}',
   'repo.open.detectedBare': '检测到 SVN 版本库存储目录: {path}',
-  'repo.open.dragUnsupported': '当前浏览器不支持拖拽路径识别，已自动打开系统目录选择，请选择项目目录',
   'repo.open.pickUnsupported': '当前运行环境不支持系统目录选择，请手动输入路径',
   'repo.open.pathPlaceholder': '输入完整项目路径后回车，或将文件夹拖入下方区域识别…',
   'repo.open.pickDirTip': '打开系统目录选择框',
@@ -164,7 +165,9 @@ export const repo = {
   'repo.picker.newTip': '在当前位置新建文件夹',
   'repo.picker.newFolder': '📁 新建文件夹',
   'repo.picker.dirTip': '{name}/\n双击进入 · 右键重命名',
-  'repo.picker.emptyDir': '空目录（可新建文件夹）',
+  'repo.picker.pathPlaceholder': '输入完整目录路径后回车，或拖入文件夹切换目录…',
+  'repo.picker.dropHint': '📁 或将文件夹直接拖入此窗口，切换到该目录',
+  'repo.picker.noSubdir': '没有子文件夹（可新建文件夹，或直接选择当前目录）',
   'repo.picker.rename': '重命名',
   'repo.picker.current': '当前: {path}',
   'repo.picker.choose': '选择此目录',

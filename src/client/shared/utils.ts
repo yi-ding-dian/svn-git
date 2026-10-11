@@ -93,6 +93,16 @@ export function parentPath(p: string): string {
   return i <= 0 ? '/' : t.slice(0, i);
 }
 
+/** 拖入的 File → 绝对路径（打开项目 / 目录选择器共用；取不到返回 null，由调用方兜底）。
+ *  ① Electron 内嵌窗口：webUtils.getPathForFile（preload 注入，替代已移除的 File.path）
+ *  ② 浏览器（Chrome/Edge 等）：File.path 属性
+ *  ③ 都没有（Firefox 等）：null */
+export function pathFromFile(f: File): string | null {
+  const el = window as unknown as { svngit?: { getPathForFile: (file: File) => string | null } };
+  const p = el.svngit?.getPathForFile(f) ?? (f as File & { path?: string }).path;
+  return p || null;
+}
+
 /** 是否为二进制文件（不支持文本对比） */
 export function isBinaryFile(path: string): boolean {
   const name = path.split('/').pop() ?? '';

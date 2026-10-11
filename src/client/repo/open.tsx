@@ -1,12 +1,13 @@
-/** 打开项目：目录浏览选择仓库（启动页 / 打开项目模态框共用） */
-import React, { useEffect, useRef, useState } from 'react';
-import { baseName, joinPath, parentPath } from '../shared/utils.js';
+/** 打开项目：目录浏览选择仓库（启动页 / 打开项目模态框共用）。
+ *  浏览视图在 DirBrowser（与「所在目录」选择器共用）；这里只管数据与打开仓库的语义 */
+import { useEffect, useRef, useState } from 'react';
+import { baseName } from '../shared/utils.js';
 import { get, post, type BrowseResult, type RepoInfo } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
-import { GridIcon } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { t } from '../../shared/i18n/index.js';
 import { CreateRepoDialog, GetRepoDialog } from './repo-create.js';
+import { DirBrowser } from './dir-browser.js';
 
 /** svnadmin 版本库存储目录特征（format 文件 + db/conf/hooks 等）：不是工作副本，需要打开同名 -wc */
 function isSvnBareDir(entries: { name: string }[]): boolean {
@@ -30,7 +31,6 @@ export function OpenBrowser(props: {
   const [error, setError] = useState('');
   const [svnBare, setSvnBare] = useState<string | null>(null); // 识别到 SVN 版本库存储目录 → 提示进入工作副本
   const [pathInput, setPathInput] = useState('');
-  const [dragOver, setDragOver] = useState(false);
   const [history, setHistory] = useState<{ path: string; type: 'svn' | 'git'; lastOpened: number }[]>([]);
   // 最近项目右键菜单（删除）
   const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string } | null>(null);
@@ -125,54 +125,9 @@ export function OpenBrowser(props: {
     }
   };
 
-  // 上一级：Windows 形态下 `\` 与 `/` 都算分隔符（原来只按 `/` 切，纯 `D:\x\y` 路径上会切错）
-  const goUp = () => setDir((d) => parentPath(d));
-
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const f = e.dataTransfer.files?.[0] as (File & { path?: string }) | undefined;
-    if (!f) return;
-    // ① Electron 内嵌窗口：webUtils.getPathForFile（preload 注入，替代已移除的 File.path）
-    const el = window as unknown as { svngit?: { getPathForFile: (file: File) => string | null } };
-    const epath = el.svngit?.getPathForFile(f);
-    if (epath) {
-      void openPath(epath);
-      return;
-    }
-    // ② 浏览器（Chrome/Edge 等）：File.path 属性
-    if (f.path) {
-      void openPath(f.path);
-      return;
-    }
-    // ③ 均不可用（Firefox/新版浏览器）：自动打开系统目录选择器，一步到位
-    // 当前浏览器不支持拖拽路径识别，已自动打开系统目录选择，请选择项目目录
-    setError(t('repo.open.dragUnsupported'));
-    void pickDir();
-  };
-
-  /** 系统目录选择对话框（Electron 打包版） */
-  const pickDir = async () => {
-    try {
-      const r = await get.pickDir();
-      if (r.path) void openPath(r.path);
-      // 当前运行环境不支持系统目录选择，请手动输入路径
-      else if (r.unsupported) setError(t('repo.open.pickUnsupported'));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
-
-  return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragOver(true);
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={onDrop}
-      className={dragOver ? 'drop-zone dragover' : 'drop-zone'}
-    >
+  /** 最近项目列表（点击直接打开）→ 浏览器顶部插槽 */
+  const recent = (
+    <>
       {/* 最近项目（点击直接打开） */}
       {history.length > 0 && (
         <>
@@ -282,100 +237,71 @@ export function OpenBrowser(props: {
           </div>
         </>
       )}
-      {/* 路径输入 */}
-      <div className="row" style={{ marginBottom: 10 }}>
-        <input
-          type="text"
-          style={{ flex: 1 }}
-          // 输入完整项目路径后回车，或将文件夹拖入下方区域识别…
-          placeholder={t('repo.open.pathPlaceholder')}
-          value={pathInput}
-          onChange={(e) => setPathInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void openPath(pathInput);
-          }}
-        />
-        {/* 打开系统目录选择框 / 📁 选择目录… */}
-        <button onClick={() => void pickDir()} title={t('repo.open.pickDirTip')}>{t('repo.open.pickDirBtn')}</button>
-        {/* 打开 */}
-        <button className="primary" onClick={() => void openPath(pathInput)}>{t('repo.open.openBtn')}</button>
-      </div>
-      <div className="dim small" style={{ marginBottom: 8 }}>
-        {/* 📁 或将文件夹直接拖入此窗口，自动识别 SVN/Git 仓库 */}
-        {t('repo.open.dropHint')}
-      </div>
-      <div className="breadcrumb">
-        {dir}
-        {dir !== '/' && (
-          <a href="#" onClick={(e) => { e.preventDefault(); goUp(); }}>
-            {/* ← 上级 */}
-            {' '}{t('repo.up')}
-          </a>
-        )}
-      </div>
-      {error && <div className="error">{error}</div>}
-      {svnBare && (
-        <div className="repo-enter" style={{ marginBottom: 10 }}>
-          <span className="badge svn">SVN</span>
-          <span className="info" style={{ flex: 1 }}>
-            {/* 是 SVN 版本库存储目录（服务器数据，不能直接编辑）。 */}
-            <b>{baseName(svnBare)}</b> {t('repo.bare.isStore')}
-            {/* 请打开它的工作副本进行日常操作： */}
-            {' '}{t('repo.bare.openWcHint')}
-          </span>
-          <button
-            className="primary"
-            onClick={() => void openPath(`${svnBare.replace(/\/+$/, '')}-wc`)}
-          >
-            {/* 进入工作副本 {name} → */}
-            {t('repo.bare.enterWc', { name: `${baseName(svnBare)}-wc` })}
-          </button>
-        </div>
-      )}
-      {/* ⏳ 读取目录… */}
-      {!data && !error && <div className="loading">{t('repo.open.loading')}</div>}
-      {data && (
-        <>
-          {(() => {
-            const rp = data.repo;
-            if (!rp) return null;
-            return (
-              <div className="repo-enter">
-                <span className={`badge ${rp.type!}`}>{rp.type!.toUpperCase()}</span>
-                <span className="info">
-                  {/* {root} — SVN/Git 工作副本 */}
-                  {t('repo.open.wcLabel', { root: rp.root ?? '' })}
+    </>
+  );
+
+  return (
+    <DirBrowser
+      dir={dir}
+      data={data}
+      error={error}
+      onError={setError}
+      onDirChange={setDir}
+      // 输入/拖入的路径统一走 openPath：仓库 → 直接进入；目录 → 跳转浏览；SVN 版本库目录 → 引导进工作副本
+      onPathPicked={(p) => void openPath(p)}
+      pathInput={{
+        value: pathInput,
+        onChange: setPathInput,
+        // 输入完整项目路径后回车，或将文件夹拖入下方区域识别…
+        placeholder: t('repo.open.pathPlaceholder'),
+        onSubmit: () => void openPath(pathInput),
+        pickDir: true,
+        // 📁 或将文件夹直接拖入此窗口，自动识别 SVN/Git 仓库
+        hint: t('repo.open.dropHint'),
+        // 打开
+        extra: <button className="primary" onClick={() => void openPath(pathInput)}>{t('repo.open.openBtn')}</button>,
+      }}
+      slots={{
+        top: recent,
+        notice: (
+          <>
+            {svnBare && (
+              <div className="repo-enter" style={{ marginBottom: 10 }}>
+                <span className="badge svn">SVN</span>
+                <span className="info" style={{ flex: 1 }}>
+                  {/* 是 SVN 版本库存储目录（服务器数据，不能直接编辑）。 */}
+                  <b>{baseName(svnBare)}</b> {t('repo.bare.isStore')}
+                  {/* 请打开它的工作副本进行日常操作： */}
+                  {' '}{t('repo.bare.openWcHint')}
                 </span>
-                {/* 进入此仓库 → */}
-                <button className="primary" onClick={() => void enter()}>{t('repo.open.enterThis')}</button>
+                <button
+                  className="primary"
+                  onClick={() => void openPath(`${svnBare.replace(/\/+$/, '')}-wc`)}
+                >
+                  {/* 进入工作副本 {name} → */}
+                  {t('repo.bare.enterWc', { name: `${baseName(svnBare)}-wc` })}
+                </button>
               </div>
-            );
-          })()}
-          {/* 文件浏览形式：图标网格，点击目录进入 */}
-          <div className="open-grid">
-            {/* 空目录 */}
-            {data.entries.length === 0 && <div className="empty" style={{ gridColumn: '1 / -1' }}>{t('repo.open.emptyDir')}</div>}
-            {data.entries.map((it) => (
-              <div
-                key={it.name}
-                className={`open-grid-item ${it.isDir ? 'dir' : ''}`}
-                // 双击进入目录 {name}
-                title={it.isDir ? t('repo.open.dblClickDir', { name: it.name }) : it.name}
-                onDoubleClick={() => {
-                  if (it.isDir) {
-                    // `..` 走 parentPath（避免留下 `D:\x\..` 段）；其余按父目录形态统一分隔符
-                    setDir((d) => (it.name === '..' ? parentPath(d) : joinPath(d, it.name)));
-                  }
-                }}
-              >
-                <GridIcon isDir={it.isDir} name={it.name} size={38} />
-                <span className="open-grid-name">{it.name}{it.isDir ? '/' : ''}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+            )}
+            {(() => {
+              const rp = data?.repo;
+              if (!rp) return null;
+              return (
+                <div className="repo-enter">
+                  <span className={`badge ${rp.type!}`}>{rp.type!.toUpperCase()}</span>
+                  <span className="info">
+                    {/* {root} — SVN/Git 工作副本 */}
+                    {t('repo.open.wcLabel', { root: rp.root ?? '' })}
+                  </span>
+                  {/* 进入此仓库 → */}
+                  <button className="primary" onClick={() => void enter()}>{t('repo.open.enterThis')}</button>
+                </div>
+              );
+            })()}
+          </>
+        ),
+      }}
+    />
   );
 }
 

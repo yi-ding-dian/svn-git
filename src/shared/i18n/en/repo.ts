@@ -13,6 +13,7 @@ export const repo = {
   'repo.browse': '📂 Browse',
   'repo.browseTip': 'Open the folder browser (create/rename folders)',
   'repo.confirm.target': 'Target path: {path}',
+  'repo.browser.dragUnsupported': 'This browser cannot resolve dropped paths; the system directory picker was opened instead',
 
   // ---- 启动页 ----
   'repo.home.title': 'svn-git Version Control',
@@ -29,8 +30,6 @@ export const repo = {
     'No SVN/Git repository detected in this directory. Pick another one, or open a directory that contains a repository from the list below',
   'repo.open.switchedDir': 'Switched to directory: {path}',
   'repo.open.detectedBare': 'SVN repository storage directory detected: {path}',
-  'repo.open.dragUnsupported':
-    'This browser cannot resolve dropped paths; the system directory picker was opened instead — please choose your project directory',
   'repo.open.pickUnsupported': 'The system directory picker is not available here; please type the path manually',
   'repo.open.pathPlaceholder': 'Type a full project path and press Enter, or drop a folder below to detect it…',
   'repo.open.pickDirTip': 'Open the system directory picker',
@@ -166,7 +165,9 @@ export const repo = {
   'repo.picker.newTip': 'Create a folder in the current location',
   'repo.picker.newFolder': '📁 New Folder',
   'repo.picker.dirTip': '{name}/\nDouble-click to enter · right-click to rename',
-  'repo.picker.emptyDir': 'Empty directory (you can create a folder)',
+  'repo.picker.pathPlaceholder': 'Type a full directory path and press Enter, or drop a folder to switch…',
+  'repo.picker.dropHint': '📁 Or drop a folder into this window to switch to that directory',
+  'repo.picker.noSubdir': 'No subfolders (create one, or choose this directory)',
   'repo.picker.rename': 'Rename',
   'repo.picker.current': 'Current: {path}',
   'repo.picker.choose': 'Choose This Directory',

@@ -1,10 +1,12 @@
-/** 目录选择器：浏览文件夹、新建（行内输入）、重命名（行内输入、自动全选），确定返回路径（创建/克隆仓库的"所在目录"用）
+/** 目录选择器：「所在目录」用 —— 浏览视图与「打开项目」共用 DirBrowser（路径输入/拖拽/网格一致），
+ *  这里只补选择器自己的东西：新建文件夹、右键重命名、底部「选择此目录」。
  *  新建/重命名反馈显示在自身弹窗内（不外抛），避免污染外层弹窗的结果行 */
 import React, { useEffect, useState } from 'react';
 import { get, post, type BrowseResult } from '../shared/api.js';
-import { GridIcon, IconOk, IconErr } from '../ui/icons.js';
+import { IconOk, IconErr } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
-import { joinPath, parentPath } from '../shared/utils.js';
+import { joinPath } from '../shared/utils.js';
+import { DirBrowser } from './dir-browser.js';
 import { t } from '../../shared/i18n/index.js';
 
 export function DirPicker(props: {
@@ -12,8 +14,6 @@ export function DirPicker(props: {
   startDir: string;
   onPick: (path: string) => void;
   onClose: () => void;
-  /** 可选：外部通知回调（不再用于新建/重命名反馈，保留兼容） */
-  onToast?: (msg: string) => void;
 }) {
   const [dir, setDir] = useState(props.startDir);
   const [data, setData] = useState<BrowseResult | null>(null);
@@ -21,6 +21,8 @@ export function DirPicker(props: {
   const [notice, setNotice] = useState(''); // 新建/重命名反馈（自身弹窗内显示）
   const [noticeErr, setNoticeErr] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; name: string } | null>(null);
+  // 路径输入行（与「打开项目」同款：回车切换目录）
+  const [pathInput, setPathInput] = useState('');
   // 行内编辑：creating=新建输入框；renaming=正在重命名的文件夹名
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -37,9 +39,25 @@ export function DirPicker(props: {
     load(dir);
   }, [dir]);
 
-  // 上一级：Windows 形态下 `\` 与 `/` 都算分隔符（原来只按 `/` 切——纯 `D:\x\y` 路径上
-  // 会切掉最后一个字符、跳到不存在的目录）；到根返回自身，据此隐藏链接
-  const goUp = () => setDir((d) => parentPath(d));
+  /** 路径输入提交：先预检（同「打开项目」的 openPath，只是不做仓库识别）——成功才切目录并清空输入，
+   *  失败保留输入便于修改；输入的就是当前目录时只清输入，不发请求也不报错 */
+  const submitPath = () => {
+    const p = pathInput.trim();
+    if (!p) return;
+    if (p === dir) {
+      setPathInput('');
+      return;
+    }
+    setError('');
+    setNotice('');
+    void get
+      .browse(p)
+      .then(() => {
+        setDir(p);
+        setPathInput('');
+      })
+      .catch((e: Error) => setError(e.message));
+  };
 
   /** 新建确认：创建后自动进入新文件夹 */
   const confirmCreate = (n: string) => {
@@ -83,97 +101,86 @@ export function DirPicker(props: {
   };
 
   return (
-    <div>
-      {/* 工具栏：当前路径 + 新建文件夹（行内输入，回车确认） */}
-      <div className="row" style={{ marginBottom: 10, gap: 8 }}>
-        <div className="breadcrumb" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {dir}
-          {parentPath(dir) !== dir && (
-            <a href="#" onClick={(e) => { e.preventDefault(); goUp(); }}>
-              {/* ← 上级 */}
-              {' '}{t('repo.up')}
-            </a>
-          )}
-        </div>
-        {creating ? (
-          <input
-            autoFocus
-            type="text"
-            // 输入文件夹名称，回车创建
-            placeholder={t('repo.picker.newPlaceholder')}
-            style={{ width: 200, padding: '5px 10px', fontSize: 13 }}
-            onChange={(e) => {
-              const v = e.currentTarget.value;
-              if (v.includes('/')) e.currentTarget.value = v.replace(/[/\\]/g, '');
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') confirmCreate(e.currentTarget.value);
-              if (e.key === 'Escape') setCreating(false);
-            }}
-          />
-        ) : (
-          // 在当前位置新建文件夹 / 📁 新建文件夹
-          <button className="mini primary" onClick={() => setCreating(true)} title={t('repo.picker.newTip')}>{t('repo.picker.newFolder')}</button>
-        )}
-      </div>
-      {error && <div className="error">{error}</div>}
-      {notice && (
-        <div
-          className={noticeErr ? 'error' : 'small'}
-          style={{
-            ...(noticeErr ? {} : { color: 'var(--ok)' }),
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          {noticeErr ? <IconErr /> : <IconOk />}
-          <span>{notice}</span>
-        </div>
-      )}
-      {/* 文件夹网格：单击进入 · 右键重命名（行内输入自动全选） */}
-      <div className="open-grid" style={{ maxHeight: 260 }}>
-        {data?.entries.map((it) =>
-          it.isDir ? (
-            renaming === it.name ? (
-              // 重命名输入框：自动全选原文件名，回车确认
-              <div key={it.name} className="open-grid-item dir" style={{ padding: '10px 6px 2px' }}>
-                <GridIcon isDir name={it.name} size={38} />
-                <input
-                  autoFocus
-                  type="text"
-                  defaultValue={it.name}
-                  style={{ width: '100%', padding: '3px 5px', fontSize: 12, textAlign: 'center' }}
-                  onFocus={(e) => e.target.select()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') confirmRename(it.name, e.currentTarget.value);
-                    if (e.key === 'Escape') setRenaming(null);
-                  }}
-                />
-              </div>
-            ) : (
-              <div
-                key={it.name}
-                className="open-grid-item dir"
-                // {name}/\n双击进入 · 右键重命名
-                title={t('repo.picker.dirTip', { name: it.name })}
-                // `..` 是服务端给的上级条目：走 parentPath（否则路径里会留下 `D:\x\..` 这种段）
-                onDoubleClick={() => setDir((d) => (it.name === '..' ? parentPath(d) : joinPath(d, it.name)))}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setMenu({ x: e.clientX, y: e.clientY, name: it.name });
-                }}
-              >
-                <GridIcon isDir name={it.name} size={38} />
-                <span className="open-grid-name">{it.name}/</span>
-              </div>
-            )
+    <>
+      <DirBrowser
+        dir={dir}
+        data={data}
+        error={error}
+        onError={setError}
+        onDirChange={setDir}
+        // 拖入文件夹 / 系统选择器：切换到该目录
+        onPathPicked={setDir}
+        pathInput={{
+          value: pathInput,
+          onChange: setPathInput,
+          // 输入完整目录路径后回车，或拖入文件夹切换目录…
+          placeholder: t('repo.picker.pathPlaceholder'),
+          onSubmit: submitPath,
+          // 📁 或将文件夹直接拖入此窗口，切换到该目录
+          hint: t('repo.picker.dropHint'),
+        }}
+        // 没有可进入的子文件夹就提示（有文件但无子目录时也算，文案已按此措辞）
+        isEmpty={(d) => !d.entries.some((e) => e.isDir && e.name !== '..')}
+        // 没有子文件夹（可新建文件夹，或直接选择当前目录）
+        emptyText={t('repo.picker.noSubdir')}
+        // {name}/\n双击进入 · 右键重命名
+        tipFor={(e) => (e.isDir ? t('repo.picker.dirTip', { name: e.name }) : e.name)}
+        onDirContextMenu={(e, name) => {
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY, name });
+        }}
+        rename={renaming ? { name: renaming, onSubmit: confirmRename, onCancel: () => setRenaming(null) } : undefined}
+        slots={{
+          // 面包屑行右侧：新建文件夹（行内输入，回车确认）
+          toolbar: creating ? (
+            <input
+              autoFocus
+              type="text"
+              // 输入文件夹名称，回车创建
+              placeholder={t('repo.picker.newPlaceholder')}
+              style={{ width: 200, padding: '5px 10px', fontSize: 13 }}
+              onChange={(e) => {
+                const v = e.currentTarget.value;
+                if (v.includes('/')) e.currentTarget.value = v.replace(/[/\\]/g, '');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') confirmCreate(e.currentTarget.value);
+                if (e.key === 'Escape') setCreating(false);
+              }}
+            />
+          ) : (
+            // 在当前位置新建文件夹 / 📁 新建文件夹
+            <button className="mini primary" onClick={() => setCreating(true)} title={t('repo.picker.newTip')}>{t('repo.picker.newFolder')}</button>
+          ),
+          // 新建/重命名反馈（自身弹窗内显示，不外抛）
+          notice: notice ? (
+            <div
+              className={noticeErr ? 'error' : 'small'}
+              style={{
+                ...(noticeErr ? {} : { color: 'var(--ok)' }),
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              {noticeErr ? <IconErr /> : <IconOk />}
+              <span>{notice}</span>
+            </div>
           ) : null,
-        )}
-        {/* 空目录（可新建文件夹） */}
-        {data && data.entries.filter((e) => e.isDir).length === 0 && <div className="empty" style={{ gridColumn: '1 / -1' }}>{t('repo.picker.emptyDir')}</div>}
-      </div>
-      {/* 右键菜单：重命名 */}
+          // 底部：当前路径 + 确定/取消（foot 风格：分隔线 + 贴底右对齐）
+          footer: (
+            <div className="foot" style={{ margin: 0, padding: '12px 0 0' }}>
+              {/* 当前: {path} */}
+              <span className="dim small" style={{ flex: 1, wordBreak: 'break-all' }}>{t('repo.picker.current', { path: dir })}</span>
+              {/* 取消 */}
+              <button onClick={props.onClose}>{t('common.cancel')}</button>
+              {/* 选择此目录 */}
+              <button className="primary" onClick={() => props.onPick(dir)}>{t('repo.picker.choose')}</button>
+            </div>
+          ),
+        }}
+      />
+      {/* 右键菜单：重命名（fixed 定位，放组件树哪个位置都行） */}
       {menu && (
         <ContextMenu
           x={menu.x}
@@ -195,15 +202,6 @@ export function DirPicker(props: {
           ]}
         />
       )}
-      {/* 底部：当前路径 + 确定/取消（foot 风格：分隔线 + 贴底右对齐） */}
-      <div className="foot" style={{ margin: 0, padding: '12px 0 0' }}>
-        {/* 当前: {path} */}
-        <span className="dim small" style={{ flex: 1, wordBreak: 'break-all' }}>{t('repo.picker.current', { path: dir })}</span>
-        {/* 取消 */}
-        <button onClick={props.onClose}>{t('common.cancel')}</button>
-        {/* 选择此目录 */}
-        <button className="primary" onClick={() => props.onPick(dir)}>{t('repo.picker.choose')}</button>
-      </div>
-    </div>
+    </>
   );
 }
