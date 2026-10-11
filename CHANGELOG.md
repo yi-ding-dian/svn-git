@@ -6,7 +6,7 @@
 
 ### 测试与工程
 - **Linux 源码运行脚本 `run.sh`**：补上一直缺的那半 —— Windows 有双击即跑的启动脚本（现名 `run.bat`，原名 `运行.bat`），Linux 只能手动敲 `npm install` + `npm run dev`。两者做的是同一件事（装依赖 → 构建 → 启动），其余入口路径都只留 package.json 一处
-- **一键发版脚本** `deploy/release.mjs`（双击入口 `deploy/发布.bat`）：检测工作区/分支/tag 占用 → 问升哪一位与发布说明 → 自动归档 CHANGELOG 的 `[Unreleased]`、`npm version` 提交并打 tag、`git push --follow-tags` 触发 CI、轮询 GitHub API 报出构建结果与产物清单。支持 `--patch|--minor|--major --yes --no-push --no-watch` 供 GUI / CI 非交互调用
+- **一键发版脚本** `deploy/release.mjs`（双击入口 `deploy/release.bat`）：检测工作区/分支/tag 占用 → 问升哪一位与发布说明 → 自动归档 CHANGELOG 的 `[Unreleased]`、`npm version` 提交并打 tag、`git push --follow-tags` 触发 CI、轮询 GitHub API 报出构建结果与产物清单。支持 `--patch|--minor|--major --yes --no-push --no-watch` 供 GUI / CI 非交互调用
 
 ## [1.0.0] - 2026-10-11
 
@@ -45,7 +45,7 @@
 - 新增 `npm test`（build + VCS 层 47 + 扩展 45 + diff 算法 6 + **HTTP API 集成 32** = 130 项断言）
 - 新增 `.github/workflows/test.yml`（ubuntu + svn 依赖，push/PR 自动跑全量测试）
 - 新增 `test/api-test.mjs`：真实服务端到端测试（越界拦截 6 项、CSRF、缓存失效、软删 keep、重命名 API、SVN net-check 等）
-- **Windows 免安装单文件 exe**：新增 electron-builder `portable` 目标（对标 Linux 的 AppImage，目标机无需装 Node）；打包脚本收进 `deploy/`（`打包.bat` / `build.sh` / `deploy/README.md`），产物统一落 `deploy/release/`
+- **Windows 免安装单文件 exe**：新增 electron-builder `portable` 目标（对标 Linux 的 AppImage，目标机无需装 Node）；打包脚本收进 `deploy/`（`build.bat` / `build.sh` / `deploy/README.md`），产物统一落 `deploy/release/`
 - **产物文件名改 ASCII**：`svn-git-<版本>-portable.exe`、`svn-git-<版本>-setup.exe`、`svn-git-<版本>.AppImage`（窗口标题 / 开始菜单等界面名称仍为中文）——中文文件名在下载 URL 里会被百分号编码，命令行与传输环节也易乱码
 - **版本号与构建标识分离**：「关于」弹窗显示 `v1.0.0（72af3ea）`，构建信息带 commit 短 hash 与 dirty 标记。版本号是发布语义、只在发版时人工变更（`npm version`），日常打包靠 hash 就能对上代码，不再每次打包涨号
 

@@ -7,15 +7,17 @@
 
 | 脚本 | 平台 | 产物（落在 `deploy/release/`） |
 |---|---|---|
-| `打包.bat` | Windows | `svn-git-<版本>-portable.exe` — 免安装单文件 exe，约 70MB |
+| `build.bat` | Windows | `svn-git-<版本>-portable.exe` — 免安装单文件 exe，约 70MB |
 | `build.sh` | Linux | `svn-git-<版本>.AppImage` — 免安装单文件，约 97MB |
 | （安装包） | Windows | `svn-git-<版本>-setup.exe` — NSIS 安装包，约 70MB |
+
+脚本名一律 ASCII 且两两成对：打包 `build.bat`（Windows 双击）/ `build.sh`（Linux），发版 `release.bat`（Windows 双击入口）/ `release.mjs`（流程逻辑，由入口调用）。
 
 > **文件名一律 ASCII，界面名称保持中文**：`productName`（窗口标题、开始菜单、安装目录）是 `svn-git文件版本管理`，而产物文件名写死前缀 `svn-git-`（在 `electron-builder.yml` 的各 `artifactName` 里）。原因：中文文件名在下载 URL 里会被百分号编码、命令行和传输环节容易乱码。
 
 > 产物目录由 `electron-builder.yml` 的 `directories.output` 统一指定（Windows 和 Linux 都落这里，已加进 `.gitignore`）。目录里除最终产物外还有 `win-unpacked/` 等中间文件和 `latest.yml`（自动更新用），可以无视。
 
-## Windows：双击 `打包.bat`
+## Windows：双击 `build.bat`
 
 首次运行会自动 `npm install`，然后构建 + 打包，结束时打印产物名和所在目录。
 
@@ -38,7 +40,7 @@ npm run dist:win            # NSIS 安装包（装到 Program Files + 开始菜�
 
 ## 发版（升版本号 + 打 tag + 触发 CI）
 
-双击 `发布.bat`，或命令行 `node deploy/release.mjs`。交互式走完整个流程：
+双击 `release.bat`，或命令行 `node deploy/release.mjs`。交互式走完整个流程：
 
 ```
 检测  工作区干净 / 当前在 main / 新版本的 tag 没被本地或远端占用
@@ -67,4 +69,4 @@ npm run dist:win            # NSIS 安装包（装到 Program Files + 开始菜�
 - **不需要装 Node / 浏览器** —— Electron 运行时已内置
 - **但仍需要 `svn.exe` / `git.exe`** —— 工具本身只做图形界面，实际版本控制操作调的是系统命令行。装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**（默认不勾选），另装 [Git for Windows](https://git-scm.com/)
 
-**发版机**（跑 `发布.bat` 那台）额外需要：能 push 到 `origin`（Git 凭据已配好）。CI 是 tag 触发的，构建与上传都在 GitHub 侧完成，见 `../.github/workflows/release.yml`。
+**发版机**（跑 `release.bat` 那台）额外需要：能 push 到 `origin`（Git 凭据已配好）。CI 是 tag 触发的，构建与上传都在 GitHub 侧完成，见 `../.github/workflows/release.yml`。
