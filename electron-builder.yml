@@ -29,6 +29,10 @@ linux:
   executableName: svngit
   # 窗口关联：desktopName（package.json 顶层）与 WM_CLASS 一致，桌面环境才能把窗口绑定到应用菜单条目
   syncDesktopName: true
+# AppImage 压缩算法：xz 比默认 gzip 产物小 22%（97→76MB），只多约 8 秒（mksquashfs 多线程，
+# 与 Windows 侧 7za 单线程 -mx9 的 3 分 39 秒不是一个量级）；electron-builder 只暴露算法选项，无 1-9 档
+appImage:
+  compression: xz
 win:
   icon: build/icon.png
   target:
