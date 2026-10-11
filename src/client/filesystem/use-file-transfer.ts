@@ -13,6 +13,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { post, uploadFile } from '../shared/api.js';
+import { absPath } from '../shared/utils.js';
 
 // ============================ 拖入上传 ============================
 
@@ -350,7 +351,7 @@ export function useCopyPaste(opts: {
       return;
     }
     const dest = destDirArg ?? dir;
-    const absOf = (rel: string): string => (repoRoot ? `${repoRoot}/${rel}` : rel);
+    const absOf = (rel: string): string => absPath(repoRoot, rel);
 
     busy.current = true;
     try {

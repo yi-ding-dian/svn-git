@@ -3,6 +3,7 @@
 import React from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
+import { absPath } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar } from '../ui/icons.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
@@ -225,7 +226,7 @@ export function buildMultiItems(
     // 复制完整路径（{n} 项）
     label: t('fs.menu.copyPathN', { n: tArr.length }),
     action: () => {
-      const abs = s.root ? tArr.map((x) => `${s.root}/${x.rel}`).join('\n') : tArr.map((x) => x.rel).join('\n');
+      const abs = tArr.map((x) => absPath(s.root, x.rel)).join('\n');
       // 已复制 {n} 个完整路径
       void navigator.clipboard?.writeText(abs).then(() => s.onToast(t('fs.menu.pathsCopied', { n: tArr.length })));
     },
@@ -298,7 +299,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       // 复制完整路径
       label: t('fs.act.copyPath'),
       action: () => {
-        const abs = s.root ? `${s.root}/${row.rel}` : row.rel;
+        const abs = absPath(s.root, row.rel);
         // 完整路径已复制
         void navigator.clipboard?.writeText(abs).then(() => s.onToast(t('fs.menu.pathCopied')));
       },
@@ -546,7 +547,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
     // 复制完整路径
     label: t('fs.act.copyPath'),
     action: () => {
-      const abs = s.root ? `${s.root}/${row.rel}` : row.rel;
+      const abs = absPath(s.root, row.rel);
       // 完整路径已复制
       void navigator.clipboard?.writeText(abs).then(() => s.onToast(t('fs.menu.pathCopied')));
     },

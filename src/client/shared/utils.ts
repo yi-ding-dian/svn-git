@@ -23,10 +23,33 @@ export function fmtSize(n: number): string {
  *  当名字显示出来（实报：Windows 侧边栏「最近项目」显示成 `D:\svn-git`，Linux 上正常）。
  *  只在路径确为 Windows 形式（盘符 `C:\`/`C:/` 或 UNC `\\server`）时才把 `\` 当分隔符——
  *  Linux 上 `\` 是合法文件名字符，不能无条件当分隔符（否则会切坏 Linux 的文件名）。 */
+export function isWinPath(p: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\');
+}
+
 export function baseName(p: string): string {
-  const isWin = /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\');
-  const segs = p.split(isWin ? /[/\\]/ : '/').filter(Boolean);
+  const segs = p.split(isWinPath(p) ? /[/\\]/ : '/').filter(Boolean);
   return segs.pop() ?? p;
+}
+
+/** 拼「仓库根 + 版本库相对路径」，输出平台原生分隔符的绝对路径。
+ *
+ *  `root` 是**平台原生**的绝对路径（Windows 形如 `D:\svn-git`，来自服务端），
+ *  `rel` 是版本库风格的正斜杠相对路径（git/svn 的输出，本项目内部一律用 `/`）。
+ *  直接 `${root}/${rel}` 会拼出 `D:\svn-git/run.bat` 这种**混用分隔符**的路径 ——
+ *  Windows 认得，但复制出去贴进脚本/配置文件/命令行就是隐患，看着也别扭。
+ *
+ *  分隔符按 `root` 判定，且只认「确为 Windows 路径」（同 isWinPath）——
+ *  不能无条件转成 `\`，否则 Linux 上含反斜杠的文件名会被改坏。
+ *
+ *  `root` 自身**原样保留**（它来自服务端，本就是平台原生形式），只统一「拼接处」和
+ *  `rel` 的分隔符 —— 别顺手把 root 也改了，那个字符串还要拿去和服务端、剪贴板比对。 */
+export function absPath(root: string | undefined, rel: string): string {
+  if (!root) return rel; // 还没选仓库时（root 为空）退回相对路径，调用方不用自己判空
+  const sep = isWinPath(root) ? '\\' : '/';
+  const r = root.replace(/[\\/]+$/, ''); // 去掉尾部分隔符（`D:\`、`/` 这类根）
+  const p = rel.replace(/^[\\/]+/, '').replace(/[\\/]/g, sep);
+  return p ? `${r}${sep}${p}` : r;
 }
 
 /** 是否为二进制文件（不支持文本对比） */

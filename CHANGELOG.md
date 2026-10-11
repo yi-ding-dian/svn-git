@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+- **「修改提交注释」报"找不到编辑器"**（Windows）：`GIT_SEQUENCE_EDITOR` / `GIT_EDITOR` 被设成反斜杠路径，而 git 是把编辑器命令交给 **POSIX shell** 执行的 —— shell 把 `\U` `\A` `\1` 当转义吃掉，`C:\Users\...\seq.sh` 变成 `C:Users...seq.sh`，报 `command not found`，reword 直接失败。传给 git 的一律改用正斜杠（MSYS bash 认 `C:/...`；POSIX 上本就是正斜杠，无副作用）
+- **「复制完整路径」在 Windows 拼出 `D:\svn-git/run.bat` 这种混用分隔符**：`root` 是平台原生（反斜杠）、`rel` 是版本库风格（正斜杠），直接 `${root}/${rel}` 拼接所致。抽出 `absPath()` 统一处理，4 处调用点收口 —— 其中文件粘贴那处会把路径回传给服务端，不只是一处显示。分隔符只按「确为 Windows 路径」判定（同 `baseName` 的既有规则），Linux 上含 `\` 的文件名不会被改坏
+
 ### 测试与工程
 - **Linux 源码运行脚本 `run.sh`**：补上一直缺的那半 —— Windows 有双击即跑的启动脚本（现名 `run.bat`，原名 `运行.bat`），Linux 只能手动敲 `npm install` + `npm run dev`。两者做的是同一件事（装依赖 → 构建 → 启动），其余入口路径都只留 package.json 一处
 - **一键发版脚本** `deploy/release.mjs`（双击入口 `deploy/release.bat`）：检测工作区/分支/tag 占用 → 问升哪一位与发布说明 → 自动归档 CHANGELOG 的 `[Unreleased]`、`npm version` 提交并打 tag、`git push --follow-tags` 触发 CI、轮询 GitHub API 报出构建结果与产物清单。支持 `--patch|--minor|--major --yes --no-push --no-watch` 供 GUI / CI 非交互调用

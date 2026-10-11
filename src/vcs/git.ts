@@ -444,11 +444,17 @@ export class GitVcs {
     const msgScript = path.join(dir, 'msg.sh');
     const b64 = Buffer.from(message, 'utf8').toString('base64');
     fs.writeFileSync(msgScript, `#!/bin/sh\nprintf '%s' '${b64}' | base64 -d > "$1"\n`, { mode: 0o700 });
+    // 传给 git 的编辑器路径必须换成**正斜杠**：git 是把 GIT_SEQUENCE_EDITOR / GIT_EDITOR
+    // 交给 POSIX shell 执行的，而 Windows 路径里的反斜杠在 shell 里是转义符 ——
+    // `C:\Users\...\seq.sh` 会被解析成 `C:Users...seq.sh`（\U \A \1 全被吃掉）→
+    // `command not found`，reword 直接失败（实报：修改提交注释报编辑器找不到）。
+    // 换成 `C:/Users/.../seq.sh` 后 MSYS bash 能正常执行；POSIX 上本就是正斜杠，无副作用。
+    const shellPath = (p: string) => p.split(path.sep).join('/');
     try {
       // commit.cleanup=whitespace：reword 写回时 git 默认 strip 会删掉以 # 开头的行
       const res = await this.exec(['-c', 'core.quotepath=false', '-c', 'commit.cleanup=whitespace', 'rebase', '-i', base], {
         timeoutMs: 120_000,
-        env: { GIT_SEQUENCE_EDITOR: seq, GIT_EDITOR: msgScript },
+        env: { GIT_SEQUENCE_EDITOR: shellPath(seq), GIT_EDITOR: shellPath(msgScript) },
       });
       // 修改注释失败（工作区有未提交修改时需先提交或还原）
       if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.rewordFailedDirty') };
