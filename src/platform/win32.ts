@@ -276,6 +276,18 @@ export const win32: Platform = {
   },
 
   async revealPath(abs) {
+    // 目录 → 直接打开它本身；文件 → /select 在其所在文件夹里选中。
+    // 对目录也用 /select 是错的：Explorer 会**在上一层打开**并把它选中——用户实报
+    // 「在仓库根空白处右键『打开文件管理器』，开出来的是 D:\ 而不是 D:\svn-git」。
+    // （explorer 成功也返回 1，调用方本就不看返回码，这里同样不检查）
+    try {
+      if (fs.statSync(abs).isDirectory()) {
+        await run('explorer', [abs], { timeoutMs: 10_000 });
+        return;
+      }
+    } catch {
+      /* stat 失败（刚被删等）：按文件走 /select，保持原行为 */
+    }
     // 在资源管理器中定位文件
     await run('explorer', ['/select,', abs], { timeoutMs: 10_000 });
   },
