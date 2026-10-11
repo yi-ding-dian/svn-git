@@ -36,7 +36,8 @@ export function DirBrowser(props: {
     placeholder?: string;
     /** 输入行下方提示（拖拽说明） */
     hint?: string;
-    /** 显示「📁 选择目录…」系统选择按钮（打开项目用；选择器本身就是系统选择的替代，不再叠一个） */
+    /** 显示「📁 选择目录…」系统选择按钮（打开项目 / 选择所在目录共用；选到的路径走 onPathPicked）。
+     *  仅 Electron 桌面版有效，纯浏览器模式点了走 onError 提示不支持 */
     pickDir?: boolean;
     /** 行内按钮插槽（打开项目：「打开」；排在 📁选择目录… 之后，保持原有按钮顺序） */
     extra?: React.ReactNode;

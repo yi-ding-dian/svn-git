@@ -116,6 +116,9 @@ export function DirPicker(props: {
           // 输入完整目录路径后回车，或拖入文件夹切换目录…
           placeholder: t('repo.picker.pathPlaceholder'),
           onSubmit: submitPath,
+          // 系统目录选择按钮（与「打开项目」同款）：选到路径走 onPathPicked → 切到该目录；
+          // 仅 Electron 桌面版有效，纯浏览器模式点了提示不支持
+          pickDir: true,
           // 📁 或将文件夹直接拖入此窗口，切换到该目录
           hint: t('repo.picker.dropHint'),
         }}
