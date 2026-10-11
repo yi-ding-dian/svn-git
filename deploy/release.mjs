@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** 一键发版：检测 → 问答 → 归档 CHANGELOG → 升版本 → push → 盯 CI
+/** 一键发版：检测 → 问答 → 升版本 → push → 盯 CI
  *
  *  **为什么是脚本，不是应用里的菜单按钮**：发版是"开发者对这个项目"的操作，
  *  不是"用户对任意仓库"的操作。写在脚本里能进 git、能被 review、CI 里也能复用，
@@ -109,37 +109,22 @@ async function confirm(question, def = false) {
   return a === 'y' || a === 'yes';
 }
 
-// ---------------------------------------------------------------- CHANGELOG
+// ---------------------------------------------------------------- 发布说明
 
-/** 定位 [Unreleased] 段：返回 { lines, start, end, body }（找不到 / 段是空的 → null） */
-function findUnreleased() {
-  const p = path.join(ROOT, 'CHANGELOG.md');
-  if (!fs.existsSync(p)) return null;
-  const lines = fs.readFileSync(p, 'utf8').split(/\r?\n/);
-  const start = lines.findIndex((l) => /^##\s*\[Unreleased\]/i.test(l));
-  if (start < 0) return null;
-
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    if (/^##\s/.test(lines[i])) {
-      end = i;
-      break;
-    }
-  }
-  const body = lines.slice(start + 1, end).join('\n').trim();
-  return body ? { lines, start, end, body } : null;
+/** 最新的发布 tag（无 tag / 非 git 仓库返回 null） */
+function lastTag() {
+  return git(['describe', '--tags', '--abbrev=0'], { allowFail: true }) || null;
 }
 
-/** 把 [Unreleased] 段归档成 [x.y.z] - 日期，顶部留出新的空 [Unreleased]。
- *  返回归档的正文；返回 null = 没内容可归档。 */
-function archiveChangelog(version) {
-  const found = findUnreleased();
-  if (!found) return null;
-  const { lines, start, end, body } = found;
-  const date = new Date().toISOString().slice(0, 10);
-  const out = [...lines.slice(0, start), '## [Unreleased]', '', `## [${version}] - ${date}`, '', body, '', ...lines.slice(end)];
-  fs.writeFileSync(path.join(ROOT, 'CHANGELOG.md'), out.join('\n'));
-  return body;
+/** 发布说明的默认值：自上个 tag 以来**最新一条提交的主题**（省得每次手打，也顺手提醒
+ *  "这条写的就是这次要发的东西"）。没有新提交 / 没有 tag 时回退为 "<tag> 发布"。
+ *  （原实现取 CHANGELOG 的 [Unreleased] 首条；CHANGELOG 已删，改为直接看提交——
+ *    提交信息本来就写得细，不必再维护一份平行文档。） */
+function defaultReleaseNote(tag) {
+  const range = lastTag();
+  const args = ['log', '-1', '--format=%s'];
+  if (range) args.push(`${range}..HEAD`);
+  return (git(args, { allowFail: true }) || '').trim().slice(0, 60) || `${tag} 发布`;
 }
 
 // ---------------------------------------------------------------- GitHub CI
@@ -274,37 +259,17 @@ async function main() {
   console.log(`${OK} 版本 ${cur} → ${next}（tag ${tag}）`);
 
   // --- 发布说明（用于版本提交信息 + tag 说明）
-  //     默认取 CHANGELOG 里第一条变更（剥掉 markdown 标记）—— 省得每次手打，
-  //     也顺手提醒"这条写的就是这次要发的东西"
-  const firstBullet = findUnreleased()
-    ?.body.split('\n')
-    .find((l) => /^\s*[-*]\s+/.test(l));
-  const defaultNote = firstBullet
-    ? firstBullet.trim().replace(/^[-*]\s+/, '').replace(/\*\*/g, '').slice(0, 60)
-    : `${tag} 发布`;
-  const note = await ask('\n这次发布了什么（一句话，进 commit 和 tag 信息）', defaultNote);
+  //     默认取"自上个 tag 以来最新一条提交主题"（见 defaultReleaseNote）—— 省得每次手打
+  const note = await ask('\n这次发布了什么（一句话，进 commit 和 tag 信息）', defaultReleaseNote(tag));
   const message = `${tag}：${note}`;
 
   // --- 预览
   console.log('\n将要执行：');
-  console.log(`  1. CHANGELOG.md：[Unreleased] 归档成 [${next}] - ${new Date().toISOString().slice(0, 10)}`);
-  console.log(`  2. git commit -m "CHANGELOG：归档 ${tag}"`);
-  console.log(`  3. npm version ${level} -m "${message}"   → 提交 + 打 tag ${tag}`);
-  console.log(NO_PUSH ? '  4. （--no-push，不推送）' : `  4. git push --follow-tags   → 触发 CI 出包`);
+  console.log(`  1. npm version ${level} -m "${message}"   → 提交 + 打 tag ${tag}`);
+  console.log(NO_PUSH ? '  2. （--no-push，不推送）' : `  2. git push --follow-tags   → 触发 CI 出包`);
   if (!(await confirm('\n开始吗？', true))) die('已取消');
 
-  // --- 1. 归档 CHANGELOG
-  const body = archiveChangelog(next);
-  if (body) {
-    git(['add', 'CHANGELOG.md']);
-    git(['commit', '-m', `CHANGELOG：归档 ${tag}`]);
-    console.log(`${OK} CHANGELOG 已归档`);
-  } else {
-    console.log(`${WARN} CHANGELOG 的 [Unreleased] 段是空的，没有内容可归档`);
-    if (!YES && !(await confirm('没有变更记录，仍然继续吗？', false))) die('已取消');
-  }
-
-  // --- 2. 升版本 + 打 tag
+  // --- 升版本 + 打 tag
   //     npm version 会自己提交 package.json / package-lock.json 并打 tag；
   //     它只在"已跟踪文件干净"时才肯继续，前面已确认过
   const out = sh(NPM, ['version', level, '-m', message]);

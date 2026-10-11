@@ -45,8 +45,7 @@ npm run dist:win            # NSIS 安装包（装到 Program Files + 开始菜�
 ```
 检测  工作区干净 / 当前在 main / 新版本的 tag 没被本地或远端占用
 问    升哪一位（patch / minor / major，显示 1.0.0 → 1.0.1）
-问    发布说明（默认取 CHANGELOG 里第一条变更，进 commit 与 tag 信息）
-自动  归档 CHANGELOG：[Unreleased] → [x.y.z] - 日期，顶部留出新的空段
+问    发布说明（默认取自上个 tag 以来最新一条提交的主题，进 commit 与 tag 信息）
 自动  npm version → 提交 package.json / package-lock.json 并打 tag
 自动  git push --follow-tags → 触发 CI
 自动  轮询 GitHub API 报 CI 结果与产物清单（Ctrl+C 可退出，不影响构建）
