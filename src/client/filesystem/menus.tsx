@@ -5,7 +5,7 @@ import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { absPath } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar, IconTerminal, IconErr } from '../ui/icons.js';
+import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconTrash, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar, IconTerminal, IconErr } from '../ui/icons.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
 import type { Clip, ClipItem } from './use-file-transfer.js';
@@ -362,7 +362,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       if (s.repoType === 'git') {
         items.push({ sep: true });
         // 删除磁盘文件 / 从磁盘永久删除该目录，不可恢复（不影响版本库）
-        items.push({ icon: <IconClean />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteDirDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
+        items.push({ icon: <IconTrash />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteDirDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
       }
     } else if (row.code !== '?') {
       // 版本化目录：更新/提交/还原/历史/忽略设置/删除（无 diff）
@@ -419,7 +419,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       });
       items.push(renameItem(row.code, s.repoType, row.rel, true, s.onAction, s.startRename));
       // 删除磁盘文件 / 从磁盘永久删除该目录，不可恢复（不影响版本库）
-      items.push({ icon: <IconClean />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteDirDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
+      items.push({ icon: <IconTrash />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteDirDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
       // 常用文件夹（仅 svn：git 加载快无需预加载）
       if (s.repoType === 'svn') {
         if (s.favs.some((f) => f.path === row.rel)) {
@@ -440,7 +440,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       if (s.repoType === 'git') {
         items.push({ sep: true });
         // 删除磁盘文件 / 从磁盘永久删除该文件，不可恢复（不影响版本库）
-        items.push({ icon: <IconClean />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteFileDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
+        items.push({ icon: <IconTrash />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteFileDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
       }
       items.push({ sep: true });
       // 查看内容
@@ -468,7 +468,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
           action: s.repoType === 'git' ? undefined : () => s.ignoreFile(row),
         });
         // 删除磁盘文件 / 从磁盘永久删除该文件，不可恢复（不影响版本库）
-        items.push({ icon: <IconClean />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteFileDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
+        items.push({ icon: <IconTrash />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteFileDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
       } else {
         const modified = row.code === 'M' || row.code === 'A' || row.code === 'D' || row.code === 'R' || row.code === 'C';
         if (modified) {

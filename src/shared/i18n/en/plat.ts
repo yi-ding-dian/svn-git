@@ -37,6 +37,7 @@ export const plat = {
   'plat.sudoTermOpened': 'The install command has been opened in a system terminal — enter your password there to complete',
   'plat.sudoTermCmd': 'Command: {cmd}',
   'plat.sudoTermDone': 'When done, return to the svngit page and click [Reload page]',
+  'plat.trashFailed': 'Failed to move to Trash: {msg}',
   'plat.distroUnknown': 'Unknown distribution',
   'plat.sudoOk': 'Checking root privileges… ✓ available',
   'plat.sudoNeedPassword': 'Checking root privileges… ✗ password required (use the manual command below)',

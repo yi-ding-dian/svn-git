@@ -41,6 +41,7 @@ export const plat = {
   'plat.sudoTermOpened': '已在系统终端打开安装命令，请在终端中输入密码完成安装',
   'plat.sudoTermCmd': '执行的命令: {cmd}',
   'plat.sudoTermDone': '安装完成后，请回到 svngit 页面点【刷新页面】',
+  'plat.trashFailed': '移到回收站失败: {msg}',
   'plat.distroUnknown': '未知发行版',
   'plat.sudoOk': '检测 root 权限… ✓ 可用',
   'plat.sudoNeedPassword': '检测 root 权限… ✗ 需要密码（请用下方手动命令）',

@@ -333,6 +333,19 @@ export const win32: Platform = {
     return { ok: false, message: t('plat.winUninstallHint') };
   },
 
+  async trashPath(abs) {
+    // PowerShell 走 VisualBasic.FileIO 的回收站 API（SendToRecycleBin，可从回收站恢复）。
+    // 路径里的单引号按 PS 规则双写转义；文件/目录分用 DeleteFile / DeleteDirectory
+    const isDir = fs.statSync(abs).isDirectory();
+    const quoted = `'${abs.replace(/'/g, "''")}'`;
+    const expr = `[Microsoft.VisualBasic.FileIO.FileSystem]::Delete${isDir ? 'Directory' : 'File'}(${quoted}, 'OnlyErrorDialogs', 'SendToRecycleBin')`;
+    const r = await run('powershell', ['-NoProfile', '-NonInteractive', '-Command', `Add-Type -AssemblyName Microsoft.VisualBasic; ${expr}`], { timeoutMs: 60_000 });
+    if (r.code !== 0) {
+      // 移到回收站失败: {msg}
+      throw new Error(t('plat.trashFailed', { msg: r.stderr.trim() || `exit ${r.code}` }));
+    }
+  },
+
   async envInstall(tool: InstallTool, send, done) {
     // SVN 引导装 SlikSVN（纯命令行版——本工具即图形界面，不需要再来个 GUI）。
     // 别换回 TortoiseSVN 包：它的 winget 默认清单只装 GUI，装完反而没有 svn.exe 命令行。

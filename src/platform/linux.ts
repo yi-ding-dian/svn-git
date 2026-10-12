@@ -252,6 +252,26 @@ export const linux: Platform = {
     await run('xdg-open', [target], { timeoutMs: 10_000 });
   },
 
+  async trashPath(abs) {
+    // 优先 gio（GLib 自带，桌面发行版必有）；回退 trash-put（trash-cli）；都失败则 throw（调用方回退直接删）
+    const attempts: { cmd: string; args: string[] }[] = [
+      { cmd: 'gio', args: ['trash', abs] },
+      { cmd: 'trash-put', args: [abs] },
+    ];
+    const errs: string[] = [];
+    for (const a of attempts) {
+      try {
+        const r = await run(a.cmd, a.args, { timeoutMs: 30_000 });
+        if (r.code === 0) return;
+        errs.push(`${a.cmd}: ${r.stderr.trim() || `exit ${r.code}`}`);
+      } catch (e) {
+        errs.push(`${a.cmd}: ${(e as Error).message}`);
+      }
+    }
+    // 移到回收站失败（gio / trash-put 均不可用）: {msg}
+    throw new Error(t('plat.trashFailed', { msg: errs.join('; ') }));
+  },
+
   openUrl(url) {
     const p = spawn('xdg-open', [url], { stdio: 'ignore', detached: true });
     // [svngit] 打开浏览器失败({cmd}): {msg}

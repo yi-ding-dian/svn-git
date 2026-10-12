@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { run } from '../../vcs/exec.js';
+import { platform } from '../../platform/index.js';
 import {
   sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached, runVcs, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS, writeTextKeepEncoding, isBinaryFile,
 } from './util.js';
@@ -244,7 +245,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         try {
-          for (const p of paths) fs.rmSync(path.join(repo.root, p), { recursive: true, force: true });
+          for (const p of paths) {
+            const abs = path.join(repo.root, p);
+            try {
+              await platform.trashPath(abs); // 优先移入系统回收站（可从回收站恢复）
+            } catch {
+              // 回收站不可用（无桌面环境 / 工具缺失）→ 回退直接删除，保证「删除」始终可用
+              fs.rmSync(abs, { recursive: true, force: true });
+            }
+          }
           invalidateStatusCache(repo.root); // 磁盘文件集变化（? 项被删），防状态缓存/过滤树显示旧文件
           // 已删除磁盘文件 {n} 项
           sendJson(res, 200, { ok: true, message: t('srv.fsDeleted', { n: paths.length }) });

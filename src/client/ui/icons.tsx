@@ -195,6 +195,23 @@ export function IconClean({ size = 16 }: IconProps) {
   );
 }
 
+/** 垃圾桶（移到回收站）：盖 + 桶身 + 竖纹，蓝色系表「可恢复」 */
+export function IconTrash({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <defs>
+        <linearGradient id="ic-trash" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#58a6ff" />
+          <stop offset="1" stopColor="#1f6feb" />
+        </linearGradient>
+      </defs>
+      <path d="M8.5 3h7l.8 2H20v2H4V5h3.7z" fill="url(#ic-trash)" />
+      <path d="M6 8.2h12l-1 12A1.9 1.9 0 0 1 15.1 22H8.9A1.9 1.9 0 0 1 7 20.2z" fill="url(#ic-trash)" />
+      <path d="M10.2 11.5v7M13.8 11.5v7" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" opacity=".9" />
+    </svg>
+  );
+}
+
 /** 打开项目：彩色文件夹 */
 export function IconFolder({ size = 16 }: IconProps) {
   return (

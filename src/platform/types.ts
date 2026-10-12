@@ -45,6 +45,9 @@ export interface Platform {
   resolveAppIcon(key: string): IconData | null;
   /** 在系统文件管理器中定位文件 / 打开其所在文件夹 */
   revealPath(abs: string): Promise<void>;
+  /** 移到系统回收站（可从回收站恢复）。失败时 throw——调用方回退直接删除。
+   *  Linux: gio trash → trash-put；Windows: PowerShell 的 SendToRecycleBin */
+  trashPath(abs: string): Promise<void>;
   /** 用系统默认浏览器打开 URL */
   openUrl(url: string): void;
   /** 列出系统可用字体 family（Linux: fc-list；Windows: 注册表 Fonts 键），供字体设置"不存在不给选" */
