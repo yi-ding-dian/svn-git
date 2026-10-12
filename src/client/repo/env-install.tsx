@@ -12,7 +12,7 @@ export function EnvInstallModal(props: {
   onInstalled: () => void;
 }) {
   const [logs, setLogs] = useState<string[]>([]);
-  const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'error' | 'opened'>('idle');
   const [manual, setManual] = useState('');
   const [busyTool, setBusyTool] = useState<'svn' | 'git' | ''>('');
   const logRef = useRef<HTMLDivElement>(null);
@@ -42,6 +42,9 @@ export function EnvInstallModal(props: {
           setBusyTool('');
           if (d.code === 0) {
             setStatus('done');
+          } else if (d.taskOpened) {
+            // 需要密码：已在系统终端打开安装命令（用户在终端里输密码执行完成），提示去终端
+            setStatus('opened');
           } else {
             setStatus('error');
             if (d.manual) setManual(d.manual);
@@ -110,7 +113,7 @@ export function EnvInstallModal(props: {
             <Row name="svn" info={props.env.svn} tool="svn" />
             <Row name="git" info={props.env.git} tool="git" />
           </div>
-          {(status === 'running' || status === 'done' || status === 'error') && (
+          {(status === 'running' || status === 'done' || status === 'error' || status === 'opened') && (
             <>
               <div
                 ref={logRef}
@@ -130,6 +133,13 @@ export function EnvInstallModal(props: {
                   {t('repo.env.done')}
                 </div>
               )}
+              {status === 'opened' && (
+                <div style={{ color: 'var(--ok)', marginTop: 10, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <IconOk size={13} />
+                  {/* 已在系统终端打开安装命令：请在终端里输入密码完成安装，完成后点下方刷新按钮 */}
+                  {t('repo.env.terminalOpened')}
+                </div>
+              )}
               {status === 'error' && (
                 <div className="error" style={{ marginTop: 10 }}>
                   {/* 安装失败。请在终端手动执行： */}
@@ -145,7 +155,7 @@ export function EnvInstallModal(props: {
           {/* 取消安装 */}
           {status === 'running' && <button onClick={cancelInstall}>{t('repo.env.cancelInstall')}</button>}
           {/* 🔄 刷新页面 */}
-          {status === 'done' && <button className="primary" onClick={props.onInstalled}>{t('repo.env.reload')}</button>}
+          {(status === 'done' || status === 'opened') && <button className="primary" onClick={props.onInstalled}>{t('repo.env.reload')}</button>}
         </div>
       </ResizableModal>
     </div>

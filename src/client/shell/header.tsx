@@ -901,6 +901,17 @@ export function AppHeader(props: {
               },
             },
             {
+              icon: '🔍',
+              // 环境检测
+              label: t('shell.tool.envCheck'),
+              // 查看 SVN / Git 的安装状态与版本；缺失时可一键安装
+              title: t('shell.tool.envCheckTitle'),
+              action: () => {
+                setMoreMenu(null);
+                props.setModal({ type: 'env' });
+              },
+            },
+            {
               // 语言：固定项（与「关于」同为设置类，**不参与拖拽定制** —— 工具栏按钮语义是"点击即执行"，
               // 而语言是"展开选一个"，拖过去会变成语义怪异的按钮）
               icon: <IconGlobe />,

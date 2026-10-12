@@ -78,7 +78,9 @@ function scanDesktopApps(): { name: string; exec: string; mimes: Set<string>; ic
   return out;
 }
 
-/** 发行版包管理器探测（/etc/os-release）：返回安装命令与手动命令;未知回退 apt(Debian 系默认)。 */
+/** 发行版包管理器探测（/etc/os-release）：返回安装命令**前缀**（sudo -n 免密路径用）与手动命令前缀；
+ *  软件包清单由调用方按所选工具拼接（用户可能只缺 git 或只缺 svn，不能一律全装）;
+ *  未知回退 apt(Debian 系默认)。 */
 function detectDistro(): { name: string; manager: string; install: string[]; manual: string } {
   let id = '';
   try {
@@ -88,23 +90,52 @@ function detectDistro(): { name: string; manager: string; install: string[]; man
   } catch {
     /* 读失败按未知处理 */
   }
-  const arg = ['git', 'subversion'].join(' ');
   switch (id) {
     case 'fedora':
-      return { name: 'Fedora', manager: 'dnf', install: ['sudo', '-n', 'dnf', 'install', '-y', 'git', 'subversion'], manual: `sudo dnf install -y ${arg}` };
+      return { name: 'Fedora', manager: 'dnf', install: ['sudo', '-n', 'dnf', 'install', '-y'], manual: 'sudo dnf install -y' };
     case 'rhel':
     case 'centos':
-      return { name: 'CentOS/RHEL', manager: 'yum', install: ['sudo', '-n', 'yum', 'install', '-y', 'git', 'subversion'], manual: `sudo yum install -y ${arg}` };
+      return { name: 'CentOS/RHEL', manager: 'yum', install: ['sudo', '-n', 'yum', 'install', '-y'], manual: 'sudo yum install -y' };
     case 'opensuse':
     case 'opensuse-leap':
     case 'opensuse-tumbleweed':
-      return { name: 'openSUSE', manager: 'zypper', install: ['sudo', '-n', 'zypper', '--non-interactive', 'install', 'git', 'subversion'], manual: `sudo zypper --non-interactive install -y ${arg}` };
+      return { name: 'openSUSE', manager: 'zypper', install: ['sudo', '-n', 'zypper', '--non-interactive', 'install'], manual: 'sudo zypper --non-interactive install -y' };
     case 'arch':
-      return { name: 'Arch', manager: 'pacman', install: ['sudo', '-n', 'pacman', '-S', '--noconfirm', 'git', 'subversion'], manual: `sudo pacman -S --noconfirm ${arg}` };
+      return { name: 'Arch', manager: 'pacman', install: ['sudo', '-n', 'pacman', '-S', '--noconfirm'], manual: 'sudo pacman -S --noconfirm' };
     default:
       // 未知发行版
-      return { name: id || t('plat.distroUnknown'), manager: 'apt', install: ['sudo', '-n', 'apt-get', 'install', '-y', 'git', 'subversion'], manual: `sudo apt-get install -y ${arg}` };
+      return { name: id || t('plat.distroUnknown'), manager: 'apt', install: ['sudo', '-n', 'apt-get', 'install', '-y'], manual: 'sudo apt-get install -y' };
   }
+}
+
+/** 需要 sudo 密码时：写临时脚本并拉起系统终端执行（终端里 sudo 自行提示输密码，免去用户复制命令）。
+ *  成功返回 true（终端已打开）；无图形环境（SSH 等）/ 找不到终端模拟器 → false（调用方回退手动命令文案）。 */
+async function openInstallTerminal(manualPrefix: string, pkgs: string[], send: (d: Record<string, unknown>) => void): Promise<boolean> {
+  // 无图形环境：终端窗口无处可开（SSH 会话等），直接回退文字命令
+  if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) return false;
+  const script = path.join(os.tmpdir(), `svngit-env-install-${Date.now()}.sh`);
+  const content = [
+    '#!/bin/bash',
+    'rm -f -- "$0"', // 临时脚本自删，不在 /tmp 留痕
+    `${manualPrefix} ${pkgs.join(' ')}`,
+    'echo',
+    `echo ${shq(t('plat.sudoTermDone'))}`,
+    'exec bash', // 窗口留着让用户看到输出（与 runScript 行为一致）
+  ].join('\n') + '\n';
+  try {
+    fs.writeFileSync(script, content, { mode: 0o755 });
+  } catch {
+    return false;
+  }
+  const term = findTerminal(`bash ${shq(script)}`);
+  if (!term) return false;
+  const r = await launchDetached([term.bin, ...term.argv], t('plat.sudoTermOpened'));
+  if (!r.ok) return false;
+  // 已在系统终端打开安装命令，请在终端中输入密码完成安装
+  send({ line: t('plat.sudoTermOpened') });
+  // 执行的命令: {cmd}（让用户在输密码前看到具体命令）
+  send({ line: t('plat.sudoTermCmd', { cmd: `${manualPrefix} ${pkgs.join(' ')}` }) });
+  return true;
 }
 
 /** 按 .desktop Icon= 名在系统图标目录找图片（theme 未解析,按 hicolor 常规尺寸/可缩放目录查找） */
@@ -313,26 +344,29 @@ export const linux: Platform = {
     const pkgs = tool === 'svn' ? ['subversion'] : tool === 'git' ? ['git'] : ['git', 'subversion'];
     /** 发行版包管理器探测（/etc/os-release）：不同发行版 svn/git 包名与安装命令不同 */
     const distro = detectDistro();
-    const install = distro.install; // ['sudo','-n',<manager>,...]
-    const manual = distro.manual; // 手动命令全文
+    const install = distro.install; // 命令前缀 ['sudo','-n',<manager>,...]，软件包按所选工具拼
+    const manual = `${distro.manual} ${pkgs.join(' ')}`; // 手动命令（只含所选工具，避免"点 SVN 却装 Git"）
     const sudoOk = await run('sudo', ['-n', 'true'], { timeoutMs: 10_000 });
     send({ line: t(sudoOk.code === 0 ? 'plat.sudoOk' : 'plat.sudoNeedPassword') });
     // 发行版: {name}（{manager}）
     send({ line: t('plat.distro', { name: distro.name, manager: distro.manager }) });
     if (sudoOk.code !== 0) {
-      send({ done: true, code: 1, manual });
+      // 需要密码：拉起系统终端执行（sudo 在终端里自行提示输密码）；
+      // 拉不起终端（无图形环境/无终端模拟器）时前端会显示 manual 命令
+      const opened = await openInstallTerminal(distro.manual, pkgs, send);
+      send({ done: true, code: 1, manual, ...(opened ? { taskOpened: true } : {}) });
       done();
       return;
     }
     // 开始安装: {pkgs}…
     send({ line: t('plat.installStart', { pkgs: pkgs.join(' ') }) });
-    const child = spawn(install[0]!, install.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(install[0]!, install.slice(1).concat(pkgs), { stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.on('data', (d: Buffer) => send({ line: d.toString() }));
     child.stderr.on('data', (d: Buffer) => send({ line: d.toString() }));
     child.on('error', (e) => {
       // 启动失败: {msg}
       send({ line: t('plat.launchFail', { msg: e.message }) });
-      send({ done: true, code: 1, manual: `sudo apt-get install -y ${pkgs.join(' ')}` });
+      send({ done: true, code: 1, manual });
       done();
     });
     child.on('close', (code) => {

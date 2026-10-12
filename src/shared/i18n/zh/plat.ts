@@ -38,6 +38,9 @@ export const plat = {
   // ---- 环境安装引导（envInstall 流式输出到界面日志）----
   'plat.winEnvHint': 'Windows 环境：请在终端以管理员身份执行以下命令安装：',
   'plat.winUacHint': '（安装过程可能弹出 UAC 授权窗口，请点「是」允许）',
+  'plat.sudoTermOpened': '已在系统终端打开安装命令，请在终端中输入密码完成安装',
+  'plat.sudoTermCmd': '执行的命令: {cmd}',
+  'plat.sudoTermDone': '安装完成后，请回到 svngit 页面点【刷新页面】',
   'plat.distroUnknown': '未知发行版',
   'plat.sudoOk': '检测 root 权限… ✓ 可用',
   'plat.sudoNeedPassword': '检测 root 权限… ✗ 需要密码（请用下方手动命令）',

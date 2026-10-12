@@ -185,6 +185,7 @@ export const repo = {
   'repo.env.help3':
     ' repositories. Whichever you use, the matching command-line tool must be installed; if you only use one, install just that one — a missing engine only affects operations on that kind of repository.',
   'repo.env.done': 'Installation complete — click the button below to reload the page, then you can use it',
+  'repo.env.terminalOpened': 'The install command was opened in a system terminal: enter your password there to complete, then click Reload below',
   'repo.env.failed': 'Installation failed. Run it manually in a terminal:',
   'repo.env.cancelInstall': 'Cancel Install',
   'repo.env.reload': '🔄 Reload Page',

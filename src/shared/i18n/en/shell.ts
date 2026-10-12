@@ -60,6 +60,8 @@ export const shell = {
   'shell.tool.terminalTitle': 'Run git / svn commands in the repository directory (or press Ctrl+`). Non-interactive commands only: no pipes/redirection; use a system terminal for commands that need a TTY',
   'shell.tool.font': 'Fonts',
   'shell.tool.gitInfo': 'Git Info & Config',
+  'shell.tool.envCheck': 'Environment Check',
+  'shell.tool.envCheckTitle': 'View SVN / Git installation status and versions; one-click install if missing',
   'shell.tool.svnAccount': 'SVN Account: {user}',
   'shell.tool.svnLogin': 'SVN Login',
 

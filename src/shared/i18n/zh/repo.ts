@@ -185,6 +185,7 @@ export const repo = {
   'repo.env.help3':
     ' 两种仓库。使用哪种仓库，系统需已安装对应的命令行工具；只用其中一种时，只需安装对应的一种即可，未安装的引擎仅影响该类仓库的操作。',
   'repo.env.done': '安装完成，点击下方按钮刷新页面后即可使用',
+  'repo.env.terminalOpened': '已在系统终端打开安装命令：请在终端里输入密码完成安装，装好后点下方刷新按钮',
   'repo.env.failed': '安装失败。请在终端手动执行：',
   'repo.env.cancelInstall': '取消安装',
   'repo.env.reload': '🔄 刷新页面',

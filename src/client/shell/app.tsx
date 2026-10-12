@@ -169,6 +169,16 @@ export function App() {
       .catch(() => {});
   }, [loadHistory]);
 
+  // 「环境检测」弹窗每次打开都重新检测一次（⋯ 菜单入口）：
+  // 确保看到的是最新状态（用户可能刚在别处装完 svn/git）
+  useEffect(() => {
+    if (modal?.type !== 'env') return;
+    get
+      .envCheck()
+      .then((r) => setEnv(r))
+      .catch(() => {});
+  }, [modal?.type]);
+
   // 环境缺失:只提示「当前仓库类型需要」的引擎;未打开仓库时任一缺失都提示
   // (用户可能只用 Git 或只用 SVN,不强制两者都装)
   const needSvn = !repo?.type || repo.type === 'svn';

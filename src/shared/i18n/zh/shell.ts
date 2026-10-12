@@ -62,6 +62,8 @@ export const shell = {
   'shell.tool.terminalTitle': '在仓库目录下执行 git / svn 命令（Ctrl+` 也可打开）。只支持非交互命令：不支持管道/重定向，需要 TTY 的命令请用系统终端',
   'shell.tool.font': '字体设置',
   'shell.tool.gitInfo': 'Git 信息与配置',
+  'shell.tool.envCheck': '环境检测',
+  'shell.tool.envCheckTitle': '查看 SVN / Git 的安装状态与版本；缺失时可一键安装',
   'shell.tool.svnAccount': 'SVN 账号: {user}',
   'shell.tool.svnLogin': 'SVN 登录',
 
