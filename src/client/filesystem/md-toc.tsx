@@ -18,6 +18,8 @@ export interface TocItem {
 export function MdTocPopover(props: {
   /** 按钮底边 y：浮层从它下方展开 */
   y: number;
+  /** 按钮左边缘 x：浮层左缘与它对齐、向右展开（用户定稿："尽量靠右，但不能偏离按钮太远"） */
+  x: number;
   items: TocItem[];
   onJump: (id: string) => void;
   onClose: () => void;
@@ -28,17 +30,17 @@ export function MdTocPopover(props: {
   /** 被折叠的条目下标。默认全展开 —— 文档通常不长，一眼看全比一层层点开快 */
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
 
-  // 定位：水平**贴窗口右边缘**（目录按钮右边还有「查看原文」等按钮，跟按钮右边缘对齐会让浮层悬在
-  // 半空、右侧空出一块）；垂直贴按钮下方，下边不够则改为贴底。
+  // 定位：水平**左对齐按钮左边缘、向右展开**（"尽量靠右，但不偏离按钮"——用户定稿；与 MdThemePopover
+  // 同一套"贴按钮"模式），右侧不够则回退贴窗口右缘；垂直贴按钮下方，下边不够则改为贴底。
   // 用 useLayoutEffect 而非 useEffect —— 量宽修正必须发生在绘制前，否则首帧会从右边甩出去再弹回来（肉眼可见的闪）。
   useLayoutEffect(() => {
     if (!ref.current) return;
     const r = ref.current.getBoundingClientRect();
-    const left = Math.max(8, window.innerWidth - r.width - 8);
+    const left = Math.max(8, Math.min(props.x, window.innerWidth - r.width - 8));
     let top = props.y;
     if (top + r.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - r.height - 8);
     setPos({ left, top });
-  }, [props.y]);
+  }, [props.y, props.x]);
 
   const items = props.items;
   /** 第 i 项有没有子级：后面紧跟一项、且层级更深 */

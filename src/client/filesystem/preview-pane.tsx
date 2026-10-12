@@ -137,7 +137,7 @@ export function PreviewPane(props: Props) {
   /** md 主题气泡位置（null = 未打开） */
   const [mdThemePop, setMdThemePop] = useState<{ x: number; y: number } | null>(null);
   /** 文档目录气泡：只记按钮底边 y（水平位置由浮层自己贴窗口右侧算） */
-  const [tocPop, setTocPop] = useState<{ y: number } | null>(null);
+  const [tocPop, setTocPop] = useState<{ y: number; x: number } | null>(null);
   /** 目录条目：md 渲染后从 DOM 提取（见下方 effect）；空数组 = 没标题或不在预览态 */
   const [tocItems, setTocItems] = useState<TocItem[]>([]);
   /** md 正文容器：提取标题、挂锚点、跳转定位都靠它 */
@@ -449,7 +449,8 @@ export function PreviewPane(props: Props) {
             title={t('fs.pv.tocTitle')}
             onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
-              setTocPop((v) => (v ? null : { y: r.bottom + 4 })); // 只传底边：浮层自己贴窗口右侧展开
+              // 按钮底边 + 左边缘：浮层贴按钮正下方、左缘对齐向右展开（用户定稿：尽量靠右、不偏离按钮）
+              setTocPop((v) => (v ? null : { y: r.bottom + 4, x: r.left }));
             }}
           >
             {/* ☰ 目录 ({n}) */}
@@ -596,6 +597,7 @@ export function PreviewPane(props: Props) {
       {tocPop && (
         <MdTocPopover
           y={tocPop.y}
+          x={tocPop.x}
           items={tocItems}
           onJump={(id) => mdBodyRef.current?.querySelector<HTMLElement>(`#${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}
           onClose={() => setTocPop(null)}
