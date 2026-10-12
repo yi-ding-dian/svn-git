@@ -287,6 +287,7 @@ export const get = {
     ),
   tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),
+  projectStatus: (dir: string) => api<ProjectProbe>(`/api/project-status?path=${encodeURIComponent(dir)}`),
   stashFiles: (index: number) => api<{ files: { path: string; code: string }[] }>(`/api/stash?index=${index}`),
   blame: (path: string) => api<{ lines: { rev: string; author: string; date: string; line: number; text: string }[] }>(`/api/blame?path=${encodeURIComponent(path)}`),
   gitClean: () => api<{ files: string[] }>('/api/git-clean'),
@@ -335,6 +336,20 @@ export interface BranchInfo {
 export interface StashItem {
   index: number;
   label: string;
+}
+
+/** 最近项目仪表盘：单个项目的摘要状态（后端只读探测，30 秒缓存；error 时其余字段缺省） */
+export interface ProjectProbe {
+  type?: 'git' | 'svn';
+  /** git=分支名；svn=工作副本位置（如 trunk） */
+  branch?: string;
+  ahead?: number;
+  /** 待拉取提交数（git，基于本地记录的远端引用，不联网） */
+  behind?: number;
+  changed?: number;
+  untracked?: number;
+  conflict?: number;
+  error?: string;
 }
 
 export const post = {

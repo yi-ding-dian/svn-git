@@ -1,11 +1,11 @@
 /** 侧边栏：视图导航 + 最近项目列表（右键设常用/备注/删除）+ 版本号 */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { IconClock, IconFolder, IconRename } from '../ui/icons.js';
 // import { IconDiff } from '../ui/icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from '../ui/context-menu.js';
 import { RemarkModal } from '../repo/remark.js';
 import { THEMES, THEME_PINNED } from './header.js';
-import type { HistoryItem } from '../shared/api.js';
+import { get, type HistoryItem, type ProjectProbe } from '../shared/api.js';
 import { baseName } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -40,6 +40,63 @@ function relTime(ts: number): string {
   return d.getFullYear() === now.getFullYear() ? mmdd : `${d.getFullYear()}-${mmdd}`;
 }
 
+/** 徽标数字压缩：>99 显示 99+（避免长数字把行挤歪；悬浮明细里是原始数字） */
+const fmtCount = (n: number): string => (n > 99 ? '99+' : String(n));
+
+/** 状态行有没有"信号"（⬆未推送 / ⬇待拉取 / ●未提交 / ⚠冲突 / ⚠不可用）——
+ *  全无 = 整行不显示（用户定稿：干净项目不留中间行，分支信息悬浮看） */
+function probeHasSignal(st: ProjectProbe): boolean {
+  return (
+    Boolean(st.error) ||
+    (st.ahead ?? 0) > 0 ||
+    (st.behind ?? 0) > 0 ||
+    (st.changed ?? 0) > 0 ||
+    (st.conflict ?? 0) > 0
+  );
+}
+
+/** 仪表盘徽标（最近项目的状态行）：只留强信号（未推送/未提交/冲突——**未跟踪归悬浮明细**，
+ *  噪音大不代表"有活没干"）；git 带分支名作上下文、**svn 不带**（位置串太长，用户定稿去掉）；
+ *  compact（项目 >10）时只取徽标（并入名字行）。 */
+function probeBadges(st: ProjectProbe, withBranch: boolean) {
+  if (st.error) {
+    return (
+      <span className="st-bad" title={st.error === 'unavailable' ? t('shell.recent.probeUnavailable') : st.error}>
+        ⚠
+      </span>
+    );
+  }
+  return (
+    <>
+      {withBranch && st.type !== 'svn' && st.branch && <span className="st-branch">{st.branch}</span>}
+      {(st.ahead ?? 0) > 0 && <span className="st-ahead">⬆{fmtCount(st.ahead!)}</span>}
+      {(st.behind ?? 0) > 0 && <span className="st-behind">⬇{fmtCount(st.behind!)}</span>}
+      {(st.changed ?? 0) > 0 && <span className="st-changed">●{fmtCount(st.changed!)}</span>}
+      {(st.conflict ?? 0) > 0 && <span className="st-conflict">⚠{fmtCount(st.conflict!)}</span>}
+    </>
+  );
+}
+
+/** 悬浮明细（拼进最近项目条目的 title）：分支/位置、未推送、待拉取、未提交、未跟踪、冲突——有一条列一行。
+ *  live=true（当前项目且远程实时检查有效）：behind 用"远程检查"措辞，否则标"基于上次获取"（本地记录，可能过期） */
+function probeTip(st: ProjectProbe, live = false): string {
+  if (st.error) return st.error === 'unavailable' ? t('shell.recent.probeUnavailable') : st.error;
+  const out: string[] = [];
+  // 当前分支 / 工作副本位置
+  if (st.branch) out.push(t(st.type === 'svn' ? 'shell.recent.tipSvnLoc' : 'shell.recent.tipBranch', { b: st.branch }));
+  // 未推送：{n} 个提交
+  if ((st.ahead ?? 0) > 0) out.push(t('shell.recent.tipAhead', { n: st.ahead! }));
+  // 待拉取：{n} 个提交（远程检查）/ 待拉取：{n} 个提交（基于上次获取）
+  if ((st.behind ?? 0) > 0) out.push(t(live ? 'shell.recent.tipBehindLive' : 'shell.recent.tipBehind', { n: st.behind! }));
+  // 未提交：{n} 个文件
+  if ((st.changed ?? 0) > 0) out.push(t('shell.recent.tipChanged', { n: st.changed! }));
+  // 未跟踪：{n} 个文件
+  if ((st.untracked ?? 0) > 0) out.push(t('shell.recent.tipUntracked', { n: st.untracked! }));
+  // 冲突：{n} 个文件
+  if ((st.conflict ?? 0) > 0) out.push(t('shell.recent.tipConflict', { n: st.conflict! }));
+  return out.join('\n');
+}
+
 export function Sidebar(props: {
   view: View;
   history: HistoryItem[];
@@ -64,6 +121,9 @@ export function Sidebar(props: {
   onOpenRecentMore: (x: number, y: number) => void;
   /** 该面板是否打开（「…」按钮高亮态） */
   recentMoreOpen: boolean;
+  /** 当前项目的远程新提交数（preflight 实时检查结果，与顶部提示条同源）：
+   *  补进当前项目条目的 ⬇ 徽标——本地探测拿不到它（尤其 SVN，远端更新必须联网查） */
+  remoteBehind?: number;
   /** 点开过但打不开的项目：路径 → 错误消息（这些项上常驻 ×，悬浮时显示同一条消息） */
   invalidPaths: Record<string, string>;
   /** 悬浮失效项时显示提示（复用点击后那套浮层） */
@@ -78,6 +138,29 @@ export function Sidebar(props: {
   // 项目超过一屏（要折叠成「…」）时用**单行紧凑**模式：两行式每项 ~51px，10 项就把侧边栏撑满了，
   // 时间那行这时只能让位——它是锦上添花，项目名才是要认的
   const compact = props.history.length > RECENT_LIMIT;
+
+  // 最近项目仪表盘：路径 → 摘要状态。异步补上（先列表后状态，不阻塞渲染）；后端 30 秒缓存挡重复查询。
+  // 依赖用"路径串"而非 history 数组——数组引用每次应用刷新都会新建，会让所有项目被无谓重查。
+  const [probes, setProbes] = useState<Record<string, ProjectProbe>>({});
+  const historyKey = props.history.map((h) => h.path).join('|');
+  useEffect(() => {
+    let alive = true;
+    for (const h of props.history.slice(0, RECENT_LIMIT)) {
+      get
+        .projectStatus(h.path)
+        .then((r) => {
+          if (alive) setProbes((p) => ({ ...p, [h.path]: r }));
+        })
+        .catch(() => {
+          if (alive) setProbes((p) => ({ ...p, [h.path]: { error: 'unavailable' } }));
+        });
+    }
+    return () => {
+      alive = false;
+    };
+    // currentRoot 变化（切了项目）→ 重查一遍（被切换项目的状态一定变了）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyKey, props.currentRoot]);
 
   const NAV = [
     // 历史
@@ -130,10 +213,19 @@ export function Sidebar(props: {
         <>
           {/* 最近项目 */}
           <div className="sidebar-title">{t('shell.recent.title')}</div>
+          {/* 列表在可用高度内自己滚动（用户定稿：项目多时滚列表，不裁进「…」、
+              也不把整个侧边栏/页面撑出滚动条）；NAV / 主题 / 标题 / 打开按钮都固定不动 */}
           <div className="history-list">
-            {props.history.slice(0, RECENT_LIMIT).map((h) => {
+            {props.history.map((h) => {
               const invalidMsg = props.invalidPaths[h.path];
               const invalid = Boolean(invalidMsg);
+              // 展示用状态：当前项目的 behind 与"远程实时检查"（remoteHint）取大——
+              // SVN 项目本地探测恒 0，靠这里把顶部条那 2 个新提交补进侧边栏
+              const probe = probes[h.path];
+              const stView: ProjectProbe | undefined = probe
+                ? { ...probe, behind: Math.max(probe.behind ?? 0, h.path === props.currentRoot ? (props.remoteBehind ?? 0) : 0) }
+                : undefined;
+              const behindLive = h.path === props.currentRoot && (props.remoteBehind ?? 0) > 0;
               return (
                 <div
                   key={h.path}
@@ -143,7 +235,7 @@ export function Sidebar(props: {
                       // {path}（打不开，目录已删除或不是工作副本）
                       ? t('shell.recent.invalid', { path: h.path })
                       // 备注：{remark} / （当前操作的项目） / （常用项目） / 点击打开 · 右键设常用/备注/删除
-                      : `${h.path}${h.remark ? `\n${t('shell.recent.tipRemark', { remark: h.remark })}` : ''}${h.path === props.currentRoot ? `\n${t('shell.recent.tipCurrent')}` : ''}${h.fav ? `\n${t('shell.recent.tipFav')}` : ''}\n${t('shell.recent.tipClick')}`
+                      : `${h.path}${h.remark ? `\n${t('shell.recent.tipRemark', { remark: h.remark })}` : ''}${h.path === props.currentRoot ? `\n${t('shell.recent.tipCurrent')}` : ''}${h.fav ? `\n${t('shell.recent.tipFav')}` : ''}${stView ? `\n${probeTip(stView, behindLive)}` : ''}\n${t('shell.recent.tipClick')}`
                   }
                   onClick={() => props.onOpenHistory(h)}
                   onMouseEnter={() => {
@@ -164,6 +256,10 @@ export function Sidebar(props: {
                   <span className="history-path">{baseName(h.path)}</span>
                   {/* 常用项目（启动时优先打开） */}
                   {h.fav && <span className="fav-star" title={t('shell.recent.favStar')}>★</span>}
+                  {/* 仪表盘状态（项目多、compact 时并入名字行；完整"分支+徽标"在下面的独立状态行） */}
+                  {compact && stView && probeHasSignal(stView) && (
+                    <span className="history-status inline">{probeBadges(stView, false)}</span>
+                  )}
                   {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮）。
                       必须排在第二行**之前**——第二行 flex-basis:100% 会换行，× 写在它后面会被挤到第二行 */}
                   {invalid && (
@@ -181,6 +277,12 @@ export function Sidebar(props: {
                       ×
                     </button>
                   )}
+                  {/* 仪表盘状态行（名字行与备注行之间）：只显示"有事"的项目（有 ⬆/●/⚠ 任一才出行——
+                      用户定稿：干净项目整行隐藏，分支/未跟踪等细节都在悬浮明细里）。
+                      异步查得，回来前不占位（不做"…"占位——会先撑高列表再缩回，反而跳） */}
+                  {!compact && stView && probeHasSignal(stView) && (
+                    <span className="history-status">{probeBadges(stView, true)}</span>
+                  )}
                   {/* 第二行 = 备注 + 时间。时间 flex:0 0 auto 钉死不被压缩，备注吃掉剩余宽度、超长截断成
                       「…」——所以备注写多长都挤不掉时间（用户要求"保证时间正常显示"），全文靠悬浮看 */}
                   {!compact && (
@@ -192,21 +294,7 @@ export function Sidebar(props: {
                 </div>
               );
             })}
-            {/* 超出上限：末行「…」居中，点击在右侧展开其余项目 */}
-            {props.history.length > RECENT_LIMIT && (
-              <div
-                className={`history-item history-more ${props.recentMoreOpen ? 'active' : ''}`}
-                // 还有 {n} 个最近项目
-                title={t('shell.recent.moreTitle', { n: props.history.length - RECENT_LIMIT })}
-                onClick={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  props.onOpenRecentMore(r.right + 6, r.top);
-                }}
-              >
-                {/* …（{n} 条） */}
-                <span className="history-more-dots">{t('shell.recent.moreDots', { n: props.history.length - RECENT_LIMIT })}</span>
-              </div>
-            )}
+            {/* 超出部分靠列表滚动查看（用户定稿：不再折叠成「…」行） */}
             {/* 右键菜单：设为常用 / 删除 / 取消 */}
             {rmMenu && (
               <ContextMenu

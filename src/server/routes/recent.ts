@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { detectRepo } from '../../vcs/detect.js';
+import { probeProjectCached } from '../../vcs/probe.js';
 import { sendJson, readBody, currentScopes, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -166,6 +167,18 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
         }
         sendJson(res, 200, { ok: true, items: loadHistory() });
+        return true;
+      }
+
+      if (p === '/api/project-status' && req.method === 'GET') {
+        // 最近项目仪表盘：探测任意项目的摘要状态（只读、不切当前仓库；30s 缓存）
+        const dir = String(url.searchParams.get('path') ?? '').trim();
+        if (!dir) {
+          // 缺少路径参数
+          sendJson(res, 400, { error: t('srv.missingPath') });
+          return true;
+        }
+        sendJson(res, 200, await probeProjectCached(dir));
         return true;
       }
 

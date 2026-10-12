@@ -323,6 +323,14 @@ body[data-theme="violet"], body[data-theme="charcoal"] {
 
 html, body, #root { height: 100%; }
 
+/* 细滚动条（用户定稿：两次收窄后 3px）——全局统一，含横向条；轨道透明不占视觉；
+   颜色跟随主题变量（滑块 --border、悬停 --dim）；3px 下拖拽偏难点，滚轮/触摸板不受影响 */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -356,7 +364,8 @@ body {
 
 .sidebar {
   width: 160px; background: var(--panel); border-right: 1px solid var(--border);
-  padding: 12px 0; flex-shrink: 0; display: flex; flex-direction: column;
+  /* overflow: hidden = 兜底：极矮窗口下宁可裁掉也不让侧边栏把页面撑出滚动条 */
+  padding: 12px 0; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden;
 }
 .sidebar .item {
   padding: 10px 20px; cursor: pointer; color: var(--dim); user-select: none;
@@ -369,12 +378,18 @@ body {
   padding: 14px 20px 6px; font-size: 0.86em; color: var(--dim);
   border-top: 1px solid var(--border); margin-top: 10px;
 }
-.history-list { display: flex; flex-direction: column; gap: 3px; padding-top: 2px; }
+/* 最近项目列表：随可用高收缩、超出**列表内滚动**（用户定稿：项目多时滚列表，不裁「…」、
+   也不把侧边栏/页面撑出滚动条）。项目 > RECENT_LIMIT 时另有单行紧凑模式 */
+.history-list { display: flex; flex-direction: column; gap: 3px; padding-top: 2px; flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 .history-item {
   display: flex; align-items: center; gap: 6px;
   /* wrap + 第二行 flex-basis:100%：让「备注+时间」那行占满整行（含徽标下方那块）。
      原先第二行缩进在名字下方，徽标底下 30 多 px 白空着（用户实报「左边那么多空位」） */
   flex-wrap: wrap;
+  /* flex-shrink: 0 不可省：列表可收缩（.history-list 的 flex: 0 1 auto）时，
+     项作为 flex 子项默认也会被压扁——项内容被切半（实测踩过）。项保持自然高，
+     放不下的由渲染层的「…」裁切负责 */
+  flex-shrink: 0;
   /* 右侧只留 10px：星号要尽量贴行尾（左侧 20px 保持与菜单项/标题对齐，不能动） */
   padding: 8px 10px 8px 20px; cursor: pointer; color: var(--text); overflow: hidden;
 }
@@ -401,14 +416,25 @@ body {
 .history-time { flex-basis: 100%; font-size: 0.76em; color: var(--dim); display: flex; gap: 4px; justify-content: center; }
 .history-remark { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-time-text { flex: 0 0 auto; }
+/* 仪表盘状态行（最近项目名字行与备注行之间）：分支/位置 + 状态徽标；与备注行同样居中、满行换行。
+   compact（项目 >10 时）用 .inline 并入名字行（只放徽标，不带分支名） */
+.history-status { flex-basis: 100%; display: flex; gap: 5px; justify-content: center; align-items: center; font-size: 0.72em; line-height: 1.35; color: var(--dim); overflow: hidden; white-space: nowrap; }
+.history-status .st-branch { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.history-status .st-ahead { flex: 0 0 auto; color: var(--accent); }
+.history-status .st-behind { flex: 0 0 auto; color: var(--accent); }
+.history-status .st-changed { flex: 0 0 auto; color: var(--warn); font-weight: 600; }
+.history-status .st-conflict { flex: 0 0 auto; color: var(--err); font-weight: 700; }
+.history-status .st-bad { color: var(--err); }
+.history-status.inline { flex-basis: auto; margin-left: 2px; }
 /* 徽标跟**第一行（项目名）**对齐，不跟着两行内容垂直居中；星号仍整行居中 */
 .history-item .badge { align-self: flex-start; margin-top: 2px; }
 /* 最近项目下方的「＋ 打开项目」：虚线框，像个"新增"入口而不是普通菜单项 */
 .history-open {
-  margin: 8px 10px 0 20px; padding: 7px 10px;
+  /* 按钮做小一号（用户要求）：矮一点、字号小一点——竖向 padding 4 与字号 0.8 搭配后约 22px 高 */
+  margin: 6px 10px 0 20px; padding: 4px 10px;
   display: flex; align-items: center; justify-content: center; gap: 4px;
   border: 1px dashed var(--border); border-radius: 6px; background: transparent;
-  color: var(--dim); font-size: 0.88em; cursor: pointer;
+  color: var(--dim); font-size: 0.8em; cursor: pointer;
 }
 .history-open:hover { border-color: var(--accent); color: var(--accent); background: var(--panel2); }
 /* 常用项目星号标记：margin-left:auto 把它顶到行尾——名字短时贴右（不再停在名字后面），

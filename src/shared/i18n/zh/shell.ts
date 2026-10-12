@@ -141,6 +141,18 @@ export const shell = {
   'shell.recent.tipCurrent': '（当前操作的项目）',
   'shell.recent.tipFav': '（常用项目）',
   'shell.recent.tipClick': '点击打开 · 右键设常用/备注/删除',
+  // ---- 最近项目仪表盘（状态短行 + 悬浮明细）----
+  'shell.recent.tipBranch': '当前分支：{b}',
+  'shell.recent.tipSvnLoc': '工作副本位置：{b}',
+  'shell.recent.tipAhead': '未推送：{n} 个提交',
+  // 待拉取（基于本地记录的远端状态——上次拉取/获取之后别人的新推送；不联网实时查）
+  'shell.recent.tipBehind': '待拉取：{n} 个提交（基于上次获取）',
+  // 待拉取（当前项目：preflight 远程实时检查的结果）
+  'shell.recent.tipBehindLive': '待拉取：{n} 个提交（远程检查）',
+  'shell.recent.tipChanged': '未提交：{n} 个文件',
+  'shell.recent.tipUntracked': '未跟踪：{n} 个文件',
+  'shell.recent.tipConflict': '冲突：{n} 个文件',
+  'shell.recent.probeUnavailable': '状态不可用（目录不存在或已不是工作副本）',
   'shell.recent.favStar': '常用项目（启动时优先打开）',
   'shell.recent.removeInvalid': '该项目已打不开，点击从最近项目中移除',
   'shell.recent.removeAria': '移除 {path}',
