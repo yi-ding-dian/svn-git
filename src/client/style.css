@@ -377,7 +377,17 @@ body {
 .sidebar-title {
   padding: 14px 20px 6px; font-size: 0.86em; color: var(--dim);
   border-top: 1px solid var(--border); margin-top: 10px;
+  /* 标题左、状态显隐开关（眼睛）右 */
+  display: flex; align-items: center; gap: 6px;
 }
+/* 「最近项目」标题右侧的状态行显隐开关：睁眼（绿·显示中）/ 闭眼（灰·已关闭）——
+   图标自身表达状态（不用斜杠版、也不靠淡化）。关闭后列表更干净，悬浮明细仍在 */
+.recent-status-eye {
+  margin-left: auto; width: 18px; height: 18px; border-radius: 4px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--dim); cursor: pointer; flex-shrink: 0;
+}
+.recent-status-eye:hover { background: var(--panel2); }
 /* 最近项目列表：随可用高收缩、超出**列表内滚动**（用户定稿：项目多时滚列表，不裁「…」、
    也不把侧边栏/页面撑出滚动条）。项目 > RECENT_LIMIT 时另有单行紧凑模式 */
 .history-list { display: flex; flex-direction: column; gap: 3px; padding-top: 2px; flex: 0 1 auto; min-height: 0; overflow-y: auto; }

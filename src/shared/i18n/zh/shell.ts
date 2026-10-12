@@ -153,6 +153,9 @@ export const shell = {
   'shell.recent.tipUntracked': '未跟踪：{n} 个文件',
   'shell.recent.tipConflict': '冲突：{n} 个文件',
   'shell.recent.probeUnavailable': '状态不可用（目录不存在或已不是工作副本）',
+  // 状态行显隐开关（「最近项目」标题右侧的眼睛）
+  'shell.recent.hideStatus': '隐藏状态信息',
+  'shell.recent.showStatus': '显示状态信息',
   'shell.recent.favStar': '常用项目（启动时优先打开）',
   'shell.recent.removeInvalid': '该项目已打不开，点击从最近项目中移除',
   'shell.recent.removeAria': '移除 {path}',

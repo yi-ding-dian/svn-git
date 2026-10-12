@@ -1,6 +1,6 @@
 /** 侧边栏：视图导航 + 最近项目列表（右键设常用/备注/删除）+ 版本号 */
 import React, { useEffect, useState } from 'react';
-import { IconClock, IconFolder, IconRename } from '../ui/icons.js';
+import { IconClock, IconEye, IconEyeClosed, IconFolder, IconRename } from '../ui/icons.js';
 // import { IconDiff } from '../ui/icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from '../ui/context-menu.js';
 import { RemarkModal } from '../repo/remark.js';
@@ -142,6 +142,26 @@ export function Sidebar(props: {
   // 最近项目仪表盘：路径 → 摘要状态。异步补上（先列表后状态，不阻塞渲染）；后端 30 秒缓存挡重复查询。
   // 依赖用"路径串"而非 history 数组——数组引用每次应用刷新都会新建，会让所有项目被无谓重查。
   const [probes, setProbes] = useState<Record<string, ProjectProbe>>({});
+  // 状态行显隐开关（「最近项目」标题右侧的眼睛；偏好持久化、默认显示）：
+  // 只控制"平时那行"——悬浮明细（title）不受影响，想看了悬浮仍有
+  const [showStatus, setShowStatus] = useState(() => {
+    try {
+      return localStorage.getItem('svngit-recent-status') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const toggleStatus = () => {
+    setShowStatus((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem('svngit-recent-status', next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
   const historyKey = props.history.map((h) => h.path).join('|');
   useEffect(() => {
     let alive = true;
@@ -211,8 +231,21 @@ export function Sidebar(props: {
       {/* 最近项目：底部区域（版本号上方） */}
       {props.history.length > 0 && (
         <>
-          {/* 最近项目 */}
-          <div className="sidebar-title">{t('shell.recent.title')}</div>
+          {/* 最近项目：标题右侧的眼睛 = 状态行显隐开关（关掉后列表更干净；悬浮明细仍在） */}
+          <div className="sidebar-title">
+            <span>{t('shell.recent.title')}</span>
+            {/* 睁眼（绿）= 状态信息显示中；闭眼（灰）= 已关闭（用户定稿：不用斜杠版、也不靠淡化） */}
+            <button
+              className="recent-status-eye"
+              // 隐藏状态信息 / 显示状态信息
+              title={t(showStatus ? 'shell.recent.hideStatus' : 'shell.recent.showStatus')}
+              aria-label={t(showStatus ? 'shell.recent.hideStatus' : 'shell.recent.showStatus')}
+              aria-pressed={showStatus}
+              onClick={toggleStatus}
+            >
+              {showStatus ? <IconEye size={14} /> : <IconEyeClosed size={14} />}
+            </button>
+          </div>
           {/* 列表在可用高度内自己滚动（用户定稿：项目多时滚列表，不裁进「…」、
               也不把整个侧边栏/页面撑出滚动条）；NAV / 主题 / 标题 / 打开按钮都固定不动 */}
           <div className="history-list">
@@ -257,7 +290,7 @@ export function Sidebar(props: {
                   {/* 常用项目（启动时优先打开） */}
                   {h.fav && <span className="fav-star" title={t('shell.recent.favStar')}>★</span>}
                   {/* 仪表盘状态（项目多、compact 时并入名字行；完整"分支+徽标"在下面的独立状态行） */}
-                  {compact && stView && probeHasSignal(stView) && (
+                  {showStatus && compact && stView && probeHasSignal(stView) && (
                     <span className="history-status inline">{probeBadges(stView, false)}</span>
                   )}
                   {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮）。
@@ -280,7 +313,7 @@ export function Sidebar(props: {
                   {/* 仪表盘状态行（名字行与备注行之间）：只显示"有事"的项目（有 ⬆/●/⚠ 任一才出行——
                       用户定稿：干净项目整行隐藏，分支/未跟踪等细节都在悬浮明细里）。
                       异步查得，回来前不占位（不做"…"占位——会先撑高列表再缩回，反而跳） */}
-                  {!compact && stView && probeHasSignal(stView) && (
+                  {showStatus && !compact && stView && probeHasSignal(stView) && (
                     <span className="history-status">{probeBadges(stView, true)}</span>
                   )}
                   {/* 第二行 = 备注 + 时间。时间 flex:0 0 auto 钉死不被压缩，备注吃掉剩余宽度、超长截断成

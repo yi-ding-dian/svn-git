@@ -148,6 +148,8 @@ export const shell = {
   'shell.recent.tipUntracked': 'Untracked: {n} file(s)',
   'shell.recent.tipConflict': 'Conflicts: {n} file(s)',
   'shell.recent.probeUnavailable': 'Status unavailable (directory missing or not a working copy)',
+  'shell.recent.hideStatus': 'Hide status info',
+  'shell.recent.showStatus': 'Show status info',
   'shell.recent.favStar': 'Favorite (opened first at startup)',
   'shell.recent.removeInvalid': 'This project cannot be opened; click to remove it from recent projects',
   'shell.recent.removeAria': 'Remove {path}',

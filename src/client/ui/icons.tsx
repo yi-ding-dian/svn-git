@@ -419,6 +419,16 @@ export function IconEye({ size = 14 }: IconProps) {
   );
 }
 
+/** 闭眼：状态行关闭态（灰色）——下凸弧线 = 合拢的眼睑 + 三根下睫毛（少了睫毛像微笑/放大镜） */
+export function IconEyeClosed({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M4 9.5 Q12 17 20 9.5" stroke="#8b949e" strokeWidth="2" strokeLinecap="round" fill="none" />
+      <path d="M8.5 12.8l-1.2 2M12 14v2.2M15.5 12.8l1.2 2" stroke="#8b949e" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** 回到根目录：绿色房子 */
 export function IconHome({ size = 14 }: IconProps) {
   return (

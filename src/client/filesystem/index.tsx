@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry } from '../shared/api.js';
-import { IconDiff, IconRevert, IconClock, IconEyeOff, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconList, IconTree, IconGrid, IconHome, IconUp, GridIcon, MiniIcon } from '../ui/icons.js';
+import { IconDiff, IconRevert, IconClock, IconEyeClosed, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconList, IconTree, IconGrid, IconHome, IconUp, GridIcon, MiniIcon } from '../ui/icons.js';
 import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { filterEntries, type Filter, type Mode, type VisibleRow } from './utils.js';
@@ -1235,7 +1235,7 @@ export function FsView(props: Props) {
           {/* 添加 */}
           <ActionBtn icon={<IconPlus />} label={t('fs.act.add')} cmd={cmdOfRepo(props.repoType, 'add', { paths: e.rel })} onClick={() => onAction('add', e.rel)} />
           {/* 忽略 / 加入忽略 */}
-          <ActionBtn icon={<IconEyeOff />} label={t('fs.act.ignore')} title={t('fs.act.ignoreTitle')} cmd={cmdOfRepo(props.repoType, 'ignore_add', { path: e.rel, pattern: '…' })} onClick={() => ignoreFile(e)} />
+          <ActionBtn icon={<IconEyeClosed />} label={t('fs.act.ignore')} title={t('fs.act.ignoreTitle')} cmd={cmdOfRepo(props.repoType, 'ignore_add', { path: e.rel, pattern: '…' })} onClick={() => ignoreFile(e)} />
         </>
       )}
       {e.isDir && e.code && e.code !== '?' && !e.miss && (
@@ -1288,7 +1288,8 @@ export function FsView(props: Props) {
           {/* 显示/隐藏隐藏文件 */}
           <button className="mini tool-btn" onClick={() => setShowHidden((s) => !s)} title={t('fs.toolbar.hiddenTitle')}>
             {/* 隐藏 / 隐藏文件 */}
-            {showHidden ? <IconEye /> : <IconEyeOff />} {showHidden ? t('fs.toolbar.hide') : t('fs.toolbar.hiddenFiles')}
+            {/* 文字固定「隐藏文件」（用户定稿：别随状态变"隐藏"），只有眼睛切换：关=闭眼 / 开=睁眼 */}
+            {showHidden ? <IconEye /> : <IconEyeClosed />} {t('fs.toolbar.hiddenFiles')}
           </button>
           <span className="row" style={{ gap: 4 }}>
             {(['changed', 'new', 'deleted'] as Filter[]).map((f) => (

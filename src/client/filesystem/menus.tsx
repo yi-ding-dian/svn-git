@@ -5,7 +5,7 @@ import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { absPath } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconTrash, IconDiff, IconFile, IconIgnore, IconEyeOff, IconExternal, IconLock, IconUnlock, IconStar, IconTerminal, IconErr } from '../ui/icons.js';
+import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconTrash, IconDiff, IconFile, IconIgnore, IconEyeClosed, IconExternal, IconLock, IconUnlock, IconStar, IconTerminal, IconErr } from '../ui/icons.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
 import type { Clip, ClipItem } from './use-file-transfer.js';
@@ -357,7 +357,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       // 忽略设置…
       items.push({ icon: <IconIgnore />, label: t('fs.act.ignoreSettings'), action: () => s.setIgnoreModal({ dir: row.rel }) });
       // 取消忽略
-      items.push({ icon: <IconEyeOff />, label: t('fs.act.unignore'), action: () => s.setUnignoreAsk({ rel: row.rel, name: row.name, isDir: true }) });
+      items.push({ icon: <IconEyeClosed />, label: t('fs.act.unignore'), action: () => s.setUnignoreAsk({ rel: row.rel, name: row.name, isDir: true }) });
       items.push(renameItem(row.code, s.repoType, row.rel, true, s.onAction, s.startRename));
       if (s.repoType === 'git') {
         items.push({ sep: true });
@@ -435,7 +435,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
     // 文件
     if (row.code === 'I') {
       // 取消忽略
-      items.push({ icon: <IconEyeOff />, label: t('fs.act.unignore'), action: () => s.setUnignoreAsk({ rel: row.rel, name: row.name, isDir: false }) });
+      items.push({ icon: <IconEyeClosed />, label: t('fs.act.unignore'), action: () => s.setUnignoreAsk({ rel: row.rel, name: row.name, isDir: false }) });
       items.push(renameItem(row.code, s.repoType, row.rel, false, s.onAction, s.startRename));
       if (s.repoType === 'git') {
         items.push({ sep: true });
