@@ -8,7 +8,7 @@
 | 脚本 | 平台 | 产物（落在 `deploy/release/`） |
 |---|---|---|
 | `build.bat` | Windows | `svn-git-<版本>-portable.exe` — 免安装单文件 exe，默认档约 85MB（压缩级别可选，见下文） |
-| `build.sh` | Linux | `svn-git-<版本>.AppImage` — 免安装单文件，约 97MB |
+| `build.sh` | Linux | `svn-git-<版本>.AppImage` — 免安装单文件，约 97MB（gzip；**勿换 xz**——冷启动会慢 20 倍，原因见 `electron-builder.yml` 注释） |
 | （安装包） | Windows | `svn-git-<版本>-setup.exe` — NSIS 安装包，约 70MB |
 
 脚本名一律 ASCII 且两两成对：打包 `build.bat`（Windows 双击）/ `build.sh`（Linux），发版 `release.bat`（Windows 双击入口）/ `release.mjs`（流程逻辑，由入口调用）。
@@ -45,6 +45,23 @@ npm run dist:win            # NSIS 安装包（装到 Program Files + 开始菜�
 打好后可用 `../scripts/install-appimage.sh <AppImage 路径>` 把它装进系统应用菜单。
 
 **AppImage 只能在 Linux 上打**，Windows 打不出来；Windows 侧对应的免安装形态就是上面的 portable exe（首启会解压到临时目录，比 AppImage 挂载慢一两秒）。
+
+## 产物怎么用（自己拿到产物、或发给别人时看这节）
+
+产物都是**免安装单文件**，双击即开应用窗口；在终端里运行则按下面三条规则走：
+
+- **不带参数**（终端里）：先弹运行方式菜单 —— `1` 应用窗口 / `2` 浏览器 · 前台 / `3` 浏览器 · 后台（回车默认 `1`）
+- **带 `--browser`**：跳过菜单，启动服务并打开系统浏览器（前台运行，终端被占用）
+- **带 `-d`**（自动含 `--browser`）：**后台常驻** —— 命令立即返回，服务在后台运行、浏览器照常自动打开
+
+```bash
+./svn-git-1.0.0.AppImage --browser -d      # Linux：后台常驻
+svn-git-1.0.0-portable.exe --browser -d    # Windows：同上（portable 包装器会原样转发参数）
+```
+
+> 双击图标没有终端，不弹菜单、直接开窗口。
+> 停止方式：窗口模式关窗即退；浏览器 / 后台模式用页面右上角「退出应用」；前台浏览器模式 Ctrl+C 也行。
+> 服务只监听 `127.0.0.1:23456`（被占用时自动换随机端口，以浏览器标签地址栏为准）；指定启动目录用环境变量 `SVNGIT_DIR`（Linux 直接前置，Windows CMD 里先 `set`）。
 
 ## 发版（升版本号 + 打 tag + 触发 CI）
 

@@ -9,4 +9,12 @@ export const main = {
   'main.openingWindow': '  正在打开应用窗口…（无需浏览器，关闭窗口即退出）',
   'main.openingBrowser': '  正在打开浏览器…（关闭浏览器标签后服务仍在后台，停止请用页面右上角「退出」）',
   'main.pickDirFail': '[svngit] 注入系统目录选择失败（浏览器模式将无法选择目录）:',
+  'main.daemonStarted': '  已在后台启动（浏览器将自动打开）；停止：页面右上角「退出」',
+  'main.daemonMissing': '[svngit] 找不到可执行文件，无法后台启动: {exe}',
+  'main.menuTitle': '  请选择运行方式:',
+  'main.menuDirect': '    1. 应用窗口（直接运行，关闭窗口即退出）',
+  'main.menuBrowser': '    2. 浏览器 · 前台（启动服务并打开浏览器；终端被占用，Ctrl+C 停止）',
+  'main.menuDaemon': '    3. 浏览器 · 后台（启动服务并打开浏览器；命令立即返回，页面右上角「退出」停止）',
+  'main.menuPrompt': '请选择 [1]: ',
+  'main.menuInvalid': '  无效选择，请输入 1、2 或 3',
 } as const;

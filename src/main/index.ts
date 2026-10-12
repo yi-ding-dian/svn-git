@@ -2,6 +2,8 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { spawn } from 'node:child_process';
+import readline from 'node:readline';
 import { createRequire } from 'node:module';
 import { startServer, setPickDirHandler } from '../server/index.js';
 import { detectRepo } from '../vcs/detect.js';
@@ -20,7 +22,19 @@ const START_DIR = process.env.SVNGIT_DIR ?? process.cwd();
  * - Electron 打包版：内嵌 BrowserWindow（自带渲染引擎，无浏览器也能用）
  * - 纯 node（开发）或 --browser 参数：xdg-open 外部浏览器（服务常驻，页面右上角「退出」停止）
  */
-const BROWSER = process.argv.includes('--browser');
+let BROWSER = process.argv.includes('--browser');
+// 后台常驻（-d），处理见文件末尾的 -d 分支
+let DAEMON = process.argv.includes('-d');
+
+// 运行方式交互菜单：终端里直接运行打包版（不带参数）时先问一下怎么跑。
+// 不弹的三种情况：双击图标没有终端（isTTY 假）；带了 --browser / -d 参数（脚本友好）；
+// 纯 node（run.sh / npm start）—— 否则源码启动流程会被菜单卡住。
+if (process.versions.electron && !BROWSER && !DAEMON && process.stdin.isTTY && process.stdout.isTTY) {
+  setLang(loadConfig().lang); // 早于输出定语言：boot() 里这一步还没跑到
+  const mode = await askRunMode();
+  BROWSER = mode !== '1'; // 2/3 都是"服务 + 浏览器"
+  DAEMON = mode === '3';
+}
 
 async function openUI(url: string) {
   if (process.versions.electron && !BROWSER) {
@@ -55,6 +69,39 @@ async function openUI(url: string) {
   }
   // 纯 node：打开系统默认浏览器（跨平台，平台逻辑下沉到 src/platform）
   platform.openUrl(url);
+}
+
+/** 交互菜单（仅终端直跑打包版时）：读一行选 1/2/3；回车或输入流关闭（Ctrl+D）按默认 1 走。
+ *  用常驻的 line 监听（for await）而不是 rl.question —— question 在「多行一次到达」时会丢
+ *  后续行（重挂一次性监听器赶不上同一批数据，粘贴多行 / 管道喂输入都会踩到）。 */
+async function askRunMode(): Promise<'1' | '2' | '3'> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  // Ctrl+C 放弃启动：readline 缺省只是暂停输入流，会让人以为卡死
+  rl.on('SIGINT', () => process.exit(130));
+  const showMenu = () => {
+    console.log('');
+    //   请选择运行方式:
+    console.log(t('main.menuTitle'));
+    console.log(t('main.menuDirect'));
+    console.log(t('main.menuBrowser'));
+    console.log(t('main.menuDaemon'));
+    rl.setPrompt(t('main.menuPrompt'));
+    rl.prompt();
+  };
+  try {
+    showMenu();
+    for await (const line of rl) {
+      const v = line.trim();
+      if (v === '' || v === '1') return '1';
+      if (v === '2' || v === '3') return v;
+      //   无效选择，请输入 1、2 或 3
+      console.log(t('main.menuInvalid'));
+      showMenu();
+    }
+    return '1'; // 输入流关闭（Ctrl+D / 输入耗尽）：按默认走
+  } finally {
+    rl.close();
+  }
 }
 
 // 忽略 SIGHUP：关闭启动它的终端后服务保持运行（浏览器页面继续可用）
@@ -129,6 +176,27 @@ async function boot() {
   console.log('');
 
   await openUI(handle.url);
+}
+
+// 后台常驻（-d）：重新拉起自身后父进程立即退出 —— 必须用「原文件」重新执行，不能 spawn 挂载点/
+// 临时目录里的可执行文件：父进程一退出，AppImage 会卸载 FUSE 挂载、Windows portable 包装器会
+// 清理临时目录，子进程将失去二进制。$APPIMAGE / $PORTABLE_EXECUTABLE_FILE 分别是这两种运行器
+// 注入的原文件路径；纯 node（开发）退回 execPath + 脚本路径。窗口版关窗即退、没有常驻语义，
+// 故 -d 自动补齐 --browser。停止方式不变：页面右上角「退出」（POST /api/shutdown）。
+if (DAEMON) {
+  const exe = process.env.APPIMAGE ?? process.env.PORTABLE_EXECUTABLE_FILE ?? process.execPath;
+  const args = process.argv.slice(1).filter((a) => a !== '-d');
+  if (!args.includes('--browser')) args.push('--browser');
+  setLang(loadConfig().lang); // 早于输出定语言：boot() 里这一步还没跑到
+  if (!fs.existsSync(exe)) {
+    // [svngit] 找不到可执行文件，无法后台启动: {exe}
+    console.error(t('main.daemonMissing', { exe }));
+    process.exit(1);
+  }
+  // 已在后台启动（浏览器将自动打开）；停止：页面右上角「退出」
+  console.log(t('main.daemonStarted'));
+  spawn(exe, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  process.exit(0);
 }
 
 // Electron 打包版：等 app ready 后再启动（窗口创建要求 ready）；纯 node 直接启动

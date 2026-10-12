@@ -9,4 +9,12 @@ export const main = {
   'main.openingWindow': '  Opening app window… (no browser needed; closing the window exits)',
   'main.openingBrowser': '  Opening browser… (service keeps running after the tab closes; use "Exit" at top-right to stop)',
   'main.pickDirFail': '[svngit] Failed to inject the system directory picker (browser mode cannot pick directories):',
+  'main.daemonStarted': '  Started in background (browser opens automatically); stop with "Exit" at the page top-right',
+  'main.daemonMissing': '[svngit] Executable not found, cannot start in background: {exe}',
+  'main.menuTitle': '  Choose how to run:',
+  'main.menuDirect': '    1. App window (runs directly; closing the window exits)',
+  'main.menuBrowser': '    2. Browser · foreground (starts the server and opens the browser; terminal stays occupied, Ctrl+C to stop)',
+  'main.menuDaemon': '    3. Browser · background (starts the server and opens the browser; command returns immediately, stop with "Exit" at the page top-right)',
+  'main.menuPrompt': 'Choose [1]: ',
+  'main.menuInvalid': '  Invalid choice; enter 1, 2, or 3',
 };
