@@ -5,7 +5,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { detectRepo } from '../../vcs/detect.js';
-import { probeProjectCached } from '../../vcs/probe.js';
+import { probeProject, probeProjectCached } from '../../vcs/probe.js';
+import { createVcs } from '../../vcs/index.js';
+import type { SvnCred } from '../../vcs/svn.js';
+import { loadConfig } from '../../config.js';
 import { sendJson, readBody, currentScopes, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -94,6 +97,71 @@ function addHistory(entry: { path: string; type: 'svn' | 'git' }): void {
   }
 }
 
+/** 任意项目的远程检查（最近项目 ⬇ 待拉取）：detectRepo → 临时 VCS 实例 → preflight。
+ *  preflight 自带超时（git fetch 15s / svn status -u 20s）与失败快速返回 — 不会卡请求；
+ *  缓存：成功 60s / 失败 20s（打开侧边栏会成批请求，挡住重复联网）。 */
+const remoteCheckCache = new Map<string, { at: number; ok: boolean; behind: number }>();
+async function remoteProbeAny(dir: string): Promise<{ behind?: number; error?: string }> {
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return { error: 'unavailable' };
+  const repo = detectRepo(dir);
+  if (!repo) return { error: 'unavailable' };
+  const hit = remoteCheckCache.get(dir);
+  if (hit && Date.now() - hit.at < (hit.ok ? 60_000 : 20_000)) {
+    return hit.ok ? { behind: hit.behind } : { error: 'check-failed' };
+  }
+  // 凭据复用当前会话配置（同账号场景；失败快速返回，由前端标"检查失败"）
+  const cfg = loadConfig();
+  const cred: SvnCred | null = cfg.svn.username
+    ? { username: cfg.svn.username, password: cfg.svn.password, trustServerCert: cfg.svn.trustServerCert }
+    : null;
+  try {
+    const vcs = createVcs(repo, cred);
+    const pf = await vcs.preflight();
+    remoteCheckCache.set(dir, { at: Date.now(), ok: true, behind: pf.behind });
+    return { behind: pf.behind };
+  } catch {
+    remoteCheckCache.set(dir, { at: Date.now(), ok: false, behind: 0 });
+    return { error: 'check-failed' };
+  }
+}
+
+/** 任意项目"就地更新"（点侧边栏 ⬇）：git=pull / svn=update。
+ *  **安全约束**：只更新工作区**干净**（无 tracked 改动/冲突）的项目——在用户没打开的项目里
+ *  拉出合并冲突没法处理，直接拒绝并提示先打开处理；未跟踪文件不挡（pull/update 不会覆盖它们）。
+ *  成功后失效该项目的远程检查缓存（⬇ 归零由前端做）。 */
+async function pullAny(dir: string): Promise<{ ok: boolean; message?: string }> {
+  try {
+    if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+      // 该项目已打不开（目录不存在或不是工作副本）
+      return { ok: false, message: t('shell.recent.probeUnavailable') };
+    }
+    const repo = detectRepo(dir);
+    if (!repo) return { ok: false, message: t('shell.recent.probeUnavailable') };
+    const st = await probeProject(dir);
+    if ('error' in st) return { ok: false, message: t('shell.recent.probeUnavailable') };
+    if (st.changed > 0 || st.conflict > 0) {
+      // 该项目有未提交的改动，请先打开处理
+      return { ok: false, message: t('shell.recent.pullDirty') };
+    }
+    const cfg = loadConfig();
+    const cred: SvnCred | null = cfg.svn.username
+      ? { username: cfg.svn.username, password: cfg.svn.password, trustServerCert: cfg.svn.trustServerCert }
+      : null;
+    const vcs = createVcs(repo, cred);
+    // pull 自带 600s 超时与友好错误；svn update 无参数 = 整个工作副本
+    const r =
+      repo.type === 'git'
+        // 当前仓库不支持拉取
+        ? ((await vcs.pull?.()) ?? { ok: false, message: t('srv.pullUnsupported') })
+        // 当前仓库不支持更新
+        : ((await vcs.update?.()) ?? { ok: false, message: t('srv.updateUnsupported') });
+    if (r.ok) remoteCheckCache.delete(dir); // 拉完重算（缓存失效）
+    return { ok: r.ok, message: r.message };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
+}
+
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
   const p = url.pathname;
@@ -179,6 +247,32 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         sendJson(res, 200, await probeProjectCached(dir));
+        return true;
+      }
+
+      if (p === '/api/pull-any' && req.method === 'POST') {
+        // 点侧边栏 ⬇ 就地更新该项目（git pull / svn update；工作区脏则拒绝，见 pullAny）
+        const body = await readBody(req);
+        const dir = String(body.path ?? '').trim();
+        if (!dir) {
+          // 缺少路径参数
+          sendJson(res, 400, { error: t('srv.missingPath') });
+          return true;
+        }
+        sendJson(res, 200, await pullAny(dir));
+        return true;
+      }
+
+      if (p === '/api/remote-probe' && req.method === 'GET') {
+        // 任意项目的"远程检查"（⬇ 待拉取）：复用 preflight（自带 15s/20s 超时 + 失败快速返回，
+        // 全程异步不阻塞界面）。缓存：成功 60s / 失败 20s——打开侧边栏会成批请求，挡住重复联网。
+        const dir = String(url.searchParams.get('path') ?? '').trim();
+        if (!dir) {
+          // 缺少路径参数
+          sendJson(res, 400, { error: t('srv.missingPath') });
+          return true;
+        }
+        sendJson(res, 200, await remoteProbeAny(dir));
         return true;
       }
 

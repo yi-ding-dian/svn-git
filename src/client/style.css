@@ -432,6 +432,10 @@ body {
 .history-status .st-branch { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .history-status .st-ahead { flex: 0 0 auto; color: var(--accent); }
 .history-status .st-behind { flex: 0 0 auto; color: var(--accent); }
+/* ⬇ 可点（就地更新该项目）：按钮 reset + hover 下划线提示可点；busy 时 ⏳ 由 JSX 换字 */
+.history-status .st-pull { background: none; border: none; padding: 0; font: inherit; cursor: pointer; color: var(--accent); }
+.history-status .st-pull:hover { text-decoration: underline; }
+.history-status .st-pull:disabled { cursor: default; text-decoration: none; }
 .history-status .st-changed { flex: 0 0 auto; color: var(--warn); font-weight: 600; }
 .history-status .st-conflict { flex: 0 0 auto; color: var(--err); font-weight: 700; }
 .history-status .st-bad { color: var(--err); }

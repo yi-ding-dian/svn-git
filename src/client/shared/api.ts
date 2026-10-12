@@ -288,6 +288,8 @@ export const get = {
   tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),
   projectStatus: (dir: string) => api<ProjectProbe>(`/api/project-status?path=${encodeURIComponent(dir)}`),
+  /** 远程检查（⬇ 待拉取；后端复用 preflight，自带超时与缓存、异步不阻塞） */
+  remoteProbe: (dir: string) => api<{ behind?: number; error?: string }>(`/api/remote-probe?path=${encodeURIComponent(dir)}`),
   stashFiles: (index: number) => api<{ files: { path: string; code: string }[] }>(`/api/stash?index=${index}`),
   blame: (path: string) => api<{ lines: { rev: string; author: string; date: string; line: number; text: string }[] }>(`/api/blame?path=${encodeURIComponent(path)}`),
   gitClean: () => api<{ files: string[] }>('/api/git-clean'),
@@ -394,6 +396,8 @@ export const post = {
   tag: (action: 'create' | 'delete', name: string) => api<VcsResult>('/api/tag', json({ action, name })),
   stash: (action: 'push' | 'pop' | 'drop', message = '', index = 0, paths?: string[]) =>
     api<VcsResult>('/api/stash', json({ action, message, index, paths })),
+  /** 点侧边栏 ⬇ 就地更新该项目（工作区脏则后端拒绝；结果消息直接 toast） */
+  pullAny: (dir: string) => api<VcsResult>('/api/pull-any', json({ path: dir })),
   repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true, signal?: AbortSignal) =>
     api<VcsResult & { repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' }>(
       '/api/repo-create',

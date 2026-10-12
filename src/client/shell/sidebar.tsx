@@ -5,7 +5,7 @@ import { IconClock, IconEye, IconEyeClosed, IconFolder, IconRename } from '../ui
 import { ContextMenu } from '../ui/context-menu.js';
 import { RemarkModal } from '../repo/remark.js';
 import { THEMES, THEME_PINNED } from './header.js';
-import { get, type HistoryItem, type ProjectProbe } from '../shared/api.js';
+import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js';
 import { baseName } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -57,8 +57,9 @@ function probeHasSignal(st: ProjectProbe): boolean {
 
 /** 仪表盘徽标（最近项目的状态行）：只留强信号（未推送/未提交/冲突——**未跟踪归悬浮明细**，
  *  噪音大不代表"有活没干"）；git 带分支名作上下文、**svn 不带**（位置串太长，用户定稿去掉）；
- *  compact（项目 >10）时只取徽标（并入名字行）。 */
-function probeBadges(st: ProjectProbe, withBranch: boolean) {
+ *  compact（项目 >10）时只取徽标（并入名字行）。
+ *  pull：⬇ 徽标变可点按钮（就地更新该项目）；busy 时显示 ⏳ 防重复点。 */
+function probeBadges(st: ProjectProbe, withBranch: boolean, pull?: { busy: boolean; onClick: () => void }) {
   if (st.error) {
     return (
       <span className="st-bad" title={st.error === 'unavailable' ? t('shell.recent.probeUnavailable') : st.error}>
@@ -70,7 +71,23 @@ function probeBadges(st: ProjectProbe, withBranch: boolean) {
     <>
       {withBranch && st.type !== 'svn' && st.branch && <span className="st-branch">{st.branch}</span>}
       {(st.ahead ?? 0) > 0 && <span className="st-ahead">⬆{fmtCount(st.ahead!)}</span>}
-      {(st.behind ?? 0) > 0 && <span className="st-behind">⬇{fmtCount(st.behind!)}</span>}
+      {(st.behind ?? 0) > 0 &&
+        (pull ? (
+          // 点击就地更新（拉取远程新提交）；stopPropagation：别触发行点击（切项目）
+          <button
+            className="st-behind st-pull"
+            title={t('shell.recent.pullTip')}
+            disabled={pull.busy}
+            onClick={(e) => {
+              e.stopPropagation();
+              pull.onClick();
+            }}
+          >
+            {pull.busy ? '⏳' : `⬇${fmtCount(st.behind!)}`}
+          </button>
+        ) : (
+          <span className="st-behind">⬇{fmtCount(st.behind!)}</span>
+        ))}
       {(st.changed ?? 0) > 0 && <span className="st-changed">●{fmtCount(st.changed!)}</span>}
       {(st.conflict ?? 0) > 0 && <span className="st-conflict">⚠{fmtCount(st.conflict!)}</span>}
     </>
@@ -78,8 +95,9 @@ function probeBadges(st: ProjectProbe, withBranch: boolean) {
 }
 
 /** 悬浮明细（拼进最近项目条目的 title）：分支/位置、未推送、待拉取、未提交、未跟踪、冲突——有一条列一行。
- *  live=true（当前项目且远程实时检查有效）：behind 用"远程检查"措辞，否则标"基于上次获取"（本地记录，可能过期） */
-function probeTip(st: ProjectProbe, live = false): string {
+ *  live=true：behind 用"远程检查"措辞，否则标"基于上次获取"（本地记录，可能过期）；
+ *  remoteFailed=true：远程检查失败（网络/凭据）——如实标注，别让人以为"没有远程更新" */
+function probeTip(st: ProjectProbe, live = false, remoteFailed = false): string {
   if (st.error) return st.error === 'unavailable' ? t('shell.recent.probeUnavailable') : st.error;
   const out: string[] = [];
   // 当前分支 / 工作副本位置
@@ -88,6 +106,8 @@ function probeTip(st: ProjectProbe, live = false): string {
   if ((st.ahead ?? 0) > 0) out.push(t('shell.recent.tipAhead', { n: st.ahead! }));
   // 待拉取：{n} 个提交（远程检查）/ 待拉取：{n} 个提交（基于上次获取）
   if ((st.behind ?? 0) > 0) out.push(t(live ? 'shell.recent.tipBehindLive' : 'shell.recent.tipBehind', { n: st.behind! }));
+  // 远程检查失败（网络或凭据问题）
+  if (remoteFailed) out.push(t('shell.recent.remoteFailed'));
   // 未提交：{n} 个文件
   if ((st.changed ?? 0) > 0) out.push(t('shell.recent.tipChanged', { n: st.changed! }));
   // 未跟踪：{n} 个文件
@@ -124,6 +144,8 @@ export function Sidebar(props: {
   /** 当前项目的远程新提交数（preflight 实时检查结果，与顶部提示条同源）：
    *  补进当前项目条目的 ⬇ 徽标——本地探测拿不到它（尤其 SVN，远端更新必须联网查） */
   remoteBehind?: number;
+  /** 轻提示（点 ⬇ 更新的结果等）：复用 app 的 showToast */
+  onToast: (msg: string, err?: boolean) => void;
   /** 点开过但打不开的项目：路径 → 错误消息（这些项上常驻 ×，悬浮时显示同一条消息） */
   invalidPaths: Record<string, string>;
   /** 悬浮失效项时显示提示（复用点击后那套浮层） */
@@ -163,6 +185,41 @@ export function Sidebar(props: {
     });
   };
   const historyKey = props.history.map((h) => h.path).join('|');
+  // 远程检查（⬇ 待拉取）：打开/刷新时**自动**对全部项目跑一轮（后台异步、先回来先显示）——
+  // SVN 等"必须联网才知道"的远程新提交由此覆盖（不切换过去也能看到）；
+  // 后端自带超时（15s/20s）与缓存，卡住的项目不影响其他项目、也不阻塞界面。
+  const [remoteBehinds, setRemoteBehinds] = useState<Record<string, { behind?: number; failed?: boolean }>>({});
+  useEffect(() => {
+    let alive = true;
+    for (const h of props.history) {
+      get
+        .remoteProbe(h.path)
+        .then((r) => {
+          if (alive) setRemoteBehinds((p) => ({ ...p, [h.path]: r.error ? { failed: true } : { behind: r.behind ?? 0 } }));
+        })
+        .catch(() => {
+          if (alive) setRemoteBehinds((p) => ({ ...p, [h.path]: { failed: true } }));
+        });
+    }
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyKey]);
+  // 点 ⬇ 就地更新该项目：busy 防重复点；成功后 ⬇ 归零 + toast 结果（工作区脏由后端拒绝并回消息）
+  const [pulling, setPulling] = useState<Record<string, boolean>>({});
+  const pullProject = (path: string) => {
+    if (pulling[path]) return;
+    setPulling((p) => ({ ...p, [path]: true }));
+    post
+      .pullAny(path)
+      .then((r) => {
+        props.onToast(r.message ?? t('shell.recent.pullTip'), !r.ok);
+        if (r.ok) setRemoteBehinds((p) => ({ ...p, [path]: { behind: 0 } }));
+      })
+      .catch((e: Error) => props.onToast(e.message, true))
+      .finally(() => setPulling((p) => ({ ...p, [path]: false })));
+  };
   useEffect(() => {
     let alive = true;
     for (const h of props.history.slice(0, RECENT_LIMIT)) {
@@ -255,10 +312,17 @@ export function Sidebar(props: {
               // 展示用状态：当前项目的 behind 与"远程实时检查"（remoteHint）取大——
               // SVN 项目本地探测恒 0，靠这里把顶部条那 2 个新提交补进侧边栏
               const probe = probes[h.path];
+              const rb = remoteBehinds[h.path];
+              // behind 三源取大：本地记录（probe）· 远程检查（remoteProbe，覆盖任意项目——SVN 靠它）
+              // · 当前项目顶部条同源（remoteHint，2 分钟巡检）
               const stView: ProjectProbe | undefined = probe
-                ? { ...probe, behind: Math.max(probe.behind ?? 0, h.path === props.currentRoot ? (props.remoteBehind ?? 0) : 0) }
+                ? {
+                    ...probe,
+                    behind: Math.max(probe.behind ?? 0, rb?.behind ?? 0, h.path === props.currentRoot ? (props.remoteBehind ?? 0) : 0),
+                  }
                 : undefined;
-              const behindLive = h.path === props.currentRoot && (props.remoteBehind ?? 0) > 0;
+              // 实时措辞：顶部条或刚远程检查过的项目 = "远程检查"；其余本地的标"基于上次获取"
+              const behindLive = (h.path === props.currentRoot && (props.remoteBehind ?? 0) > 0) || (rb?.behind ?? 0) > 0;
               return (
                 <div
                   key={h.path}
@@ -268,7 +332,7 @@ export function Sidebar(props: {
                       // {path}（打不开，目录已删除或不是工作副本）
                       ? t('shell.recent.invalid', { path: h.path })
                       // 备注：{remark} / （当前操作的项目） / （常用项目） / 点击打开 · 右键设常用/备注/删除
-                      : `${h.path}${h.remark ? `\n${t('shell.recent.tipRemark', { remark: h.remark })}` : ''}${h.path === props.currentRoot ? `\n${t('shell.recent.tipCurrent')}` : ''}${h.fav ? `\n${t('shell.recent.tipFav')}` : ''}${stView ? `\n${probeTip(stView, behindLive)}` : ''}\n${t('shell.recent.tipClick')}`
+                      : `${h.path}${h.remark ? `\n${t('shell.recent.tipRemark', { remark: h.remark })}` : ''}${h.path === props.currentRoot ? `\n${t('shell.recent.tipCurrent')}` : ''}${h.fav ? `\n${t('shell.recent.tipFav')}` : ''}${stView ? `\n${probeTip(stView, behindLive, Boolean(rb?.failed))}` : ''}\n${t('shell.recent.tipClick')}`
                   }
                   onClick={() => props.onOpenHistory(h)}
                   onMouseEnter={() => {
@@ -291,7 +355,9 @@ export function Sidebar(props: {
                   {h.fav && <span className="fav-star" title={t('shell.recent.favStar')}>★</span>}
                   {/* 仪表盘状态（项目多、compact 时并入名字行；完整"分支+徽标"在下面的独立状态行） */}
                   {showStatus && compact && stView && probeHasSignal(stView) && (
-                    <span className="history-status inline">{probeBadges(stView, false)}</span>
+                    <span className="history-status inline">
+                      {probeBadges(stView, false, { busy: Boolean(pulling[h.path]), onClick: () => pullProject(h.path) })}
+                    </span>
                   )}
                   {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮）。
                       必须排在第二行**之前**——第二行 flex-basis:100% 会换行，× 写在它后面会被挤到第二行 */}
@@ -314,7 +380,9 @@ export function Sidebar(props: {
                       用户定稿：干净项目整行隐藏，分支/未跟踪等细节都在悬浮明细里）。
                       异步查得，回来前不占位（不做"…"占位——会先撑高列表再缩回，反而跳） */}
                   {showStatus && !compact && stView && probeHasSignal(stView) && (
-                    <span className="history-status">{probeBadges(stView, true)}</span>
+                    <span className="history-status">
+                      {probeBadges(stView, true, { busy: Boolean(pulling[h.path]), onClick: () => pullProject(h.path) })}
+                    </span>
                   )}
                   {/* 第二行 = 备注 + 时间。时间 flex:0 0 auto 钉死不被压缩，备注吃掉剩余宽度、超长截断成
                       「…」——所以备注写多长都挤不掉时间（用户要求"保证时间正常显示"），全文靠悬浮看 */}

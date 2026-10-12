@@ -149,6 +149,12 @@ export const shell = {
   'shell.recent.tipBehind': '待拉取：{n} 个提交（基于上次获取）',
   // 待拉取（当前项目：preflight 远程实时检查的结果）
   'shell.recent.tipBehindLive': '待拉取：{n} 个提交（远程检查）',
+  // 远程检查失败（网络不通 / 凭据问题）：如实标注，别让人以为"没有远程更新"
+  'shell.recent.remoteFailed': '远程检查失败（网络或凭据问题）',
+  // 点 ⬇ 徽标就地更新该项目
+  'shell.recent.pullTip': '点击更新该项目（拉取远程新提交）',
+  // 拒绝就地更新（脏工作区）：避免在没打开的项目里拉出合并冲突
+  'shell.recent.pullDirty': '该项目有未提交的改动，请先打开处理',
   'shell.recent.tipChanged': '未提交：{n} 个文件',
   'shell.recent.tipUntracked': '未跟踪：{n} 个文件',
   'shell.recent.tipConflict': '冲突：{n} 个文件',
