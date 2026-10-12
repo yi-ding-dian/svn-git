@@ -16,12 +16,13 @@
 import { marked, type Tokens } from 'marked';
 import { renderCodeBlock } from './highlight.js';
 
-export function renderMarkdown(text: string, opts?: { baseDir?: string; breaks?: boolean }): string {
+export function renderMarkdown(text: string, opts?: { baseDir?: string; breaks?: boolean; copyBtn?: boolean }): string {
   const baseDir = opts?.baseDir ?? '';
   const renderer = new marked.Renderer();
   // 代码块：接 highlight.js（与源码预览/差异视图同一份语言注册表）→ 带语法高亮色；
-  // 未标语言/未注册语言（```text 目录树等）保持纯文本（转义在 renderCodeBlock 内兜底）
-  renderer.code = ((token: Tokens.Code) => renderCodeBlock(token.text, token.lang)) as typeof renderer.code;
+  // 未标语言/未注册语言（```text 目录树等）保持纯文本（转义在 renderCodeBlock 内兜底）。
+  // opts.copyBtn：文件预览带右上角「复制」按钮；提交信息渲染不带（那边没有点击代理，加了是死按钮）
+  renderer.code = ((token: Tokens.Code) => renderCodeBlock(token.text, token.lang, opts?.copyBtn)) as typeof renderer.code;
   // 图片：绝对 URL / 根路径原样；相对路径转 /api/file?path= 可加载地址
   renderer.image = (token) => {
     const src = token.href.trim();

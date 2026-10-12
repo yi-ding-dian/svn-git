@@ -258,10 +258,25 @@ export function PreviewPane(props: Props) {
       .catch((e: Error) => props.onError(t('fs.pv.saveFailedMsg', { msg: e.message })));
   };
 
-  /** md-render 容器点击：目标是图片则放大查看 */
+  /** md-render 容器点击：图片则放大查看；代码块的「复制」按钮则复制该块代码（事件代理——
+   *  按钮由 renderMarkdown 输出的 HTML 生成，React 事件照样能冒泡到这里） */
   const onMdRenderClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const el = e.target as HTMLElement;
-    if (el.tagName === 'IMG') setImgViewer((el as HTMLImageElement).src);
+    if (el.tagName === 'IMG') {
+      setImgViewer((el as HTMLImageElement).src);
+      return;
+    }
+    if (!el.classList.contains('md-copy')) return;
+    const code = el.closest('pre')?.querySelector('code')?.textContent ?? '';
+    void navigator.clipboard?.writeText(code).then(() => {
+      // 就地反馈：按钮短暂变「已复制」，1.5 秒后复原
+      el.textContent = t('fs.pv.copied');
+      el.classList.add('copied');
+      setTimeout(() => {
+        el.textContent = t('fs.pv.copyCode');
+        el.classList.remove('copied');
+      }, 1500);
+    });
   };
   useEffect(() => {
     if (!imgViewer) return;
@@ -551,7 +566,10 @@ export function PreviewPane(props: Props) {
             ref={mdBodyRef}
             onClick={onMdRenderClick}
             dangerouslySetInnerHTML={{
-              __html: renderMarkdown(text, { baseDir: target.rel.includes('/') ? target.rel.slice(0, target.rel.lastIndexOf('/')) : '' }),
+              __html: renderMarkdown(text, {
+                baseDir: target.rel.includes('/') ? target.rel.slice(0, target.rel.lastIndexOf('/')) : '',
+                copyBtn: true, // 代码块右上角带「复制」按钮（点击在 onMdRenderClick 代理处理）
+              }),
             }}
           />
         ) : blameMode ? (

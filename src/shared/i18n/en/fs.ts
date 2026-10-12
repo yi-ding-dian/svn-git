@@ -438,5 +438,7 @@ export const fs = {
   // ---- Markdown preview: document outline ----
   'fs.pv.tocCount': 'Contents ({n})',
   'fs.pv.tocTitle': 'Document outline (click to expand / collapse)',
+  'fs.pv.copyCode': 'Copy',
+  'fs.pv.copied': 'Copied',
   'fs.pv.tocToggle': 'Expand / collapse this section',
 };

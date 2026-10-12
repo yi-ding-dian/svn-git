@@ -1,5 +1,6 @@
 /** 语法高亮公共模块（hljs 子集 + 语言推断） */
 import hljs from 'highlight.js/lib/core';
+import { t } from '../../shared/i18n/index.js';
 import cpp from 'highlight.js/lib/languages/cpp';
 import c from 'highlight.js/lib/languages/c';
 import python from 'highlight.js/lib/languages/python';
@@ -68,16 +69,19 @@ export function highlightLine(line: string, lang?: string): string {
 
 /** Markdown 代码块：整块高亮 → 完整 `<pre><code>` HTML（与源码预览/差异视图同一份语言表）。
  *  语言未标注或未注册（```text 目录树等）→ 纯文本转义，外观与原来一致。
- *  class 拼进属性前过字符白名单：lang 来自文档内容（仓库可能来自远程），不能直接拼 HTML。 */
-export function renderCodeBlock(code: string, langInfo?: string): string {
+ *  class 拼进属性前过字符白名单：lang 来自文档内容（仓库可能来自远程），不能直接拼 HTML。
+ *  withCopy=true 时在右上角输出「复制」按钮（点击由预览容器的 onMdRenderClick 事件代理处理；
+ *  按钮文本也要过 escape —— i18n 文案本地可信，但保持一致处理）。 */
+export function renderCodeBlock(code: string, langInfo?: string, withCopy = false): string {
   const raw = (langInfo ?? '').trim().split(/\s+/)[0] ?? ''; // info string 首词才是语言（```ts title=…）
   const name = normalizeLang(raw);
   const known = !!name && /^[a-z0-9-]+$/.test(name) && !!hljs.getLanguage(name);
-  if (!known) return `<pre><code>${escapeHtml(code)}</code></pre>`;
+  const copyBtn = withCopy ? `<button class="md-copy" type="button">${escapeHtml(t('fs.pv.copyCode'))}</button>` : '';
+  if (!known) return `<pre><code>${escapeHtml(code)}</code>${copyBtn}</pre>`;
   try {
     const html = hljs.highlight(code, { language: name, ignoreIllegals: true }).value;
-    return `<pre><code class="hljs language-${name}">${html}</code></pre>`;
+    return `<pre><code class="hljs language-${name}">${html}</code>${copyBtn}</pre>`;
   } catch {
-    return `<pre><code>${escapeHtml(code)}</code></pre>`;
+    return `<pre><code>${escapeHtml(code)}</code>${copyBtn}</pre>`;
   }
 }

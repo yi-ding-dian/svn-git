@@ -1044,6 +1044,19 @@ textarea { resize: vertical; font-family: inherit; }
 .md-render code { background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 0.92em; }
 .md-render pre { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow: auto; font-size: 0.9em; line-height: 1.5; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
 .md-render pre code { background: none; border: none; padding: 0; }
+/* 代码块右上角「复制」按钮（文件预览专用，HTML 由 renderCodeBlock 输出、点击走 onMdRenderClick 代理）：
+   hover 才显示不打扰阅读；点击后 .copied 就地变「已复制」，由 JS 1.5 秒后复原 */
+.md-render pre { position: relative; }
+.md-render pre .md-copy {
+  position: absolute; top: 6px; right: 6px;
+  opacity: 0; transition: opacity .15s;
+  font-size: 12px; line-height: 1; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--dim);
+  cursor: pointer; user-select: none;
+}
+.md-render pre:hover .md-copy, .md-render pre .md-copy:focus-visible { opacity: 1; }
+.md-render pre .md-copy:hover { color: var(--text); border-color: var(--accent); }
+.md-render pre .md-copy.copied { opacity: 1; color: var(--ok); border-color: var(--ok); }
 .md-render blockquote { border-left: 3px solid var(--accent); background: var(--panel2); margin: 8px 0; padding: 6px 12px; color: var(--dim); border-radius: 0 6px 6px 0; }
 .md-render ul, .md-render ol { margin: 6px 0; padding-left: 24px; }
 .md-render hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }

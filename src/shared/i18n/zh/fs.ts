@@ -438,5 +438,7 @@ export const fs = {
   // ---- md 预览：文档目录（右上角按钮 → 折叠树浮层，点条目跳到对应标题）----
   'fs.pv.tocCount': '目录 ({n})',
   'fs.pv.tocTitle': '文档目录（点击展开 / 收起）',
+  'fs.pv.copyCode': '复制',
+  'fs.pv.copied': '已复制',
   'fs.pv.tocToggle': '展开 / 折叠这一节',
 } as const;
