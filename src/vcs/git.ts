@@ -1207,6 +1207,26 @@ export class GitVcs {
       });
   }
 
+  /** 某条 stash 的内容文件列表（储藏弹窗点行展开查看用）：
+   *  追踪文件走 `stash show --name-status`（重命名/复制的两个路径用 " → " 连接）；
+   *  未跟踪部分存在第三个父提交 ^3（stashPush 带 -u 时有）——`ls-tree` 单列，无该父时命令报错、忽略 */
+  async stashFiles(index: number): Promise<{ path: string; code: string }[]> {
+    const ref = `stash@{${index}}`;
+    const out: { path: string; code: string }[] = [];
+    const tracked = await this.exec(['-c', 'core.quotepath=false', 'stash', 'show', '--name-status', ref]);
+    if (tracked.code === 0) {
+      for (const line of tracked.stdout.split('\n')) {
+        const parts = line.trim().split('\t');
+        if (parts.length >= 2 && parts[0]) out.push({ code: parts[0][0]!, path: parts.slice(1).join(' → ') });
+      }
+    }
+    const unt = await this.exec(['-c', 'core.quotepath=false', 'ls-tree', '-r', '--name-only', `${ref}^3`]);
+    if (unt.code === 0) {
+      for (const p of unt.stdout.split('\n')) if (p.trim()) out.push({ code: '?', path: p.trim() });
+    }
+    return out;
+  }
+
   /** 保存 stash */
   async stashPush(message = '', paths?: string[]): Promise<VcsResult> {
     const args = ['stash', 'push', '-u']; // 包含未跟踪文件（部分暂存时按 pathspec 限定只收选中路径）

@@ -287,6 +287,7 @@ export const get = {
     ),
   tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),
+  stashFiles: (index: number) => api<{ files: { path: string; code: string }[] }>(`/api/stash?index=${index}`),
   blame: (path: string) => api<{ lines: { rev: string; author: string; date: string; line: number; text: string }[] }>(`/api/blame?path=${encodeURIComponent(path)}`),
   gitClean: () => api<{ files: string[] }>('/api/git-clean'),
   remotes: () => api<{ remotes: { name: string; url: string }[] }>('/api/remotes'),

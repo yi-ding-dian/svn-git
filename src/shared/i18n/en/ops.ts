@@ -100,7 +100,7 @@ export const ops = {
   // ---- Stash 储藏（stash）----
   'ops.stash.title': 'Stash (GIT)',
   'ops.stash.help':
-    'Stash sets your uncommitted changes aside (including untracked files) so the working copy becomes clean — handy when you want to switch branches or do something else first and come back later.\nClick "Save Current Changes" to stash them (a description is optional); in the list, "Restore" brings the changes back into the working copy and "Discard" throws them away.',
+    'Stash sets your uncommitted changes aside (including untracked files) so the working copy becomes clean — handy when you want to switch branches or do something else first and come back later.\nClick "Save Current Changes" to stash them (a description is optional); in the list, "Restore" brings the changes back into the working copy and "Discard" deletes this stash entry (its changes are lost). Click a stash row to expand and see the files it contains.',
   'ops.stash.listTitle':
     'Working copy changes ({n} item, all selected by default; uncheck to stash only the selected files)|Working copy changes ({n} items, all selected by default; uncheck to stash only the selected files)',
   'ops.stash.noChanges': 'Nothing to stash in the working copy (modify some files first, then come back)',
@@ -108,11 +108,14 @@ export const ops = {
   'ops.stash.showUntracked': 'Show untracked ({n})',
   'ops.stash.save': '📦 Save Current Changes',
   'ops.stash.none': 'No stashes',
+  'ops.stash.expandTip': 'Click to view the files in this stash (click again to collapse)',
+  'ops.stash.filesNone': '(file list unavailable)',
   'ops.stash.popTitle': 'Restore Stash',
   'ops.stash.popMsg': 'Restore stash@{index}? The changes will be merged into the working copy (the stash entry is kept if conflicts occur).',
   'ops.stash.pop': 'Restore',
   'ops.stash.dropTitle': 'Discard Stash',
-  'ops.stash.dropMsg': 'Discard stash@{index}? The changes will be lost.',
+  'ops.stash.dropMsg': 'Discard stash@{index}? The changes it holds will be lost permanently (your working copy files are not affected — click Restore first if you still need them).',
+  'ops.stash.dropTip': 'Delete this stash: the changes it holds are lost permanently (working copy files are untouched — click Restore first if you still need them)',
   'ops.stash.drop': 'Discard',
 
   // ---- 标签管理（tag）----

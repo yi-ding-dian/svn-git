@@ -102,18 +102,21 @@ export const ops = {
   // ---- Stash 储藏（stash）----
   'ops.stash.title': 'Stash 储藏 (GIT)',
   'ops.stash.help':
-    'Stash 把当前未提交的改动临时收起来（含未跟踪文件），让工作区变干净——适合"先切分支/先做别的，稍后再回来继续"。\n点「保存当前改动」收起（可写说明）；列表中「恢复」= 把改动取回工作区，「丢弃」= 放弃这份改动。',
+    'Stash 把当前未提交的改动临时收起来（含未跟踪文件），让工作区变干净——适合"先切分支/先做别的，稍后再回来继续"。\n点「保存当前改动」收起（可写说明）；列表中「恢复」= 把改动取回工作区，「丢弃」= 删除这份储藏（里面的改动丢失）。点 Stash 行可展开查看它包含的文件。',
   'ops.stash.listTitle': '当前工作区改动（{n} 项，默认全选；取消勾选 = 只储藏选中的文件）',
   'ops.stash.noChanges': '工作区没有改动可储藏（先修改文件，再回来保存）',
   'ops.stash.msgPlaceholder': '保存说明（可选）…',
   'ops.stash.showUntracked': '显示未跟踪 ({n})',
   'ops.stash.save': '📦 保存当前改动',
   'ops.stash.none': '暂无 Stash',
+  'ops.stash.expandTip': '点击查看这条 Stash 里包含的文件（再点收起）',
+  'ops.stash.filesNone': '（没有取到文件列表）',
   'ops.stash.popTitle': '恢复 Stash',
   'ops.stash.popMsg': '确认恢复 stash@{index}？改动将合入工作区（如产生冲突会保留该条 Stash 供处理）。',
   'ops.stash.pop': '恢复',
   'ops.stash.dropTitle': '丢弃 Stash',
-  'ops.stash.dropMsg': '确认丢弃 stash@{index}？改动将丢失。',
+  'ops.stash.dropMsg': '确认丢弃 stash@{index}？里面存的改动将全部丢失、不可恢复（工作区文件不受「丢弃」影响；如还需要这些改动，请先点「恢复」）。',
+  'ops.stash.dropTip': '删除这条 Stash：里面存的改动将永久丢失（工作区文件不受影响；如还需要这些改动，请先点「恢复」）',
   'ops.stash.drop': '丢弃',
 
   // ---- 标签管理（tag）----

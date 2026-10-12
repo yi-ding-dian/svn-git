@@ -131,34 +131,34 @@ export function CommitSelectModal(props: {
               )}
             </span>
           </div>
-          {/* 文件列表：弹窗高度变化时跟随伸缩，全部显示得下则不滚动 */}
-          <div className="changed" style={{ flex: 1, minHeight: 80, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
-            {/* 全选/全不选 + 状态过滤开关（仅列表存在该状态时显示）。
-                行固定在列表顶部（sticky）：列表滚动时开关不掉走；boxShadow 同色补住 margin 缝隙防内容透出 */}
-            <div className="row" style={{ gap: 12, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4, position: 'sticky', top: 0, zIndex: 1, background: 'var(--panel)', boxShadow: '0 4px 0 var(--panel)' }}>
-              <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
-                <input type="checkbox" checked={allOn} onChange={toggleAllVisible} />
-                <span className="dim small">{t(allOn ? 'ops.select.clear' : 'ops.select.all')}</span>
+          {/* 全选/全不选 + 状态过滤开关（仅列表存在该状态时显示）。
+              放在滚动容器**外面**：滚动条只覆盖下面的文件列表，不把表头也框进去（用户反馈） */}
+          <div className="row" style={{ gap: 12, paddingBottom: 6, flexShrink: 0 }}>
+            <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
+              <input type="checkbox" checked={allOn} onChange={toggleAllVisible} />
+              <span className="dim small">{t(allOn ? 'ops.select.clear' : 'ops.select.all')}</span>
+            </label>
+            {hasA && (
+              // 勾上 = 只显示并全选「添加」类；取消 = 取消这些文件的勾选
+              <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.commitSelect.filterATip')}>
+                <input type="checkbox" checked={filterA} onChange={() => applyFilter('A', !filterA)} />
+                <span className="act A small">A</span>
+                {/* 添加 */}
+                <span className="dim small">{t('ops.commitSelect.filterA')}</span>
               </label>
-              {hasA && (
-                // 勾上 = 只显示并全选「添加」类；取消 = 取消这些文件的勾选
-                <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.commitSelect.filterATip')}>
-                  <input type="checkbox" checked={filterA} onChange={() => applyFilter('A', !filterA)} />
-                  <span className="act A small">A</span>
-                  {/* 添加 */}
-                  <span className="dim small">{t('ops.commitSelect.filterA')}</span>
-                </label>
-              )}
-              {hasD && (
-                // 勾上 = 只显示并全选「删除」类；取消 = 取消这些文件的勾选
-                <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.commitSelect.filterDTip')}>
-                  <input type="checkbox" checked={filterD} onChange={() => applyFilter('D', !filterD)} />
-                  <span className="act D small">D</span>
-                  {/* 删除 */}
-                  <span className="dim small">{t('ops.commitSelect.filterD')}</span>
-                </label>
-              )}
-            </div>
+            )}
+            {hasD && (
+              // 勾上 = 只显示并全选「删除」类；取消 = 取消这些文件的勾选
+              <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.commitSelect.filterDTip')}>
+                <input type="checkbox" checked={filterD} onChange={() => applyFilter('D', !filterD)} />
+                <span className="act D small">D</span>
+                {/* 删除 */}
+                <span className="dim small">{t('ops.commitSelect.filterD')}</span>
+              </label>
+            )}
+          </div>
+          {/* 文件列表：弹窗高度变化时跟随伸缩，全部显示得下则不滚动；滚动条只属于这个容器（表头在它外面） */}
+          <div className="changed" style={{ flex: 1, minHeight: 80, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
             {visibleItems.map((it) => (
               <label
                 key={it.path}

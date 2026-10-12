@@ -275,6 +275,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         if (req.method === 'GET') {
+          // 带 index = 查该条 stash 的内容文件列表（储藏弹窗点行展开用）
+          const idxRaw = url.searchParams.get('index');
+          if (idxRaw !== null) {
+            const files = (await vcs.stashFiles?.(Number(idxRaw))) ?? [];
+            sendJson(res, 200, { files });
+            return true;
+          }
           const list = (await vcs.stashList?.()) ?? [];
           sendJson(res, 200, { items: list });
           return true;

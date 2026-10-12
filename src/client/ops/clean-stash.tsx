@@ -98,9 +98,9 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
       )}
       {/* 列表是主伸缩区：默认 260px，弹窗拉高时吃掉多余高度；矮窗口下保底 80px（约 3 行） */}
       {files && files.length > 0 && (
-        <div className="changed" style={{ flex: '1 1 260px', minHeight: 80, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
-          {/* 全选行固定在列表顶部（sticky）：列表滚动时不动；boxShadow 同色补住 margin 缝隙防内容透出 */}
-          <label className="row" style={{ cursor: 'pointer', gap: 6, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4, flexShrink: 0, position: 'sticky', top: 0, zIndex: 1, background: 'var(--panel)', boxShadow: '0 4px 0 var(--panel)' }}>
+        <>
+          {/* 全选行在滚动容器**外面**：滚动条只覆盖下面的文件列表（与其他弹窗同款） */}
+          <label className="row" style={{ cursor: 'pointer', gap: 6, paddingBottom: 6, flexShrink: 0 }}>
             <input
               type="checkbox"
               checked={checked.size === files.length}
@@ -110,26 +110,28 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
             {/* 已勾选 {n}/{total} */}
             <span className="dim small" style={{ marginLeft: 'auto' }}>{t('ops.checkedCount', { n: checked.size, total: files.length })}</span>
           </label>
-          {files.map((f) => (
-            <label key={f} className="changed-row" style={{ cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={checked.has(f)}
-                onChange={() => {
-                  const nx = new Set(checked);
-                  if (nx.has(f)) nx.delete(f);
-                  else nx.add(f);
-                  setChecked(nx);
-                }}
-                style={{ flexShrink: 0 }}
-              />
-              <span style={{ color: 'var(--err)', flexShrink: 0, display: 'inline-flex', alignItems: 'center' }}>
-                <IconErr size={12} />
-              </span>
-              <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
-            </label>
-          ))}
-        </div>
+          <div className="changed" style={{ flex: '1 1 260px', minHeight: 80, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
+            {files.map((f) => (
+              <label key={f} className="changed-row" style={{ cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={checked.has(f)}
+                  onChange={() => {
+                    const nx = new Set(checked);
+                    if (nx.has(f)) nx.delete(f);
+                    else nx.add(f);
+                    setChecked(nx);
+                  }}
+                  style={{ flexShrink: 0 }}
+                />
+                <span style={{ color: 'var(--err)', flexShrink: 0, display: 'inline-flex', alignItems: 'center' }}>
+                  <IconErr size={12} />
+                </span>
+                <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
+              </label>
+            ))}
+          </div>
+        </>
       )}
       <div style={{ flexShrink: 0 }}>
         <ResultLine msg={msg} err={msgErr} />
@@ -214,8 +216,27 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
   };
   // 工具风格二次确认
   const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void } | null>(null);
+  // 展开查看的 Stash（点行展开文件列表；懒加载后缓存。undefined=正在加载）
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [fileList, setFileList] = useState<Record<number, { path: string; code: string }[]>>({});
+  const toggleExpand = (index: number) => {
+    if (expanded === index) {
+      setExpanded(null);
+      return;
+    }
+    setExpanded(index);
+    if (!fileList[index]) {
+      get
+        .stashFiles(index)
+        .then((r) => setFileList((p) => ({ ...p, [index]: r.files })))
+        .catch(() => setFileList((p) => ({ ...p, [index]: [] })));
+    }
+  };
 
   const load = () => {
+    // pop/drop/push 后 stash 序号会移动：展开态与文件缓存一并作废
+    setExpanded(null);
+    setFileList({});
     get
       .stash()
       .then((r) => setItems(r.items))
@@ -273,43 +294,43 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
       </div>
       {/* 主伸缩区：默认 180px（约 6 行），弹窗拉高时吃掉全部多余高度；
           矮窗口下可压到 60px（保底 2 行）——再小不如把空间让给「保存说明 + 保存按钮」，列表反正能滚 */}
+      {/* 全选/全不选 + 状态过滤开关（仅列表存在该状态时显示）——与提交弹窗同款。
+          放在滚动容器**外面**：滚动条只覆盖下面的文件列表，不把表头也框进去（用户反馈） */}
+      {files.length > 0 && (
+        <div className="row" style={{ gap: 12, padding: '4px 6px', flexShrink: 0 }}>
+          <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
+            <input type="checkbox" checked={allOn} onChange={toggleAllVisible} />
+            <span className="dim small">{t(allOn ? 'ops.select.clear' : 'ops.select.all')}</span>
+          </label>
+          {codes.map((c) => (
+            <label key={c} className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.filterToggleTip')}>
+              <input type="checkbox" checked={filters.has(c)} onChange={() => toggleFilter(c)} />
+              <span className={`act ${c} small`}>{c}</span>
+            </label>
+          ))}
+          {/* 有未跟踪文件时才显示：勾上 = 显示并全选 ?，取消 = 隐藏并取消勾选（与其他状态框同一语义） */}
+          {untrackedCount > 0 && (
+            <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.filterToggleTip')}>
+              <input type="checkbox" checked={showUntracked} onChange={toggleUntracked} />
+              <span className="act ? small">?</span>
+              {/* 显示未跟踪 ({n}) */}
+              <span className="dim small">{t('ops.stash.showUntracked', { n: untrackedCount })}</span>
+            </label>
+          )}
+          {/* 已勾选 {n}/{total} */}
+          <span className="dim small" style={{ marginLeft: 'auto' }}>{t('ops.checkedCount', { n: checked.size, total: files.length })}</span>
+          {/* 勾了但被过滤藏起来的项（仍会被一起储藏）：醒目提示，别让人以为"没勾"或"没看到就当没有" */}
+          {hiddenChecked > 0 && (
+            <span className="small" style={{ color: 'var(--warn)', flexShrink: 0 }} title={t('ops.checkedHiddenTip')}>
+              {/* · {n} 项被过滤隐藏 */}
+              {t('ops.checkedHidden', { n: hiddenChecked })}
+            </span>
+          )}
+        </div>
+      )}
       <div className="vcs-list" style={{ flex: '1 1 180px', minHeight: 60 }}>
         {/* 工作区没有改动可储藏（先修改文件，再回来保存） */}
         {files.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.stash.noChanges')}</div>}
-        {/* 全选/全不选 + 状态过滤开关（仅列表存在该状态时显示）——与提交弹窗同款。
-            行固定在列表顶部（sticky）：列表滚动时开关不掉走；boxShadow 同色补住 margin 缝隙防内容透出 */}
-        {files.length > 0 && (
-          <div className="row" style={{ gap: 12, borderBottom: '1px solid var(--border2)', padding: '4px 6px', marginBottom: 4, flexShrink: 0, position: 'sticky', top: 0, zIndex: 1, background: 'var(--panel)', boxShadow: '0 4px 0 var(--panel)' }}>
-            <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
-              <input type="checkbox" checked={allOn} onChange={toggleAllVisible} />
-              <span className="dim small">{t(allOn ? 'ops.select.clear' : 'ops.select.all')}</span>
-            </label>
-            {codes.map((c) => (
-              <label key={c} className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.filterToggleTip')}>
-                <input type="checkbox" checked={filters.has(c)} onChange={() => toggleFilter(c)} />
-                <span className={`act ${c} small`}>{c}</span>
-              </label>
-            ))}
-            {/* 有未跟踪文件时才显示：勾上 = 显示并全选 ?，取消 = 隐藏并取消勾选（与其他状态框同一语义） */}
-            {untrackedCount > 0 && (
-              <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.filterToggleTip')}>
-                <input type="checkbox" checked={showUntracked} onChange={toggleUntracked} />
-                <span className="act ? small">?</span>
-                {/* 显示未跟踪 ({n}) */}
-                <span className="dim small">{t('ops.stash.showUntracked', { n: untrackedCount })}</span>
-              </label>
-            )}
-            {/* 已勾选 {n}/{total} */}
-            <span className="dim small" style={{ marginLeft: 'auto' }}>{t('ops.checkedCount', { n: checked.size, total: files.length })}</span>
-            {/* 勾了但被过滤藏起来的项（仍会被一起储藏）：醒目提示，别让人以为"没勾"或"没看到就当没有" */}
-            {hiddenChecked > 0 && (
-              <span className="small" style={{ color: 'var(--warn)', flexShrink: 0 }} title={t('ops.checkedHiddenTip')}>
-                {/* · {n} 项被过滤隐藏 */}
-                {t('ops.checkedHidden', { n: hiddenChecked })}
-              </span>
-            )}
-          </div>
-        )}
         {visibleFiles.map((f) => (
           <div key={f.path} className="vcs-row" style={{ cursor: 'default' }}>
             <input
@@ -356,45 +377,72 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
         {/* 暂无 Stash */}
         {items.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.stash.none')}</div>}
         {items.map((it) => (
-          <div key={it.index} className="changed-row">
-            <span style={{ color: 'var(--warn)' }}>📦</span>
-            <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              stash@{it.index}: {it.label}
-            </span>
-            <button
-              className="mini"
-              disabled={busy}
-              onClick={() =>
-                setCfm({
-                  // 恢复 Stash
-                  title: t('ops.stash.popTitle'),
-                  // 确认恢复 stash@{index}？改动将合入工作区（如产生冲突会保留该条 Stash 供处理）。
-                  msg: t('ops.stash.popMsg', { index: it.index }),
-                  action: () => act('pop', it.index),
-                })
-              }
-              title={`${cmdOfRepo('git', 'stash_pop', { index: String(it.index) }) ?? ''}`}
-            >
-              {/* 恢复 */}
-              {t('ops.stash.pop')}
-            </button>
-            <button
-              className="mini danger"
-              disabled={busy}
-              onClick={() =>
-                setCfm({
-                  // 丢弃 Stash
-                  title: t('ops.stash.dropTitle'),
-                  // 确认丢弃 stash@{index}？改动将丢失。
-                  msg: t('ops.stash.dropMsg', { index: it.index }),
-                  action: () => act('drop', it.index),
-                })
-              }
-            >
-              {/* 丢弃 */}
-              {t('ops.stash.drop')}
-            </button>
-          </div>
+          <React.Fragment key={it.index}>
+            {/* 点行展开：看这条 Stash 里存了哪些文件（懒加载） */}
+            <div className="changed-row" style={{ cursor: 'pointer' }} onClick={() => toggleExpand(it.index)} title={t('ops.stash.expandTip')}>
+              <span style={{ color: 'var(--warn)' }}>📦</span>
+              <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {/* 写法必须用模板串：stash@{n} 里的 {} 直接写在 JSX 文本里会被当表达式解析（花括号不显示） */}
+                {`stash@{${it.index}}: ${it.label}`}
+              </span>
+              <span className="dim small" style={{ flexShrink: 0 }}>{expanded === it.index ? '▾' : '▸'}</span>
+              <button
+                className="mini"
+                disabled={busy}
+                onClick={(e) => {
+                  e.stopPropagation(); // 点按钮不触发行展开/收起
+                  setCfm({
+                    // 恢复 Stash
+                    title: t('ops.stash.popTitle'),
+                    // 确认恢复 stash@{index}？改动将合入工作区（如产生冲突会保留该条 Stash 供处理）。
+                    msg: t('ops.stash.popMsg', { index: it.index }),
+                    action: () => act('pop', it.index),
+                  });
+                }}
+                title={`${cmdOfRepo('git', 'stash_pop', { index: String(it.index) }) ?? ''}`}
+              >
+                {/* 恢复 */}
+                {t('ops.stash.pop')}
+              </button>
+              <button
+                className="mini danger"
+                disabled={busy}
+                onClick={(e) => {
+                  e.stopPropagation(); // 点按钮不触发行展开/收起
+                  setCfm({
+                    // 删除 Stash
+                    title: t('ops.stash.dropTitle'),
+                    // 确认删除这条 Stash？里面存的改动将全部丢弃、不可恢复（工作区文件不受影响；如还需要这些改动，请先点「恢复」）。
+                    msg: t('ops.stash.dropMsg', { index: it.index }),
+                    action: () => act('drop', it.index),
+                  });
+                }}
+                title={t('ops.stash.dropTip')}
+              >
+                {/* 丢弃 */}
+                {t('ops.stash.drop')}
+              </button>
+            </div>
+            {/* 展开区：这条 Stash 包含的文件（状态码 + 路径；未跟踪文件以 ? 列出） */}
+            {expanded === it.index && (
+              <div style={{ padding: '0 8px 6px 30px' }}>
+                {!fileList[it.index] ? (
+                  // 加载中…
+                  <div className="dim small">{t('ops.loading')}</div>
+                ) : fileList[it.index]!.length === 0 ? (
+                  // （没有取到文件列表）
+                  <div className="dim small">{t('ops.stash.filesNone')}</div>
+                ) : (
+                  fileList[it.index]!.map((f) => (
+                    <div key={f.path} className="changed-row" style={{ padding: '2px 0' }}>
+                      <span className={`act ${f.code}`}>{f.code}</span>
+                      <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.path}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </React.Fragment>
         ))}
       </div>
       <div style={{ flexShrink: 0 }}>
