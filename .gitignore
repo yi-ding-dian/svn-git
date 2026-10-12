@@ -27,3 +27,6 @@ test2
 # 模块说明.md：.git/info/exclude 里有同名忽略规则，下面两行把它翻回「不忽略」（维持当前实际状态）
 模块说明.md
 !模块说明.md
+dist-appimage
+修改记录
+md文件预览测试
