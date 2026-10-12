@@ -139,7 +139,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       if (p === '/api/env-check') {
         const check = async (cmd: string): Promise<{ installed: boolean; version: string }> => {
           try {
-            const r = await run(cmd, ['--version'], { timeoutMs: 10_000 });
+            // decode 'auto'：版本横幅是本地化消息——中文 Windows 下 svn 回来的是 GBK 字节
+            // （"svn，版本 1.14.2-SlikSvn"），按 UTF-8 解就成 "svn���汾"。这里只显示不解析路径，
+            // 走探测（UTF-8 → GB18030）安全
+            const r = await run(cmd, ['--version'], { timeoutMs: 10_000, decode: 'auto' });
             return { installed: r.code === 0, version: r.stdout.split('\n')[0]?.trim() ?? '' };
           } catch {
             // 命令不存在(如未安装 svn)→ 视为未安装,而非接口 500
