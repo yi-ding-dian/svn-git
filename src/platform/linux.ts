@@ -169,6 +169,8 @@ function findTerminal(cmd: string): { bin: string; argv: string[] } | null {
 
 export const linux: Platform = {
   isWindows: false,
+  // Linux 侧 svn 恒在 PATH（apt 等装到 /usr/bin），无需路径兜底
+  svnFallbacks: [],
   chooseOpenCmd: null,
 
   listOpenWithApps(ext, mimes) {

@@ -33,6 +33,7 @@ export const plat = {
 
   // ---- Environment install guide (streamed to the UI log by envInstall) ----
   'plat.winEnvHint': 'Windows environment: run the following commands in a terminal as administrator:',
+  'plat.winUacHint': '(A UAC prompt may appear during installation — click "Yes" to allow)',
   'plat.distroUnknown': 'Unknown distribution',
   'plat.sudoOk': 'Checking root privileges… ✓ available',
   'plat.sudoNeedPassword': 'Checking root privileges… ✗ password required (use the manual command below)',

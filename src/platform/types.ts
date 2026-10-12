@@ -28,6 +28,9 @@ export interface LaunchResult {
 export interface Platform {
   /** 当前是否 Windows（App 外壳一些平台专属开关也用它） */
   readonly isWindows: boolean;
+  /** PATH 里找不到 svn 时的常见安装路径兜底（Windows: SlikSVN / TortoiseSVN 的 bin；Linux: 空）。
+   *  装完 svn 后系统 PATH 不会刷新到已运行的进程，靠这个让「装完刷新页面即用」成立 */
+  readonly svnFallbacks: string[];
   /** Windows 的「选择其他应用…」哨兵命令；非 Windows 为 null */
   readonly chooseOpenCmd: string | null;
   /** 按扩展名 + 可用 MIME 枚举该平台的可选打开方式程序 */

@@ -9,6 +9,7 @@ import { detectRepo } from '../../vcs/detect.js';
 import { platform } from '../../platform/index.js';
 import { BINARY_EXTS, compareName } from '../../shared/types.js';
 import { run } from '../../vcs/exec.js';
+import { resolveSvnBin } from '../../vcs/svn.js';
 import { inRepoRoot, sendJson, readBody, vcsOf, START_DIR, MSG_PATH_OUT_OF_BOUNDS, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
 import type { RepoInfo } from '../../vcs/index.js';
@@ -145,7 +146,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             return { installed: false, version: '' };
           }
         };
-        const [svn, git] = await Promise.all([check('svn'), check('git')]);
+        // svn 走路径解析（resolveSvnBin）：PATH 没刷新时回退常见安装路径（见 vcs/svn.ts）
+        const [svn, git] = await Promise.all([check(await resolveSvnBin()), check('git')]);
         sendJson(res, 200, { svn, git });
         return true;
       }

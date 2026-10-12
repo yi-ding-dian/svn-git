@@ -80,7 +80,7 @@ npm run dist:linux     # 打包 AppImage
 
 ### Windows
 
-Windows 产物在本地打包:双击 `deploy/build.bat` 出**免安装单文件 exe**(portable,对标 Linux 的 AppImage),`npm run dist:win` 出**安装包**,产物都在 `deploy/release/`——详见 `deploy/README.md`。安装包另由 GitHub Actions 在 tag 发布时自动构建(见 `.github/workflows/release.yml`)。Windows 前置:安装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**(默认不勾选,勾选后才有 svn.exe 并加入 PATH)和 [Git for Windows](https://git-scm.com/)。项目根目录的 `run.bat` 可在 Windows 下以源码方式一键安装依赖并启动。
+Windows 产物在本地打包:双击 `deploy/build.bat` 出**免安装单文件 exe**(portable,对标 Linux 的 AppImage),`npm run dist:win` 出**安装包**,产物都在 `deploy/release/`——详见 `deploy/README.md`。安装包另由 GitHub Actions 在 tag 发布时自动构建(见 `.github/workflows/release.yml`)。Windows 前置:SVN 命令行两条路——装纯命令行的 [SlikSVN](https://sliksvn.com/)(`winget install --id=Slik.Subversion -e`,推荐:工具本身就是图形界面,不需要再来个 GUI),或装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**(默认不勾选,勾选后才有 svn.exe 并加入 PATH);再装 [Git for Windows](https://git-scm.com/)。工具内「环境检测 → 下载安装」可一键装 SlikSVN。项目根目录的 `run.bat` 可在 Windows 下以源码方式一键安装依赖并启动。
 
 和 AppImage 一样,exe 默认弹**应用窗口**;**用系统浏览器**操作就加 `--browser` 运行(portable 包装器会把参数原样转发给内层程序):
 

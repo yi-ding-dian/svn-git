@@ -210,6 +210,12 @@ function winStartProcess(exe: string, args: string[], cwd: string, okMsg: string
 
 export const win32: Platform = {
   isWindows: true,
+  // PATH 兜底：环境引导自动装完（或用户手动装完）时，系统 PATH 不会刷新到本进程，
+  // 直接按常见安装路径找 svn.exe —— SlikSVN（引导安装的）与 TortoiseSVN（需勾命令行组件）
+  svnFallbacks: [
+    'C:\\Program Files\\SlikSvn\\bin\\svn.exe',
+    'C:\\Program Files\\TortoiseSVN\\bin\\svn.exe',
+  ],
   chooseOpenCmd: '__CHOOSE__',
 
   listOpenWithApps(ext, mimes) {
@@ -328,19 +334,68 @@ export const win32: Platform = {
   },
 
   async envInstall(tool: InstallTool, send, done) {
-    const cmds =
+    // SVN 引导装 SlikSVN（纯命令行版——本工具即图形界面，不需要再来个 GUI）。
+    // 别换回 TortoiseSVN 包：它的 winget 默认清单只装 GUI，装完反而没有 svn.exe 命令行。
+    const svnArgs = ['install', '--id=Slik.Subversion', '-e', '--accept-source-agreements', '--accept-package-agreements'];
+    const gitArgs = ['install', '--id=Git.Git', '-e', '--accept-source-agreements', '--accept-package-agreements'];
+    const targets =
       tool === 'svn'
-        ? ['winget install --id TortoiseSVN.TortoiseSVN --accept-source-agreements']
+        ? [{ name: 'SlikSVN', args: svnArgs }]
         : tool === 'git'
-          ? ['winget install --id Git.Git --source winget --accept-source-agreements']
+          ? [{ name: 'Git for Windows', args: gitArgs }]
           : [
-              'winget install --id TortoiseSVN.TortoiseSVN --accept-source-agreements',
-              'winget install --id Git.Git --source winget --accept-source-agreements',
+              { name: 'SlikSVN', args: svnArgs },
+              { name: 'Git for Windows', args: gitArgs },
             ];
-    // Windows 环境：请在终端以管理员身份执行以下命令安装：
-    send({ line: t('plat.winEnvHint') });
-    for (const c of cmds) send({ line: `  ${c}` });
-    send({ done: true, code: 1, manual: cmds.join(' && ') });
-    done();
+    const manual = targets.map((x) => `winget ${x.args.join(' ')}`).join(' && ');
+    // winget 探测（老系统 / 未装「应用安装程序」）：不可用 → 回退手动命令引导
+    const ok = await run('winget', ['--version'], { timeoutMs: 10_000 }).then(
+      (r) => r.code === 0,
+      () => false,
+    );
+    if (!ok) {
+      // Windows 环境：请在终端以管理员身份执行以下命令安装：
+      send({ line: t('plat.winEnvHint') });
+      for (const x of targets) send({ line: `  winget ${x.args.join(' ')}` });
+      send({ done: true, code: 1, manual });
+      done();
+      return;
+    }
+    // （安装过程可能弹出 UAC 授权窗口，请点「是」允许）
+    send({ line: t('plat.winUacHint') });
+    // winget 一次装一个包：串行执行，输出实时流回弹窗日志（与 Linux 侧同一套流程）
+    let i = 0;
+    const step = () => {
+      const cur = targets[i++];
+      if (!cur) {
+        send({ done: true, code: 0 });
+        done();
+        return;
+      }
+      // 开始安装: {pkgs}…
+      send({ line: t('plat.installStart', { pkgs: cur.name }) });
+      const child = spawn('winget', cur.args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      child.stdout.on('data', (d: Buffer) => send({ line: d.toString() }));
+      child.stderr.on('data', (d: Buffer) => send({ line: d.toString() }));
+      child.on('error', (e) => {
+        // 启动失败: {msg}
+        send({ line: t('plat.launchFail', { msg: e.message }) });
+        send({ done: true, code: 1, manual });
+        done();
+      });
+      child.on('close', (code) => {
+        if (code === 0) {
+          // ✅ 安装完成
+          send({ line: t('plat.installDone') });
+          step();
+        } else {
+          // ❌ 安装失败（退出码 {code}）
+          send({ line: t('plat.installFailed', { code: String(code) }) });
+          send({ done: true, code: code ?? 1, manual });
+          done();
+        }
+      });
+    };
+    step();
   },
 };

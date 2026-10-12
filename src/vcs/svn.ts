@@ -5,7 +5,30 @@ import { XMLParser } from 'fast-xml-parser';
 import { run } from './exec.js';
 import { invalidateSvnIgnoreMap } from './ignore.js';
 import { t } from '../shared/i18n/index.js';
+import { platform } from '../platform/index.js';
 import type { FileStatus, IgnorePlan, LogEntry, RepoInfo, SvnLayout, VcsResult } from './types.js';
+
+/** svn 可执行文件解析：PATH 优先；找不到时试平台常见安装路径（Windows 上装完 svn 系统 PATH
+ *  不会刷新到已运行的进程——兜底路径让「装完刷新页面即用」成立）。
+ *  解析成功缓存；失败不缓存（用户装好后下一次操作自动生效）。 */
+let svnBinResolved: string | null = null;
+export async function resolveSvnBin(): Promise<string> {
+  if (svnBinResolved) return svnBinResolved;
+  try {
+    await run('svn', ['--version'], { timeoutMs: 10_000 });
+    svnBinResolved = 'svn'; // 能启动即认（版本信息异常也仍是它）
+    return 'svn';
+  } catch {
+    /* PATH 里没有：继续试常见安装路径 */
+  }
+  for (const p of platform.svnFallbacks) {
+    if (fs.existsSync(p)) {
+      svnBinResolved = p;
+      return p;
+    }
+  }
+  return 'svn'; // 都没有：维持原行为（调用方按「未安装」报错）
+}
 
 export interface SvnCred {
   username: string;
@@ -64,9 +87,9 @@ export class SvnVcs {
     return args;
   }
 
-  private exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; decode?: 'utf8' | 'auto'; raw?: boolean } = {}) {
+  private async exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; decode?: 'utf8' | 'auto'; raw?: boolean } = {}) {
     const stdinData = extra.stdinData ?? (this.cred?.username ? this.cred.password + '\n' : undefined);
-    return run('svn', this.baseArgs().concat(args), {
+    return run(await resolveSvnBin(), this.baseArgs().concat(args), {
       cwd: this.repo.root,
       stdinData,
       timeoutMs: extra.timeoutMs ?? 120_000,

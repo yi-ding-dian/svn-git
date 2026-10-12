@@ -91,6 +91,6 @@ svn-git-1.0.0-portable.exe --browser -d    # Windows：同上（portable 包装�
 **目标机**（跑产物的那台）：
 
 - **不需要装 Node / 浏览器** —— Electron 运行时已内置
-- **但仍需要 `svn.exe` / `git.exe`** —— 工具本身只做图形界面，实际版本控制操作调的是系统命令行。装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**（默认不勾选），另装 [Git for Windows](https://git-scm.com/)
+- **但仍需要 `svn.exe` / `git.exe`** —— 工具本身只做图形界面，实际版本控制操作调的是系统命令行。SVN 命令行两条路：装纯命令行的 [SlikSVN](https://sliksvn.com/)（推荐，`winget install --id=Slik.Subversion -e`——工具本身就是图形界面，不需要再来个 GUI），或装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**（默认不勾选）；Git 装 [Git for Windows](https://git-scm.com/)。工具内「环境检测 → 下载安装」可一键装上 SlikSVN。
 
 **发版机**（跑 `release.bat` 那台）额外需要：能 push 到 `origin`（Git 凭据已配好）。CI 是 tag 触发的，构建与上传都在 GitHub 侧完成，见 `../.github/workflows/release.yml`。
