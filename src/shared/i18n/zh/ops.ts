@@ -19,6 +19,11 @@ export const ops = {
   // 「已勾选」两种写法：带数字高亮（<b>）的用 label 前缀，整句的用 checkedCount
   'ops.checkedLabel': '已勾选',
   'ops.checkedCount': '已勾选 {n}/{total}',
+  // 状态复选框统一语义（储藏/提交弹窗同款，2026-10-12 定案）：勾上=要这类、取消=不要这类
+  'ops.filterToggleTip': '勾上 = 只显示该类并全选；取消 = 取消该类全部勾选（只影响这一类）',
+  // 勾选里被过滤藏起来的项数（附在「已勾选 N/total」后面），防"看不见的勾"被误一起处理
+  'ops.checkedHidden': ' · {n} 项被过滤隐藏',
+  'ops.checkedHiddenTip': '这些文件已勾选、但被当前过滤隐藏——仍会一并保存/提交',
   'ops.rowTip.diff': '双击查看差异',
   'ops.window.restore': '还原窗口',
   'ops.window.maximize': '最大化',
@@ -43,9 +48,9 @@ export const ops = {
   'ops.commitSelect.hintUnversioned': 'ℹ️ 未版本化文件（?）不在列表中——需先在文件夹视图右键「添加到版本库」，再提交',
   'ops.commitSelect.hintExternals': '🔗 外部引用（文件夹视图里带链环图标的目录）也不在列表中——它装的是另一个仓库路径的内容，提交它等于提交那个目录，请直接到那里提交',
   'ops.commitSelect.filtered': ' · 过滤显示 {n} 个（{codes}）',
-  'ops.commitSelect.filterATip': '只显示已添加的文件（勾选自动限定为可见项）',
+  'ops.commitSelect.filterATip': '勾上 = 只显示并全选「添加」文件；取消 = 取消这些文件的勾选',
   'ops.commitSelect.filterA': '添加',
-  'ops.commitSelect.filterDTip': '只显示已删除的文件（勾选自动限定为可见项）',
+  'ops.commitSelect.filterDTip': '勾上 = 只显示并全选「删除」文件；取消 = 取消这些文件的勾选',
   'ops.commitSelect.filterD': '删除',
   'ops.rowTip.stagePartial': ' · 右键选择部分改动',
   'ops.commitSelect.stagePartialTip': '已部分暂存：提交时只提交选中的改动，未选中的留在工作区',
@@ -101,6 +106,7 @@ export const ops = {
   'ops.stash.listTitle': '当前工作区改动（{n} 项，默认全选；取消勾选 = 只储藏选中的文件）',
   'ops.stash.noChanges': '工作区没有改动可储藏（先修改文件，再回来保存）',
   'ops.stash.msgPlaceholder': '保存说明（可选）…',
+  'ops.stash.showUntracked': '显示未跟踪 ({n})',
   'ops.stash.save': '📦 保存当前改动',
   'ops.stash.none': '暂无 Stash',
   'ops.stash.popTitle': '恢复 Stash',

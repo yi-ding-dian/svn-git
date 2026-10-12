@@ -35,7 +35,8 @@ export function CommitSelectModal(props: {
       svn 下这个入口整体不该出现：后端只会回一句"仅 git 仓库支持"，那就成了"点了才知道不行" */
   const isGit = props.repoType === 'git';
 
-  // 状态过滤：仅当列表存在 A(添加)/D(删除) 文件时才显示对应过滤开关
+  // 状态复选框（A/D）语义（与储藏弹窗统一，2026-10-12 定案）：勾上 = 只显示该类 + 全选该类；
+  // 取消 = 取消该类全部勾选（过滤解除）。只动自己这一类，不影响其他类的勾选
   const hasA = props.items.some((i) => i.code === 'A');
   const hasD = props.items.some((i) => i.code === 'D');
   const [filterA, setFilterA] = useState(false);
@@ -45,15 +46,16 @@ export function CommitSelectModal(props: {
     if (filterA || filterD) return (filterA && i.code === 'A') || (filterD && i.code === 'D');
     return true;
   });
-  // 切换过滤时勾选跟随可见列表：看到勾几个就提交几个，不会把隐藏的 M/D 一起传上去
-  const applyFilter = (fa: boolean, fd: boolean) => {
-    setFilterA(fa);
-    setFilterD(fd);
-    const vis = props.items.filter((i) => {
-      if (fa || fd) return (fa && i.code === 'A') || (fd && i.code === 'D');
-      return true;
+  // 勾选里被过滤藏起来的项数：信息条醒目提示，防"看不见的勾"被静默带进提交
+  const hiddenChecked = checked.size - visibleItems.filter((i) => checked.has(i.path)).length;
+  const applyFilter = (code: 'A' | 'D', on: boolean) => {
+    if (code === 'A') setFilterA(on);
+    else setFilterD(on);
+    setChecked((prev) => {
+      const n = new Set(prev);
+      for (const it of props.items) if (it.code === code) { if (on) n.add(it.path); else n.delete(it.path); }
+      return n;
     });
-    setChecked(new Set(vis.map((v) => v.path)));
   };
   // 全选状态基于当前可见列表；全选/全不选只作用于可见列表
   const allOn = visibleItems.length > 0 && visibleItems.every((i) => checked.has(i.path));
@@ -120,29 +122,37 @@ export function CommitSelectModal(props: {
               {t('ops.checkedLabel')} <b>{checked.size}</b>/{props.items.length}
               {/*  · 过滤显示 {n} 个（{codes}） */}
               {filterA || filterD ? t('ops.commitSelect.filtered', { n: visibleItems.length, codes: [filterA ? 'A' : '', filterD ? 'D' : ''].filter(Boolean).join('+') }) : ''}
+              {/* 勾了但被过滤藏起来的项（仍会被一起提交）：醒目提示，别让人以为"没勾" */}
+              {hiddenChecked > 0 && (
+                <span style={{ color: 'var(--warn)' }} title={t('ops.checkedHiddenTip')}>
+                  {/* · {n} 项被过滤隐藏 */}
+                  {t('ops.checkedHidden', { n: hiddenChecked })}
+                </span>
+              )}
             </span>
           </div>
           {/* 文件列表：弹窗高度变化时跟随伸缩，全部显示得下则不滚动 */}
           <div className="changed" style={{ flex: 1, minHeight: 80, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
-            {/* 全选/全不选 + 状态过滤开关（仅列表存在该状态时显示） */}
-            <div className="row" style={{ gap: 12, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4 }}>
+            {/* 全选/全不选 + 状态过滤开关（仅列表存在该状态时显示）。
+                行固定在列表顶部（sticky）：列表滚动时开关不掉走；boxShadow 同色补住 margin 缝隙防内容透出 */}
+            <div className="row" style={{ gap: 12, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4, position: 'sticky', top: 0, zIndex: 1, background: 'var(--panel)', boxShadow: '0 4px 0 var(--panel)' }}>
               <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
                 <input type="checkbox" checked={allOn} onChange={toggleAllVisible} />
                 <span className="dim small">{t(allOn ? 'ops.select.clear' : 'ops.select.all')}</span>
               </label>
               {hasA && (
-                // 只显示已添加的文件（勾选自动限定为可见项）
+                // 勾上 = 只显示并全选「添加」类；取消 = 取消这些文件的勾选
                 <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.commitSelect.filterATip')}>
-                  <input type="checkbox" checked={filterA} onChange={() => applyFilter(!filterA, filterD)} />
+                  <input type="checkbox" checked={filterA} onChange={() => applyFilter('A', !filterA)} />
                   <span className="act A small">A</span>
                   {/* 添加 */}
                   <span className="dim small">{t('ops.commitSelect.filterA')}</span>
                 </label>
               )}
               {hasD && (
-                // 只显示已删除的文件（勾选自动限定为可见项）
+                // 勾上 = 只显示并全选「删除」类；取消 = 取消这些文件的勾选
                 <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.commitSelect.filterDTip')}>
-                  <input type="checkbox" checked={filterD} onChange={() => applyFilter(filterA, !filterD)} />
+                  <input type="checkbox" checked={filterD} onChange={() => applyFilter('D', !filterD)} />
                   <span className="act D small">D</span>
                   {/* 删除 */}
                   <span className="dim small">{t('ops.commitSelect.filterD')}</span>

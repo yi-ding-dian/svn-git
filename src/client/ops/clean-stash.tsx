@@ -99,7 +99,8 @@ export function CleanDialog(props: { onClose: () => void; onDone: () => void }) 
       {/* 列表是主伸缩区：默认 260px，弹窗拉高时吃掉多余高度；矮窗口下保底 80px（约 3 行） */}
       {files && files.length > 0 && (
         <div className="changed" style={{ flex: '1 1 260px', minHeight: 80, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
-          <label className="row" style={{ cursor: 'pointer', gap: 6, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4, flexShrink: 0 }}>
+          {/* 全选行固定在列表顶部（sticky）：列表滚动时不动；boxShadow 同色补住 margin 缝隙防内容透出 */}
+          <label className="row" style={{ cursor: 'pointer', gap: 6, borderBottom: '1px solid var(--border2)', paddingBottom: 6, marginBottom: 4, flexShrink: 0, position: 'sticky', top: 0, zIndex: 1, background: 'var(--panel)', boxShadow: '0 4px 0 var(--panel)' }}>
             <input
               type="checkbox"
               checked={checked.size === files.length}
@@ -164,6 +165,53 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
   // 当前工作区改动（可储藏列表）：含未跟踪(?)；冲突(C)不可储藏（先解决），I/X 同理排除
   const [files, setFiles] = useState<{ path: string; code: string }[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  // 状态复选框（M/A/D… 与「显示未跟踪」）统一语义（2026-10-12 用户实测后定案）：
+  //   勾上 = 只显示该类 + 该类全部勾上；取消 = 该类全部取消勾选（显示过滤同时解除）；
+  //   只动自己这一类、不影响其他类——一句话："打钩 = 要这类，去钩 = 不要这类"。
+  //   （旧版"勾选重置为可见项全选"在取消过滤时会把全部又勾回来，用户实报"M 文件还是没有取消"）
+  const [filters, setFilters] = useState<Set<string>>(new Set());
+  // 未跟踪(?)默认不显示：列表先只列版本化文件（M/A/D…），「显示未跟踪」开关切出来
+  const [showUntracked, setShowUntracked] = useState(false);
+  const untrackedCount = files.filter((f) => f.code === '?').length;
+  // 「?」（未跟踪）不设状态过滤开关：它表示"不在版本控制"，不是可比对的版本化状态
+  const codes = [...new Set(files.map((f) => f.code))].filter((c) => c !== '?').sort();
+  // 可见 = （未跟踪开关过滤）∩（状态过滤）
+  const visibleFiles = files.filter((f) => {
+    if (f.code === '?' && !showUntracked) return false;
+    return filters.size === 0 || filters.has(f.code);
+  });
+  const allOn = visibleFiles.length > 0 && visibleFiles.every((f) => checked.has(f.path));
+  // 勾选里被过滤藏起来的项数：计数栏醒目提示，防"看不见的勾"被误当没勾而漏掉/被静默收走
+  const hiddenChecked = checked.size - visibleFiles.filter((f) => checked.has(f.path)).length;
+  /** 勾选/取消某状态的全部文件（只动这一类，其他类不受影响） */
+  const setCodeChecked = (code: string, on: boolean) => {
+    setChecked((prev) => {
+      const n = new Set(prev);
+      for (const f of files) if (f.code === code) { if (on) n.add(f.path); else n.delete(f.path); }
+      return n;
+    });
+  };
+  const toggleFilter = (code: string) => {
+    const on = !filters.has(code);
+    const nf = new Set(filters);
+    if (on) nf.add(code);
+    else nf.delete(code);
+    setFilters(nf);
+    setCodeChecked(code, on);
+  };
+  const toggleUntracked = () => {
+    const on = !showUntracked;
+    setShowUntracked(on);
+    setCodeChecked('?', on);
+  };
+  const toggleAllVisible = () => {
+    setChecked((prev) => {
+      const n = new Set(prev);
+      if (allOn) for (const v of visibleFiles) n.delete(v.path);
+      else for (const v of visibleFiles) n.add(v.path);
+      return n;
+    });
+  };
   // 工具风格二次确认
   const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void } | null>(null);
 
@@ -180,7 +228,8 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
       .then((r) => {
         const list = (r.items ?? []).filter((i) => i.code && i.code !== 'I' && i.code !== 'X' && i.code !== 'C');
         setFiles(list.map((i) => ({ path: i.path, code: i.code })));
-        setChecked(new Set(list.map((i) => i.path))); // 默认全选
+        // 默认只勾版本化文件（? 藏起来不勾）——「保存当前改动」不会悄悄把未跟踪文件一起收走
+        setChecked(new Set(list.filter((i) => i.code !== '?').map((i) => i.path)));
       })
       .catch(() => {});
   };
@@ -227,7 +276,41 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
       <div className="vcs-list" style={{ flex: '1 1 180px', minHeight: 60 }}>
         {/* 工作区没有改动可储藏（先修改文件，再回来保存） */}
         {files.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.stash.noChanges')}</div>}
-        {files.map((f) => (
+        {/* 全选/全不选 + 状态过滤开关（仅列表存在该状态时显示）——与提交弹窗同款。
+            行固定在列表顶部（sticky）：列表滚动时开关不掉走；boxShadow 同色补住 margin 缝隙防内容透出 */}
+        {files.length > 0 && (
+          <div className="row" style={{ gap: 12, borderBottom: '1px solid var(--border2)', padding: '4px 6px', marginBottom: 4, flexShrink: 0, position: 'sticky', top: 0, zIndex: 1, background: 'var(--panel)', boxShadow: '0 4px 0 var(--panel)' }}>
+            <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
+              <input type="checkbox" checked={allOn} onChange={toggleAllVisible} />
+              <span className="dim small">{t(allOn ? 'ops.select.clear' : 'ops.select.all')}</span>
+            </label>
+            {codes.map((c) => (
+              <label key={c} className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.filterToggleTip')}>
+                <input type="checkbox" checked={filters.has(c)} onChange={() => toggleFilter(c)} />
+                <span className={`act ${c} small`}>{c}</span>
+              </label>
+            ))}
+            {/* 有未跟踪文件时才显示：勾上 = 显示并全选 ?，取消 = 隐藏并取消勾选（与其他状态框同一语义） */}
+            {untrackedCount > 0 && (
+              <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.filterToggleTip')}>
+                <input type="checkbox" checked={showUntracked} onChange={toggleUntracked} />
+                <span className="act ? small">?</span>
+                {/* 显示未跟踪 ({n}) */}
+                <span className="dim small">{t('ops.stash.showUntracked', { n: untrackedCount })}</span>
+              </label>
+            )}
+            {/* 已勾选 {n}/{total} */}
+            <span className="dim small" style={{ marginLeft: 'auto' }}>{t('ops.checkedCount', { n: checked.size, total: files.length })}</span>
+            {/* 勾了但被过滤藏起来的项（仍会被一起储藏）：醒目提示，别让人以为"没勾"或"没看到就当没有" */}
+            {hiddenChecked > 0 && (
+              <span className="small" style={{ color: 'var(--warn)', flexShrink: 0 }} title={t('ops.checkedHiddenTip')}>
+                {/* · {n} 项被过滤隐藏 */}
+                {t('ops.checkedHidden', { n: hiddenChecked })}
+              </span>
+            )}
+          </div>
+        )}
+        {visibleFiles.map((f) => (
           <div key={f.path} className="vcs-row" style={{ cursor: 'default' }}>
             <input
               type="checkbox"
@@ -243,6 +326,8 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
             <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.path}</span>
           </div>
         ))}
+        {/* 没有匹配当前过滤的文件 */}
+        {files.length > 0 && visibleFiles.length === 0 && <div className="dim" style={{ padding: '8px 4px' }}>{t('ops.commitSelect.noMatch')}</div>}
       </div>
       <div className="row" style={{ margin: '12px 0', flexShrink: 0 }}>
         <input
