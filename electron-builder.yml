@@ -29,10 +29,11 @@ linux:
   executableName: svngit
   # 窗口关联：desktopName（package.json 顶层）与 WM_CLASS 一致，桌面环境才能把窗口绑定到应用菜单条目
   syncDesktopName: true
-# AppImage 压缩算法：xz 比默认 gzip 产物小 22%（97→76MB），只多约 8 秒（mksquashfs 多线程，
-# 与 Windows 侧 7za 单线程 -mx9 的 3 分 39 秒不是一个量级）；electron-builder 只暴露算法选项，无 1-9 档
+# AppImage 压缩算法：保持 gzip（默认）。教训（2026-10-12 实测）：xz 虽然产物小 22%（97→76MB）、
+# 打包也只多 8 秒，但 AppImage 每次启动都要从 squashfs 惰性解压（挂载是全新的、不吃页缓存），
+# xz 把冷启动从 1 秒拖到 22 秒 —— 启动速度远比省这 21MB 重要，不要改回 xz
 appImage:
-  compression: xz
+  compression: gzip
 win:
   icon: build/icon.png
   target:
