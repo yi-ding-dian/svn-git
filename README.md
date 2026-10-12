@@ -163,7 +163,7 @@ src/
     ├── terminal/      #   内置终端
     └── ui/            #   通用组件:弹窗外壳/图标/右键菜单/差异渲染/角标
 scripts/               # 构建、开发、检查、截图脚本
-deploy/                # 打包与发版(Windows 双击入口 build.bat / release.bat + release.mjs)
+deploy/                # 打包与发版(build.bat / build.sh 打包, release.bat / release.sh 发版 + 流程逻辑 release.mjs)
 test/                  # 自动化测试(npm test 六个套件 + npm run test:e2e 前端冒烟)
 ```
 

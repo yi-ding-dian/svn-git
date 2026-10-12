@@ -11,7 +11,7 @@
 | `build.sh` | Linux | `svn-git-<版本>.AppImage` — 免安装单文件，约 97MB（gzip；**勿换 xz**——冷启动会慢 20 倍，原因见 `electron-builder.yml` 注释） |
 | （安装包） | Windows | `svn-git-<版本>-setup.exe` — NSIS 安装包，约 70MB |
 
-脚本名一律 ASCII 且两两成对：打包 `build.bat`（Windows 双击）/ `build.sh`（Linux），发版 `release.bat`（Windows 双击入口）/ `release.mjs`（流程逻辑，由入口调用）。
+脚本名一律 ASCII 且两两成对：打包 `build.bat`（Windows 双击）/ `build.sh`（Linux），发版 `release.bat`（Windows 双击）/ `release.sh`（Linux）；流程逻辑统一在 `release.mjs`——两个入口都只是薄壳（cd 后转发给它）。
 
 > **文件名一律 ASCII，界面名称保持中文**：`productName`（窗口标题、开始菜单、安装目录）是 `svn-git文件版本管理`，而产物文件名写死前缀 `svn-git-`（在 `electron-builder.yml` 的各 `artifactName` 里）。原因：中文文件名在下载 URL 里会被百分号编码、命令行和传输环节容易乱码。
 
@@ -65,7 +65,7 @@ svn-git-1.0.0-portable.exe --browser -d    # Windows：同上（portable 包装�
 
 ## 发版（升版本号 + 打 tag + 触发 CI）
 
-双击 `release.bat`，或命令行 `node deploy/release.mjs`。交互式走完整个流程：
+双击 `release.bat`（Windows）/ `./deploy/release.sh`（Linux），或命令行 `node deploy/release.mjs`。交互式走完整个流程：
 
 ```
 检测  工作区干净 / 当前在 main / 新版本的 tag 没被本地或远端占用
@@ -93,4 +93,4 @@ svn-git-1.0.0-portable.exe --browser -d    # Windows：同上（portable 包装�
 - **不需要装 Node / 浏览器** —— Electron 运行时已内置
 - **但仍需要 `svn.exe` / `git.exe`** —— 工具本身只做图形界面，实际版本控制操作调的是系统命令行。SVN 命令行两条路：装纯命令行的 [SlikSVN](https://sliksvn.com/)（推荐，`winget install --id=Slik.Subversion -e`——工具本身就是图形界面，不需要再来个 GUI），或装 [TortoiseSVN](https://tortoisesvn.net/) 时**必须勾选 `command line client tools`**（默认不勾选）；Git 装 [Git for Windows](https://git-scm.com/)。工具内「环境检测 → 下载安装」可一键装上 SlikSVN。
 
-**发版机**（跑 `release.bat` 那台）额外需要：能 push 到 `origin`（Git 凭据已配好）。CI 是 tag 触发的，构建与上传都在 GitHub 侧完成，见 `../.github/workflows/release.yml`。
+**发版机**（跑 `release.bat` / `release.sh` 那台）额外需要：能 push 到 `origin`（Git 凭据已配好）。CI 是 tag 触发的，构建与上传都在 GitHub 侧完成，见 `../.github/workflows/release.yml`。

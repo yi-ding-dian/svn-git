@@ -25,6 +25,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { execFileSync } from 'node:child_process';
@@ -56,9 +57,14 @@ const ALLOW_BRANCH = optVal('--branch') ?? 'main';
 const WIN = process.platform === 'win32';
 const quoteWin = (s) => (/[\s"&|<>^()]/.test(s) ? `"${String(s).replace(/"/g, '""')}"` : String(s));
 
-/** 跑一条命令并把 stdout 拿回来（stderr 一并捕获，失败时展示） */
-function sh(cmd, args, { allowFail = false } = {}) {
-  const opts = { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] };
+/** 跑一条命令并把 stdout 拿回来（stderr 一并捕获，失败时展示；env 追加在当前环境之上） */
+function sh(cmd, args, { allowFail = false, env = null } = {}) {
+  const opts = {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    ...(env ? { env: { ...process.env, ...env } } : {}),
+  };
   try {
     return WIN
       ? execFileSync([cmd, ...args.map(quoteWin)].join(' '), { ...opts, shell: true }).trim()
@@ -195,6 +201,56 @@ async function watchCi(gh, tag) {
   console.log(`\n${WARN} 等太久了，不盯了 —— 自己看：${runsUrl}`);
 }
 
+// ---------------------------------------------------------------- 推送（带可见凭据输入）
+
+/** 推送 + 触发 CI。
+ *  git 自带的凭据提示**不回显**（用户名/密码都看不见——用户实报"起码得知道我输入了什么"），
+ *  所以这里先以 GIT_TERMINAL_PROMPT=0 静默试推（已配 credential.helper / SSH remote 的直接过）；
+ *  需要认证时由本脚本接管提问——用户名**回显**、PAT **明文显示**（输入即所得，可核对），
+ *  回答经临时 askpass 文件喂给 git，推完立即删除；可选顺手配置 credential.helper=store 一劳永逸。 */
+async function pushWithCreds() {
+  const tryPush = (extra) =>
+    sh('git', ['push', '--follow-tags'], { allowFail: true, env: { GIT_TERMINAL_PROMPT: '0', ...extra } });
+  if (tryPush({}) !== null) return; // 免密直接过（allowFail 失败返回 null）
+
+  console.log(`\n${WARN} 推送需要 GitHub 凭据（仅本次推送使用，不会保存）`);
+  const user = (await ask('GitHub 用户名（会显示）')).trim();
+  const token = (await ask('Personal Access Token（粘贴，会显示——便于核对）')).trim();
+  if (!user || !token) die('已取消（未填写凭据）');
+
+  // 临时 askpass：git 通过它取用户名/密码。落在 tmp 独立目录、推完即删
+  const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`; // POSIX 单引号转义（PAT 通常无引号，防御性处理）
+  const workDir = path.join(os.tmpdir(), `svngit-askpass-${Date.now()}`);
+  fs.mkdirSync(workDir, { recursive: true });
+  let askpass;
+  if (WIN) {
+    // Windows：GIT_ASKPASS 用 .cmd；参数里含 "Username for ..." 还是 "Password for ..." 决定回哪个
+    askpass = path.join(workDir, 'askpass.cmd');
+    fs.writeFileSync(
+      askpass,
+      ['@echo off', 'echo %* | findstr /i "username" >nul', `if %errorlevel%==0 (echo ${user}) else (echo ${token})`, ''].join('\r\n'),
+    );
+  } else {
+    askpass = path.join(workDir, 'askpass.sh');
+    fs.writeFileSync(
+      askpass,
+      ['#!/bin/sh', 'case "$1" in', `  *[Uu]sername*) echo ${shq(user)} ;;`, `  *[Pp]assword*) echo ${shq(token)} ;;`, 'esac', ''].join('\n'),
+      { mode: 0o755 },
+    );
+  }
+  try {
+    if (tryPush({ GIT_ASKPASS: askpass }) === null) {
+      die('推送失败', '检查用户名 / PAT 是否正确（PAT 需勾 repo 权限）；改好后重跑本脚本即可重试');
+    }
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true }); // 凭据不留盘
+  }
+  if (await confirm('要记住凭据吗（以后推送 / 发版免输）？', true)) {
+    git(['config', '--global', 'credential.helper', 'store']);
+    console.log(`${OK} 已设置 credential.helper=store（凭据存 ~/.git-credentials，下次不再问）`);
+  }
+}
+
 // ---------------------------------------------------------------- 主流程
 
 async function main() {
@@ -280,8 +336,8 @@ async function main() {
     return;
   }
 
-  // --- 3. 推
-  git(['push', '--follow-tags']);
+  // --- 3. 推（git 自带提示不回显——改用本脚本的可见输入，见 pushWithCreds）
+  await pushWithCreds();
   console.log(`${OK} 已推送 main + ${tag}`);
 
   // --- 4. 盯 CI
