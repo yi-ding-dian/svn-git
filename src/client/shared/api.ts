@@ -58,6 +58,8 @@ export interface LogEntry {
   date: string;
   msg: string;
   changed: { action: string; path: string }[];
+  /** 合并提交（git 多父）：自身无文件变更，界面显示「合并」而非「0 文件」（见 vcs/types.ts） */
+  isMerge?: boolean;
 }
 
 export interface DiffResult {

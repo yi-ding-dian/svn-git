@@ -49,6 +49,9 @@ export interface LogEntry {
   msg: string;
   /** 变更文件（svn: svn log -v；git: --name-status） */
   changed: { action: string; path: string }[];
+  /** 是否为合并提交（git 多父；svn 恒无）。合并提交自身无文件变更（changed 恒为空），
+   *  改动都记在两侧的提交上 —— 界面据此显示「合并」而不是「0 文件」 */
+  isMerge?: boolean;
 }
 
 export interface DiffResult {

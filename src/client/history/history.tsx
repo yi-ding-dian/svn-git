@@ -415,7 +415,8 @@ export function HistoryView(props: Props) {
                       <span className="date">{l.date.slice(0, 16)}</span>
                       <span className="author">{l.author}</span>
                       <span className="msg">{l.msg}</span>
-                      <span className="stat">{l.changed.length}</span>
+                      {/* 合并提交用图标（自身无文件变更，数字 0 会误导）；悬浮用推送弹窗的同一句说明 */}
+                      <span className="stat" title={l.isMerge ? t('ops.push.mergeHint') : undefined}>{l.isMerge ? '⇄' : l.changed.length}</span>
                       {isUnpushed && (
                         // 未推送：本地领先远程 {n} 个提交
                         <span className="unpushed" title={t('hist.unpushedTip', { n: unpushed.length })}>

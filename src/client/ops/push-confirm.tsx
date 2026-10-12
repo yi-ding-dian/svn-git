@@ -212,13 +212,17 @@ export function PushConfirmModal(props: {
                   >
                     {l.msg}
                   </span>
-                  {/* {n} 文件 */}
-                  <span className="small dim" style={{ flexShrink: 0 }}>{t('ops.push.filesCount', { n: l.changed.length })} {expanded === l.rev ? '▾' : '▸'}</span>
+                  {/* 合并提交显示「合并」（自身无文件变更，显示 0 文件会让人误解）；普通提交显示 {n} 文件 */}
+                  <span className="small dim" style={{ flexShrink: 0 }}>
+                    {l.isMerge ? t('ops.push.mergeTag') : t('ops.push.filesCount', { n: l.changed.length })} {expanded === l.rev ? '▾' : '▸'}
+                  </span>
                 </div>
                 {expanded === l.rev && (
                   <div style={{ padding: '2px 10px 8px 44px', background: 'var(--panel2)' }}>
-                    {/* 无文件变更 */}
-                    {l.changed.length === 0 && <div className="dim small">{t('ops.push.noFileChanges')}</div>}
+                    {/* 合并提交说明 / 无文件变更 */}
+                    {l.changed.length === 0 && (
+                      <div className="dim small">{l.isMerge ? t('ops.push.mergeHint') : t('ops.push.noFileChanges')}</div>
+                    )}
                     {l.changed.map((c) => {
                       const text = isTextFile(c.path);
                       return (

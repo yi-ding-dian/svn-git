@@ -65,7 +65,7 @@ function parseGitLog(stdout: string): LogEntry[] {
     const sep = line.indexOf('\x1e');
     if (sep >= 0) {
       const head = line.slice(0, sep);
-      const [hash, author, date, msg] = head.split('\x1f');
+      const [hash, author, date, msg, parents] = head.split('\x1f');
       if (hash) {
         cur = {
           rev: hash.slice(0, 7),
@@ -73,6 +73,9 @@ function parseGitLog(stdout: string): LogEntry[] {
           date: (date ?? '').replace('T', ' ').replace(/[+-]\d{2}:\d{2}$/, ''),
           msg: msg ?? '',
           changed: [],
+          // 多父 = 合并提交（%P 空格分隔；根提交/单父都不算）。合并提交自身无文件变更
+          //（git log --name-status 对 merge 默认不列文件），界面据此显示「合并」而非「0 文件」
+          isMerge: String(parents ?? '').trim().split(/\s+/).filter(Boolean).length > 1,
         };
         out.push(cur);
       }
@@ -262,7 +265,7 @@ export class GitVcs {
     const args = ['-c', 'core.quotepath=false', 'log'];
     if (limit > 0) args.push('-n', String(limit));
     if (offset > 0) args.push('--skip', String(offset));
-    args.push('--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--name-status');
+    args.push('--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e', '--name-status');
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args);
     // 刚 git init 的空仓库（尚无任何提交）：git log 直接失败，返回空列表即可，不该让上游 500
@@ -340,7 +343,7 @@ export class GitVcs {
     const res = await this.exec([
       '-c', 'core.quotepath=false',
       'log', '-n', '200',
-      '--format=%H%x1f%an%x1f%aI%x1f%s%x1e',
+      '--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e',
       '--name-status',
       `${range}..HEAD`,
     ]);
@@ -1369,7 +1372,7 @@ export class GitVcs {
         }
       }
       const lg = await this.exec(
-        ['-c', 'core.quotepath=false', 'log', '--format=%H%x1f%an%x1f%aI%x1f%s%x1e', '--name-status', `HEAD..${upstream}`],
+        ['-c', 'core.quotepath=false', 'log', '--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e', '--name-status', `HEAD..${upstream}`],
         { timeoutMs: 30_000 },
       );
       if (lg.code === 0) remoteLogs = parseGitLog(lg.stdout);

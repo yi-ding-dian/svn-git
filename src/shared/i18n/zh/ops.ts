@@ -250,6 +250,8 @@ export const ops = {
   'ops.push.tipOther': '（右键菜单仅对最近一次提交生效）',
   'ops.push.filesCount': '{n} 文件',
   'ops.push.noFileChanges': '无文件变更',
+  'ops.push.mergeTag': '合并',
+  'ops.push.mergeHint': '合并提交：自身无文件变更，改动在其两侧的提交上',
   'ops.push.binaryTip': '（图片/二进制文件不支持查看差异）',
   'ops.push.confirm': '确认推送（{n}）',
   'ops.push.editMsg': '修改注释',

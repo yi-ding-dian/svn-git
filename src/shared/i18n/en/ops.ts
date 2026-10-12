@@ -252,6 +252,8 @@ export const ops = {
   'ops.push.tipOther': '(the context menu only applies to the most recent commit)',
   'ops.push.filesCount': '{n} file|{n} files',
   'ops.push.noFileChanges': 'No file changes',
+  'ops.push.mergeTag': 'Merge',
+  'ops.push.mergeHint': 'Merge commit: no file changes of its own — changes live in its two sides',
   'ops.push.binaryTip': '(images/binary files cannot be diffed)',
   'ops.push.confirm': 'Push ({n})',
   'ops.push.editMsg': 'Edit Message',
