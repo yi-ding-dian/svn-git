@@ -49,9 +49,23 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       cwd: opts.cwd,
       stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'],
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
+      // 独立进程组（Unix）：取消/超时能连**孙进程**一起杀——如 git push 派生的
+      // git-remote-https helper，只杀直接子进程会留下孤儿 helper 挂到 TCP 超时。
+      // Windows 无进程组语义，保持原行为（child.kill 单杀）
+      detached: process.platform !== 'win32',
     };
     // shell 模式见 RunOptions.shell：cmd 是完整命令行，args 忽略
     const child = opts.shell ? spawn(cmd, { ...spawnOpts, shell: true }) : spawn(cmd, args, spawnOpts);
+
+    /** 杀整个进程组（detached 起的子进程是组长，负 pid = 组）；已退出/无 pid 时静默 */
+    const killTree = () => {
+      try {
+        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+        else child.kill('SIGKILL');
+      } catch {
+        /* ESRCH（进程已退出）等：忽略 */
+      }
+    };
 
     // 输出解码：默认 utf8（与改动前一致）；'auto' 走探测（UTF-8 → GB18030），只给内容型调用点用
     const dec = (b: Buffer) => (opts.decode === 'auto' ? decodeMixedText(b) : b.toString('utf8'));
@@ -71,16 +85,16 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     const timeout = opts.timeoutMs
       ? setTimeout(() => {
           if (!done) {
-            child.kill('SIGKILL');
+            killTree();
             resolve(finish(-1, { timedOut: true }));
           }
         }, opts.timeoutMs)
       : null;
 
-    // 取消信号：请求断开（如用户取消更新）→ 杀掉子进程
+    // 取消信号：请求断开（如用户取消更新/推送）→ 杀掉子进程（整组，含孙进程）
     const onAbort = () => {
       if (!done) {
-        child.kill('SIGKILL');
+        killTree();
         resolve(finish(-1, { aborted: true }));
       }
     };
