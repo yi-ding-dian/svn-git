@@ -64,15 +64,16 @@ export const shell = {
   'shell.tool.envCheckTitle': 'View SVN / Git installation status and versions; one-click install if missing',
   'shell.tool.svnInfo': 'SVN Info',
 
-  // ---- Background tasks (header hourglass indicator + task panel) ----
+  // ---- Background tasks (header hourglass indicator: shown only while running; results go to the bell) ----
   'shell.tasks.indicatorTip': 'Background tasks: {n} running (click to view)',
-  'shell.tasks.indicatorTipIdle': 'Background tasks (click to view)',
   'shell.tasks.running': 'Running',
-  'shell.tasks.finished': 'Recent',
   'shell.tasks.elapsed': '{n}s elapsed',
-  'shell.tasks.cancelled': 'Cancelled',
-  'shell.tasks.removeTip': 'Remove this record',
-  'shell.tasks.toast': '{title}: {message}',
+  // Push background-task title (order: repo · branch · action; {repo} = project name, {branch} = current branch name)
+  'shell.tasks.pushTitle': '{repo} · {branch} · Push',
+  'shell.tasks.pushBusy': 'A push is already running — view or cancel it from the hourglass in the header',
+  // Task notifications (bell: shown only with notifications; click to view / dismiss one by one)
+  'shell.notify.tip': 'Task notifications (click to view)',
+  'shell.notify.removeTip': 'Dismiss this notification',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': 'Separator',
@@ -194,13 +195,7 @@ export const shell = {
   'shell.busy.move': 'Renaming…',
   'shell.busy.fsMove': 'Renaming files on disk…',
 
-  // ---- 推送 / 更新进度遮罩（modal-host）----
-  'shell.push.target': 'Target repository',
-  'shell.push.hint': 'This may take a while depending on the network; you can cancel at any time',
-  'shell.push.cancel': 'Cancel Push',
-  'shell.push.canceled': 'Push canceled',
-  'shell.push.failedTitle': 'Push failed',
-  'shell.push.failMsg': 'Push failed: {msg}',
+  // ---- Update progress overlay (modal-host; push is a background task now — no overlay) ----
   'shell.update.hint': 'This may take a while depending on repository size and network; you can cancel at any time',
   'shell.update.cancel': 'Cancel Update',
   'shell.update.canceled': 'Update canceled',

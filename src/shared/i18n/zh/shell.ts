@@ -66,15 +66,16 @@ export const shell = {
   'shell.tool.envCheckTitle': '查看 SVN / Git 的安装状态与版本；缺失时可一键安装',
   'shell.tool.svnInfo': 'SVN 信息',
 
-  // ---- 后台任务（顶栏沙漏指示器 + 任务面板）----
+  // ---- 后台任务（顶栏沙漏指示器：**仅运行中显示**，进行中列表 + 取消；完成结果归铃铛通知）----
   'shell.tasks.indicatorTip': '后台任务：{n} 个进行中（点击查看）',
-  'shell.tasks.indicatorTipIdle': '后台任务（点击查看）',
   'shell.tasks.running': '进行中',
-  'shell.tasks.finished': '最近完成',
   'shell.tasks.elapsed': '已用 {n} 秒',
-  'shell.tasks.cancelled': '已取消',
-  'shell.tasks.removeTip': '移除这条记录',
-  'shell.tasks.toast': '{title}：{message}',
+  // 推送后台任务标题（顺序=项目名 · 分支名 · 操作——用户定稿；{repo} = 项目名、{branch} = 当前分支名）
+  'shell.tasks.pushTitle': '{repo} · {branch} · 推送',
+  'shell.tasks.pushBusy': '已有推送正在进行中，可在顶栏沙漏里查看或取消',
+  // 任务通知（铃铛：有通知才显示，点开查看 / 逐条关闭，全关掉即消失）
+  'shell.notify.tip': '任务通知（点击查看）',
+  'shell.notify.removeTip': '关闭这条通知',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': '分隔符',
@@ -203,13 +204,7 @@ export const shell = {
   'shell.busy.move': '正在重命名…',
   'shell.busy.fsMove': '正在重命名磁盘文件…',
 
-  // ---- 推送 / 更新进度遮罩（modal-host）----
-  'shell.push.target': '推送目标仓库',
-  'shell.push.hint': '视网络情况可能需要一些时间，可随时取消',
-  'shell.push.cancel': '取消推送',
-  'shell.push.canceled': '已取消推送',
-  'shell.push.failedTitle': '推送失败',
-  'shell.push.failMsg': '推送失败: {msg}',
+  // ---- 更新进度遮罩（modal-host；推送已后台任务化——无进度遮罩）----
   'shell.update.hint': '视仓库大小和网络情况可能需要一些时间，可随时取消',
   'shell.update.cancel': '取消更新',
   'shell.update.canceled': '已取消更新',

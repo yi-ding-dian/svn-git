@@ -134,7 +134,14 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
         } else if (p === '/api/revert') result = await vcs.revert(paths);
         else if (p === '/api/delete') result = body.keep === true ? await vcs.removeKeep(paths) : await vcs.remove(paths);
-        else result = (await vcs.push?.()) ?? { ok: false, message: MSG_UNSUPPORTED_OP() };
+        else {
+          // push：前端断开（后台任务面板「取消」/关页）→ 一并终止 git push 子进程（同 update 手法）
+          const ac = new AbortController();
+          res.on('close', () => {
+            if (!res.writableEnded) ac.abort();
+          });
+          result = (await vcs.push?.(ac.signal)) ?? { ok: false, message: MSG_UNSUPPORTED_OP() };
+        }
         if (result.ok) invalidateStatusCache(repo.root); // 状态改变 → 失效 30s 缓存,否则新文件过滤仍显示旧 ?/M
         sendJson(res, 200, {
           ...(result as object),

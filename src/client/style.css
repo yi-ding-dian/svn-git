@@ -893,19 +893,51 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   88% { opacity: 1; } /* 停留 ≈2.5s */
   100% { opacity: 0; }
 }
-/* 可点击的提示（后台任务完成通知——点击打开任务面板）：停留 ≈3.8s 供用户点击；
-   **必须覆盖 pointer-events: none**（基础样式是纯展示用，不接收点击）。
-   定义在 .err 之后：失败的可点通知（err+click）用这套更长的动画 */
-.toast-tip.click {
-  animation: toast-fade-click 4s ease forwards;
-  pointer-events: auto;
-  cursor: pointer;
+/* ---------- 后台任务完成横幅（顶部 3 秒浮层：不推挤内容、不挡操作；见 task-banner.tsx） ---------- */
+.task-banner {
+  position: fixed; left: 0; right: 0; z-index: 450;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 16px; font-size: 13px;
+  color: var(--ok); background: rgba(63,185,80,.16);
+  border-bottom: 1px solid rgba(63,185,80,.55);
+  backdrop-filter: blur(6px);
+  /* 3s 与 app.tsx 的 setTimeout 对齐（淡入 → 停留 → 淡出），动画放完正好被移除 */
+  animation: task-banner-fade 3s ease forwards;
+  pointer-events: none;
 }
-@keyframes toast-fade-click {
-  0% { opacity: 0; }
-  4% { opacity: 1; }
-  95% { opacity: 1; }
-  100% { opacity: 0; }
+.task-banner.err {
+  color: var(--err); background: rgba(248,81,73,.16);
+  border-bottom-color: rgba(248,81,73,.55);
+}
+@keyframes task-banner-fade {
+  0% { opacity: 0; transform: translateY(-8px); }
+  6% { opacity: 1; transform: translateY(0); }
+  82% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-4px); }
+}
+
+/* ---------- 任务通知铃铛（顶栏：有通知才显示；未读红点 + 到货轻摆） ---------- */
+.bell-dot {
+  position: absolute; top: -1px; right: -2px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--err); box-shadow: 0 0 0 2px var(--panel);
+}
+.bell-bounce { transform-origin: 50% 20%; animation: bell-bounce .7s ease; }
+@keyframes bell-bounce {
+  0%, 100% { transform: rotate(0); }
+  15% { transform: rotate(14deg); }
+  35% { transform: rotate(-11deg); }
+  55% { transform: rotate(8deg); }
+  75% { transform: rotate(-5deg); }
+}
+
+/* ---------- 魔法飞行线抵达时：沙漏锚点脉冲（magic-flight.tsx 加/移除 class） ---------- */
+.task-anchor-pulse { animation: task-anchor-pulse .6s ease; }
+@keyframes task-anchor-pulse {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.28); }
+  70% { transform: scale(.94); }
+  100% { transform: scale(1); }
 }
 
 /* ---------- 无历史记录提示 ---------- */

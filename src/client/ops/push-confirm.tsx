@@ -8,6 +8,7 @@ import { ConfirmModal, InfoModal } from '../ui/prompt.js';
 import { ClickTip } from '../ui/ui.js';
 import { autoSizeForText } from '../shared/utils.js';
 import { renderMarkdown } from '../shared/markdown.js';
+import { launchMagicFlight } from '../shell/magic-flight.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 二进制/图片等不支持差异查看的文件扩展名（双击查看差异前过滤） */
@@ -275,7 +276,16 @@ export function PushConfirmModal(props: {
         <div className="foot">
           {/* 取消 */}
           <button onClick={props.onCancel}>{t('common.cancel')}</button>
-          <button className="primary" disabled={unpushed.length === 0} onClick={props.onConfirm} title={`${cmdOf('git push')}`}>
+          {/* 确认推送：先放飞行线（从本按钮飞向顶栏沙漏），再关窗发起后台推送 */}
+          <button
+            className="primary"
+            disabled={unpushed.length === 0}
+            onClick={(e) => {
+              launchMagicFlight(e.currentTarget.getBoundingClientRect());
+              props.onConfirm();
+            }}
+            title={`${cmdOf('git push')}`}
+          >
             {/* 确认推送（{n}） */}
             {t('ops.push.confirm', { n: unpushed.length })}
           </button>

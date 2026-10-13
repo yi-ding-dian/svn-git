@@ -2,7 +2,7 @@
  *  与「推送中 / 更新中」两个遮罩集中到这里，根组件只剩一行 <ModalHost />。
  *
  *  纯搬迁，交互逻辑一行未改。依赖按类别分组传入（而非平铺 30+ 个 props）：
- *  - state / set：弹窗状态与 setter（含进行中的 pushing/updating）
+ *  - state / set：弹窗状态与 setter（含进行中的 updating 遮罩）
  *  - ctx：当前仓库与只读上下文
  *  - appearance / theme：外观与主题
  *  - actions：提交、推送、刷新、diff 跳转等动作
@@ -70,7 +70,6 @@ export interface ModalHostProps {
     invalidPaths: Record<string, string>;
     /** 打开某个最近项目（面板里点击时用） */
     openHistoryItem: (h: { path: string }) => void;
-    pushing: boolean;
     updating: boolean;
     updateElapsed: number;
     configUser: string;
@@ -124,18 +123,18 @@ export interface ModalHostProps {
     refresh: () => void;
     loadHistory: () => void;
     gotoDiff: (path: string, a?: string, b?: string) => void;
-    pushNow: () => Promise<void>;
-    cancelPush: () => void;
+    /** 发起推送（后台任务；认证失败重试也走它——每次重试是新任务） */
+    pushNow: () => void;
     cancelUpdate: () => void;
   };
 }
 
 export function ModalHost(props: ModalHostProps) {
   const { state, set, ctx, appearance, theme, actions } = props;
-  const { modal, pushAuth, updateResult, themePop, invalidPaths, pushing, updating, updateElapsed, configUser } = state;
+  const { modal, pushAuth, updateResult, themePop, invalidPaths, updating, updateElapsed, configUser } = state;
   const { repo, env, info, browseDir } = ctx;
   const { setModal, setPushAuth, setUpdateResult, setThemePop, setConfigUser, setInfo, setOnboard, setView, showToast, setDiffReturnModal } = set;
-  const { doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelPush, cancelUpdate } = actions;
+  const { doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelUpdate } = actions;
 
   return (
     <>
@@ -208,32 +207,6 @@ export function ModalHost(props: ModalHostProps) {
           onClose={() => setModal(null)}
         />
       )}
-      {pushing && (
-        <div className="modal-mask">
-          <div className="modal" style={{ width: 380 }}>
-            <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
-              <div className="spinner" />
-              {/* 正在推送… */}
-              <div style={{ marginTop: 14, fontWeight: 600 }}>{t('shell.busy.push')}</div>
-              {repo?.url && (
-                // 推送目标仓库
-                <div className="mono small dim" style={{ marginTop: 6 }} title={t('shell.push.target')}>
-                  📤 {repo.url}
-                </div>
-              )}
-              {/* 视网络情况可能需要一些时间，可随时取消 */}
-              <div className="dim small" style={{ marginTop: 6 }}>{t('shell.push.hint')}</div>
-              {/* 已耗时 {n}s */}
-              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>{t('shell.elapsed', { n: updateElapsed })}</div>
-              <button className="mini danger" style={{ marginTop: 18 }} onClick={cancelPush}>
-                {/* 取消推送 */}
-                {t('shell.push.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* 更新中：转圈提示，可取消 */}
       {updating && (
         <div className="modal-mask">
           <div className="modal" style={{ width: 380 }}>
@@ -367,7 +340,7 @@ export function ModalHost(props: ModalHostProps) {
           onToast={showToast}
           onSaved={() => {
             setPushAuth(null);
-            void pushNow(); // 保存凭据后自动重试推送（已过确认窗，直接执行；后端用 GIT_ASKPASS 携带凭据）
+            pushNow(); // 保存凭据后自动重试推送（已过确认窗，直接执行；后端用 GIT_ASKPASS 携带凭据；重试 = 新的后台任务）
           }}
         />
       )}
@@ -376,7 +349,7 @@ export function ModalHost(props: ModalHostProps) {
           onCancel={() => setModal(null)}
           onConfirm={() => {
             setModal(null);
-            void pushNow();
+            pushNow();
           }}
           onReset={() => refresh()}
           onDiff={(path, rev) => {

@@ -4,14 +4,15 @@
  *  后端不落盘**）→ 带新凭据重试。「开跑即验」：有权限的账号不弹任何框。
  *
  *  **后台任务**：检出挂在本应用的任务 store（shared/tasks）上——
- *   - `−` 最小化：弹窗收起、任务继续跑（顶栏沙漏指示器可见，完成弹 toast）；
+ *   - `−` 最小化：弹窗收起、任务继续跑（顶栏沙漏指示器可见，完成弹顶部横幅+铃铛通知）；
  *   - `✕` 关闭：取消进行中的任务（要后台继续用 −）；
  *   - 任务状态由 store 持有 → 弹窗按任务状态渲染（进度/结果/凭据重试）。
  *  入口：repo-browse.tsx 树里右键（目录行 + 空白 = 仓库根）。 */
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
-import { startTask, cancelTask, markDetached, useTasks } from '../shared/tasks.js';
+import { startTask, cancelTask, useTasks } from '../shared/tasks.js';
 import { ModalShell } from '../shell/modal-shell.js';
+import { launchMagicFlight } from '../shell/magic-flight.js';
 import { PickDirModal } from './pick-dir.js';
 import { FormRow } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
@@ -168,9 +169,8 @@ export function CheckoutDialog(props: {
     props.onClose();
   };
 
-  /** − 最小化：弹窗收起、任务继续（顶栏沙漏指示器可见，完成弹 toast） */
+  /** − 最小化：弹窗收起、任务继续（顶栏沙漏指示器可见，完成弹顶部横幅+铃铛通知） */
   const minimize = () => {
-    if (taskId && running) markDetached(taskId);
     props.onClose();
   };
 
@@ -212,7 +212,11 @@ export function CheckoutDialog(props: {
       <button
         className="primary"
         disabled={!dir.trim() || !name.trim()}
-        onClick={() => start()}
+        onClick={(e) => {
+          // 先放飞行线（从本按钮飞向顶栏沙漏），再发起后台检出（disabled 保证校验已过）
+          launchMagicFlight(e.currentTarget.getBoundingClientRect());
+          start();
+        }}
         title={cmdOfRepo('svn', 'checkout', { url: props.url, dir: joinPath(dir, name.trim() || '…') }) ?? ''}
       >
         {/* 检出 */}

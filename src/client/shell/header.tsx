@@ -2,8 +2,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo } from '../shared/api.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { useTasks, cancelTask, removeTask } from '../shared/tasks.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun } from '../ui/icons.js';
+import { useTasks, cancelTask } from '../shared/tasks.js';
+import { useNotices, markAllRead, removeNotice } from '../shared/notices.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun, IconBell } from '../ui/icons.js';
 import { type Modal } from './modal-types.js';
 import { type View } from './sidebar.js';
 import { ContextMenu } from '../ui/context-menu.js';
@@ -491,8 +492,6 @@ export function AppHeader(props: {
   unpushedCount?: number | null;
   /** 顶栏「浏览仓库」快捷入口（仅 SVN 项目；点击 = 打开当前项目的仓库浏览器，与右键菜单同一功能） */
   onBrowseRepo?: () => void;
-  /** 展开后台任务面板的信号（App 递增——完成 toast 点击时用；Header 据此打开面板） */
-  tasksOpenReq?: number;
   /** stash 条数（角标；git 仓库有效，未加载/异常为 null 不显示） */
   stashCount?: number | null;
   /** 工作区是否有可 stash 的改动（无改动时 Stash 按钮置灰） */
@@ -538,7 +537,7 @@ export function AppHeader(props: {
       /* 存储失败忽略 */
     }
   }, [layout]);
-  // 后台任务：指示器 + 面板（点「−」最小化后任务留在这里继续；完成 toast 点击也打开它）
+  // 后台任务：指示器 + 面板（进行中列表 + 取消；完成结果归铃铛——见下方 notices）
   const bgTasks = useTasks();
   const runningCount = bgTasks.filter((tk) => tk.status === 'running').length;
   const [taskPop, setTaskPop] = useState<{ x: number; y: number } | null>(null);
@@ -547,10 +546,27 @@ export function AppHeader(props: {
     const r = taskBtnRef.current?.getBoundingClientRect();
     if (r) setTaskPop({ x: r.right, y: r.bottom + 6 });
   };
-  // toast 点击 → App 递增 tasksOpenReq → 打开面板（等一帧：指示器可能本帧刚渲染出来）
+  // 任务通知：铃铛（有通知才存在）+ 未读红点 + 到货轻摆一下
+  const notices = useNotices();
+  const unreadCount = notices.filter((n) => !n.read).length;
+  const [noticePop, setNoticePop] = useState<{ x: number; y: number } | null>(null);
+  const bellBtnRef = useRef<HTMLButtonElement | null>(null);
+  const openNoticePop = () => {
+    const r = bellBtnRef.current?.getBoundingClientRect();
+    if (r) setNoticePop({ x: r.right, y: r.bottom + 6 });
+  };
+  const [bellBounce, setBellBounce] = useState(false);
+  const prevNoticeCountRef = useRef(0);
   useEffect(() => {
-    if (props.tasksOpenReq) requestAnimationFrame(() => openTaskPop());
-  }, [props.tasksOpenReq]);
+    if (notices.length > prevNoticeCountRef.current) {
+      // 新通知到货：铃铛轻摆（700ms 与 .bell-bounce 动画同步）
+      setBellBounce(true);
+      const h = window.setTimeout(() => setBellBounce(false), 700);
+      prevNoticeCountRef.current = notices.length;
+      return () => window.clearTimeout(h);
+    }
+    prevNoticeCountRef.current = notices.length;
+  }, [notices.length]);
 
   // 拖拽状态（手动 mousedown 实现，不依赖 HTML5 DnD：真实/模拟环境都可靠）：
   // 当前拖的项（按钮 key 或分隔符唯一 id）+ 插入位置（参考项 id；null=末尾）+ ⋯ 高亮 + ghost 位置
@@ -798,22 +814,36 @@ export function AppHeader(props: {
           <IconServer size={14} />
         </button>
       )}
-      {/* 后台任务指示器（有任务/有记录才显示）：运行中 = 流沙动画沙漏 + 数量；点击展开任务面板 */}
-      {bgTasks.length > 0 && (
+      {/* 后台任务指示器：**仅运行中显示**（后台没有任务时不存在——用户定稿）：流沙动画沙漏 + 数量。
+          点击展开任务面板（进行中 + 取消）。data-task-anchor：魔法飞行线的落点锚
+          （锚点随按钮生灭——magic-flight 启动时轮询等它出现） */}
+      {runningCount > 0 && (
         <button
           ref={taskBtnRef}
+          data-task-anchor
           className="header-icon-btn"
-          title={runningCount > 0 ? t('shell.tasks.indicatorTip', { n: runningCount }) : t('shell.tasks.indicatorTipIdle')}
+          title={t('shell.tasks.indicatorTip', { n: runningCount })}
           onClick={() => (taskPop ? setTaskPop(null) : openTaskPop())}
         >
-          {runningCount > 0 ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              <IconHourglassRun size={15} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>{runningCount}</span>
-            </span>
-          ) : (
-            <IconOk size={13} />
-          )}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+            <IconHourglassRun size={15} />
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>{runningCount}</span>
+          </span>
+        </button>
+      )}
+      {/* 任务通知铃铛：有通知才存在（全关掉即消失）；未读红点；点开面板（打开即已读） */}
+      {notices.length > 0 && (
+        <button
+          ref={bellBtnRef}
+          className={`header-icon-btn${bellBounce ? ' bell-bounce' : ''}`}
+          // 任务通知（点击查看）
+          title={t('shell.notify.tip')}
+          onClick={() => (noticePop ? setNoticePop(null) : openNoticePop())}
+        >
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <IconBell size={15} />
+            {unreadCount > 0 && <span className="bell-dot" />}
+          </span>
         </button>
       )}
       <span className="spacer" />
@@ -1025,11 +1055,12 @@ export function AppHeader(props: {
       )}
       {/* 后台任务面板（贴指示器展开；fixed 定位，在 header 内渲染不影响布局） */}
       {taskPop && <TaskPopover x={taskPop.x} y={taskPop.y} onClose={() => setTaskPop(null)} />}
+      {noticePop && <NoticePopover x={noticePop.x} y={noticePop.y} onClose={() => setNoticePop(null)} />}
     </div>
   );
 }
 
-/** 后台任务面板：进行中（沙漏/已用秒/[取消]）+ 最近完成（✅/❌/⊘ + 消息 + [×]移除）。
+/** 后台任务面板：进行中（沙漏/已用秒/[取消]）——完成结果归铃铛（NoticePopover）留档，不在这里重复。
  *  运行中的"已用 n 秒"每秒刷新（面板开着才 tick）；点空白/Esc…… 面板同 ContextMenu 的 mask 手法 */
 function TaskPopover(props: { x: number; y: number; onClose: () => void }) {
   const tasks = useTasks();
@@ -1038,14 +1069,15 @@ function TaskPopover(props: { x: number; y: number; onClose: () => void }) {
     const h = window.setInterval(() => force((n) => n + 1), 1000);
     return () => window.clearInterval(h);
   }, []);
-  // 记录被清空（全部 × 掉）后自动收起面板——指示器同时消失，空面板没有存在意义
-  // （留着它的遮罩会挡住界面点击——实测）
-  useEffect(() => {
-    if (tasks.length === 0) props.onClose();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks.length]);
   const running = tasks.filter((tk) => tk.status === 'running');
-  const finished = tasks.filter((tk) => tk.status !== 'running');
+  // 进行中清空（全部完成/取消）→ 自动收起：只剩空态没有留着的意义。
+  // 用 prev 判"从有到无"——空闲时打开（running 本来就是 0）不误关
+  const prevRunningRef = useRef(running.length);
+  useEffect(() => {
+    if (prevRunningRef.current > 0 && running.length === 0) props.onClose();
+    prevRunningRef.current = running.length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running.length]);
   const now = Date.now();
   return (
     <>
@@ -1062,52 +1094,78 @@ function TaskPopover(props: { x: number; y: number; onClose: () => void }) {
         className="ctx-menu"
         style={{ position: 'fixed', right: Math.max(8, window.innerWidth - props.x), top: props.y, minWidth: 300, maxWidth: 380, padding: 8 }}
       >
-        {running.length > 0 && (
-          <>
-            {/* 进行中 */}
-            <div className="dim small" style={{ padding: '2px 6px 4px' }}>{t('shell.tasks.running')}</div>
-            {running.map((tk) => (
-              <div key={tk.id} className="row" style={{ gap: 8, padding: 6, alignItems: 'center' }}>
-                <IconHourglassRun size={14} />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.title}>{tk.title}</div>
-                  {/* 已用 {n} 秒 */}
-                  <div className="dim small">{t('shell.tasks.elapsed', { n: Math.max(0, Math.floor((now - tk.startedAt) / 1000)) })}</div>
-                </span>
-                {/* 取消 */}
-                <button className="mini" onClick={() => cancelTask(tk.id)}>{t('common.cancel')}</button>
+        {/* 进行中（面板只在有任务时能打开——指示器仅运行中显示；全完成后 prevRef 会把它自动收起） */}
+        <div className="dim small" style={{ padding: '2px 6px 4px' }}>{t('shell.tasks.running')}</div>
+        {running.map((tk) => (
+          <div key={tk.id} className="row" style={{ gap: 8, padding: 6, alignItems: 'center' }}>
+            <IconHourglassRun size={14} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.title}>{tk.title}</div>
+              {/* 已用 {n} 秒 */}
+              <div className="dim small">{t('shell.tasks.elapsed', { n: Math.max(0, Math.floor((now - tk.startedAt) / 1000)) })}</div>
+            </span>
+            {/* 取消 */}
+            <button className="mini" onClick={() => cancelTask(tk.id)}>{t('common.cancel')}</button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** 任务通知面板（铃铛）：完成/失败通知列表——✓/✗ + 标题 + 消息 + 时间 + [×]逐条关闭；
+ *  打开即全部已读（红点消失）；全部关掉 → 铃铛随之消失（父层条件渲染），面板自动收起 */
+function NoticePopover(props: { x: number; y: number; onClose: () => void }) {
+  const notices = useNotices();
+  // 打开即已读（放 effect 里，避免渲染期改 store）
+  useEffect(() => {
+    markAllRead();
+  }, []);
+  // 全部关闭（铃铛消失）→ 面板自动收起
+  useEffect(() => {
+    if (notices.length === 0) props.onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notices.length]);
+  /** HH:MM（通知面板的时间戳；数字格式不入 i18n） */
+  const hm = (at: number) => {
+    const d = new Date(at);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  return (
+    <>
+      {/* 点击面板外关闭（右键也关，避免菜单叠菜单） */}
+      <div
+        style={{ position: 'fixed', inset: 0, zIndex: 299 }}
+        onClick={props.onClose}
+        onContextMenu={(ev) => {
+          ev.preventDefault();
+          props.onClose();
+        }}
+      />
+      <div
+        className="ctx-menu"
+        style={{ position: 'fixed', right: Math.max(8, window.innerWidth - props.x), top: props.y, minWidth: 320, maxWidth: 430, padding: 8 }}
+      >
+        {notices.map((n) => (
+          <div key={n.id} className="row" style={{ gap: 8, padding: 6, alignItems: 'flex-start' }}>
+            <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2, color: n.err ? 'var(--err)' : 'var(--ok)' }}>
+              {n.err ? <IconErr /> : <IconOk />}
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <div className="row" style={{ gap: 6, alignItems: 'baseline' }}>
+                <span className="small" style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={n.title}>{n.title}</span>
+                <span className="dim small nowrap" style={{ marginLeft: 'auto', flexShrink: 0 }}>{hm(n.at)}</span>
               </div>
-            ))}
-          </>
-        )}
-        {finished.length > 0 && (
-          <>
-            {/* 最近完成 */}
-            <div
-              className="dim small"
-              style={{ padding: '6px 6px 4px', marginTop: running.length ? 6 : 0, borderTop: running.length ? '1px solid var(--border2)' : undefined }}
-            >
-              {t('shell.tasks.finished')}
-            </div>
-            {finished.map((tk) => (
-              <div key={tk.id} className="row" style={{ gap: 8, padding: 6, alignItems: 'center' }}>
-                <span style={{ flexShrink: 0, display: 'inline-flex' }}>
-                  {tk.status === 'done' ? <IconOk /> : tk.status === 'cancelled' ? <span className="dim">⊘</span> : <IconErr />}
-                </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tk.title}</div>
-                  {(tk.message || tk.status === 'cancelled') && (
-                    <div className="dim small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.message ?? t('shell.tasks.cancelled')}>
-                      {tk.message ?? t('shell.tasks.cancelled')}
-                    </div>
-                  )}
-                </span>
-                {/* 移除这条记录 */}
-                <button className="mini" title={t('shell.tasks.removeTip')} onClick={() => removeTask(tk.id)}>×</button>
-              </div>
-            ))}
-          </>
-        )}
+              {n.message && (
+                <div className={n.err ? 'small' : 'dim small'} style={{ color: n.err ? 'var(--err)' : undefined, wordBreak: 'break-all', marginTop: 1 }} title={n.message}>
+                  {n.message}
+                </div>
+              )}
+            </span>
+            {/* 关闭这条通知 */}
+            <button className="mini" title={t('shell.notify.removeTip')} onClick={() => removeNotice(n.id)}>×</button>
+          </div>
+        ))}
       </div>
     </>
   );

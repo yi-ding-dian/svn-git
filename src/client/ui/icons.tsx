@@ -625,6 +625,17 @@ export function IconHourglassRun({ size = 14 }: IconProps) {
   );
 }
 
+/** 铃铛（任务通知）：有通知时顶栏出现（全关掉即消失）、未读时叠加红点（.bell-dot）。
+ *  线条描边与其它图标同风格。 */
+export function IconBell({ size = 15 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7" />
+      <path d="M10.3 20a2 2 0 0 0 3.4 0" />
+    </svg>
+  );
+}
+
 /** 图钉（**彩色·斜插**，像 📌）：仓库浏览「定位到该项目」的常驻钉子与按钮图标——
  *  红圆帽在右上、灰针斜向左下（用户定稿"要像这样斜着的彩色📌"）。 */
 export function IconPin({ size = 12 }: IconProps) {

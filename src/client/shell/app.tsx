@@ -13,9 +13,11 @@ import { useProjectHistory } from '../repo/use-project-history.js';
 import { ModalHost, onboardText, type Op } from './modal-host.js';
 import { Sidebar, type View } from './sidebar.js';
 import { IconOk, IconErr } from '../ui/icons.js';
-import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError } from '../shared/utils.js';
+import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError, baseName } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { useTasks } from '../shared/tasks.js';
+import { useTasks, startTask } from '../shared/tasks.js';
+import { addNotice } from '../shared/notices.js';
+import { TaskBanner } from './task-banner.js';
 import { useLang } from '../shared/use-lang.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 
@@ -49,11 +51,8 @@ export function App() {
   const [tick, setTick] = useState(0);
   const [toast, setToast] = useState('');
   const [toastErr, setToastErr] = useState(false);
-  /** 可点 toast 的行为（后台任务完成通知：点击打开任务面板）。**对象包一层**——
-   *  函数直接进 useState 会被 React 当作更新函数调用（经典陷阱） */
-  const [toastAction, setToastAction] = useState<{ fn: () => void } | null>(null);
-  /** 打开后台任务面板的信号（toast 点击 → 递增 → Header 展开面板） */
-  const [tasksOpenReq, setTasksOpenReq] = useState(0);
+  /** 后台任务完成横幅（顶部 3 秒浮层；key 变化 = 重播动画并重新计时——连续完成时后一条覆盖前一条） */
+  const [banner, setBanner] = useState<{ title: string; message: string; err: boolean; key: number } | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   // modal 最新引用：后台校验（提交前检查）完成后判断用户是否已关窗/切换，避免结果打扰
   const modalRef = useRef<Modal>(null);
@@ -92,15 +91,17 @@ export function App() {
   }, []);
   useEffect(() => {
     if (!toast) return;
-    // 成功 1.5s 淡出；失败停留 3 秒（够读完一行报错，又不至于赖着不走）；
-    // **可点**的（后台任务完成通知）留 4 秒给用户点击
+    // 成功 1.5s 淡出；失败停留 3 秒（够读完一行报错，又不至于赖着不走）
     // 局部变量名用 timer 而非 t：本文件 import 了 i18n 的 t()，同名会遮蔽
-    const timer = setTimeout(() => {
-      setToast('');
-      setToastAction(null);
-    }, toastAction ? 4000 : toastErr ? 3000 : 1500);
+    const timer = setTimeout(() => setToast(''), toastErr ? 3000 : 1500);
     return () => clearTimeout(timer);
-  }, [toast, toastErr, toastAction]);
+  }, [toast, toastErr]);
+  // 后台任务完成横幅：3 秒自动淡出（banner 引用变化 = 重新计时）
+  useEffect(() => {
+    if (!banner) return;
+    const timer = window.setTimeout(() => setBanner(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [banner]);
   const [updateResult, setUpdateResult] = useState<{
     dir: string;
     ok: boolean;
@@ -143,29 +144,30 @@ export function App() {
     refreshStash,
   } = useRepoStatus({ repoType: repo?.type, repoRoot: info?.root, tick });
 
-  /** 统一提示入口：默认按「成功」显示，是错误必须由调用方显式传 err=true。
-   *  旧写法把裸 setToast 当 onToast 往下传，而 toastErr 只在错误分支被置 true、成功分支没人复位，
-   *  于是一次失败之后所有普通提示都红着显示（实报：右键「复制完整路径」弹红 ✗）——
+  /** 统一提示入口（**跟随鼠标**的即时反馈——你主动操作的反馈；后台任务的完成通知不在这里：
+   *  走顶部横幅 + 铃铛留档，见下方 bgTasks 观察者）。默认按「成功」显示，是错误必须由调用方
+   *  显式传 err=true。旧写法把裸 setToast 当 onToast 往下传，而 toastErr 只在错误分支被置 true、
+   *  成功分支没人复位，于是一次失败之后所有普通提示都红着显示（实报：右键「复制完整路径」弹红 ✗）——
    *  红不红与那次操作毫无关系，只取决于这次会话之前有没有出过错。此处默认复位，由调用方声明错误。 */
-  const showToast = useCallback((msg: string, err = false, onClick?: () => void) => {
+  const showToast = useCallback((msg: string, err = false) => {
     setToastErr(err);
     setToast(msg);
-    setToastAction(onClick ? { fn: onClick } : null);
   }, []);
 
-  // 后台任务完成通知：**最小化过**的任务（detached）完成/失败时弹可点 toast → 打开任务面板。
-  // 弹窗还开着时结果就在眼前，不重复弹；取消不弹（用户自己点的）
+  // 后台任务完成通知：① 顶部横幅 3 秒（绿✓/红✗ 即时反馈）② 铃铛留档（错过可翻，逐条关闭）。
+  // 取消不通知（用户自己点的）；弹窗开着时也统一通知——横幅是固定位置的浮层，不打扰操作
   const bgTasks = useTasks();
   const notifiedTaskIdsRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     for (const tk of bgTasks) {
       if (tk.status === 'running' || notifiedTaskIdsRef.current.has(tk.id)) continue;
       notifiedTaskIdsRef.current.add(tk.id);
-      if (!tk.detached || tk.status === 'cancelled') continue;
-      // 「{title}：{message}」点击打开任务面板
-      showToast(t('shell.tasks.toast', { title: tk.title, message: tk.message ?? '' }), tk.status === 'error', () => setTasksOpenReq((n) => n + 1));
+      if (tk.status === 'cancelled') continue;
+      const info = { title: tk.title, message: tk.message ?? '', err: tk.status === 'error' };
+      setBanner({ ...info, key: Date.now() }); // 连续完成：后一条覆盖前一条并重新计时
+      addNotice(info);
     }
-  }, [bgTasks, showToast]);
+  }, [bgTasks]);
 
   const refresh = useCallback(() => {
     setTick((t) => t + 1);
@@ -316,60 +318,33 @@ export function App() {
     [refresh, showToast] // setOpBusy 为稳定 setter,无需入依赖（OP_BUSY_KEY 已提到模块级）
   );
 
-  // 推送：进度窗口(转圈可取消) + 认证引导（GitHub token / 服务器密码）；定义在 handleAction 之前供其依赖
-  const [pushing, setPushing] = useState(false);
-  const pushAbortRef = useRef<AbortController | null>(null);
+  // 推送（后台任务）：确认后弹窗即关、飞行线飞向顶栏沙漏；任务在后台跑，任务面板可取消。
+  // 完成/失败走「顶部横幅 + 铃铛」（App 的任务完成观察者统一通知）；认证失败仍弹认证引导重试
   const [pushAuth, setPushAuth] = useState<{ type: 'github' | 'server' | 'ssh'; error?: string } | null>(null);
-  // 实际执行推送（进度窗口 + 认证引导）
-  const pushNow = useCallback(async () => {
-    setPushing(true);
-    const ac = new AbortController();
-    pushAbortRef.current = ac;
-    try {
-      const r = await post.push(ac.signal);
-      if (r.ok) {
-        showToast(r.message);
-        refresh();
-      } else if (r.authType) {
-        // 认证失败 → 弹认证引导（带上失败原因，避免用户不明所以）
-        setPushAuth({ type: r.authType, error: r.message });
-      } else {
-        // 其他失败：弹窗明确显示错误（避免 toast 一闪而过"没反应"）
-        setModal({
-          type: 'confirm',
-          title: (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <IconErr size={16} />
-              {/* 推送失败 */}
-              {t('shell.push.failedTitle')}
-            </span>
-          ),
-          message: (
-            <div className="error" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-              {r.message}
-            </div>
-          ),
-          // 知道了
-          confirmLabel: t('ui.modal.gotIt'),
-          action: () => setModal(null),
-        });
-      }
-    } catch (e) {
-      // 用户主动中止（cancelled）不算失败——不标红
-      const cancelled = isCancelled(e);
-      // 已取消推送 / 推送失败: {msg}
-      showToast(cancelled ? t('shell.push.canceled') : t('shell.push.failMsg', { msg: (e as Error).message }), !cancelled);
-    } finally {
-      setPushing(false);
-      pushAbortRef.current = null;
-    }
-  }, [refresh, showToast]);
-  const cancelPush = () => pushAbortRef.current?.abort();
+  const pushNow = useCallback(() => {
+    startTask({
+      kind: 'push',
+      // 任务标题：推送 · {项目名} · {分支}（带项目名——切换项目后也能分清是哪个仓库在推）
+      title: t('shell.tasks.pushTitle', { repo: baseName(repo?.root ?? ''), branch: repo?.revOrBranch ?? '' }),
+      run: async (signal) => {
+        const r = await post.push(signal);
+        if (r.ok) refresh();
+        // 认证失败 → 弹认证引导（带失败原因）；其余失败只回给任务（横幅/铃铛提示，详情点铃铛看）
+        else if (r.authType) setPushAuth({ type: r.authType, error: r.message });
+        return { ok: r.ok, message: r.message, data: r };
+      },
+    });
+  }, [refresh, repo?.root, repo?.revOrBranch]);
   // 推送入口：弹出「确认推送」窗口（未推送提交列表 + 推送条件），确认后执行
   const doPush = useCallback(() => {
     if (unpushedCount != null && unpushedCount <= 0) return; // 无未推送提交（按钮已置灰，双保险）
+    // 已有推送在跑：别叠第二个（git 层面也会 lock 打架）——在任务面板里等它或取消它
+    if (bgTasks.some((tk) => tk.kind === 'push' && tk.status === 'running')) {
+      showToast(t('shell.tasks.pushBusy'), true);
+      return;
+    }
     setModal({ type: 'push-confirm' });
-  }, [unpushedCount]);
+  }, [unpushedCount, bgTasks, showToast]);
 
   // 跳转 diff 视图（提交冲突提示"双击查看差异"使用；定义在 handleAction 之前供其依赖）
   const gotoDiff = useCallback(
@@ -852,15 +827,15 @@ export function App() {
   );
 
   const cancelUpdate = () => updateAbortRef.current?.abort();
-  // 耗时（秒）：更新/推送中每秒刷新
+  // 更新耗时（秒）：更新中每秒刷新（推送已后台任务化——"已用秒数"由任务面板从任务 startedAt 现算）
   const [updateElapsed, setUpdateElapsed] = useState(0);
   useEffect(() => {
-    if (!updating && !pushing) return;
+    if (!updating) return;
     setUpdateElapsed(0);
     // 局部变量名用 timer 而非 t：本文件 import 了 i18n 的 t()，同名会遮蔽
     const timer = setInterval(() => setUpdateElapsed((s) => s + 1), 1000);
     return () => clearInterval(timer);
-  }, [updating, pushing]);
+  }, [updating]);
 
   const [diffFrom, setDiffFrom] = useState<View>('browse');
 
@@ -880,7 +855,6 @@ export function App() {
         onBrowseRepo={() => {
           if (repo?.root) openRepoBrowse(repo.root);
         }}
-        tasksOpenReq={tasksOpenReq}
         onRefresh={refresh}
         setModal={setModal}
         onToast={showToast}
@@ -890,6 +864,9 @@ export function App() {
         stashCount={stashCount}
         canStash={canStash ?? true}
       />
+
+      {/* 后台任务完成横幅（顶部 3 秒浮层；错过不丢——铃铛留档） */}
+      {banner && <TaskBanner key={banner.key} info={banner} />}
 
       {/* 新建仓库成功后的引导条（一次性，可关闭） */}
       {onboard && (
@@ -1121,7 +1098,7 @@ export function App() {
       {/* 操作结果提示：鼠标位置悬浮，淡出；错误态停留更久（见 .toast-tip.err） */}
       {toast && (
         <div
-          className={`toast-tip${toastErr ? ' err' : ''}${toastAction ? ' click' : ''}`}
+          className={`toast-tip${toastErr ? ' err' : ''}`}
           style={{
             left: Math.min(mouseRef.current.x, window.innerWidth - 360),
             top: Math.max(8, mouseRef.current.y - 26),
@@ -1130,15 +1107,6 @@ export function App() {
             border: toastErr ? '1px solid var(--err)' : '1px solid var(--border)',
           }}
           title={toast}
-          onClick={
-            toastAction
-              ? () => {
-                  toastAction.fn();
-                  setToast('');
-                  setToastAction(null);
-                }
-              : undefined
-          }
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             {toastErr ? <IconErr /> : <IconOk />}
@@ -1147,9 +1115,9 @@ export function App() {
         </div>
       )}
 
-      {/* 全部弹窗 + 「推送中/更新中」遮罩：集中在 modal-host.tsx（原先 21 个分支平铺在本文件 JSX 里，约 340 行） */}
+      {/* 全部弹窗 + 「更新中」遮罩：集中在 modal-host.tsx（原先 21 个分支平铺在本文件 JSX 里，约 340 行） */}
       <ModalHost
-        state={{ modal, pushAuth, updateResult, themePop, invalidPaths, openHistoryItem, pushing, updating, updateElapsed, configUser }}
+        state={{ modal, pushAuth, updateResult, themePop, invalidPaths, openHistoryItem, updating, updateElapsed, configUser }}
         set={{
           setModal,
           setPushAuth,
@@ -1165,7 +1133,7 @@ export function App() {
         ctx={{ repo, env, info, browseDir: browseDirRef.current }}
         appearance={{ fontSize, setFontSize, uiFont, setUiFont, codeFont, setCodeFont }}
         theme={{ current: theme, myThemes, setTheme, previewTheme, saveMyTheme, deleteMyTheme }}
-        actions={{ doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelPush, cancelUpdate }}
+        actions={{ doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelUpdate }}
       />
     </div>
   );
