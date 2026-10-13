@@ -2,7 +2,7 @@
  *  与「推送中 / 更新中」两个遮罩集中到这里，根组件只剩一行 <ModalHost />。
  *
  *  纯搬迁，交互逻辑一行未改。依赖按类别分组传入（而非平铺 30+ 个 props）：
- *  - state / set：弹窗状态与 setter（含进行中的 updating 遮罩）
+ *  - state / set：弹窗状态与 setter（推送/更新已后台任务化——无进度遮罩；结果窗保留）
  *  - ctx：当前仓库与只读上下文
  *  - appearance / theme：外观与主题
  *  - actions：提交、推送、刷新、diff 跳转等动作
@@ -11,7 +11,6 @@ import React from 'react';
 import { get, post, type RepoInfo } from '../shared/api.js';
 import { CommitModal } from '../ops/commit.js';
 import { CommitSelectModal } from '../ops/commit-select.js';
-import { UpdateResultModal } from '../ops/update-result.js';
 import { BranchDialog } from '../ops/branch.js';
 import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
 import { TagDialog, GitInfoModal } from '../ops/tag-git-info.js';
@@ -51,34 +50,22 @@ export function onboardText(r: RepoInfo): string {
   return t('shell.onboard.git', { root });
 }
 
-export interface UpdateResult {
-  dir: string;
-  ok: boolean;
-  message: string;
-  files?: { path: string; status: string; code?: string }[];
-  warnings?: string[];
-}
-
 export interface ModalHostProps {
   /** 弹窗状态（含进行中的遮罩） */
   state: {
     modal: Modal;
     pushAuth: { type: 'github' | 'server' | 'ssh'; error?: string } | null;
-    updateResult: UpdateResult | null;
     themePop: { x: number; y: number } | null;
     /** 点开过但打不开的项目：路径 → 错误消息（列表项上常驻 ×，悬浮时显示同一条） */
     invalidPaths: Record<string, string>;
     /** 打开某个最近项目（面板里点击时用） */
     openHistoryItem: (h: { path: string }) => void;
-    updating: boolean;
-    updateElapsed: number;
     configUser: string;
   };
   /** 对应 setter */
   set: {
     setModal: (m: Modal) => void;
     setPushAuth: (v: ModalHostProps['state']['pushAuth']) => void;
-    setUpdateResult: (v: UpdateResult | null) => void;
     setThemePop: (v: { x: number; y: number } | null) => void;
     setConfigUser: (v: string) => void;
     setInfo: (r: RepoInfo) => void;
@@ -125,16 +112,15 @@ export interface ModalHostProps {
     gotoDiff: (path: string, a?: string, b?: string) => void;
     /** 发起推送（后台任务；认证失败重试也走它——每次重试是新任务） */
     pushNow: () => void;
-    cancelUpdate: () => void;
   };
 }
 
 export function ModalHost(props: ModalHostProps) {
   const { state, set, ctx, appearance, theme, actions } = props;
-  const { modal, pushAuth, updateResult, themePop, invalidPaths, updating, updateElapsed, configUser } = state;
+  const { modal, pushAuth, themePop, invalidPaths, configUser } = state;
   const { repo, env, info, browseDir } = ctx;
-  const { setModal, setPushAuth, setUpdateResult, setThemePop, setConfigUser, setInfo, setOnboard, setView, showToast, setDiffReturnModal } = set;
-  const { doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelUpdate } = actions;
+  const { setModal, setPushAuth, setThemePop, setConfigUser, setInfo, setOnboard, setView, showToast, setDiffReturnModal } = set;
+  const { doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow } = actions;
 
   return (
     <>
@@ -205,35 +191,6 @@ export function ModalHost(props: ModalHostProps) {
               .catch(() => {});
           }}
           onClose={() => setModal(null)}
-        />
-      )}
-      {updating && (
-        <div className="modal-mask">
-          <div className="modal" style={{ width: 380 }}>
-            <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
-              <div className="spinner" />
-              {/* 正在更新… */}
-              <div style={{ marginTop: 14, fontWeight: 600 }}>{t('shell.busy.update')}</div>
-              {/* 视仓库大小和网络情况可能需要一些时间，可随时取消 */}
-              <div className="dim small" style={{ marginTop: 6 }}>{t('shell.update.hint')}</div>
-              {/* 已耗时 {n}s */}
-              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>{t('shell.elapsed', { n: updateElapsed })}</div>
-              <button className="mini danger" style={{ marginTop: 18 }} onClick={cancelUpdate}>
-                {/* 取消更新 */}
-                {t('shell.update.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {updateResult && (
-        <UpdateResultModal
-          dir={updateResult.dir}
-          ok={updateResult.ok}
-          message={updateResult.message}
-          files={updateResult.files}
-          warnings={updateResult.warnings}
-          onClose={() => setUpdateResult(null)}
         />
       )}
 

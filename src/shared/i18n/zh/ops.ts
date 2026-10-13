@@ -69,7 +69,7 @@ export const ops = {
   'ops.stageHunks.busy': '暂存中…',
   'ops.stageHunks.err': '暂存失败: {msg}',
 
-  // ---- 更新结果弹窗（update-result）----
+  // ---- 更新结果弹窗（update-result；**不再自动弹**——从铃铛通知面板点开详情）----
   'ops.update.status.updated': '已更新',
   'ops.update.status.added': '已添加',
   'ops.update.status.deleted': '已删除',

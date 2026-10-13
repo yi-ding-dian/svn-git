@@ -78,6 +78,14 @@ export function cancelTask(id: number): void {
   patch(id, { status: 'cancelled', message: undefined, endedAt: Date.now() });
 }
 
+/** 是否有同类型的进行中任务（发起前防重入）。
+ *  **直接读模块级快照**——startTask 同步更新 store，这里立即可见；
+ *  若改读组件里的 useTasks 快照（React 渲染时才更新），大目录（数万文件行）下
+ *  重渲染可能滞后几百毫秒，快速连点会漏判、叠起两个任务。 */
+export function hasRunningTask(kind: string): boolean {
+  return tasks.some((t) => t.kind === kind && t.status === 'running');
+}
+
 /** 从面板移除一条记录（进行中的不允许移除——需先取消） */
 export function removeTask(id: number): void {
   const t = tasks.find((x) => x.id === id);

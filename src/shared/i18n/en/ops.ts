@@ -65,7 +65,7 @@ export const ops = {
   'ops.stageHunks.busy': 'Staging…',
   'ops.stageHunks.err': 'Staging failed: {msg}',
 
-  // ---- 更新结果弹窗（update-result）----
+  // ---- 更新结果弹窗（update-result；**不再自动弹**——从铃铛通知面板点开详情）----
   'ops.update.status.updated': 'Updated',
   'ops.update.status.added': 'Added',
   'ops.update.status.deleted': 'Deleted',

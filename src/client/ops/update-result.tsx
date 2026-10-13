@@ -22,15 +22,19 @@ const statusLabel = (code: string): string => {
   return key ? t(key) : code;
 };
 
-/** 更新结果弹窗：显示更新目录/文件详情（不自动消失，用户可仔细查看） */
-export function UpdateResultModal(props: {
+/** 更新结果详情（组件数据；同时作为通知里携带的 detail——完成通知带上它，
+ *  铃铛面板里点开该条通知即打开本窗。见 shared/notices 与 header 的 NoticePopover） */
+export interface UpdateResultDetail {
   dir: string;
   ok: boolean;
   message: string;
   files?: { path: string; status: string; code?: string }[];
   warnings?: string[];
-  onClose: () => void;
-}) {
+}
+
+/** 更新结果弹窗：显示更新目录/文件详情（不自动消失，用户可仔细查看）。
+ *  **不再自动弹**（用户定稿：结果走铃铛通知，避免打扰）；从通知面板点开。 */
+export function UpdateResultModal(props: UpdateResultDetail & { onClose: () => void }) {
   const STATUS_COLOR: Record<string, string> = {
     updated: 'var(--ok)',
     added: 'var(--ok)',
@@ -50,7 +54,8 @@ export function UpdateResultModal(props: {
   }, [props.files]);
 
   return (
-    <div className="modal-mask">
+    // zIndex 460：高于通知面板（.ctx-menu 300）与通知气泡（450）——本窗从面板里点开，不能被它们盖住
+    <div className="modal-mask" style={{ zIndex: 460 }}>
       <ResizableModal width={720} onEsc={props.onClose}>
         <h3 style={{ color: props.ok ? 'var(--ok)' : 'var(--err)' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>

@@ -17,6 +17,9 @@ export interface Notice {
   at: number;
   /** 已读（点开铃铛面板即全部置读——红点消失） */
   read: boolean;
+  /** 业务详情（如更新结果 UpdateResultDetail——由任务 data 透传）：有详情且面板识别的
+   *  通知可点击打开「详情窗」（按 detail.kind 判别）；无详情的通知行不可点 */
+  detail?: unknown;
 }
 
 let nextId = 1;
@@ -28,8 +31,8 @@ function emit() {
 }
 
 /** 新增一条通知（新的在前） */
-export function addNotice(n: { title: string; message: string; err: boolean }): void {
-  notices = [{ id: nextId++, title: n.title, message: n.message, err: n.err, at: Date.now(), read: false }, ...notices];
+export function addNotice(n: { title: string; message: string; err: boolean; detail?: unknown }): void {
+  notices = [{ id: nextId++, title: n.title, message: n.message, err: n.err, at: Date.now(), read: false, detail: n.detail }, ...notices];
   emit();
 }
 

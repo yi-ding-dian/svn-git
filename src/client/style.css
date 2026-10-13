@@ -893,27 +893,37 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   88% { opacity: 1; } /* 停留 ≈2.5s */
   100% { opacity: 0; }
 }
-/* ---------- 后台任务完成横幅（顶部 3 秒浮层：不推挤内容、不挡操作；见 task-banner.tsx） ---------- */
-.task-banner {
-  position: fixed; left: 0; right: 0; z-index: 450;
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 16px; font-size: 13px;
-  color: var(--ok); background: rgba(63,185,80,.16);
-  border-bottom: 1px solid rgba(63,185,80,.55);
-  backdrop-filter: blur(6px);
-  /* 3s 与 app.tsx 的 setTimeout 对齐（淡入 → 停留 → 淡出），动画放完正好被移除 */
-  animation: task-banner-fade 3s ease forwards;
-  pointer-events: none;
+/* 轻提示（重复操作提醒等"扫一眼就够"的——用户定稿 1.5s 消失）：覆盖 .err 的 3s 动画
+   （同特异度在后定义者胜）；时长与 app.tsx 的 setTimeout（quick → 1500ms）对齐 */
+.toast-tip.quick {
+  animation: toast-fade-quick 1.5s ease forwards;
 }
-.task-banner.err {
-  color: var(--err); background: rgba(248,81,73,.16);
-  border-bottom-color: rgba(248,81,73,.55);
+@keyframes toast-fade-quick {
+  0% { opacity: 0; }
+  7% { opacity: 1; }
+  80% { opacity: 1; } /* 停留 ≈1.1s */
+  100% { opacity: 0; }
 }
-@keyframes task-banner-fade {
-  0% { opacity: 0; transform: translateY(-8px); }
-  6% { opacity: 1; transform: translateY(0); }
-  82% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-4px); }
+/* ---------- 任务通知气泡（铃铛正下方弹出；约 3.5s 无人点击播放"收回"动画——见 header.tsx） ---------- */
+.notice-bubble {
+  position: fixed; z-index: 450;
+  display: flex; gap: 8px; align-items: flex-start;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.22);
+  padding: 8px 10px; max-width: 340px; min-width: 190px;
+  cursor: pointer; transform-origin: top right;
+  animation: notice-bubble-pop .28s ease;
+}
+.notice-bubble:hover { border-color: var(--accent); }
+/* 收回：向铃铛方向（上方）缩小淡出——动画结束由 onAnimationEnd 移除元素 */
+.notice-bubble.out { animation: notice-bubble-retract .45s ease forwards; }
+@keyframes notice-bubble-pop {
+  from { opacity: 0; transform: translateY(-10px) scale(.85); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes notice-bubble-retract {
+  0% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-30px) scale(.25); }
 }
 
 /* ---------- 任务通知铃铛（顶栏：有通知才显示；未读红点 + 到货轻摆） ---------- */

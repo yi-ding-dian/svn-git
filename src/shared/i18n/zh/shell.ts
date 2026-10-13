@@ -13,8 +13,6 @@ export const shell = {
   /** 列表拼接分隔符（文件行号、退出前警告项……） */
   'shell.listSep': '、',
   'shell.unknownError': '未知错误',
-  'shell.elapsed': '已耗时 {n}s',
-  'shell.repoRoot': '（仓库根）',
 
   // ---- 顶栏：仓库信息 ----
   'shell.header.noRepo': '未选择仓库',
@@ -73,9 +71,15 @@ export const shell = {
   // 推送后台任务标题（顺序=项目名 · 分支名 · 操作——用户定稿；{repo} = 项目名、{branch} = 当前分支名）
   'shell.tasks.pushTitle': '{repo} · {branch} · 推送',
   'shell.tasks.pushBusy': '已有推送正在进行中，可在顶栏沙漏里查看或取消',
+  // 更新后台任务标题（同推送顺序；右键子目录更新时由代码在标题后追加「 · 目录」）
+  'shell.tasks.updateTitle': '{repo} · {branch} · 更新',
+  'shell.tasks.updateBusy': '已有更新正在进行中，可在顶栏沙漏里查看或取消',
   // 任务通知（铃铛：有通知才显示，点开查看 / 逐条关闭，全关掉即消失）
   'shell.notify.tip': '任务通知（点击查看）',
   'shell.notify.removeTip': '关闭这条通知',
+  // 通知面板里可点开的「更新结果」详情（文件清单/警告）
+  'shell.notify.detail': '详情',
+  'shell.notify.detailTip': '点击查看更新详情',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': '分隔符',
@@ -203,12 +207,6 @@ export const shell = {
   'shell.busy.push': '正在推送…',
   'shell.busy.move': '正在重命名…',
   'shell.busy.fsMove': '正在重命名磁盘文件…',
-
-  // ---- 更新进度遮罩（modal-host；推送已后台任务化——无进度遮罩）----
-  'shell.update.hint': '视仓库大小和网络情况可能需要一些时间，可随时取消',
-  'shell.update.cancel': '取消更新',
-  'shell.update.canceled': '已取消更新',
-  'shell.update.failMsg': '更新失败: {msg}',
 
   // ---- 操作失败 / 提交结果 ----
   'shell.op.failed': '操作失败',

@@ -11,8 +11,6 @@ export const shell = {
   'shell.dblClickDiff': 'Double-click to view diff',
   'shell.listSep': ', ',
   'shell.unknownError': 'Unknown error',
-  'shell.elapsed': 'Elapsed {n}s',
-  'shell.repoRoot': '(repository root)',
 
   // ---- 顶栏：仓库信息 ----
   'shell.header.noRepo': 'No repository',
@@ -71,9 +69,15 @@ export const shell = {
   // Push background-task title (order: repo · branch · action; {repo} = project name, {branch} = current branch name)
   'shell.tasks.pushTitle': '{repo} · {branch} · Push',
   'shell.tasks.pushBusy': 'A push is already running — view or cancel it from the hourglass in the header',
+  // Update background-task title (same order; the subdirectory is appended by code when updating a folder)
+  'shell.tasks.updateTitle': '{repo} · {branch} · Update',
+  'shell.tasks.updateBusy': 'An update is already running — view or cancel it from the hourglass in the header',
   // Task notifications (bell: shown only with notifications; click to view / dismiss one by one)
   'shell.notify.tip': 'Task notifications (click to view)',
   'shell.notify.removeTip': 'Dismiss this notification',
+  // Openable "update result" details (file list / warnings) in the notification panel
+  'shell.notify.detail': 'Details',
+  'shell.notify.detailTip': 'Click to view update details',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': 'Separator',
@@ -194,12 +198,6 @@ export const shell = {
   'shell.busy.push': 'Pushing…',
   'shell.busy.move': 'Renaming…',
   'shell.busy.fsMove': 'Renaming files on disk…',
-
-  // ---- Update progress overlay (modal-host; push is a background task now — no overlay) ----
-  'shell.update.hint': 'This may take a while depending on repository size and network; you can cancel at any time',
-  'shell.update.cancel': 'Cancel Update',
-  'shell.update.canceled': 'Update canceled',
-  'shell.update.failMsg': 'Update failed: {msg}',
 
   // ---- 操作失败 / 提交结果 ----
   'shell.op.failed': 'Operation failed',

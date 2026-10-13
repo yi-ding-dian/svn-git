@@ -4,6 +4,7 @@ import { get, post, type RepoInfo } from '../shared/api.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { useTasks, cancelTask } from '../shared/tasks.js';
 import { useNotices, markAllRead, removeNotice } from '../shared/notices.js';
+import { UpdateResultModal, type UpdateResultDetail } from '../ops/update-result.js';
 import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun, IconBell } from '../ui/icons.js';
 import { type Modal } from './modal-types.js';
 import { type View } from './sidebar.js';
@@ -486,7 +487,7 @@ export function AppHeader(props: {
   onToast: (m: string, err?: boolean) => void;
   /** 推送（含进度窗口与认证引导） */
   onPush: () => void;
-  /** 更新/拉取（git=pull, svn=update, 含进度窗口可取消） */
+  /** 更新/拉取（git=pull, svn=update；后台任务——任务面板可取消，完成走铃铛气泡通知） */
   onUpdate: () => void;
   /** 未推送提交数（git；null=未知/svn 不显示角标） */
   unpushedCount?: number | null;
@@ -555,18 +556,36 @@ export function AppHeader(props: {
     const r = bellBtnRef.current?.getBoundingClientRect();
     if (r) setNoticePop({ x: r.right, y: r.bottom + 6 });
   };
+  // 通知到货：铃铛轻摆 + 铃铛正下方弹出小气泡（约 3.5 秒；无人点击播放"收回"动画消失——
+  // 内容在铃铛里已留档；点击气泡 = 打开通知面板）。连续到达时后一条顶替前一条并重新计时
   const [bellBounce, setBellBounce] = useState(false);
-  const prevNoticeCountRef = useRef(0);
+  const [bubbleOut, setBubbleOut] = useState(false);
+  const [bubble, setBubble] = useState<{ id: number; title: string; message: string; err: boolean; x: number; y: number } | null>(null);
+  const lastNoticeIdRef = useRef(0);
   useEffect(() => {
-    if (notices.length > prevNoticeCountRef.current) {
-      // 新通知到货：铃铛轻摆（700ms 与 .bell-bounce 动画同步）
-      setBellBounce(true);
-      const h = window.setTimeout(() => setBellBounce(false), 700);
-      prevNoticeCountRef.current = notices.length;
-      return () => window.clearTimeout(h);
-    }
-    prevNoticeCountRef.current = notices.length;
-  }, [notices.length]);
+    const latest = notices[0];
+    if (!latest || latest.id === lastNoticeIdRef.current) return;
+    lastNoticeIdRef.current = latest.id;
+    setBellBounce(true);
+    const hb = window.setTimeout(() => setBellBounce(false), 700);
+    // 气泡锚定铃铛（本帧铃铛随 notices 一起渲染，ref 已就绪；取不到就兜到右上角）
+    const r = bellBtnRef.current?.getBoundingClientRect();
+    setBubbleOut(false);
+    setBubble({
+      id: latest.id,
+      title: latest.title,
+      message: latest.message,
+      err: latest.err,
+      x: r?.right ?? window.innerWidth - 24,
+      y: (r?.bottom ?? 44) + 6,
+    });
+    // 无人点击 → 进"收回"动画（动画结束由 onAnimationEnd 移除）
+    const hOut = window.setTimeout(() => setBubbleOut(true), 3500);
+    return () => {
+      window.clearTimeout(hb);
+      window.clearTimeout(hOut);
+    };
+  }, [notices]);
 
   // 拖拽状态（手动 mousedown 实现，不依赖 HTML5 DnD：真实/模拟环境都可靠）：
   // 当前拖的项（按钮 key 或分隔符唯一 id）+ 插入位置（参考项 id；null=末尾）+ ⋯ 高亮 + ghost 位置
@@ -1055,6 +1074,32 @@ export function AppHeader(props: {
       )}
       {/* 后台任务面板（贴指示器展开；fixed 定位，在 header 内渲染不影响布局） */}
       {taskPop && <TaskPopover x={taskPop.x} y={taskPop.y} onClose={() => setTaskPop(null)} />}
+      {/* 通知气泡（铃铛正下方弹出；无人点击 3.5s 播放"收回"动画——见上方 effect）：
+          点击 = 打开通知面板（气泡本身不留档，内容在铃铛里） */}
+      {bubble && (
+        <div
+          key={bubble.id}
+          className={`notice-bubble${bubbleOut ? ' out' : ''}`}
+          style={{ right: Math.max(8, window.innerWidth - bubble.x), top: bubble.y }}
+          onClick={() => {
+            setBubble(null);
+            openNoticePop();
+          }}
+          onAnimationEnd={() => {
+            if (bubbleOut) setBubble(null);
+          }}
+        >
+          <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2, color: bubble.err ? 'var(--err)' : 'var(--ok)' }}>
+            {bubble.err ? <IconErr /> : <IconOk />}
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <div className="small" style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={bubble.title}>{bubble.title}</div>
+            {bubble.message && (
+              <div className={bubble.err ? 'small' : 'dim small'} style={{ color: bubble.err ? 'var(--err)' : undefined, wordBreak: 'break-all', marginTop: 1 }}>{bubble.message}</div>
+            )}
+          </span>
+        </div>
+      )}
       {noticePop && <NoticePopover x={noticePop.x} y={noticePop.y} onClose={() => setNoticePop(null)} />}
     </div>
   );
@@ -1113,10 +1158,20 @@ function TaskPopover(props: { x: number; y: number; onClose: () => void }) {
   );
 }
 
+/** 通知里的「更新结果」详情判别：detail 由任务 data 透传（app 的完成观察者），
+ *  带 kind='update' 的通知行才可点开「更新结果」窗；其余通知行不可点 */
+function asUpdateDetail(d: unknown): UpdateResultDetail | null {
+  const o = d as { kind?: string } | null;
+  return o && o.kind === 'update' ? (d as UpdateResultDetail) : null;
+}
+
 /** 任务通知面板（铃铛）：完成/失败通知列表——✓/✗ + 标题 + 消息 + 时间 + [×]逐条关闭；
+ *  带更新详情的行可点开「更新结果」窗（文件清单/警告——更新不再自动弹，详情从这里看）；
  *  打开即全部已读（红点消失）；全部关掉 → 铃铛随之消失（父层条件渲染），面板自动收起 */
 function NoticePopover(props: { x: number; y: number; onClose: () => void }) {
   const notices = useNotices();
+  /** 打开的「更新结果」详情窗（点面板里带「详情 ▸」的通知行） */
+  const [detail, setDetail] = useState<UpdateResultDetail | null>(null);
   // 打开即已读（放 effect 里，避免渲染期改 store）
   useEffect(() => {
     markAllRead();
@@ -1146,27 +1201,42 @@ function NoticePopover(props: { x: number; y: number; onClose: () => void }) {
         className="ctx-menu"
         style={{ position: 'fixed', right: Math.max(8, window.innerWidth - props.x), top: props.y, minWidth: 320, maxWidth: 430, padding: 8 }}
       >
-        {notices.map((n) => (
-          <div key={n.id} className="row" style={{ gap: 8, padding: 6, alignItems: 'flex-start' }}>
-            <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2, color: n.err ? 'var(--err)' : 'var(--ok)' }}>
-              {n.err ? <IconErr /> : <IconOk />}
-            </span>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <div className="row" style={{ gap: 6, alignItems: 'baseline' }}>
-                <span className="small" style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={n.title}>{n.title}</span>
-                <span className="dim small nowrap" style={{ marginLeft: 'auto', flexShrink: 0 }}>{hm(n.at)}</span>
-              </div>
-              {n.message && (
-                <div className={n.err ? 'small' : 'dim small'} style={{ color: n.err ? 'var(--err)' : undefined, wordBreak: 'break-all', marginTop: 1 }} title={n.message}>
-                  {n.message}
+        {notices.map((n) => {
+          const ud = asUpdateDetail(n.detail);
+          return (
+            <div
+              key={n.id}
+              className="row"
+              style={{ gap: 8, padding: 6, alignItems: 'flex-start', cursor: ud ? 'pointer' : undefined }}
+              title={ud ? t('shell.notify.detailTip') : undefined}
+              onClick={ud ? () => setDetail(ud) : undefined}
+            >
+              <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2, color: n.err ? 'var(--err)' : 'var(--ok)' }}>
+                {n.err ? <IconErr /> : <IconOk />}
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <div className="row" style={{ gap: 6, alignItems: 'baseline' }}>
+                  <span className="small" style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={n.title}>{n.title}</span>
+                  <span className="dim small nowrap" style={{ marginLeft: 'auto', flexShrink: 0 }}>{hm(n.at)}</span>
                 </div>
-              )}
-            </span>
-            {/* 关闭这条通知 */}
-            <button className="mini" title={t('shell.notify.removeTip')} onClick={() => removeNotice(n.id)}>×</button>
-          </div>
-        ))}
+                {n.message && (
+                  <div className={n.err ? 'small' : 'dim small'} style={{ color: n.err ? 'var(--err)' : undefined, wordBreak: 'break-all', marginTop: 1 }} title={n.message}>
+                    {n.message}
+                  </div>
+                )}
+              </span>
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                {/* 详情（点击查看更新文件清单/警告） */}
+                {ud && <span className="dim small nowrap">{t('shell.notify.detail')} ▸</span>}
+                {/* 关闭这条通知（stopPropagation：行可点时点 × 不应打开详情） */}
+                <button className="mini" title={t('shell.notify.removeTip')} onClick={(e) => { e.stopPropagation(); removeNotice(n.id); }}>×</button>
+              </span>
+            </div>
+          );
+        })}
       </div>
+      {/* 更新结果详情窗（从面板点开；关闭后回到面板） */}
+      {detail && <UpdateResultModal {...detail} onClose={() => setDetail(null)} />}
     </>
   );
 }
