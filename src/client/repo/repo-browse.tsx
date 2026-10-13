@@ -9,6 +9,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { get, post } from '../shared/api.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
+import { renderMarkdown } from '../shared/markdown.js';
+import { loadMdTheme, mdThemeVars } from '../filesystem/md-theme.js';
 import { MiniIcon, IconServer, IconPin } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { PickDirModal } from './pick-dir.js';
@@ -50,6 +52,8 @@ export function RepoBrowseModal(props: {
   const [fileErr, setFileErr] = useState('');
   /** 二进制文件（后端判定）：不渲染内容、显示"请下载后再浏览"，且不给「复制」 */
   const [fileBin, setFileBin] = useState(false);
+  /** md 文件：预览（渲染版，同主界面）↔ 源码——换文件自动回源码 */
+  const [mdPreview, setMdPreview] = useState(false);
   const [copied, setCopied] = useState(false);
   const [picker, setPicker] = useState(false);
   const [msg, setMsg] = useState('');
@@ -72,6 +76,41 @@ export function RepoBrowseModal(props: {
   const [leftRatio, setLeftRatio] = useState(45);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startRatio: number; width: number } | null>(null);
+
+  /** 换文件回源码视图时一并重置（见 cat effect）；md 判定 */
+  const isMd = !!file && /\.(md|markdown)$/i.test(file.name);
+
+  /** 「下载」：优先**浏览器原生「另存为」**（showSaveFilePicker——Electron/Chrome；用户定稿
+   *  "下载文件而已，打开浏览器的下载弹窗就行"）；不支持（Firefox 等）降级回目录选择弹窗。
+   *  取消保存框（AbortError）静默返回 */
+  const downloadFile = async () => {
+    if (!file) return;
+    const pickerFn = (
+      window as unknown as {
+        showSaveFilePicker?: (o: { suggestedName?: string }) => Promise<{ name: string; createWritable: () => Promise<WritableStream<Uint8Array>> }>;
+      }
+    ).showSaveFilePicker;
+    if (!pickerFn) {
+      setPicker(true); // 降级：现有目录选择弹窗（后端写盘）
+      return;
+    }
+    try {
+      const handle = await pickerFn({ suggestedName: file.name });
+      // 全量字节端点（预览 cat 有 2MB 上限，下载不受限）
+      const res = await fetch(`/api/repo-download?url=${encodeURIComponent(file.url)}`);
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const w = await handle.createWritable();
+      await res.body.pipeTo(w);
+      // 已保存到 {path}
+      setMsg(t('repo.browse.saved', { path: handle.name }));
+      setMsgErr(false);
+    } catch (e) {
+      const err = e as Error & { name?: string };
+      if (err.name === 'AbortError') return; // 用户取消保存框——静默
+      setMsg(err.message);
+      setMsgErr(true);
+    }
+  };
 
   /** 拉某个目录的子项（懒加载：展开才调；重复调用直接返回） */
   const loadDir = (dirUrl: string) => {
@@ -120,6 +159,7 @@ export function RepoBrowseModal(props: {
     setText(null);
     setFileErr('');
     setFileBin(false);
+    setMdPreview(/\.(md|markdown)$/i.test(file.name)); // md **默认预览模式**（用户定稿）；其他回源码
     get
       .repoCat(file.url)
       .then((r) => {
@@ -418,14 +458,18 @@ export function RepoBrowseModal(props: {
             </div>
             {/* 可拖分隔（并排对比同款；宽度收窄为 4px——用户定稿"再小点"） */}
             <div className="sb-resizer" style={{ width: 4 }} onMouseDown={startDrag} title={t('repo.browse.dragTip')} />
-            {/* 预览区 */}
-            <div className="vcs-list" style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-              {!file && <div className="dim small" style={{ padding: '10px 6px' }}>{t('repo.browse.pickFile')}</div>}
+            {/* 预览区：文件名+工具行**固定**（不随内容滚动——用户定稿），内容区独立滚动 */}
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               {/* 选中文件即出文件名行（复制/下载按钮立即可用——loading/出错/二进制时下载都需要） */}
               {file && (
-                <>
-                  <div className="row" style={{ padding: '4px 6px', borderBottom: '1px solid var(--border2)', marginBottom: 6, gap: 8 }}>
+                <div className="row" style={{ flexShrink: 0, padding: '4px 6px', borderBottom: '1px solid var(--border2)', marginBottom: 6, gap: 8 }}>
                     <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                    {/* 预览 / 源码切换（md 文件；在复制按钮**左侧**——用户定稿） */}
+                    {isMd && text !== null && (
+                      <button className="mini" onClick={() => setMdPreview((v) => !v)}>
+                        {mdPreview ? t('repo.browse.mdSource') : t('repo.browse.mdPreview')}
+                      </button>
+                    )}
                     {/* 「复制」只有文本预览才给——二进制"不支持浏览"没有可复制的内容（用户定稿） */}
                     {text !== null && (
                       <button
@@ -441,10 +485,15 @@ export function RepoBrowseModal(props: {
                         {copied ? t('fs.pv.copied') : t('fs.pv.copyCode')}
                       </button>
                     )}
-                    {/* 下载到…（文件太大/二进制提示"请下载"时就在旁边，用户实报曾找不到） */}
-                    <button className="mini" onClick={() => setPicker(true)}>{t('repo.browse.saveTo')}</button>
-                  </div>
-                  {fileBin ? (
+                    {/* 下载（浏览器原生「另存为」；不支持时降级回目录选择） */}
+                  <button className="mini" onClick={() => void downloadFile()}>{t('repo.browse.download')}</button>
+                </div>
+              )}
+              {/* 内容区：独立滚动（工具行固定在上面——用户定稿） */}
+              <div className="vcs-list" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                {!file && <div className="dim small" style={{ padding: '10px 6px' }}>{t('repo.browse.pickFile')}</div>}
+                {file &&
+                  (fileBin ? (
                     // 不支持浏览，请下载后再浏览
                     <div className="small" style={{ padding: '10px 6px', color: 'var(--warn)' }}>⚠ {t('repo.browse.binary')}</div>
                   ) : fileErr ? (
@@ -457,15 +506,33 @@ export function RepoBrowseModal(props: {
                     </div>
                   ) : text === null ? (
                     <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.loading')}</div>
+                  ) : mdPreview && isMd ? (
+                    // md 渲染预览（同主界面：renderMarkdown + md 主题变量 + 代码块复制按钮事件代理）
+                    <div
+                      className="md-render"
+                      style={{ ...mdThemeVars(loadMdTheme()), padding: '0 8px 10px' }}
+                      onClick={(ev) => {
+                        // 代码块「复制」（按钮由 renderMarkdown 输出的 HTML 生成，事件代理；
+                        // 就地反馈：短暂变「已复制」）
+                        const el = ev.target as HTMLElement;
+                        if (!el.classList.contains('md-copy')) return;
+                        const code = el.closest('pre')?.querySelector('code')?.textContent ?? '';
+                        void navigator.clipboard?.writeText(code).then(() => {
+                          el.textContent = t('fs.pv.copied');
+                          setTimeout(() => (el.textContent = t('fs.pv.copyCode')), 1500);
+                        });
+                      }}
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(text, { copyBtn: true }) }}
+                    />
                   ) : (
                     <pre className="mono" style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>
                       {text.split('\n').map((l, i) => (
                         <div key={i} dangerouslySetInnerHTML={{ __html: highlightLine(l, langOf(file.name)) || '&nbsp;' }} />
                       ))}
                     </pre>
-                  )}
-                </>
-              )}
+                  ))
+                }
+              </div>
             </div>
           </div>
           <div style={{ flexShrink: 0, marginTop: 6 }}>

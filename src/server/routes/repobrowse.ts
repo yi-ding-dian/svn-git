@@ -18,7 +18,7 @@ const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' }
 const URL_OK = /^(svn|https?|file):\/\//i;
 
 /** 跑一条只读 svn 命令（URL 直连、无工作副本模式；cwd 用 tmp——这些命令不依赖工作目录） */
-async function svnRun(args: string[], opt: { timeoutMs?: number; raw?: boolean } = {}) {
+async function svnRun(args: string[], opt: { timeoutMs?: number; raw?: boolean; maxBuffer?: number } = {}) {
   const cfg = loadConfig();
   const full: string[] = [];
   if (cfg.svn.username) full.push('--username', cfg.svn.username, '--password-from-stdin', '--non-interactive');
@@ -29,6 +29,7 @@ async function svnRun(args: string[], opt: { timeoutMs?: number; raw?: boolean }
     stdinData: cfg.svn.username ? cfg.svn.password + '\n' : undefined,
     timeoutMs: opt.timeoutMs ?? 20_000,
     raw: opt.raw,
+    maxBuffer: opt.maxBuffer,
   });
 }
 
@@ -331,6 +332,39 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       // authError 时带 user = 本次实际使用的账号（空串 = 匿名）：前端拼「当前账号[X]没有获取该仓库权限」
       ...(auth ? { authError: true, user: cred?.username ?? '' } : {}),
     });
+    return true;
+  }
+
+  if (p === '/api/repo-download' && req.method === 'GET') {
+    // 原始文件**全量**下载（「下载」按钮用）：预览 cat 有 2MB 上限，下载不受限——
+    // 直接返回二进制流（前端 fetch 后 pipeTo 浏览器原生「另存为」）。
+    // 注意失败必须用**非 2xx**（前端按 res.ok 判断——200+JSON 会被当文件内容写进去）。
+    const target = String(url.searchParams.get('url') ?? '').trim();
+    if (!URL_OK.test(target)) {
+      // 仓库地址无效（仅支持 svn / http(s) / file）
+      sendJson(res, 400, { error: t('srv.badRepoUrl') });
+      return true;
+    }
+    try {
+      // buffer 上限 1GB（本地工具够用；超大文件会被截断——后续可改流式）
+      const r = await svnRun(['cat', target], { raw: true, timeoutMs: 600_000, maxBuffer: 1024 * 1024 * 1024 });
+      if (r.code !== 0) {
+        sendJson(res, 500, { error: r.stderr.trim() || 'svn cat failed' });
+        return true;
+      }
+      const buf = r.stdoutBuf ?? Buffer.from(r.stdout ?? '', 'utf8');
+      const name = decodeURIComponent(target.split('/').filter(Boolean).pop() ?? 'file');
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        // filename*（RFC5987，支持中文名）供浏览器提示；前端用 saveFilePicker 的 suggestedName 为主
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+        'Content-Length': String(buf.length),
+        'Cache-Control': 'no-store',
+      });
+      res.end(buf);
+    } catch (e) {
+      sendJson(res, 500, { error: (e as Error).message });
+    }
     return true;
   }
 

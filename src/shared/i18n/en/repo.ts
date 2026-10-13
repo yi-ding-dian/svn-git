@@ -15,7 +15,11 @@ export const repo = {
   'repo.browse.clickFile': 'Click to preview',
   'repo.browse.pickFile': 'Click a file on the left to preview',
   'repo.browse.saveTo': 'Download to…',
+  'repo.browse.download': 'Download',
   'repo.browse.saved': 'Saved to {path}',
+  // Toggle markdown source ↔ rendered preview (same rendering as the main file preview)
+  'repo.browse.mdPreview': 'Preview',
+  'repo.browse.mdSource': 'Original',
   // Binary files (docx/xlsx/archives…) have no text preview: prompt to download instead
   'repo.browse.binary': 'Preview not supported — download the file to view it',
   'repo.browse.entry': 'Browse repository',
