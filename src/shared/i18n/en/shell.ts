@@ -74,6 +74,17 @@ export const shell = {
   'shell.tasks.updateBusy': 'An update is already running — view or cancel it from the hourglass in the header',
   // The action word for the sidebar ⬇ pull task (title built in code: repo · branch · Pull)
   'shell.tasks.pullAction': 'Pull',
+  // Branch-operation task titles (shown in the hourglass/notifications after auto-backgrounding; {name}=branch)
+  'shell.tasks.branchCreate': 'Create branch · {name}',
+  'shell.tasks.branchSwitch': 'Switch branch · {name}',
+  'shell.tasks.branchDelete': 'Delete branch · {name}',
+  'shell.tasks.branchMerge': 'Merge branch · {name}',
+  'shell.tasks.branchPush': 'Push branch · {name}',
+  'shell.tasks.branchRemoteDelete': 'Delete remote branch · {name}',
+  // SVN cleanup task title
+  'shell.tasks.cleanupTitle': '{repo} · Cleanup',
+  // Shown when an operation takes over 3s and moves to the background ({title}=task title)
+  'shell.tasks.backgrounded': '{title} moved to the background — you will be notified when it finishes',
   // Task notifications (bell: shown only with notifications; click to view / dismiss one by one)
   'shell.notify.tip': 'Task notifications (click to view)',
   'shell.notify.removeTip': 'Dismiss this notification',

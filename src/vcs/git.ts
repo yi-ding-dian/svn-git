@@ -950,8 +950,8 @@ export class GitVcs {
 
   /** 创建分支：git branch <名> [基点]。基点缺省=当前 HEAD（现状行为）；传主干名则从主干创建——
    * 从非主干分支开新分支会包含该分支已提交的改动，基于主干可避开（前端确认弹窗引导） */
-  async branchCreate(name: string, base?: string): Promise<VcsResult> {
-    const res = await this.exec(['branch', name, ...(base ? [base] : [])]);
+  async branchCreate(name: string, base?: string, signal?: AbortSignal): Promise<VcsResult> {
+    const res = await this.exec(['branch', name, ...(base ? [base] : [])], { signal });
     // 创建分支失败
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.createBranchFailed') };
     // 已创建分支 {name}（基于 {base}） / 已创建分支 {name}
@@ -1033,8 +1033,8 @@ export class GitVcs {
     return { changed: tracked.length + untracked.length, tracked: tracked.length, untracked: untracked.length, conflicts };
   }
 
-  /** 切换分支（git 2.20 无 switch，用 checkout） */
-  async branchSwitch(name: string): Promise<VcsResult> {
+  /** 切换分支（git 2.20 无 switch，用 checkout）。signal：大仓库切换慢，可取消/转后台 */
+  async branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult> {
     // 远程分支（origin/xxx，refs/remotes 下存在）：
     // 直接 checkout origin/xxx 会进游离 HEAD（detached），改动不在任何分支上易丢失；
     // 本地已有同名分支则切本地（跟踪关系保留），否则自动创建本地跟踪分支。
@@ -1043,7 +1043,7 @@ export class GitVcs {
       const local = name.split('/').slice(1).join('/');
       const hasLocal = await this.exec(['rev-parse', '--verify', '--quiet', `refs/heads/${local}`]);
       if (hasLocal.code !== 0) {
-        const res = await this.exec(['checkout', '-b', local, name], { timeoutMs: 60_000 });
+        const res = await this.exec(['checkout', '-b', local, name], { timeoutMs: 60_000, signal });
         // 切换分支失败
         if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.switchBranchFailed') };
         // 已切换到 {name}（自动创建本地跟踪分支 {local}）
@@ -1051,7 +1051,7 @@ export class GitVcs {
       }
       name = local; // 本地已有同名分支，直接切换（保留跟踪关系）
     }
-    const res = await this.exec(['checkout', name], { timeoutMs: 60_000 });
+    const res = await this.exec(['checkout', name], { timeoutMs: 60_000, signal });
     // 切换分支失败
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.switchBranchFailed') };
     // 已切换到 {name}
@@ -1059,8 +1059,8 @@ export class GitVcs {
   }
 
   /** 删除分支（force 为 true 时 -D） */
-  async branchDelete(name: string, force = false): Promise<VcsResult> {
-    const res = await this.exec(['branch', force ? '-D' : '-d', name]);
+  async branchDelete(name: string, force = false, signal?: AbortSignal): Promise<VcsResult> {
+    const res = await this.exec(['branch', force ? '-D' : '-d', name], { signal });
     // 删除分支失败
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.deleteBranchFailed') };
     // 已删除分支 {name}
@@ -1070,14 +1070,14 @@ export class GitVcs {
   /** 合并分支到当前分支。
    *  提示一律"说人话"：不带分支名看不出合的是谁，不区分"已是最新"会让人以为合了（其实什么都没发生），
    *  冲突时只丢一句"可能有冲突"还得自己去翻——下面按 git 的真实输出分情况给结果。 */
-  async merge(name: string): Promise<VcsResult> {
+  async merge(name: string, signal?: AbortSignal): Promise<VcsResult> {
     // 当前分支名（提示里要说清"合并进哪个分支"）。用 rev-parse --abbrev-ref 而不是 branch --show-current：
     // 后者是 git 2.22+ 才有的，本机 2.20.1 会报 unknown option（实测）。分离头指针时它返回 "HEAD"
     const curRaw = await this.exec(['rev-parse', '--abbrev-ref', 'HEAD']);
     const curName = curRaw.stdout.trim();
     // 当前分支
     const cur = !curName || curName === 'HEAD' ? t('vcs.currentBranch') : curName;
-    const res = await this.exec(['merge', name], { timeoutMs: 120_000 });
+    const res = await this.exec(['merge', name], { timeoutMs: 120_000, signal });
     const out = res.stdout;
     const err = res.stderr;
 

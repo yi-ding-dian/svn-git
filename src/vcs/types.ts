@@ -149,11 +149,12 @@ export interface Vcs {
     lineConflicts?: string[];
     outdated?: { wcRev: string; headRev: string } | null;
   }>;
-  /** 创建分支（git 可选基点 base：git branch <名> [基点]；svn 固定从 trunk 复制） */
-  branchCreate(name: string, base?: string): Promise<VcsResult>;
-  branchSwitch(name: string): Promise<VcsResult>;
-  branchDelete(name: string, force?: boolean): Promise<VcsResult>;
-  merge(name: string): Promise<VcsResult>;
+  /** 创建分支（git 可选基点 base：git branch <名> [基点]；svn 固定从 trunk 复制）。
+   *  signal：取消/转后台（前端断开 → 后端杀掉在跑的子进程） */
+  branchCreate(name: string, base?: string, signal?: AbortSignal): Promise<VcsResult>;
+  branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult>;
+  branchDelete(name: string, force?: boolean, signal?: AbortSignal): Promise<VcsResult>;
+  merge(name: string, signal?: AbortSignal): Promise<VcsResult>;
   /** 中止进行中的合并（git 独有：merge --abort；svn 无对应物） */
   mergeAbort?(): Promise<VcsResult>;
   /** 推送指定本地分支到远程（git 独有；首次推送自动 git push -u origin <名字> 建立上游） */
@@ -210,7 +211,7 @@ export interface Vcs {
   catRev?(rev: string, pathRel: string): Promise<DiffResult>;
   update?(pathRel?: string, signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }>;
   selfLockedFiles?(): Promise<string[]>;
-  cleanup?(): Promise<VcsResult>;
+  cleanup?(signal?: AbortSignal): Promise<VcsResult>;
   resolve?(pathRel: string, accept: string): Promise<VcsResult>;
   propSetIgnore?(pathRel: string, pattern: string): Promise<VcsResult>;
   /** 忽略预案：规则最终写到哪个目录、内容是什么（弹窗确认前展示，避免「填了 A 却写入 B」） */

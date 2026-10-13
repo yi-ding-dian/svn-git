@@ -55,15 +55,21 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const action = String(body.action ?? '');
         const name = String(body.name ?? '');
         let result: VcsResult;
-        if (action === 'create') result = await vcs.branchCreate(name, String(body.base ?? '') || undefined);
+        // 取消/转后台统一（写操作链路）：客户端断开（任务面板「取消」）→ 杀掉在跑的子进程
+        // （切换/合并可能几十秒——大仓库；推送/删除远程是网络操作）
+        const ac = new AbortController();
+        res.on('close', () => {
+          if (!res.writableEnded) ac.abort();
+        });
+        if (action === 'create') result = await vcs.branchCreate(name, String(body.base ?? '') || undefined, ac.signal);
         else if (action === 'switch') {
-          result = await vcs.branchSwitch(name);
+          result = await vcs.branchSwitch(name, ac.signal);
           // svn switch 会改写工作副本文件（回主干等）；git checkout 后工作区内容换分支——防旧状态残留
           if (result.ok) invalidateStatusCache(vcsOf().repo.root);
         }
-        else if (action === 'delete') result = await vcs.branchDelete(name, Boolean(body.force));
+        else if (action === 'delete') result = await vcs.branchDelete(name, Boolean(body.force), ac.signal);
         else if (action === 'merge') {
-          result = await vcs.merge(name);
+          result = await vcs.merge(name, ac.signal);
           // 合并成功/冲突都会让工作区状态骤变（C/MERGE_HEAD/干净），一律失效 30s 缓存
           //（冲突时虽然 ok=false，但界面需要立刻显示 C 状态，否则「解决冲突」入口不出现）
           invalidateStatusCache(vcsOf().repo.root);
@@ -94,18 +100,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             sendJson(res, 400, { error: t('srv.trunkNoDelete') });
             return true;
           }
-          const ac = new AbortController();
-          res.on('close', () => {
-            if (!res.writableEnded) ac.abort();
-          });
           result = (await vcs.branchRemoteDelete?.(name, ac.signal)) ?? { ok: false, message: MSG_UNSUPPORTED_OP() };
         }
         else if (action === 'push') {
-          // 分支推送可取消：客户端断开（fetch abort → res close 且未写完）时终止 git push 子进程
-          const ac = new AbortController();
-          res.on('close', () => {
-            if (!res.writableEnded) ac.abort();
-          });
           // 当前仓库类型不支持分支推送
           result = (await vcs.branchPush?.(name, ac.signal)) ?? { ok: false, message: t('srv.branchPushUnsupported') };
         }

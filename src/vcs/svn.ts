@@ -724,7 +724,7 @@ export class SvnVcs {
 
   /** 创建分支：svn copy <trunk> <root>/branches/<name>（仅标准布局：分支必须从 trunk 复制才保证可合并回主干；
    *  无 trunk（非标准布局）直接拒绝，不 fallback 到当前 URL——从当前位置复制的分支无合并回主干意义） */
-  async branchCreate(name: string): Promise<VcsResult> {
+  async branchCreate(name: string, _base?: string, signal?: AbortSignal): Promise<VcsResult> {
     const root = await this.repoRootUrl();
     // 目标已存在时 svn copy 会嵌套复制造成污染 → 先校验
     try {
@@ -748,7 +748,7 @@ export class SvnVcs {
       return { ok: false, message: t('vcs.createBranchesDirFailed', { err: (err as Error).message }) };
     }
     // 创建分支 {name}
-    const res = await this.exec(['copy', `${root}/trunk`, `${root}/branches/${name}`, '-m', t('vcs.commitMsg.branchCreate', { name })], { timeoutMs: 120_000 });
+    const res = await this.exec(['copy', `${root}/trunk`, `${root}/branches/${name}`, '-m', t('vcs.commitMsg.branchCreate', { name })], { timeoutMs: 120_000, signal });
     if (res.code !== 0) {
       const auth = this.authError(res);
       // 创建分支失败
@@ -759,10 +759,10 @@ export class SvnVcs {
   }
 
   /** 删除分支（远程删除 branches/<name>，危险操作由前端确认） */
-  async branchDelete(name: string): Promise<VcsResult> {
+  async branchDelete(name: string, _force?: boolean, signal?: AbortSignal): Promise<VcsResult> {
     const root = await this.repoRootUrl();
     // 删除分支 {name}
-    const res = await this.exec(['delete', `${root}/branches/${name}`, '-m', t('vcs.commitMsg.branchDelete', { name })], { timeoutMs: 120_000 });
+    const res = await this.exec(['delete', `${root}/branches/${name}`, '-m', t('vcs.commitMsg.branchDelete', { name })], { timeoutMs: 120_000, signal });
     if (res.code !== 0) {
       const auth = this.authError(res);
       // 删除分支失败
@@ -802,7 +802,7 @@ export class SvnVcs {
     return { changed: items.length, tracked: items.length - untracked, untracked, conflicts: [], outdated };
   }
 
-  async branchSwitch(name: string): Promise<VcsResult> {
+  async branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult> {
     const root = await this.repoRootUrl();
     let target: string;
     if (name === 'trunk' || name === 'root' || name === '') {
@@ -818,7 +818,7 @@ export class SvnVcs {
     } else {
       target = `${root}/branches/${name}`;
     }
-    const res = await this.exec(['switch', target], { timeoutMs: 300_000 });
+    const res = await this.exec(['switch', target], { timeoutMs: 300_000, signal });
     if (res.code !== 0) {
       const auth = this.authError(res);
       // 切换分支失败
@@ -834,9 +834,9 @@ export class SvnVcs {
   }
 
   /** 合并分支到工作副本：svn merge <root>/branches/<name> */
-  async merge(branchName: string): Promise<VcsResult> {
+  async merge(branchName: string, signal?: AbortSignal): Promise<VcsResult> {
     const root = await this.repoRootUrl();
-    const res = await this.exec(['merge', `${root}/branches/${branchName}`], { timeoutMs: 300_000 });
+    const res = await this.exec(['merge', `${root}/branches/${branchName}`], { timeoutMs: 300_000, signal });
     if (res.code !== 0) {
       const auth = this.authError(res);
       // 合并失败（可能有冲突）
@@ -913,9 +913,9 @@ export class SvnVcs {
 
   // ============ 清理 / 冲突解决 / 忽略 ============
 
-  /** svn cleanup：清理中断操作遗留的锁 */
-  async cleanup(): Promise<VcsResult> {
-    const res = await this.exec(['cleanup']);
+  /** svn cleanup：清理中断操作遗留的锁（大工作副本可能慢——支持取消/转后台） */
+  async cleanup(signal?: AbortSignal): Promise<VcsResult> {
+    const res = await this.exec(['cleanup'], { signal });
     // 清理失败
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.cleanupFailed') };
     // 清理完成

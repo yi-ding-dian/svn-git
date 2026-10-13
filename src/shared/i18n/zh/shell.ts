@@ -76,6 +76,17 @@ export const shell = {
   'shell.tasks.updateBusy': '已有更新正在进行中，可在顶栏沙漏里查看或取消',
   // 侧栏 ⬇ 拉取任务的"操作"词（标题由代码拼：项目名 · 分支 · 拉取——同检出标题的拼接先例）
   'shell.tasks.pullAction': '拉取',
+  // 分支操作任务标题（3 秒未完成自动转后台时显示在沙漏/通知里；{name}=分支名）
+  'shell.tasks.branchCreate': '创建分支 · {name}',
+  'shell.tasks.branchSwitch': '切换分支 · {name}',
+  'shell.tasks.branchDelete': '删除分支 · {name}',
+  'shell.tasks.branchMerge': '合并分支 · {name}',
+  'shell.tasks.branchPush': '推送分支 · {name}',
+  'shell.tasks.branchRemoteDelete': '删除远程分支 · {name}',
+  // SVN 清理任务标题
+  'shell.tasks.cleanupTitle': '{repo} · 清理',
+  // 操作超过 3 秒自动转入后台时的提示（{title}=任务标题）
+  'shell.tasks.backgrounded': '{title} 已转入后台运行，完成后会通知您',
   // 任务通知（铃铛：有通知才显示，点开查看 / 逐条关闭，全关掉即消失）
   'shell.notify.tip': '任务通知（点击查看）',
   'shell.notify.removeTip': '关闭这条通知',

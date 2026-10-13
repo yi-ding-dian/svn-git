@@ -6,11 +6,23 @@ import { IconBranch } from '../ui/icons.js';
 import { HelpNote } from '../ui/ui.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { runAction } from '../shared/vcs-action.js';
+import { useTasks } from '../shared/tasks.js';
+import { startTaskDeferred } from '../shell/bg-defer.js';
+import { launchMagicFlight } from '../shell/magic-flight.js';
 import { ResultLine } from '../ui/result-line.js';
-import { t } from '../../shared/i18n/index.js';
+import { t, type I18nKey } from '../../shared/i18n/index.js';
 import { LayoutNote } from './layout-note.js';
 // ==================== 分支管理 ====================
+
+/** 分支操作 → 任务标题 key（**模块级**：同 OP_BUSY_KEY 惯例，避免每次渲染重建） */
+const BRANCH_TITLE_KEY: Record<'create' | 'switch' | 'delete' | 'merge' | 'push' | 'remote-delete', I18nKey> = {
+  create: 'shell.tasks.branchCreate',
+  switch: 'shell.tasks.branchSwitch',
+  delete: 'shell.tasks.branchDelete',
+  merge: 'shell.tasks.branchMerge',
+  push: 'shell.tasks.branchPush',
+  'remote-delete': 'shell.tasks.branchRemoteDelete',
+};
 
 export function BranchDialog(props: {
   repoType: 'svn' | 'git';
@@ -25,7 +37,11 @@ export function BranchDialog(props: {
   const [newName, setNewName] = useState('');
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
-  const [busy, setBusy] = useState(false);
+  /** 分支任务运行中（操作忙碌——按钮禁用统一用它）：从任务 store 派生，不再单独维护 state */
+  const bgTasks = useTasks();
+  const busy = bgTasks.some((tk) => tk.kind === 'branch' && tk.status === 'running');
+  /** 飞线起点：分支操作统一经确认框——确认按钮点击时记下它的位置（3 秒转后台时从这里起飞） */
+  const fromRef = useRef<{ x: number; y: number } | null>(null);
   // 科普折叠块展开状态（新手教学，默认收起不打扰）
   const [showHelp, setShowHelp] = useState(false);
   // 是否配置了远程：没有 origin 的本地孤仓库不显示「推送到远程」（推了也会失败）
@@ -58,76 +74,51 @@ export function BranchDialog(props: {
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 分推送进度窗（网络卡时可见可取消，与主推送一致）
-  const [pushProg, setPushProg] = useState<{ action: 'push' | 'remote-delete'; name: string } | null>(null);
-  const pushAbortRef = useRef<AbortController | null>(null);
-  const [pushElapsed, setPushElapsed] = useState(0);
-  useEffect(() => {
-    if (!pushProg) return;
-    setPushElapsed(0);
-    const timer = setInterval(() => setPushElapsed((s) => s + 1), 1000);
-    return () => clearInterval(timer);
-  }, [pushProg]);
-  /** 推送到远程/删除远程分支：进度窗 + 可取消（与主推送同款交互；认证失败走结果消息） */
-  const doBranchNet = async (action: 'push' | 'remote-delete', name: string) => {
-    setBusy(true);
-    setPushProg({ action, name });
-    const ac = new AbortController();
-    pushAbortRef.current = ac;
-    try {
-      const r = await post.branch(action, name, false, ac.signal);
-      setMsg(r.message);
-      setMsgErr(!r.ok);
-      if (r.ok) {
-        setPushProg(null);
-        load();
-        props.onChanged();
-      } else {
-        setPushProg(null); // 失败/取消：关闭进度窗，结果消息留在对话框提示行
-      }
-    } catch (e) {
-      setMsg((e as Error).message);
-      setMsgErr(true);
-      setPushProg(null);
-    } finally {
-      setBusy(false);
-      pushAbortRef.current = null;
-    }
-  };
-
-  const act = (action: 'create' | 'switch' | 'delete' | 'merge' | 'push', name: string, force = false, base?: string) => {
-    setBusy(true);
-    void runAction(
-      () => post.branch(action, name, force, undefined, base),
-      (m, err) => {
-        // 未合并导致删除被拒 → 不干巴巴报错，改弹"强制删除"二次确认。
+  /** 分支操作统一入口（**3 秒延迟后台化**——用户定稿）：任务从发起起就在 store 里，
+   *  3 秒内完成：弹窗内照常收尾（结果行/列表刷新），用户无感；
+   *  超时未完成：收起弹窗 + 飞线（起点=确认按钮）+ 轻提示"已转入后台"，完成走统一通知。 */
+  const act = (action: 'create' | 'switch' | 'delete' | 'merge' | 'push' | 'remote-delete', name: string, force = false, base?: string) => {
+    const title = t(BRANCH_TITLE_KEY[action], { name });
+    const from = fromRef.current ?? undefined;
+    fromRef.current = null; // 用掉即清（每次确认时重新记）
+    startTaskDeferred({
+      kind: 'branch',
+      title,
+      run: async (signal) => {
+        const r = await post.branch(action, name, force, signal, base);
+        // 未合并导致删除被拒 → 不干巴巴报错，改弹"强制删除"二次确认（3 秒内弹窗还开着才有意义；
+        // 已转后台的失败可从通知里看到提示后重新进弹窗强删）。
         // （确认框文案早就写着"可强制删除"，但 force 从没传下去过，未合并的分支根本删不掉 —— 用户实报）
-        // 两段式：已合并的分支删起来毫无变化，只有真被 git 拒绝时才把"强制"摆上来，并说清后果
-        if (action === 'delete' && err && !force && /没有完全合并|not fully merged/.test(m)) { // i18n-ignore: 解析 git 命令输出的中英文报错（判断"未合并"）
+        if (action === 'delete' && !r.ok && !force && /没有完全合并|not fully merged/.test(r.message)) { // i18n-ignore: 解析 git 命令输出的中英文报错（判断"未合并"）
           setCfm({
             // ⚠ 分支未完全合并
             title: t('ops.branch.notMergedTitle'),
             // 强制删除会永久丢失该分支上未合并的提交，无法恢复。仍要删除吗？
-            msg: `${m}\n\n${t('ops.branch.notMergedBody')}`,
+            msg: `${r.message}\n\n${t('ops.branch.notMergedBody')}`,
             danger: true,
             // 强制删除
             confirmLabel: t('ops.branch.forceDelete'),
             action: () => act('delete', name, true),
           });
-          return; // 已转成确认流程，不再走下面的默认报错显示
+          return { ok: false, message: r.message };
         }
         // 可在「解决冲突」中用「中止合并」放弃本次合并
-        const text = action === 'merge' && err ? `${m} ${t('ops.branch.mergeAbortHint')}` : m;
+        const text = action === 'merge' && !r.ok ? `${r.message} ${t('ops.branch.mergeAbortHint')}` : r.message;
         setMsg(text);
-        setMsgErr(Boolean(err));
-        props.onToast(text, Boolean(err)); // 鼠标附近也弹一次（弹窗里那行保留，不替代）
+        setMsgErr(!r.ok);
+        // 成功刷新；合并"失败"（冲突 ok=false）时工作区也已变化——同样刷新后「解决冲突」入口才出现
+        if (r.ok || action === 'merge') {
+          load();
+          props.onChanged();
+        }
+        return { ok: r.ok, message: text };
       },
-      () => {
-        load();
-        props.onChanged();
+      onSlow: () => {
+        props.onClose(); // 收起弹窗（任务后台继续；完成走气泡+铃铛通知）
+        if (from) launchMagicFlight(from);
+        props.onToast(t('shell.tasks.backgrounded', { title }), false);
       },
-      action === 'merge' // 合并冲突（ok=false）时工作区已变化：刷新后「解决冲突」入口才会出现
-    ).finally(() => setBusy(false));
+    });
   };
 
   /** 新建分支确认：确保创建的分支能按要求合回主干——
@@ -327,7 +318,7 @@ export function BranchDialog(props: {
       title: t('ops.branch.pushTitle'),
       // 确认将本地分支 {name} 推送到远程服务器（origin）？\n首次推送会自动建立上游跟踪。
       msg: `${t('ops.branch.pushMsg', { name })}${warn}`,
-      action: () => void doBranchNet('push', name),
+      action: () => act('push', name),
     });
   };
 
@@ -339,7 +330,7 @@ export function BranchDialog(props: {
       // 确认删除远程分支 {name}？\n远程服务器上该分支将不再存在（本地分支不受影响），此操作不可恢复。
       msg: t('ops.branch.remoteDeleteMsg', { name }),
       confirmCmd: cmdOfRepo(props.repoType, 'branch_remote_delete', { name: name.split('/').slice(1).join('/') }),
-      action: () => void doBranchNet('remote-delete', name),
+      action: () => act('remote-delete', name),
     });
   };
 
@@ -547,7 +538,9 @@ export function BranchDialog(props: {
           confirmLabel={cfm.confirmLabel ?? t('ui.modal.confirm')}
           hideCancel={cfm.hideCancel}
           confirmCmd={cfm.confirmCmd}
-          onConfirm={() => {
+          onConfirm={(e) => {
+            // 飞线起点：记下确认按钮位置（3 秒转后台时从这里起飞）
+            fromRef.current = e.currentTarget.getBoundingClientRect();
             const a = cfm.action;
             setCfm(null);
             a();
@@ -592,7 +585,9 @@ export function BranchDialog(props: {
             'branch_create',
             createBase === 'trunk' ? { name: createCfm.name, base: createCfm.trunkBase! } : { name: createCfm.name },
           )}
-          onConfirm={() => {
+          onConfirm={(e) => {
+            // 飞线起点：记下确认按钮位置（3 秒转后台时从这里起飞）
+            fromRef.current = e.currentTarget.getBoundingClientRect();
             const { name, trunkBase } = createCfm;
             const base = createBase === 'trunk' ? trunkBase : undefined;
             setCreateCfm(null);
@@ -600,26 +595,6 @@ export function BranchDialog(props: {
           }}
           onCancel={() => setCreateCfm(null)}
         />
-      )}
-      {/* 分支推送中：转圈提示，可取消（与主推送同款） */}
-      {pushProg && (
-        <div className="modal-mask">
-          <div className="modal" style={{ width: 380 }}>
-            <div className="body" style={{ textAlign: 'center', padding: '26px 18px' }}>
-              <div className="spinner" />
-              <div style={{ marginTop: 14, fontWeight: 600 }}>
-                {t(pushProg.action === 'remote-delete' ? 'ops.branch.pushingRemoteDelete' : 'ops.branch.pushing', { name: pushProg.name })}
-              </div>
-              {/* 视网络情况可能需要一些时间，可随时取消 */}
-              <div className="dim small" style={{ marginTop: 6 }}>{t('ops.branch.pushHint')}</div>
-              {/* 已耗时 {s}s */}
-              <div className="small" style={{ marginTop: 8, color: 'var(--accent)' }}>{t('ops.branch.elapsed', { s: pushElapsed })}</div>
-              <button className="mini danger" style={{ marginTop: 18 }} onClick={() => pushAbortRef.current?.abort()}>
-                {t(pushProg.action === 'remote-delete' ? 'ops.branch.cancelDelete' : 'ops.branch.cancelPush')}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 </ModalShell>
   );

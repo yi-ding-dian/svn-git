@@ -24,14 +24,9 @@ export function setPickDirHandler(fn: () => Promise<string | null>): void {
 function browseDirs(dir: string): { entries: { name: string; isDir: boolean }[]; repo: RepoInfo | null } {
   const out: { name: string; isDir: boolean }[] = [];
   const cur = path.resolve(dir);
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(cur);
-  } catch (err) {
-    // 抛**原始 errno 错误**（带 code）：路由层按 ENOENT 给"目录不存在"的友好文案——
-    // 原先包成新 Error 会把 code 丢掉，没法区分"不存在"与"没权限"等
-    throw err;
-  }
+  // readdirSync 的原始 errno 错误（带 code）直接上抛：路由层按 ENOENT 给"目录不存在"的友好文案——
+  // 若包成新 Error 会把 code 丢掉，没法区分"不存在"与"没权限"等
+  const entries = fs.readdirSync(cur);
   if (cur !== '/') out.push({ name: '..', isDir: true });
   const dirs: string[] = [];
   const files: string[] = [];

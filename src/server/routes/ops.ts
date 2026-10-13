@@ -155,7 +155,17 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const { vcs, repo } = vcsOf();
         const body = await readBody(req);
         const action = String(body.action ?? '');
-        if (action === 'cleanup') return runVcs(ctx, () => vcs.cleanup?.());
+        if (action === 'cleanup') {
+          // 取消/转后台：客户端断开（任务面板「取消」）→ 杀掉 svn cleanup 子进程（同 update 手法）
+          const ac = new AbortController();
+          res.on('close', () => {
+            if (!res.writableEnded) ac.abort();
+          });
+          const r = (await vcs.cleanup?.(ac.signal)) ?? { ok: false, message: t('srv.unknownAction') };
+          invalidateStatusCache(repo.root);
+          sendJson(res, 200, { ...r, authError: authErrorOf(r) });
+          return true;
+        }
         if (action === 'resolve' || action === 'propset-ignore') {
           // 路径越界校验：resolve/propset-ignore 的 path 是相对仓库根路径
           const rel = String(body.path ?? '');

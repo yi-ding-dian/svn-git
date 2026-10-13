@@ -4,6 +4,9 @@ import { get, post, type RepoInfo } from '../shared/api.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { useTasks, cancelTask } from '../shared/tasks.js';
 import { useNotices, markAllRead, removeNotice } from '../shared/notices.js';
+import { startTaskDeferred } from './bg-defer.js';
+import { launchMagicFlight } from './magic-flight.js';
+import { baseName } from '../shared/utils.js';
 import { UpdateResultModal, type UpdateResultDetail } from '../ops/update-result.js';
 import { InfoModal } from '../ui/prompt.js';
 import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun, IconBell } from '../ui/icons.js';
@@ -191,6 +194,8 @@ const isSepItem = (k: string) => k.startsWith('sep-');
 
 /** 按钮渲染所需的上下文（由 AppHeader 组装） */
 type ToolCtx = {
+  /** 当前仓库根（清理等任务标题里显示项目名用） */
+  repoRoot?: string | null;
   repoType: 'git' | 'svn' | null;
   conflictCount: number;
   unpushedCount?: number | null;
@@ -338,10 +343,22 @@ const TOOLS: ToolDef[] = [
               // 执行
               confirmLabel: t('shell.tool.cleanConfirmBtn'),
               action: () => {
-                void post
-                  .svnExtra('cleanup')
-                  .then((r) => c.onToast(r.message, !r.ok))
-                  .catch((e: Error) => c.onToast((e as Error).message, true));
+                // 3 秒延迟后台化（用户定稿）：快完成照旧（气泡通知）；慢（大工作副本）→ 自动转后台 +
+                // 飞线（从清理按钮起飞）+ 轻提示"已转入后台"
+                const title = t('shell.tasks.cleanupTitle', { repo: baseName(c.repoRoot ?? '') });
+                const rect = document.querySelector<HTMLElement>('[data-tool-key="clean"]')?.getBoundingClientRect();
+                startTaskDeferred({
+                  kind: 'cleanup',
+                  title,
+                  run: async (signal) => {
+                    const r = await post.svnExtra('cleanup', '', 'working', '', signal);
+                    return { ok: r.ok, message: r.message };
+                  },
+                  onSlow: () => {
+                    if (rect) launchMagicFlight(rect);
+                    c.onToast(t('shell.tasks.backgrounded', { title }), false);
+                  },
+                });
               },
             }),
         }
@@ -661,6 +678,7 @@ export function AppHeader(props: {
 
   // 当前仓库类型下实际渲染的按钮定义
   const ctx: ToolCtx = {
+    repoRoot: repo?.root ?? null,
     repoType: repo?.type ?? null,
     conflictCount: props.conflictCount,
     unpushedCount: props.unpushedCount,

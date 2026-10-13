@@ -439,8 +439,8 @@ export const post = {
   /** 创建/获取前置风险检测（目标已存在、位于仓库内等），供二次确认展示 */
   repoCheck: (type: 'git' | 'svn', dir: string, name: string, url = '') =>
     api<RepoCheck>('/api/repo-create/check', json({ type, dir, name, url })),
-  svnExtra: (action: 'cleanup' | 'resolve' | 'propset-ignore', path = '', accept = 'working', pattern = '') =>
-    api<VcsResult>('/api/svn-extra', json({ action, path, accept, pattern })),
+  svnExtra: (action: 'cleanup' | 'resolve' | 'propset-ignore', path = '', accept = 'working', pattern = '', signal?: AbortSignal) =>
+    api<VcsResult>('/api/svn-extra', json({ action, path, accept, pattern }, signal)),
   gitClean: (paths?: string[]) => api<VcsResult>('/api/git-clean', json({ paths })),
   fsDelete: (paths: string[]) => api<VcsResult>('/api/fs-delete', json({ paths })),
   /** 版本化文件/目录重命名/移动（svn move / git mv，提交后生效） */
