@@ -207,11 +207,6 @@ export const repo = {
   'repo.env.cancelInstall': '取消安装',
   'repo.env.reload': '🔄 刷新页面',
 
-  // ---- 侧边栏「最近项目 · …」（RecentMorePopover）----
-  'repo.recentMore.title': '其余 {n} 个最近项目',
-  'repo.recentMore.remarkTip': '{path}\n备注：{remark}',
-  'repo.recentMore.fav': '常用项目',
-
   // ---- 备注弹窗（RemarkModal）----
   'repo.remark.title': '备注',
   'repo.remark.intro': '给「{name}」写一句备注，显示在最近项目的时间前面（侧边栏窄，过长会被截断成「…」，悬浮该项可看全文）',

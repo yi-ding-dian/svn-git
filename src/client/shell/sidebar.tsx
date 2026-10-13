@@ -12,9 +12,6 @@ import { t } from '../../shared/i18n/index.js';
 /** 主视图类型（侧边栏导航目标） */
 export type View = 'log' | 'diff' | 'browse';
 
-/** 侧边栏最近项目最多列这么多，其余收进「…」面板（项目多时不撑长侧边栏） */
-export const RECENT_LIMIT = 10;
-
 /** 最近打开时间（列表第二行的小字）：越近越具体、越远越粗略——侧边栏只有 160px 宽，省着用 */
 function relTime(ts: number): string {
   if (!ts) return '';
@@ -56,10 +53,9 @@ function probeHasSignal(st: ProjectProbe): boolean {
 }
 
 /** 仪表盘徽标（最近项目的状态行）：只留强信号（未推送/未提交/冲突——**未跟踪归悬浮明细**，
- *  噪音大不代表"有活没干"）；git 带分支名作上下文、**svn 不带**（位置串太长，用户定稿去掉）；
- *  compact（项目 >10）时只取徽标（并入名字行）。
+ *  噪音大不代表"有活没干"）；git 带分支名作上下文、**svn 不带**（位置串太长，用户定稿去掉）。
  *  pull：⬇ 徽标变可点按钮（就地更新该项目）；busy 时显示 ⏳ 防重复点。 */
-function probeBadges(st: ProjectProbe, withBranch: boolean, pull?: { busy: boolean; onClick: () => void }) {
+function probeBadges(st: ProjectProbe, pull?: { busy: boolean; onClick: () => void }) {
   if (st.error) {
     return (
       <span className="st-bad" title={st.error === 'unavailable' ? t('shell.recent.probeUnavailable') : st.error}>
@@ -69,7 +65,7 @@ function probeBadges(st: ProjectProbe, withBranch: boolean, pull?: { busy: boole
   }
   return (
     <>
-      {withBranch && st.type !== 'svn' && st.branch && <span className="st-branch">{st.branch}</span>}
+      {st.type !== 'svn' && st.branch && <span className="st-branch">{st.branch}</span>}
       {(st.ahead ?? 0) > 0 && <span className="st-ahead">⬆{fmtCount(st.ahead!)}</span>}
       {(st.behind ?? 0) > 0 &&
         (pull ? (
@@ -137,10 +133,6 @@ export function Sidebar(props: {
   onOpenThemePop: (x: number, y: number) => void;
   /** 主题气泡是否打开（「…」按钮高亮态） */
   themePopOpen: boolean;
-  /** 点最近项目末尾的「…」：在按钮右侧展开其余项目（参数为锚点坐标） */
-  onOpenRecentMore: (x: number, y: number) => void;
-  /** 该面板是否打开（「…」按钮高亮态） */
-  recentMoreOpen: boolean;
   /** 当前项目的远程新提交数（preflight 实时检查结果，与顶部提示条同源）：
    *  补进当前项目条目的 ⬇ 徽标——本地探测拿不到它（尤其 SVN，远端更新必须联网查） */
   remoteBehind?: number;
@@ -160,9 +152,6 @@ export function Sidebar(props: {
   const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean; remark: string; type: 'svn' | 'git' } | null>(null);
   // 备注弹窗（右键「备注」打开）：null = 关闭
   const [remarkFor, setRemarkFor] = useState<{ path: string; name: string; current: string } | null>(null);
-  // 项目超过一屏（要折叠成「…」）时用**单行紧凑**模式：两行式每项 ~51px，10 项就把侧边栏撑满了，
-  // 时间那行这时只能让位——它是锦上添花，项目名才是要认的
-  const compact = props.history.length > RECENT_LIMIT;
 
   // 最近项目仪表盘：路径 → 摘要状态。异步补上（先列表后状态，不阻塞渲染）；后端 30 秒缓存挡重复查询。
   // 依赖用"路径串"而非 history 数组——数组引用每次应用刷新都会新建，会让所有项目被无谓重查。
@@ -225,7 +214,9 @@ export function Sidebar(props: {
   };
   useEffect(() => {
     let alive = true;
-    for (const h of props.history.slice(0, RECENT_LIMIT)) {
+    // 全部项目都探测（本地探测 + 后端 30 秒缓存 + 异步逐个回来）。原先只探前 10 项，
+    // 超出的项目没有状态徽标——列表能滚之后那就是另一种"藏信息"（与紧凑模式一并去掉）
+    for (const h of props.history) {
       get
         .projectStatus(h.path)
         .then((r) => {
@@ -356,12 +347,6 @@ export function Sidebar(props: {
                   <span className="history-path">{baseName(h.path)}</span>
                   {/* 常用项目（启动时优先打开） */}
                   {h.fav && <span className="fav-star" title={t('shell.recent.favStar')}>★</span>}
-                  {/* 仪表盘状态（项目多、compact 时并入名字行；完整"分支+徽标"在下面的独立状态行） */}
-                  {showStatus && compact && stView && probeHasSignal(stView) && (
-                    <span className="history-status inline">
-                      {probeBadges(stView, false, { busy: Boolean(pulling[h.path]), onClick: () => pullProject(h.path) })}
-                    </span>
-                  )}
                   {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮）。
                       必须排在第二行**之前**——第二行 flex-basis:100% 会换行，× 写在它后面会被挤到第二行 */}
                   {invalid && (
@@ -382,19 +367,18 @@ export function Sidebar(props: {
                   {/* 仪表盘状态行（名字行与备注行之间）：只显示"有事"的项目（有 ⬆/●/⚠ 任一才出行——
                       用户定稿：干净项目整行隐藏，分支/未跟踪等细节都在悬浮明细里）。
                       异步查得，回来前不占位（不做"…"占位——会先撑高列表再缩回，反而跳） */}
-                  {showStatus && !compact && stView && probeHasSignal(stView) && (
+                  {showStatus && stView && probeHasSignal(stView) && (
                     <span className="history-status">
-                      {probeBadges(stView, true, { busy: Boolean(pulling[h.path]), onClick: () => pullProject(h.path) })}
+                      {probeBadges(stView, { busy: Boolean(pulling[h.path]), onClick: () => pullProject(h.path) })}
                     </span>
                   )}
-                  {/* 第二行 = 备注 + 时间。时间 flex:0 0 auto 钉死不被压缩，备注吃掉剩余宽度、超长截断成
-                      「…」——所以备注写多长都挤不掉时间（用户要求"保证时间正常显示"），全文靠悬浮看 */}
-                  {!compact && (
-                    <span className="history-time">
-                      {h.remark && <span className="history-remark">{h.remark}</span>}
-                      <span className="history-time-text">{relTime(h.lastOpened)}</span>
-                    </span>
-                  )}
+                  {/* 第二行 = 备注 + 时间（**始终显示**，项目多时列表内部滚动）。时间 flex:0 0 auto
+                      钉死不被压缩，备注吃掉剩余宽度、超长截断成「…」——所以备注写多长都挤不掉时间
+                      （用户要求"保证时间正常显示"），全文靠悬浮看 */}
+                  <span className="history-time">
+                    {h.remark && <span className="history-remark">{h.remark}</span>}
+                    <span className="history-time-text">{relTime(h.lastOpened)}</span>
+                  </span>
                 </div>
               );
             })}

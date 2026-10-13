@@ -8,7 +8,7 @@
  *  - actions：提交、推送、刷新、diff 跳转等动作
  */
 import React from 'react';
-import { get, post, type RepoInfo, type HistoryItem } from '../shared/api.js';
+import { get, post, type RepoInfo } from '../shared/api.js';
 import { CommitModal } from '../ops/commit.js';
 import { CommitSelectModal } from '../ops/commit-select.js';
 import { UpdateResultModal } from '../ops/update-result.js';
@@ -29,13 +29,12 @@ import { ConflictResolverModal } from '../conflicts/conflicts.js';
 import { RemoteConflictModal } from '../conflicts/remote-conflicts.js';
 import { ThemePopover } from '../appearance/theme-popover.js';
 import type { MyTheme } from '../shared/theme.js';
-import { RecentMorePopover } from '../repo/recent-more.js';
 import { FontModal } from '../appearance/font-modal.js';
 import { TerminalModal } from '../terminal/terminal.js';
 import { OpenModal } from '../repo/open.js';
 import { IconOk } from '../ui/icons.js';
 import { pathAutoWidth, translateVcsError } from '../shared/utils.js';
-import { RECENT_LIMIT, type View } from './sidebar.js';
+import type { View } from './sidebar.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 文件操作类型（App 的 runOp 参数；定义在此供双方引用，避免 app ↔ modal-host 循环依赖） */
@@ -67,10 +66,6 @@ export interface ModalHostProps {
     pushAuth: { type: 'github' | 'server' | 'ssh'; error?: string } | null;
     updateResult: UpdateResult | null;
     themePop: { x: number; y: number } | null;
-    /** 侧边栏最近项目「…」面板的锚点（null = 未打开） */
-    recentMore: { x: number; y: number } | null;
-    /** 最近项目全量：面板里显示主列表折叠掉的那批 */
-    history: HistoryItem[];
     /** 点开过但打不开的项目：路径 → 错误消息（列表项上常驻 ×，悬浮时显示同一条） */
     invalidPaths: Record<string, string>;
     /** 打开某个最近项目（面板里点击时用） */
@@ -86,7 +81,6 @@ export interface ModalHostProps {
     setPushAuth: (v: ModalHostProps['state']['pushAuth']) => void;
     setUpdateResult: (v: UpdateResult | null) => void;
     setThemePop: (v: { x: number; y: number } | null) => void;
-    setRecentMore: (v: { x: number; y: number } | null) => void;
     setConfigUser: (v: string) => void;
     setInfo: (r: RepoInfo) => void;
     setOnboard: (v: string | null) => void;
@@ -138,9 +132,9 @@ export interface ModalHostProps {
 
 export function ModalHost(props: ModalHostProps) {
   const { state, set, ctx, appearance, theme, actions } = props;
-  const { modal, pushAuth, updateResult, themePop, recentMore, history, invalidPaths, openHistoryItem, pushing, updating, updateElapsed, configUser } = state;
+  const { modal, pushAuth, updateResult, themePop, invalidPaths, pushing, updating, updateElapsed, configUser } = state;
   const { repo, env, info, browseDir } = ctx;
-  const { setModal, setPushAuth, setUpdateResult, setThemePop, setRecentMore, setConfigUser, setInfo, setOnboard, setView, showToast, setDiffReturnModal } = set;
+  const { setModal, setPushAuth, setUpdateResult, setThemePop, setConfigUser, setInfo, setOnboard, setView, showToast, setDiffReturnModal } = set;
   const { doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow, cancelPush, cancelUpdate } = actions;
 
   return (
@@ -350,20 +344,6 @@ export function ModalHost(props: ModalHostProps) {
           onSave={theme.saveMyTheme}
           onDelete={theme.deleteMyTheme}
           onPreview={theme.previewTheme}
-        />
-      )}
-      {/* 侧边栏最近项目「…」：其余项目贴按钮右侧展开（仿主题气泡） */}
-      {recentMore && (
-        <RecentMorePopover
-          x={recentMore.x}
-          y={recentMore.y}
-          items={history.slice(RECENT_LIMIT)}
-          currentRoot={repo?.root}
-          onOpen={(p) => {
-            setRecentMore(null);
-            openHistoryItem({ path: p });
-          }}
-          onClose={() => setRecentMore(null)}
         />
       )}
       {modal?.type === 'git-info' && <GitInfoModal onClose={() => setModal(null)} onToast={showToast} />}

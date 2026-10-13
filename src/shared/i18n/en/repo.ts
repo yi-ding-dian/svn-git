@@ -205,11 +205,6 @@ export const repo = {
   'repo.env.cancelInstall': 'Cancel Install',
   'repo.env.reload': '🔄 Reload Page',
 
-  // ---- 侧边栏「最近项目 · …」 ----
-  'repo.recentMore.title': 'Other {n} recent project|Other {n} recent projects',
-  'repo.recentMore.remarkTip': '{path}\nNote: {remark}',
-  'repo.recentMore.fav': 'Favorite project',
-
   // ---- 备注弹窗 ----
   'repo.remark.title': 'Note',
   'repo.remark.intro': 'Write a note for "{name}"; it shows before the time in recent projects (the sidebar is narrow, so long notes are truncated to "…" — hover the entry to read the full text)',

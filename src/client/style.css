@@ -439,7 +439,6 @@ body {
 .history-status .st-changed { flex: 0 0 auto; color: var(--warn); font-weight: 600; }
 .history-status .st-conflict { flex: 0 0 auto; color: var(--err); font-weight: 700; }
 .history-status .st-bad { color: var(--err); }
-.history-status.inline { flex-basis: auto; margin-left: 2px; }
 /* 徽标跟**第一行（项目名）**对齐，不跟着两行内容垂直居中；星号仍整行居中 */
 .history-item .badge { align-self: flex-start; margin-top: 2px; }
 /* 最近项目下方的「＋ 打开项目」：虚线框，像个"新增"入口而不是普通菜单项 */
@@ -573,14 +572,6 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   border-radius: 6px; cursor: pointer;
 }
 .recent-more:hover { background: var(--panel2); color: var(--accent); }
-/* 侧边栏最近项目的「…」行（居中）+ 点开的右侧面板 */
-.history-more { justify-content: center; color: var(--dim); }
-.history-more:hover { background: var(--panel2); color: var(--accent); }
-.history-more.active { color: var(--accent); background: var(--panel2); }
-.history-more-dots { font-size: 15px; line-height: 1; letter-spacing: 1px; }
-.recent-pop { width: 340px; max-height: 70vh; overflow: auto; padding: 6px; }
-.recent-pop-title { font-size: 0.8em; color: var(--dim); padding: 4px 8px 6px; }
-.recent-pop .recent-item { padding: 5px 8px; font-size: 0.85em; }
 /* 树冲突清单（wc-notice）：嵌在提示条里，条目多时限高滚动 */
 /* 冲突清单：最多显示 6 行，超出滚动（行高 12px×1.8≈21.6px，6 行 129.6 + 上下 padding 6 ≈ 136px）。
    不撑高横幅，也不藏内容——滚动条本身就是"还有更多"的提示，条数在横幅首句里已经写明 */

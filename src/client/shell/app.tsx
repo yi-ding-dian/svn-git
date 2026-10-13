@@ -60,8 +60,6 @@ export function App() {
    *  不带它的话，历史视图用的是**上一次查看过的路径**（或整仓库）——用户实报"点击历史不是当前目录的历史"。 */
   const browseDirRef = useRef('');
   const [configUser, setConfigUser] = useState('');
-  // 侧边栏「最近项目」末尾的「…」：锚点坐标（null = 面板未打开）
-  const [recentMore, setRecentMore] = useState<{ x: number; y: number } | null>(null);
   // 点开过但打不开的项目（目录已删/不是工作副本）：路径 → 错误消息。
   // 列表项上常驻一个 × 供直接移除；鼠标悬浮该项时用同一条消息做浮层提示
   const [invalidPaths, setInvalidPaths] = useState<Record<string, string>>({});
@@ -1022,8 +1020,6 @@ export function App() {
               setTheme={setTheme}
               onOpenThemePop={(x, y) => setThemePop({ x, y })}
               themePopOpen={Boolean(themePop)}
-              onOpenRecentMore={(x, y) => setRecentMore({ x, y })}
-              recentMoreOpen={Boolean(recentMore)}
               invalidPaths={invalidPaths}
               onOpenProject={() => setModal({ type: 'open' })} // 与顶栏 ⋯ 菜单里的「打开项目」同一个弹窗
               onShowTip={(msg) => {
@@ -1114,13 +1110,12 @@ export function App() {
 
       {/* 全部弹窗 + 「推送中/更新中」遮罩：集中在 modal-host.tsx（原先 21 个分支平铺在本文件 JSX 里，约 340 行） */}
       <ModalHost
-        state={{ modal, pushAuth, updateResult, themePop, recentMore, history, invalidPaths, openHistoryItem, pushing, updating, updateElapsed, configUser }}
+        state={{ modal, pushAuth, updateResult, themePop, invalidPaths, openHistoryItem, pushing, updating, updateElapsed, configUser }}
         set={{
           setModal,
           setPushAuth,
           setUpdateResult,
           setThemePop,
-          setRecentMore,
           setConfigUser,
           setInfo,
           setOnboard,
