@@ -66,7 +66,7 @@ export function DirBrowser(props: {
     try {
       const r = await get.pickDir();
       if (r.path) pick(r.path);
-      // 当前运行环境不支持系统目录选择，请手动输入路径
+      // 浏览器模式下不支持系统目录选择，请手动输入路径
       else if (r.unsupported) props.onError?.(t('repo.open.pickUnsupported'));
     } catch (e) {
       props.onError?.((e as Error).message);

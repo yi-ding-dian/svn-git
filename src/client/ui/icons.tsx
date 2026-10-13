@@ -625,6 +625,21 @@ export function IconHourglassRun({ size = 14 }: IconProps) {
   );
 }
 
+/** 图钉（**彩色·斜插**，像 📌）：仓库浏览「定位到该项目」的常驻钉子与按钮图标——
+ *  红圆帽在右上、灰针斜向左下（用户定稿"要像这样斜着的彩色📌"）。 */
+export function IconPin({ size = 12 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      {/* 针：从帽底斜向左下 */}
+      <path d="M14.4 9.6 L6.8 20.2" stroke="#8b949e" strokeWidth="2" strokeLinecap="round" />
+      {/* 帽（红圆，右上） */}
+      <circle cx="15.6" cy="7.8" r="5.2" fill="#f85149" />
+      {/* 帽顶高光 */}
+      <circle cx="13.9" cy="6" r="1.6" fill="#ffb3ad" />
+    </svg>
+  );
+}
+
 /** 服务器机柜（两格 + 绿色指示灯·**彩色**）：「浏览仓库」（菜单/弹窗标题/顶栏快捷入口）——
  *  远程仓库在那台服务器上。机身蓝→紫渐变（与 IconLogin 同色系），灯绿色（运行中）。
  *  用户定稿（替换原单色地球；点灯从 1px 点改为圆点，14px 下也能看见颜色） */

@@ -75,7 +75,7 @@ export const repo = {
   'repo.open.notRepo': '当前目录未识别到 SVN/Git 仓库，请重新选择，或从下方文件列表中选择包含仓库的目录',
   'repo.open.switchedDir': '已切换到目录: {path}',
   'repo.open.detectedBare': '检测到 SVN 版本库存储目录: {path}',
-  'repo.open.pickUnsupported': '当前运行环境不支持系统目录选择，请手动输入路径',
+  'repo.open.pickUnsupported': '浏览器模式下不支持系统目录选择，请手动输入路径',
   'repo.open.pathPlaceholder': '输入完整项目路径后回车，或将文件夹拖入下方区域识别…',
   'repo.open.pickDirTip': '打开系统目录选择框',
   'repo.open.pickDirBtn': '📁 选择目录…',

@@ -71,7 +71,7 @@ export const repo = {
     'No SVN/Git repository detected in this directory. Pick another one, or open a directory that contains a repository from the list below',
   'repo.open.switchedDir': 'Switched to directory: {path}',
   'repo.open.detectedBare': 'SVN repository storage directory detected: {path}',
-  'repo.open.pickUnsupported': 'The system directory picker is not available here; please type the path manually',
+  'repo.open.pickUnsupported': 'The system directory picker is not available in browser mode; please type the path manually',
   'repo.open.pathPlaceholder': 'Type a full project path and press Enter, or drop a folder below to detect it…',
   'repo.open.pickDirTip': 'Open the system directory picker',
   'repo.open.pickDirBtn': '📁 Choose Directory…',

@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { get, post } from '../shared/api.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
-import { MiniIcon, IconServer } from '../ui/icons.js';
+import { MiniIcon, IconServer, IconPin } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { PickDirModal } from './pick-dir.js';
 import { CheckoutDialog } from './checkout.js';
@@ -58,8 +58,13 @@ export function RepoBrowseModal(props: {
   // 树右键菜单（目录行 + 空白 = 仓库根；文件行不给）与「检出到本地」弹窗
   const [menu, setMenu] = useState<{ x: number; y: number; url: string } | null>(null);
   const [checkout, setCheckout] = useState<{ url: string } | null>(null);
-  // 「定位到该项目」（用户定稿 A：只高亮不深入）：located=高亮的目录 url；locating=防连点
+  // 「定位到该项目」（用户定稿 A）：located=📍 钉子所在目录 url（**常驻**——点别处也不消失，
+  // 再定位才换，当"工作副本在哪"的书签用）；locatedHL=蓝框高亮是否还亮（点任何地方即灭——
+  // 与"点击选中"区分开）。locating=防连点
   const [located, setLocated] = useState<string | null>(null);
+  const [locatedHL, setLocatedHL] = useState(false);
+  /** 右键/单击选中行（用户定稿：右键时要选中该文件或目录）——与 file 共用 active 高亮 */
+  const [ctxSel, setCtxSel] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   // kids 的 ref 镜像：locate 的异步循环里要读"最新已加载状态"（闭包里的 state 会陈旧）
   const kidsRef = useRef<Record<string, RepoEntry[] | 'loading'>>({});
@@ -183,8 +188,12 @@ export function RepoBrowseModal(props: {
         toExpand.push(cur);
       }
       if (toExpand.length > 0) {
-        setExpanded((prev) => new Set([...prev, ...toExpand]));
+        // 只展开到目标的**父级**——目标自身保持折叠（用户定稿：定位到它即可；
+        // 把它标成展开态但没有子项数据、也不拉，反而让下面同级的行看起来像它的内容）
+        setExpanded((prev) => new Set([...prev, ...toExpand.slice(0, -1)]));
+        setCtxSel(null); // 定位接管高亮（清掉可能挂着的行选中）
         setLocated(cur);
+        setLocatedHL(true);
         // 等树渲染完再滚动居中（350ms 覆盖一帧渲染）
         window.setTimeout(() => {
           document.querySelector(`.repo-row[data-url="${CSS.escape(cur)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -259,7 +268,16 @@ export function RepoBrowseModal(props: {
                 title={t('repo.browse.locateTip')}
                 onClick={() => void locate()}
               >
-                {locating ? t('repo.browse.locating') : `📍 ${t('repo.browse.locate')}`}
+                {locating ? (
+                  // 定位中…
+                  t('repo.browse.locating')
+                ) : (
+                  // 定位到该项目（彩色图钉，与树里的钉子同款）
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <IconPin size={12} />
+                    {t('repo.browse.locate')}
+                  </span>
+                )}
               </button>
             )}
           </span>
@@ -277,20 +295,48 @@ export function RepoBrowseModal(props: {
             <div
               className="vcs-list repo-list"
               style={{ flex: `0 0 ${leftRatio}%`, minWidth: 0 }}
-              // 空白处右键 = 仓库根（行内已 stopPropagation，不会冒到这里）
+              // 空白处右键 = 仓库根（行内已 stopPropagation，不会冒到这里）；顺带清掉行选中与定位高亮
+              // （📍 钉子常驻不清——只灭蓝框）
               onContextMenu={(ev) => {
                 ev.preventDefault();
+                setCtxSel(null);
+                setLocatedHL(false);
                 setMenu({ x: ev.clientX, y: ev.clientY, url: root });
+              }}
+              // 空白左键（行内点击由行自己处理，冒泡来的直接跳过）：取消选择与定位高亮
+              onClick={(ev) => {
+                if (ev.target !== ev.currentTarget) return;
+                setCtxSel(null);
+                setLocatedHL(false);
               }}
             >
               {rootLoading && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.loading')}</div>}
-              {rootErr && <div className="error small" style={{ padding: '10px 6px', wordBreak: 'break-all' }}>{rootErr}</div>}
+              {rootErr && (
+                <div className="error small" style={{ padding: '10px 6px', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>{rootErr}</span>
+                  {/* ×：关掉这条提示 */}
+                  <button
+                    className="mini"
+                    style={{ flexShrink: 0 }}
+                    title={t('common.close')}
+                    onClick={() =>
+                      setErrs((e) => {
+                        const n = { ...e };
+                        delete n[root];
+                        return n;
+                      })
+                    }
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
               {/* 这个目录是空的 */}
               {Array.isArray(kids[root]) && kids[root].length === 0 && (
                 <div className="dim small" style={{ padding: '10px 6px' }}>{t('repo.browse.empty')}</div>
               )}
               {rows.map(({ e, url, depth }) => {
-                const active = file?.url === url || located === url;
+                const active = file?.url === url || (located === url && locatedHL) || ctxSel === url;
                 const open = e.isDir && expanded.has(url);
                 const busy = e.isDir && kids[url] === 'loading';
                 const subErr = e.isDir && open ? errs[url] : undefined;
@@ -302,28 +348,69 @@ export function RepoBrowseModal(props: {
                       style={{ cursor: 'pointer', paddingLeft: 4 + depth * 14 }}
                       // 单击展开 / 收起 / 单击预览
                       title={`${e.name}\n${t(e.isDir ? 'repo.browse.clickDir' : 'repo.browse.clickFile')}`}
-                      onClick={() => (e.isDir ? toggleDir(url) : setFile({ name: e.name, url }))}
+                      onClick={() => {
+                        // 单击选中（与右键一致）；定位蓝框是"一次性指路"——点任何地方就让它让位
+                        setCtxSel(url);
+                        setLocatedHL(false);
+                        if (e.isDir) {
+                          toggleDir(url);
+                          setFile(null); // 点目录 = 取消文件的选中与预览（焦点只有一个——用户定稿）
+                        } else {
+                          setFile({ name: e.name, url });
+                        }
+                      }}
                       onContextMenu={(ev) => {
                         ev.preventDefault();
                         ev.stopPropagation();
-                        // 文件行不给菜单（检出只对目录/仓库根有意义，不弹浏览器原生菜单）；
-                        // 目录行右键 → 「检出到本地…」（该目录 URL）
-                        if (e.isDir) setMenu({ x: ev.clientX, y: ev.clientY, url });
+                        setCtxSel(url); // 右键即选中该行（用户定稿）
+                        setLocatedHL(false); // 定位蓝框让位（📍 钉子常驻）
+                        if (e.isDir) {
+                          setFile(null); // 右键目录同样收敛焦点（避免文件+目录两个蓝框并存）
+                          setMenu({ x: ev.clientX, y: ev.clientY, url });
+                        } else {
+                          // 文件行不给菜单（检出只对目录/仓库根有意义，不弹浏览器原生菜单）；
+                          // 只选中、不清预览之外的东西
+                          setFile(null);
+                        }
                       }}
                     >
                       <span className="repo-arrow">{e.isDir ? (busy ? '…' : open ? '▾' : '▸') : ''}</span>
                       <MiniIcon isDir={e.isDir} name={e.name} />
-                      <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span className="mono small" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {e.name}
                       </span>
+                      {/* 📍 定位钉子（彩色 SVG 图钉）：**常驻**（"工作副本在哪"的书签；再定位才换）——紧跟文件名后（用户定稿） */}
+                      {located === url && (
+                        <span style={{ flexShrink: 0, display: 'inline-flex' }} title={t('repo.browse.locate')}>
+                          <IconPin size={12} />
+                        </span>
+                      )}
+                      {/* 弹性占位：把大小/修订列推到行尾（替代 name 原本的 flex:1） */}
+                      <span style={{ flex: 1 }} />
                       <span className="dim small nowrap" style={{ flexShrink: 0, width: 60, textAlign: 'right' }}>{fmtSize(e.size)}</span>
                       <span className="dim small nowrap" style={{ flexShrink: 0, width: 70 }} title={`${e.author ?? ''} ${e.date?.slice(0, 10) ?? ''}`}>
                         {e.rev ? `r${e.rev}` : ''}
                       </span>
                     </div>
-                    {/* 展开失败：该目录下就地报错（如无权限） */}
+                    {/* 展开失败：该目录下就地报错（如无权限）；× 关掉这条提示 */}
                     {subErr && (
-                      <div className="error small" style={{ padding: `2px 6px 4px ${20 + depth * 14}px`, wordBreak: 'break-all' }}>{subErr}</div>
+                      <div className="error small" style={{ padding: `2px 6px 4px ${20 + depth * 14}px`, wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ flex: 1, minWidth: 0 }}>{subErr}</span>
+                        <button
+                          className="mini"
+                          style={{ flexShrink: 0 }}
+                          title={t('common.close')}
+                          onClick={() =>
+                            setErrs((e) => {
+                              const n = { ...e };
+                              delete n[url];
+                              return n;
+                            })
+                          }
+                        >
+                          ×
+                        </button>
+                      </div>
                     )}
                   </React.Fragment>
                 );
@@ -361,7 +448,13 @@ export function RepoBrowseModal(props: {
                     // 不支持浏览，请下载后再浏览
                     <div className="small" style={{ padding: '10px 6px', color: 'var(--warn)' }}>⚠ {t('repo.browse.binary')}</div>
                   ) : fileErr ? (
-                    <div className="error small" style={{ padding: '2px 6px', wordBreak: 'break-all' }}>{fileErr}</div>
+                    <div className="error small" style={{ padding: '2px 6px', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ flex: 1, minWidth: 0 }}>{fileErr}</span>
+                      {/* ×：关掉这条提示 */}
+                      <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setFileErr('')}>
+                        ×
+                      </button>
+                    </div>
                   ) : text === null ? (
                     <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.loading')}</div>
                   ) : (
