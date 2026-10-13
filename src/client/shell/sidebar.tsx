@@ -230,7 +230,12 @@ export function Sidebar(props: {
           // 拉的正好是当前项目：工作副本已变——顺带刷新主界面（文件列表/顶栏角标，否则还是旧数据）
           if (path === props.currentRoot) props.onRefresh?.();
         }
-        return { ok: r.ok, message: r.message ?? t('shell.recent.pullTip') };
+        // 与「手动进该项目右键更新」对齐（用户定稿）：svn 警告拼进通知消息（列表里看得见 ⚠），
+        // 完整结果（文件清单/警告）装进通知详情 → 点通知弹**同一个「更新结果」窗**（不再是全文小窗）
+        const base = r.message ?? t('shell.recent.pullTip');
+        const msg = r.warnings?.length ? `${base}\n⚠ ${r.warnings.join('\n⚠ ')}` : base;
+        const detail = { kind: 'update' as const, dir: '', ok: r.ok, message: base, files: r.files, warnings: r.warnings };
+        return { ok: r.ok, message: msg, data: detail };
       },
     });
   };

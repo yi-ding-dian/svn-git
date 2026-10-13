@@ -128,8 +128,13 @@ async function remoteProbeAny(dir: string): Promise<{ behind?: number; error?: s
 /** 任意项目"就地更新"（点侧边栏 ⬇）：git=pull / svn=update。
  *  **安全约束**：只更新工作区**干净**（无 tracked 改动/冲突）的项目——在用户没打开的项目里
  *  拉出合并冲突没法处理，直接拒绝并提示先打开处理；未跟踪文件不挡（pull/update 不会覆盖它们）。
- *  成功后失效该项目的远程检查缓存（⬇ 归零由前端做）。 */
-async function pullAny(dir: string, signal?: AbortSignal): Promise<{ ok: boolean; message?: string }> {
+ *  成功后失效该项目的远程检查缓存（⬇ 归零由前端做）。
+ *  files/warnings 原样带回：前端据此在通知里展示与「手动更新」一致的**完整结果详情**
+ *  （文件清单 / svn 警告——点通知弹「更新结果」窗）。 */
+async function pullAny(
+  dir: string,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; message?: string; files?: { path: string; status: string; code?: string }[]; warnings?: string[] }> {
   try {
     if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
       // 该项目已打不开（目录不存在或不是工作副本）
@@ -157,7 +162,7 @@ async function pullAny(dir: string, signal?: AbortSignal): Promise<{ ok: boolean
         // 当前仓库不支持更新
         : ((await vcs.update?.(undefined, signal)) ?? { ok: false, message: t('srv.updateUnsupported') });
     if (r.ok) remoteCheckCache.delete(dir); // 拉完重算（缓存失效）
-    return { ok: r.ok, message: r.message };
+    return { ok: r.ok, message: r.message, files: 'files' in r ? r.files : undefined, warnings: r.warnings };
   } catch (e) {
     return { ok: false, message: (e as Error).message };
   }
