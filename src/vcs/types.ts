@@ -135,6 +135,9 @@ export interface Vcs {
   /** 重命名/移动（git mv / svn move，本地调度，提交后生效） */
   move(from: string, to: string): Promise<VcsResult>;
   preflight(): Promise<PreflightResult>;
+  /** 失效 preflight 缓存（svn 有 60s 缓存；更新/拉取等改变工作副本基准的操作后调用——
+   *  否则紧接着的重查会命中旧 behind，"更新完成 ⬇/横条消失"滞后最多 1 分钟）。git 无缓存不实现 */
+  invalidatePreflight?(): void;
   branchList(): Promise<BranchListResult>;
   switchCheck(branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>;
   /** 合并预检：

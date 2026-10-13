@@ -600,7 +600,10 @@ export function AppHeader(props: {
   const lastNoticeIdRef = useRef(0);
   useEffect(() => {
     const latest = notices[0];
-    if (!latest || latest.id === lastNoticeIdRef.current) return;
+    // **id 单调递增**：只认"比上次弹过的更大"的 id 才算新通知。
+    // 不能用 "!= 上次的 id" —— 删掉头部通知后，列表新头是旧通知（id 更小），
+    // 会被误判为"新到货"再弹一次气泡（用户实报：多条时点 × 会弹一条消息出来）
+    if (!latest || latest.id <= lastNoticeIdRef.current) return;
     lastNoticeIdRef.current = latest.id;
     setBellBounce(true);
     const hb = window.setTimeout(() => setBellBounce(false), 700);

@@ -9,7 +9,7 @@ import { probeProject, probeProjectCached } from '../../vcs/probe.js';
 import { createVcs } from '../../vcs/index.js';
 import type { SvnCred } from '../../vcs/svn.js';
 import { loadConfig } from '../../config.js';
-import { sendJson, readBody, currentScopes, type Ctx } from './util.js';
+import { sendJson, readBody, currentScopes, vcsOf, realpathSafe, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 最近打开的项目历史（服务端持久化：浏览器端口随机，localStorage 不可靠） */
@@ -161,7 +161,18 @@ async function pullAny(
         ? ((await vcs.pull?.(signal)) ?? { ok: false, message: t('srv.pullUnsupported') })
         // 当前仓库不支持更新
         : ((await vcs.update?.(undefined, signal)) ?? { ok: false, message: t('srv.updateUnsupported') });
-    if (r.ok) remoteCheckCache.delete(dir); // 拉完重算（缓存失效）
+    if (r.ok) {
+      remoteCheckCache.delete(dir); // 拉完重算（缓存失效）
+      // 拉的正好是当前打开的仓库：当前会话单例（顶栏 preflight / 侧栏 ⬇ 都读它）的缓存
+      // 也失效——本函数用的是临时实例，单例自己没经手这次 update；不清的话前端"拉完立即
+      // 重查"会命中旧 behind，⬇ 角标/顶栏横条最多滞后 1 分钟才消失（用户实报）
+      try {
+        const cur = vcsOf();
+        if (realpathSafe(cur.repo.root) === realpathSafe(dir)) cur.vcs.invalidatePreflight?.();
+      } catch {
+        /* 无当前仓库等情况：忽略 */
+      }
+    }
     return { ok: r.ok, message: r.message, files: 'files' in r ? r.files : undefined, warnings: r.warnings };
   } catch (e) {
     return { ok: false, message: (e as Error).message };

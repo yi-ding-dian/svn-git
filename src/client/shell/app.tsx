@@ -158,7 +158,10 @@ export function App() {
     setTick((t) => t + 1);
     void refreshUnpushed();
     void refreshStash();
-  }, [refreshUnpushed, refreshStash]);
+    // 远程提示条也一并重查（否则侧栏 ⬇ 拉完当前项目后，顶部横条/⬇ 角标（三源取大里的
+    // remoteHint）要等下一轮 2 分钟轮询才消失——用户实报"更新完成仍显示 ⬇1"）
+    void checkRemote();
+  }, [refreshUnpushed, refreshStash, checkRemote]);
 
   // 最近项目列表（加载 / 删除 / 设常用 / 备注）抽到 useProjectHistory；错误统一走 toast
   const { history, loadHistory, removeHistory, setFav, setRemark } = useProjectHistory((msg) => {

@@ -431,6 +431,9 @@ export class SvnVcs {
                 : t('vcs.updateExternalsSkipped', { n: files.length })
               // 外部引用同步失败已跳过，其余已是最新（当前 r{rev}） / 外部引用同步失败已跳过，其余已是最新
               : retry.stderr.trim() || (rev ? t('vcs.externalsSkippedLatestRev', { rev }) : t('vcs.externalsSkippedLatest'));
+          // BASE 已变：preflight 的 60s 缓存必须失效——否则"更新完成后立即重查"会拿到旧 behind，
+          // 顶栏横条与侧栏 ⬇ 角标不消失（用户实报"更新完仍显示 ⬇1"）
+          this.invalidatePreflight();
           return { ok: true, message: msg, files, warnings: warnings.length ? warnings : undefined };
         }
         // 重试（跳过外部引用）仍失败：提示原始错误并说明已尝试跳过
@@ -465,6 +468,8 @@ export class SvnVcs {
           ? t('vcs.updateLatestRev', { rev })
           // 已是最新版本
           : res.stderr.trim() || t('vcs.updateLatest');
+    // BASE 已变：preflight 的 60s 缓存必须失效（同上：更新完成后立即重查必须拿到新值）
+    this.invalidatePreflight();
     return { ok: true, message: msg, files, warnings: warnings.length ? warnings : undefined };
   }
 
@@ -621,7 +626,12 @@ export class SvnVcs {
     let remoteLogs: LogEntry[] = [];
     if (expiredCount > 0) {
       const lg = await this.exec(['log', '-r', 'HEAD:BASE', '-v', '--xml']);
-      if (lg.code === 0) remoteLogs = this.parseLogXml(lg.stdout);
+      if (lg.code === 0) {
+        remoteLogs = this.parseLogXml(lg.stdout);
+        // svn log -r N:M 是**含两端**的区间（倒序输出）：HEAD:BASE 会把 BASE 自身那版也列出来
+        // ——去掉末条（即 BASE），behind 才是真正的"远程新提交数"（实测：只落后 1 个提交时算成了 2）
+        remoteLogs.pop();
+      }
     }
     const result = {
       remoteHasUpdate: expiredCount > 0,
@@ -639,6 +649,12 @@ export class SvnVcs {
 
   /** preflight 结果缓存（status -u 是服务器查询）：成功 60s / 失败 10s 内不重试 */
   private preflightCache: { time: number; ok: boolean; data: Awaited<ReturnType<SvnVcs['preflight']>> } | null = null;
+
+  /** 失效 preflight 缓存（update 成功内部调；外部路径（如侧栏 ⬇ 的 pullAny 用临时实例更新）
+   *  经 Vcs 接口调——否则"更新完成立即重查"会命中旧 behind，⬇/横条不消失） */
+  invalidatePreflight(): void {
+    this.preflightCache = null;
+  }
 
   /** svn status 文本解析：自己锁定的文件（锁列在 index 5，K=自己锁） */
   async selfLockedFiles(): Promise<string[]> {
