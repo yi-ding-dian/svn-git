@@ -26,6 +26,8 @@ export const srv = {
   'srv.repoFileTooBig': '文件太大（超过 2MB），请用「下载到…」查看',
   // 目标已存在：{path}（未覆盖）
   'srv.repoSaveExists': '目标已存在：{path}（未覆盖）',
+  // 仓库浏览右键检出：目标目录挡住检出（已有别人的东西，不能动）
+  'srv.coTargetExists': '目标目录已存在且非空：{path}',
   'srv.pathEmpty': '路径为空',
   'srv.samePath': '新旧路径相同',
   'srv.notGitRepo': '非 Git 仓库',

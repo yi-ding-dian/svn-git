@@ -309,7 +309,18 @@ export function ModalHost(props: ModalHostProps) {
         <EnvInstallModal env={env} onClose={() => setModal(null)} onInstalled={() => location.reload()} />
       )}
       {/* SVN 仓库浏览（最近项目右键「浏览仓库」）：不检出直接看远程；wcRel 供"定位到该项目" */}
-      {modal?.type === 'repo-browse' && <RepoBrowseModal url={modal.url} wcRel={modal.wcRel} onClose={() => setModal(null)} />}
+      {modal?.type === 'repo-browse' && (
+        <RepoBrowseModal
+          url={modal.url}
+          wcRel={modal.wcRel}
+          onClose={() => setModal(null)}
+          // 右键检出的工作副本「打开项目」：先关本弹窗，再走最近项目同款打开逻辑
+          onOpenProject={(dir) => {
+            setModal(null);
+            state.openHistoryItem({ path: dir });
+          }}
+        />
+      )}
       {modal?.type === 'conflicts' && (
         <ConflictResolverModal
           onClose={() => setModal(null)}

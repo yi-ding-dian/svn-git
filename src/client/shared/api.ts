@@ -407,6 +407,19 @@ export const post = {
   pullAny: (dir: string) => api<VcsResult>('/api/pull-any', json({ path: dir })),
   /** 远程文件保存到本地（「下载到…」）：目标已存在则后端拒绝 */
   repoSave: (url: string, dir: string) => api<{ ok: boolean; path?: string; error?: string }>('/api/repo-save', json({ url, dir })),
+  /** 仓库浏览右键「检出到本地」：URL 直连检出工作副本。
+   *  cred = 本次临时账号密码（认证失败后重试用；**只用于本次检出、后端不落盘**，缺省用已存配置）。 */
+  repoCheckout: (
+    url: string,
+    dir: string,
+    name: string,
+    cred?: { username: string; password: string },
+    signal?: AbortSignal,
+  ) =>
+    api<{ ok: boolean; message: string; repoDir?: string; authError?: boolean; user?: string }>(
+      '/api/repo-checkout',
+      json({ url, dir, name, username: cred?.username, password: cred?.password }, signal),
+    ),
   repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true, signal?: AbortSignal) =>
     api<VcsResult & { repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' }>(
       '/api/repo-create',

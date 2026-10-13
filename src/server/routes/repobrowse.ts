@@ -5,7 +5,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
-import { run } from '../../vcs/exec.js';
+import { run, type RunResult } from '../../vcs/exec.js';
 import { resolveSvnBin } from '../../vcs/svn.js';
 import { loadConfig } from '../../config.js';
 import { decodeMixedText } from '../../shared/text.js';
@@ -41,6 +41,27 @@ interface RepoEntry {
   author?: string;
   date?: string;
 }
+
+/** 检出失败/取消后没清干净的半截目录（键即路径）：下次对同一目标检出时开始时先重试清理。
+ *  同 index.ts 获取仓库的 leftoverTargets 思路；清不掉**绝不算检出失败**。 */
+const coLeftovers = new Set<string>();
+
+/** 清掉本次检出留下的半截目录（Windows 上 svn 刚被 SIGKILL，句柄可能未释放，带重试防 EBUSY/EPERM） */
+function cleanCoTarget(target: string): boolean {
+  try {
+    fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    coLeftovers.delete(target);
+    return true;
+  } catch {
+    coLeftovers.add(target);
+    return false;
+  }
+}
+
+/** SVN 认证/授权失败判定（解析 svn 输出文本，不是界面文案，禁止翻译）：
+ *  E170001 认证/授权被拒、E215004 凭据用完或被拒、本地化消息；宽匹配——
+ *  宁可按认证失败处理（前端弹凭据框可重试），也不把用户卡在看不明白的错误里。 */
+const SVN_AUTH_FAIL = /E170001|E215004|Authentication failed|Authentication required|authorization failed|Not authorized|认证失败/i; // i18n-ignore: 解析 svn 输出的匹配表
 
 /** svn list -v --xml 解析（嵌套容错：单元素时 fast-xml-parser 不返回数组） */
 function parseList(stdout: string): RepoEntry[] {
@@ -183,6 +204,106 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     } catch (e) {
       sendJson(res, 200, { ok: false, error: (e as Error).message });
     }
+    return true;
+  }
+
+  if (p === '/api/repo-checkout' && req.method === 'POST') {
+    // 仓库浏览右键「检出到本地」：URL 直连检出工作副本（不依赖已打开项目）。
+    // 凭据：本次请求带的临时凭据优先（**只本次用、绝不落盘**），否则用已保存的 SVN 账号；
+    // 两者都没有 = 匿名裸跑。认证失败按 authError 返回（带 user 供前端拼"当前账号无权限"），
+    // 由前端弹凭据框重试——"开跑即验"：有权限的人不弹任何框。
+    const body = await readBody(req);
+    const targetUrl = String(body.url ?? '').trim();
+    const dir = String(body.dir ?? '').trim();
+    const name = String(body.name ?? '').trim();
+    if (!URL_OK.test(targetUrl) || !dir || !name) {
+      // 仓库地址无效（仅支持 svn / http(s) / file）
+      sendJson(res, 400, { error: t('srv.badRepoUrl') });
+      return true;
+    }
+    const target = path.join(dir, name);
+    // 上次同目标的半截检出没清干净（或服务重启丢了记录）：开始时先清一遍
+    if (coLeftovers.has(target)) cleanCoTarget(target);
+    let existedBefore = fs.existsSync(target);
+    if (existedBefore) {
+      try {
+        const entries = fs.readdirSync(target);
+        if (entries.length === 1 && entries[0] === '.svn') {
+          // 只有 .svn 一个条目 = 上次检出中断留下的残骸（必然检出失败）；清掉继续
+          cleanCoTarget(target);
+          existedBefore = false;
+        } else if (entries.length > 0) {
+          // 目标目录已存在且非空：{path}
+          sendJson(res, 200, { ok: false, message: t('srv.coTargetExists', { path: target }) });
+          return true;
+        }
+        // 空目录：留给 svn 检出进去（existedBefore=true → 失败/取消时一个字节都不动）
+      } catch {
+        /* 读不到就按原样交给 svn，让它报自己的错 */
+      }
+    }
+    // 凭据解析：本次请求带的临时凭据（重试用）优先，否则已保存配置，都没有 = 匿名裸跑。
+    // 临时凭据**只用于本次检出**：加 --no-auth-cache，连 svn 自己的 auth 缓存都不写入
+    //（非交互模式默认会存——"下次悄悄记住"违背"只本次用"的决策）；配置凭据/匿名沿用 svn 默认。
+    const cfg = loadConfig();
+    const tempCred =
+      typeof body.username === 'string' && body.username
+        ? { username: body.username, password: String(body.password ?? '') }
+        : null;
+    const cred = tempCred ?? (cfg.svn.username ? { username: cfg.svn.username, password: cfg.svn.password } : null);
+    // **客户端断开要真的停**：用户点「取消」/关弹窗 → 断开请求 → 这里把 svn 一起杀掉并清半截目录。
+    // ⚠ 必须听 **res** 的 close，不能听 req 的：请求体已被 readBody 读完，req 的 'close' 早已触发
+    // （挂上去等于空放）——详见 index.ts 克隆段的同款注释。
+    const ac = new AbortController();
+    const onClose = () => ac.abort();
+    res.on('close', onClose);
+    /** 失败/取消清半截目录：只清"这次刚建出来的"，原本就存在的（哪怕空的）一个字节都不动 */
+    const cleanup = () => {
+      if (!existedBefore) cleanCoTarget(target);
+    };
+    const args = ['checkout', '-q', '--non-interactive'];
+    if (cred) args.push('--username', cred.username, '--password-from-stdin');
+    if (tempCred) args.push('--no-auth-cache');
+    if (cfg.svn.trustServerCert) args.push('--trust-server-cert');
+    args.push(targetUrl, target);
+    let r: RunResult;
+    try {
+      r = await run(await resolveSvnBin(), args, {
+        cwd: os.tmpdir(),
+        stdinData: cred ? cred.password + '\n' : undefined,
+        timeoutMs: 600_000, // 与「获取仓库」一致：大仓库首次检出常常要几分钟
+        signal: ac.signal,
+      });
+    } catch (e) {
+      res.off('close', onClose);
+      cleanup();
+      sendJson(res, 200, { ok: false, message: (e as Error).message });
+      return true;
+    }
+    res.off('close', onClose);
+    // aborted（用户取消/断开）与 timedOut（到 10 分钟上限）都要判——只判一个会把另一种当普通失败
+    if (r.aborted || r.timedOut) {
+      cleanup();
+      sendJson(res, 200, {
+        ok: false,
+        // 已取消获取 / 获取超时（超过 {sec} 秒），已停止
+        message: r.timedOut ? t('srv.cloneTimeout', { sec: 600 }) : t('srv.cloneCancelled'),
+      });
+      return true;
+    }
+    if (r.code === 0) {
+      // 已检出 SVN 工作副本 {path}
+      sendJson(res, 200, { ok: true, message: t('srv.svnCheckedOut', { path: target }), repoDir: target });
+      return true;
+    }
+    cleanup();
+    const auth = SVN_AUTH_FAIL.test(r.stdout + r.stderr);
+    sendJson(res, 200, {
+      ok: false,
+      message: r.stderr.trim() || r.stdout.trim() || 'svn checkout failed',
+      // authError 时带 user = 本次实际使用的账号（空串 = 匿名）：前端拼「当前账号[X]没有获取该仓库权限」
+      ...(auth ? { authError: true, user: cred?.username ?? '' } : {}),
+    });
     return true;
   }
 

@@ -16,6 +16,8 @@ export function ModalShell(props: {
   closeIcon?: boolean;
   /** 不渲染底部操作区（与 closeIcon 搭配：只靠右上角 × 关闭） */
   hideFoot?: boolean;
+  /** 标题栏右上角附加按钮（在 × 左侧，如「检出到本地」的 - 号后台占位） */
+  titleExtra?: React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
 }) {
@@ -25,6 +27,7 @@ export function ModalShell(props: {
         <h3 style={{ position: 'relative' }}>
           {props.icon && <span style={{ marginRight: 8 }}>{props.icon}</span>}
           {props.title}
+          {props.titleExtra}
           {props.closeIcon && (
             // 关闭
             <button className="modal-x" title={t('common.close')} aria-label={t('common.close')} onClick={props.onClose}>

@@ -1,14 +1,18 @@
 /** SVN 仓库浏览弹窗（不 checkout 直接看远程，Tortoise Repo-Browser 的角色）：
  *  左=**文件树**（可折叠展开、懒加载——第一次展开才拉子项）；右=文件预览（cat，按扩展名语法高亮）
  *  +「复制」「下载到…」；左右宽度可拖动调整（沿用并排对比的 sb-resizer 模式）。
- *  只读：没有任何写操作的入口；cat 内容超过 2MB 由后端拒绝（提示用下载）。
+ *  浏览器自身对远程只读（没有任何写远程的入口）；唯一会写磁盘的是右键「检出到本地…」
+ *  （目录行 + 空白 = 仓库根；文件行不给）→ 走 CheckoutDialog → 后端 URL 直连检出。
+ *  cat 内容超过 2MB 由后端拒绝（提示用下载）。
  *  入口：最近项目里 SVN 项目右键「浏览仓库」（app 用 repo-root 接口取仓库根 URL 后打开）。 */
 import React, { useEffect, useRef, useState } from 'react';
 import { ModalShell, ResizableModal } from '../shell/modal-shell.js';
 import { get, post } from '../shared/api.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { MiniIcon } from '../ui/icons.js';
+import { ContextMenu } from '../ui/context-menu.js';
 import { DirPicker } from './dir-picker.js';
+import { CheckoutDialog } from './checkout.js';
 import { ResultLine } from '../ui/result-line.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -29,7 +33,13 @@ function fmtSize(n?: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function RepoBrowseModal(props: { url: string; wcRel?: string; onClose: () => void }) {
+export function RepoBrowseModal(props: {
+  url: string;
+  wcRel?: string;
+  onClose: () => void;
+  /** 右键检出的工作副本「打开项目」（modal-host 接 openHistoryItem，先关本弹窗） */
+  onOpenProject?: (dir: string) => void;
+}) {
   const root = props.url.replace(/\/+$/, '');
   // ——树状态：已加载的子项（root 也在里面；'loading' = 正在拉）+ 展开集合 + 各自的错误
   const [kids, setKids] = useState<Record<string, RepoEntry[] | 'loading'>>({});
@@ -43,6 +53,9 @@ export function RepoBrowseModal(props: { url: string; wcRel?: string; onClose: (
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [maxed, setMaxed] = useState(false);
+  // 树右键菜单（目录行 + 空白 = 仓库根；文件行不给）与「检出到本地」弹窗
+  const [menu, setMenu] = useState<{ x: number; y: number; url: string } | null>(null);
+  const [checkout, setCheckout] = useState<{ url: string } | null>(null);
   // 「定位到该项目」（用户定稿 A：只高亮不深入）：located=高亮的目录 url；locating=防连点
   const [located, setLocated] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -256,7 +269,15 @@ export function RepoBrowseModal(props: { url: string; wcRel?: string; onClose: (
           {/* 主区：左树 / 可拖分隔（比并排对比的 6px 更窄，用户定稿）/ 右预览。
               面包屑已去掉（树本身表达层级；用户定稿） */}
           <div ref={bodyRef} style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <div className="vcs-list repo-list" style={{ flex: `0 0 ${leftRatio}%`, minWidth: 0 }}>
+            <div
+              className="vcs-list repo-list"
+              style={{ flex: `0 0 ${leftRatio}%`, minWidth: 0 }}
+              // 空白处右键 = 仓库根（行内已 stopPropagation，不会冒到这里）
+              onContextMenu={(ev) => {
+                ev.preventDefault();
+                setMenu({ x: ev.clientX, y: ev.clientY, url: root });
+              }}
+            >
               {rootLoading && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.loading')}</div>}
               {rootErr && <div className="error small" style={{ padding: '10px 6px', wordBreak: 'break-all' }}>{rootErr}</div>}
               {/* 这个目录是空的 */}
@@ -277,6 +298,13 @@ export function RepoBrowseModal(props: { url: string; wcRel?: string; onClose: (
                       // 单击展开 / 收起 / 单击预览
                       title={`${e.name}\n${t(e.isDir ? 'repo.browse.clickDir' : 'repo.browse.clickFile')}`}
                       onClick={() => (e.isDir ? toggleDir(url) : setFile({ name: e.name, url }))}
+                      onContextMenu={(ev) => {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        // 文件行不给菜单（检出只对目录/仓库根有意义，不弹浏览器原生菜单）；
+                        // 目录行右键 → 「检出到本地…」（该目录 URL）
+                        if (e.isDir) setMenu({ x: ev.clientX, y: ev.clientY, url });
+                      }}
                     >
                       <span className="repo-arrow">{e.isDir ? (busy ? '…' : open ? '▾' : '▸') : ''}</span>
                       <MiniIcon isDir={e.isDir} name={e.name} />
@@ -358,6 +386,27 @@ export function RepoBrowseModal(props: { url: string; wcRel?: string; onClose: (
             />
           </ModalShell>
         </div>
+      )}
+      {/* 树右键菜单：目录行 / 空白（= 仓库根）→「检出到本地…」 */}
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          mask
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              icon: '⬇',
+              // 检出到本地…
+              label: t('repo.co.menu'),
+              action: () => setCheckout({ url: menu.url }),
+            },
+          ]}
+        />
+      )}
+      {/* 检出到本地（URL 直连检出；认证失败弹凭据框重试） */}
+      {checkout && (
+        <CheckoutDialog url={checkout.url} onClose={() => setCheckout(null)} onOpenProject={props.onOpenProject} />
       )}
     </div>
   );
