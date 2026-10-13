@@ -72,6 +72,8 @@ export const shell = {
   // Update background-task title (same order; the subdirectory is appended by code when updating a folder)
   'shell.tasks.updateTitle': '{repo} · {branch} · Update',
   'shell.tasks.updateBusy': 'An update is already running — view or cancel it from the hourglass in the header',
+  // The action word for the sidebar ⬇ pull task (title built in code: repo · branch · Pull)
+  'shell.tasks.pullAction': 'Pull',
   // Task notifications (bell: shown only with notifications; click to view / dismiss one by one)
   'shell.notify.tip': 'Task notifications (click to view)',
   'shell.notify.removeTip': 'Dismiss this notification',

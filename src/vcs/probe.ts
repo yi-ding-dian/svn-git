@@ -117,9 +117,11 @@ async function probeSvn(root: string): Promise<ProbeResult> {
 
 /** 30 秒缓存：侧边栏每次刷新都会对同一批项目重复请求，缓存挡住重复的子进程开销 */
 const cache = new Map<string, { at: number; data: ProbeResult }>();
-export async function probeProjectCached(dir: string, ttlMs = 30_000): Promise<ProbeResult> {
+export async function probeProjectCached(dir: string, opt: { ttlMs?: number; force?: boolean } = {}): Promise<ProbeResult> {
+  const ttlMs = opt.ttlMs ?? 30_000;
   const hit = cache.get(dir);
-  if (hit && Date.now() - hit.at < ttlMs) return hit.data;
+  // force（顶栏刷新的"当前项目"）：跳过缓存读——刚提交/改文件后必须立刻反映真实状态
+  if (!opt.force && hit && Date.now() - hit.at < ttlMs) return hit.data;
   const data = await probeProject(dir);
   // 防无界增长：项目数实际就十几个，超 64 直接清空重建
   if (cache.size > 64) cache.clear();

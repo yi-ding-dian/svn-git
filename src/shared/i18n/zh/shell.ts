@@ -74,6 +74,8 @@ export const shell = {
   // 更新后台任务标题（同推送顺序；右键子目录更新时由代码在标题后追加「 · 目录」）
   'shell.tasks.updateTitle': '{repo} · {branch} · 更新',
   'shell.tasks.updateBusy': '已有更新正在进行中，可在顶栏沙漏里查看或取消',
+  // 侧栏 ⬇ 拉取任务的"操作"词（标题由代码拼：项目名 · 分支 · 拉取——同检出标题的拼接先例）
+  'shell.tasks.pullAction': '拉取',
   // 任务通知（铃铛：有通知才显示，点开查看 / 逐条关闭，全关掉即消失）
   'shell.notify.tip': '任务通知（点击查看）',
   'shell.notify.removeTip': '关闭这条通知',

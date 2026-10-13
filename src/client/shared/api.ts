@@ -287,7 +287,7 @@ export const get = {
     ),
   tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),
-  projectStatus: (dir: string) => api<ProjectProbe>(`/api/project-status?path=${encodeURIComponent(dir)}`),
+  projectStatus: (dir: string, force?: boolean) => api<ProjectProbe>(`/api/project-status?path=${encodeURIComponent(dir)}${force ? '&force=1' : ''}`),
   /** 远程检查（⬇ 待拉取；后端复用 preflight，自带超时与缓存、异步不阻塞） */
   remoteProbe: (dir: string) => api<{ behind?: number; error?: string }>(`/api/remote-probe?path=${encodeURIComponent(dir)}`),
   // ---- SVN 仓库浏览（不 checkout 直接看远程）----
@@ -412,7 +412,7 @@ export const post = {
   stash: (action: 'push' | 'pop' | 'drop', message = '', index = 0, paths?: string[]) =>
     api<VcsResult>('/api/stash', json({ action, message, index, paths })),
   /** 点侧边栏 ⬇ 就地更新该项目（工作区脏则后端拒绝；结果消息直接 toast） */
-  pullAny: (dir: string) => api<VcsResult>('/api/pull-any', json({ path: dir })),
+  pullAny: (dir: string, signal?: AbortSignal) => api<VcsResult>('/api/pull-any', json({ path: dir }, signal)),
   /** 远程文件保存到本地（「下载到…」）：目标已存在则后端拒绝 */
   repoSave: (url: string, dir: string) => api<{ ok: boolean; path?: string; error?: string }>('/api/repo-save', json({ url, dir })),
   /** 清除系统凭据缓存中匹配该 URL 的条目（退出登录/切换账号用；**前端必须二次确认**——影响其他 svn 客户端） */

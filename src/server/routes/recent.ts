@@ -129,7 +129,7 @@ async function remoteProbeAny(dir: string): Promise<{ behind?: number; error?: s
  *  **安全约束**：只更新工作区**干净**（无 tracked 改动/冲突）的项目——在用户没打开的项目里
  *  拉出合并冲突没法处理，直接拒绝并提示先打开处理；未跟踪文件不挡（pull/update 不会覆盖它们）。
  *  成功后失效该项目的远程检查缓存（⬇ 归零由前端做）。 */
-async function pullAny(dir: string): Promise<{ ok: boolean; message?: string }> {
+async function pullAny(dir: string, signal?: AbortSignal): Promise<{ ok: boolean; message?: string }> {
   try {
     if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
       // 该项目已打不开（目录不存在或不是工作副本）
@@ -148,13 +148,14 @@ async function pullAny(dir: string): Promise<{ ok: boolean; message?: string }> 
       ? { username: cfg.svn.username, password: cfg.svn.password, trustServerCert: cfg.svn.trustServerCert }
       : null;
     const vcs = createVcs(repo, cred);
-    // pull 自带 600s 超时与友好错误；svn update 无参数 = 整个工作副本
+    // pull 自带 600s 超时与友好错误；svn update 无参数 = 整个工作副本。
+    // signal：前端断开（后台任务面板「取消」）→ 一并终止 git pull / svn update 子进程
     const r =
       repo.type === 'git'
         // 当前仓库不支持拉取
-        ? ((await vcs.pull?.()) ?? { ok: false, message: t('srv.pullUnsupported') })
+        ? ((await vcs.pull?.(signal)) ?? { ok: false, message: t('srv.pullUnsupported') })
         // 当前仓库不支持更新
-        : ((await vcs.update?.()) ?? { ok: false, message: t('srv.updateUnsupported') });
+        : ((await vcs.update?.(undefined, signal)) ?? { ok: false, message: t('srv.updateUnsupported') });
     if (r.ok) remoteCheckCache.delete(dir); // 拉完重算（缓存失效）
     return { ok: r.ok, message: r.message };
   } catch (e) {
@@ -239,19 +240,21 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       }
 
       if (p === '/api/project-status' && req.method === 'GET') {
-        // 最近项目仪表盘：探测任意项目的摘要状态（只读、不切当前仓库；30s 缓存）
+        // 最近项目仪表盘：探测任意项目的摘要状态（只读、不切当前仓库；30s 缓存）。
+        // force=1（顶栏刷新的"当前项目"）：绕过缓存，刚提交/改文件后角标立刻准
         const dir = String(url.searchParams.get('path') ?? '').trim();
         if (!dir) {
           // 缺少路径参数
           sendJson(res, 400, { error: t('srv.missingPath') });
           return true;
         }
-        sendJson(res, 200, await probeProjectCached(dir));
+        sendJson(res, 200, await probeProjectCached(dir, { force: url.searchParams.get('force') === '1' }));
         return true;
       }
 
       if (p === '/api/pull-any' && req.method === 'POST') {
-        // 点侧边栏 ⬇ 就地更新该项目（git pull / svn update；工作区脏则拒绝，见 pullAny）
+        // 点侧边栏 ⬇ 就地更新该项目（git pull / svn update；工作区脏则拒绝，见 pullAny）。
+        // 前端断开（后台任务面板「取消」/关页）→ 一并终止子进程（同 update 手法）
         const body = await readBody(req);
         const dir = String(body.path ?? '').trim();
         if (!dir) {
@@ -259,7 +262,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 400, { error: t('srv.missingPath') });
           return true;
         }
-        sendJson(res, 200, await pullAny(dir));
+        const ac = new AbortController();
+        res.on('close', () => {
+          if (!res.writableEnded) ac.abort();
+        });
+        sendJson(res, 200, await pullAny(dir, ac.signal));
         return true;
       }
 

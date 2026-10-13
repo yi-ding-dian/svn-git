@@ -7,6 +7,8 @@ import { RemarkModal } from '../repo/remark.js';
 import { THEMES, THEME_PINNED } from './header.js';
 import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js';
 import { baseName } from '../shared/utils.js';
+import { startTask, useTasks } from '../shared/tasks.js';
+import { launchMagicFlight } from './magic-flight.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 主视图类型（侧边栏导航目标） */
@@ -55,7 +57,7 @@ function probeHasSignal(st: ProjectProbe): boolean {
 /** 仪表盘徽标（最近项目的状态行）：只留强信号（未推送/未提交/冲突——**未跟踪归悬浮明细**，
  *  噪音大不代表"有活没干"）；git 带分支名作上下文、**svn 不带**（位置串太长，用户定稿去掉）。
  *  pull：⬇ 徽标变可点按钮（就地更新该项目）；busy 时显示 ⏳ 防重复点。 */
-function probeBadges(st: ProjectProbe, pull?: { busy: boolean; onClick: () => void }) {
+function probeBadges(st: ProjectProbe, pull?: { busy: boolean; onClick: (from: { x: number; y: number }) => void }) {
   if (st.error) {
     return (
       <span className="st-bad" title={st.error === 'unavailable' ? t('shell.recent.probeUnavailable') : st.error}>
@@ -76,7 +78,8 @@ function probeBadges(st: ProjectProbe, pull?: { busy: boolean; onClick: () => vo
             disabled={pull.busy}
             onClick={(e) => {
               e.stopPropagation();
-              pull.onClick();
+              // 飞行线起点 = ⬇ 按钮位置（同推送/检出/更新入口）
+              pull.onClick(e.currentTarget.getBoundingClientRect());
             }}
           >
             {pull.busy ? '⏳' : `⬇${fmtCount(st.behind!)}`}
@@ -119,6 +122,9 @@ export function Sidebar(props: {
   version?: string;
   /** 当前打开的仓库根：匹配的最近项目高亮选中，标明正在操作的项目 */
   currentRoot?: string | null;
+  /** 顶栏「刷新」信号（App 的 tick 递增）：重跑一轮状态探测——当前项目**强制绕过后端
+   *  30s 缓存**（刚提交/改文件后点刷新，↑● 角标必须立刻准，用户实报"刷新后 ↑18 还是旧的"） */
+  refreshTick?: number;
   onNav: (v: View) => void;
   onOpenHistory: (h: { path: string }) => void;
   onRemoveHistory: (path: string) => void;
@@ -138,6 +144,8 @@ export function Sidebar(props: {
   remoteBehind?: number;
   /** 轻提示（点 ⬇ 更新的结果等）：复用 app 的 showToast */
   onToast: (msg: string, err?: boolean) => void;
+  /** 刷新主界面（App 的 refresh：文件列表 + 顶栏角标）——侧栏 ⬇ 拉取的正好是当前项目时调用 */
+  onRefresh?: () => void;
   /** 右键「浏览仓库」（仅 SVN 项目）：app 取仓库根 URL 后开仓库浏览弹窗 */
   onBrowseRepo: (path: string) => void;
   /** 点开过但打不开的项目：路径 → 错误消息（这些项上常驻 ×，悬浮时显示同一条消息） */
@@ -198,27 +206,43 @@ export function Sidebar(props: {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyKey]);
-  // 点 ⬇ 就地更新该项目：busy 防重复点；成功后 ⬇ 归零 + toast 结果（工作区脏由后端拒绝并回消息）
-  const [pulling, setPulling] = useState<Record<string, boolean>>({});
-  const pullProject = (path: string) => {
-    if (pulling[path]) return;
-    setPulling((p) => ({ ...p, [path]: true }));
-    post
-      .pullAny(path)
-      .then((r) => {
-        props.onToast(r.message ?? t('shell.recent.pullTip'), !r.ok);
-        if (r.ok) setRemoteBehinds((p) => ({ ...p, [path]: { behind: 0 } }));
-      })
-      .catch((e: Error) => props.onToast(e.message, true))
-      .finally(() => setPulling((p) => ({ ...p, [path]: false })));
+  // 点 ⬇ 就地更新该项目（**后台任务**——与推送/检出/更新同套）：飞行线从 ⬇ 按钮起飞，
+  // 沙漏 / 任务面板可取消；完成/失败走统一通知（气泡 + 铃铛）。busy 态（⏳）由任务查询得出
+  const tasks = useTasks();
+  const pullProject = (path: string, from?: { x: number; y: number }) => {
+    // 该项目已有拉取在跑：忽略（⬇ 按钮已显示 ⏳）
+    if (tasks.some((tk) => tk.kind === `pull:${path}` && tk.status === 'running')) return;
+    if (from) launchMagicFlight(from);
+    startTask({
+      kind: `pull:${path}`,
+      // 标题：项目名 · 分支 · 拉取（分支取探测值；未探测到就省略——同检出标题的拼接先例）
+      title: `${baseName(path)}${probes[path]?.branch ? ` · ${probes[path]!.branch}` : ''} · ${t('shell.tasks.pullAction')}`,
+      run: async (signal) => {
+        const r = await post.pullAny(path, signal);
+        if (r.ok) {
+          setRemoteBehinds((p) => ({ ...p, [path]: { behind: 0 } }));
+          // 刚拉完：重探该项目状态（↑● 角标立刻准——force 绕过后端缓存）。
+          // 它可能不是当前打开的项目，refreshTick（顶栏刷新）覆盖不到，单独重探
+          get
+            .projectStatus(path, true)
+            .then((st) => setProbes((p) => ({ ...p, [path]: st })))
+            .catch(() => {});
+          // 拉的正好是当前项目：工作副本已变——顺带刷新主界面（文件列表/顶栏角标，否则还是旧数据）
+          if (path === props.currentRoot) props.onRefresh?.();
+        }
+        return { ok: r.ok, message: r.message ?? t('shell.recent.pullTip') };
+      },
+    });
   };
   useEffect(() => {
     let alive = true;
     // 全部项目都探测（本地探测 + 后端 30 秒缓存 + 异步逐个回来）。原先只探前 10 项，
     // 超出的项目没有状态徽标——列表能滚之后那就是另一种"藏信息"（与紧凑模式一并去掉）
+    // **当前项目强制绕过缓存**（force）：它是我"现在在用"的，刚提交/刷新后角标必须立刻准；
+    // 其余项目走缓存（挡侧边栏成批请求的重复探测）
     for (const h of props.history) {
       get
-        .projectStatus(h.path)
+        .projectStatus(h.path, h.path === props.currentRoot)
         .then((r) => {
           if (alive) setProbes((p) => ({ ...p, [h.path]: r }));
         })
@@ -229,9 +253,10 @@ export function Sidebar(props: {
     return () => {
       alive = false;
     };
-    // currentRoot 变化（切了项目）→ 重查一遍（被切换项目的状态一定变了）
+    // currentRoot 变化（切了项目）→ 重查一遍（被切换项目的状态一定变了）；
+    // refreshTick（顶栏刷新）→ 重跑一轮（当前项目 force——刚提交后角标立刻准）
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyKey, props.currentRoot]);
+  }, [historyKey, props.currentRoot, props.refreshTick]);
 
   const NAV = [
     // 历史
@@ -369,7 +394,7 @@ export function Sidebar(props: {
                       异步查得，回来前不占位（不做"…"占位——会先撑高列表再缩回，反而跳） */}
                   {showStatus && stView && probeHasSignal(stView) && (
                     <span className="history-status">
-                      {probeBadges(stView, { busy: Boolean(pulling[h.path]), onClick: () => pullProject(h.path) })}
+                      {probeBadges(stView, { busy: tasks.some((tk) => tk.kind === `pull:${h.path}` && tk.status === 'running'), onClick: (rect) => pullProject(h.path, rect) })}
                     </span>
                   )}
                   {/* 第二行 = 备注 + 时间（**始终显示**，项目多时列表内部滚动）。时间 flex:0 0 auto

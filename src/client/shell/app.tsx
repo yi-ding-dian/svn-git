@@ -989,10 +989,13 @@ export function App() {
               history={history}
               version={info?.version}
               currentRoot={repo?.root}
+              // 顶栏「刷新」信号：侧边栏重跑状态探测（当前项目绕过后端缓存——刚提交后点刷新，↑ 角标立刻准）
+              refreshTick={tick}
               // 当前项目的"远程有新提交"（preflight 实时检查结果，顶部提示条同源）——
               // 侧边栏当前项目条目据此显示 ⬇（SVN 项目本地探测拿不到 behind，靠这条补上）
               remoteBehind={remoteHint?.behind ?? 0}
               onToast={showToast}
+              onRefresh={refresh}
               onBrowseRepo={openRepoBrowse}
               onNav={(v) => {
                 // 点「历史」带上当前浏览目录（'' = 仓库根 → 传 undefined 看全仓库）
