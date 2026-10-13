@@ -17,6 +17,7 @@ export type Modal =
   | { type: 'push-confirm' }
   | { type: 'clean' }
   | { type: 'env' }
+  | { type: 'repo-browse'; url: string; wcRel?: string }
   | { type: 'font' }
   | { type: 'conflicts' }
   | { type: 'remote-conflicts'; files: { path: string; lines: number[] }[] }

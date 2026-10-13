@@ -17,6 +17,7 @@ import { handle as handleBrowse } from './routes/browse.js';
 import { handle as handleHost } from './routes/host.js';
 import { handle as handleHistory } from './routes/history.js';
 import { handle as handleRecent } from './routes/recent.js';
+import { handle as handleRepoBrowse } from './routes/repobrowse.js';
 import { handle as handleConfig } from './routes/config.js';
 import { handle as handleModuleIndex } from './routes/module-index.js';
 import { handle as handleUpload } from './routes/upload.js';
@@ -91,6 +92,7 @@ export function startServer(): Promise<ServerHandle> {
         if (await handleHost(ctx)) return;
         if (await handleHistory(ctx)) return;
         if (await handleRecent(ctx)) return;
+        if (await handleRepoBrowse(ctx)) return;
         if (await handleConfig(ctx)) return;
         if (await handleModuleIndex(ctx)) return;
         if (await handleUpload(ctx)) return;

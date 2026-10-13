@@ -18,6 +18,7 @@ import { TagDialog, GitInfoModal } from '../ops/tag-git-info.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
 import { LoginModal } from '../repo/login.js';
 import { EnvInstallModal } from '../repo/env-install.js';
+import { RepoBrowseModal } from '../repo/repo-browse.js';
 import { CreateRepoDialog, GetRepoDialog } from '../repo/repo-create.js';
 import { RevertModal } from '../filesystem/revert.js';
 import { RenameModal } from '../filesystem/rename.js';
@@ -313,6 +314,8 @@ export function ModalHost(props: ModalHostProps) {
       {modal?.type === 'env' && env && (
         <EnvInstallModal env={env} onClose={() => setModal(null)} onInstalled={() => location.reload()} />
       )}
+      {/* SVN 仓库浏览（最近项目右键「浏览仓库」）：不检出直接看远程；wcRel 供"定位到该项目" */}
+      {modal?.type === 'repo-browse' && <RepoBrowseModal url={modal.url} wcRel={modal.wcRel} onClose={() => setModal(null)} />}
       {modal?.type === 'conflicts' && (
         <ConflictResolverModal
           onClose={() => setModal(null)}

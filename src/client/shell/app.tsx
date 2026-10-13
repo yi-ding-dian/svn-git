@@ -188,6 +188,18 @@ export function App() {
   const envMissing = missingSvn || missingGit;
 
   // 从历史列表打开项目
+  /** 右键「浏览仓库」（SVN 项目）：取仓库根 URL → 打开仓库浏览弹窗（不检出直接看远程） */
+  const openRepoBrowse = (path: string) => {
+    get
+      .repoRoot(path)
+      .then((r) => {
+        if (r.ok && r.root) setModal({ type: 'repo-browse', url: r.root, wcRel: r.rel ?? '' });
+        // 取仓库地址失败：{msg}
+        else showToast(t('repo.browse.errNoRoot', { msg: r.error ?? '' }), true);
+      })
+      .catch((e: Error) => showToast(t('repo.browse.errNoRoot', { msg: e.message }), true));
+  };
+
   const openHistoryItem = useCallback(
     async (h: { path: string }) => {
       try {
@@ -996,6 +1008,7 @@ export function App() {
               // 侧边栏当前项目条目据此显示 ⬇（SVN 项目本地探测拿不到 behind，靠这条补上）
               remoteBehind={remoteHint?.behind ?? 0}
               onToast={showToast}
+              onBrowseRepo={openRepoBrowse}
               onNav={(v) => {
                 // 点「历史」带上当前浏览目录（'' = 仓库根 → 传 undefined 看全仓库）
                 if (v === 'log') showLog(browseDirRef.current || undefined);

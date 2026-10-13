@@ -999,6 +999,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .changed-row .act.R { color: var(--ok); }
 .changed-row .act.C { color: var(--err); }
 .changed-row .act.U { color: var(--accent); }
+/* ---------- SVN 仓库浏览（远程树） ---------- */
+.repo-arrow { flex: 0 0 14px; text-align: center; color: var(--dim); font-size: 11px; }
+.repo-row.active { background: var(--panel2); outline: 1px solid var(--accent); border-radius: 6px; }
 
 /* ---------- diff ---------- */
 .diff { font-family: Consolas, "Courier New", monospace; font-size: 13px; line-height: 1.5; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; }

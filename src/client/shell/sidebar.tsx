@@ -1,6 +1,6 @@
 /** 侧边栏：视图导航 + 最近项目列表（右键设常用/备注/删除）+ 版本号 */
 import React, { useEffect, useState } from 'react';
-import { IconClock, IconEye, IconEyeClosed, IconFolder, IconRename } from '../ui/icons.js';
+import { IconClock, IconEye, IconEyeClosed, IconFolder, IconGlobe, IconRename } from '../ui/icons.js';
 // import { IconDiff } from '../ui/icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from '../ui/context-menu.js';
 import { RemarkModal } from '../repo/remark.js';
@@ -146,6 +146,8 @@ export function Sidebar(props: {
   remoteBehind?: number;
   /** 轻提示（点 ⬇ 更新的结果等）：复用 app 的 showToast */
   onToast: (msg: string, err?: boolean) => void;
+  /** 右键「浏览仓库」（仅 SVN 项目）：app 取仓库根 URL 后开仓库浏览弹窗 */
+  onBrowseRepo: (path: string) => void;
   /** 点开过但打不开的项目：路径 → 错误消息（这些项上常驻 ×，悬浮时显示同一条消息） */
   invalidPaths: Record<string, string>;
   /** 悬浮失效项时显示提示（复用点击后那套浮层） */
@@ -153,8 +155,9 @@ export function Sidebar(props: {
   /** 最近项目下方的「＋ 打开项目」：打开项目选择弹窗（与顶栏 ⋯ 菜单里那个同一入口） */
   onOpenProject: () => void;
 }) {
-  // 最近项目右键菜单（设常用 / 备注 / 删除 / 取消）。remark 一并带出：菜单项要用它预填备注弹窗
-  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean; remark: string } | null>(null);
+  // 最近项目右键菜单（设常用 / 备注 / 浏览仓库 / 删除 / 取消）。remark/type 一并带出：
+  // 菜单项要用它预填备注弹窗、决定是否显示「浏览仓库」（仅 SVN）
+  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean; remark: string; type: 'svn' | 'git' } | null>(null);
   // 备注弹窗（右键「备注」打开）：null = 关闭
   const [remarkFor, setRemarkFor] = useState<{ path: string; name: string; current: string } | null>(null);
   // 项目超过一屏（要折叠成「…」）时用**单行紧凑**模式：两行式每项 ~51px，10 项就把侧边栏撑满了，
@@ -340,7 +343,7 @@ export function Sidebar(props: {
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    setRmMenu({ x: e.clientX, y: e.clientY, path: h.path, fav: Boolean(h.fav), remark: h.remark ?? '' });
+                    setRmMenu({ x: e.clientX, y: e.clientY, path: h.path, fav: Boolean(h.fav), remark: h.remark ?? '', type: h.type });
                   }}
                 >
                   <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>
@@ -430,6 +433,21 @@ export function Sidebar(props: {
                             });
                           },
                         },
+                        // 浏览仓库（仅 SVN：SVN 有"仓库地址"可直连浏览；git 没有等价语义——要 clone 才看得到）
+                        ...(rmMenu.type === 'svn'
+                          ? [
+                              {
+                                icon: <IconGlobe size={14} />,
+                                // 浏览仓库（说明放悬浮：菜单里四个字清爽）
+                                label: t('repo.browse.entry'),
+                                title: t('repo.browse.entryTip'),
+                                action: () => {
+                                  setRmMenu(null);
+                                  props.onBrowseRepo(rmMenu.path);
+                                },
+                              },
+                            ]
+                          : []),
                         // 删除
                         { icon: '🗑', label: t('common.delete'), danger: true, action: () => props.onRemoveHistory(rmMenu.path) },
                         // 取消

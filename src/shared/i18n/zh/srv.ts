@@ -21,6 +21,11 @@ export const srv = {
   'srv.invalidParams': '参数不合法',
   'srv.incompleteParams': '参数不完整',
   'srv.missingPath': '缺少路径',
+  // ---- SVN 仓库浏览（repobrowse）----
+  'srv.badRepoUrl': '仓库地址无效（仅支持 svn / http(s) / file）',
+  'srv.repoFileTooBig': '文件太大（超过 2MB），请用「下载到…」查看',
+  // 目标已存在：{path}（未覆盖）
+  'srv.repoSaveExists': '目标已存在：{path}（未覆盖）',
   'srv.pathEmpty': '路径为空',
   'srv.samePath': '新旧路径相同',
   'srv.notGitRepo': '非 Git 仓库',

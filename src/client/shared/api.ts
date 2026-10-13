@@ -290,6 +290,13 @@ export const get = {
   projectStatus: (dir: string) => api<ProjectProbe>(`/api/project-status?path=${encodeURIComponent(dir)}`),
   /** 远程检查（⬇ 待拉取；后端复用 preflight，自带超时与缓存、异步不阻塞） */
   remoteProbe: (dir: string) => api<{ behind?: number; error?: string }>(`/api/remote-probe?path=${encodeURIComponent(dir)}`),
+  // ---- SVN 仓库浏览（不 checkout 直接看远程）----
+  repoRoot: (path: string) => api<{ ok: boolean; root?: string; rel?: string; error?: string }>(`/api/repo-root?path=${encodeURIComponent(path)}`),
+  repoList: (url: string) =>
+    api<{ ok: boolean; entries?: { name: string; isDir: boolean; size?: number; rev?: string; author?: string; date?: string }[]; error?: string }>(
+      `/api/repo-list?url=${encodeURIComponent(url)}`,
+    ),
+  repoCat: (url: string) => api<{ ok: boolean; text?: string; error?: string }>(`/api/repo-cat?url=${encodeURIComponent(url)}`),
   stashFiles: (index: number) => api<{ files: { path: string; code: string }[] }>(`/api/stash?index=${index}`),
   blame: (path: string) => api<{ lines: { rev: string; author: string; date: string; line: number; text: string }[] }>(`/api/blame?path=${encodeURIComponent(path)}`),
   gitClean: () => api<{ files: string[] }>('/api/git-clean'),
@@ -398,6 +405,8 @@ export const post = {
     api<VcsResult>('/api/stash', json({ action, message, index, paths })),
   /** 点侧边栏 ⬇ 就地更新该项目（工作区脏则后端拒绝；结果消息直接 toast） */
   pullAny: (dir: string) => api<VcsResult>('/api/pull-any', json({ path: dir })),
+  /** 远程文件保存到本地（「下载到…」）：目标已存在则后端拒绝 */
+  repoSave: (url: string, dir: string) => api<{ ok: boolean; path?: string; error?: string }>('/api/repo-save', json({ url, dir })),
   repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true, signal?: AbortSignal) =>
     api<VcsResult & { repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' }>(
       '/api/repo-create',
