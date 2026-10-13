@@ -127,6 +127,8 @@ export const srv = {
 
   // ---- 浏览（browse.ts）----
   'srv.readDirFailed': '无法读取目录: {msg}',
+  // 浏览目录时路径不存在（打开项目里打错路径等）
+  'srv.dirNotFound': '目录不存在：{path}',
   'srv.binaryNoDiff': '二进制文件（{path}），不支持文本对比',
   'srv.notInWcNoDiff': '该文件不在当前工作副本中，无法查看差异：{path}',
   'srv.diffNotExist': '(不存在的)',

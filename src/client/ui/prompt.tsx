@@ -40,7 +40,8 @@ export function ConfirmModal(props: {
   secondaryCmd?: string;
   /** 弹窗宽度（默认 440） */
   width?: number;
-  onConfirm: () => void;
+  /** 确认回调（带点击事件——个别调用方需要起点坐标做飞行动画；无参函数同样兼容） */
+  onConfirm: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onCancel: () => void;
   onSecondary?: () => void;
 }) {

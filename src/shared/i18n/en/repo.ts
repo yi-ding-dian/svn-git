@@ -136,6 +136,8 @@ export const repo = {
   'repo.get.getting': 'Fetching…',
   'repo.get.get': 'Get',
   'repo.get.cancelTip': 'Stop this fetch: the request is aborted and the background git / svn process is terminated too',
+  // "−" on the fetch dialog: minimize to background (task keeps running and opens the project when done)
+  'repo.get.minTip': 'Minimize to background (fetch keeps running)',
   'repo.get.slowNet': 'Remote network is slow or unstable — the fetch is still running, please wait; if the network is really unreachable, press Cancel and retry with another network or URL',
   'repo.get.help':
     'Two options: Git clone = git clone (copy from a URL to your machine); SVN checkout = svn checkout (fetch a working copy from the server; the target directory is the local name).',

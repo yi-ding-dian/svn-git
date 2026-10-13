@@ -112,6 +112,8 @@ export const srv = {
 
   // ---- 浏览（browse.ts）----
   'srv.readDirFailed': 'Cannot read directory: {msg}',
+  // Browsing a path that does not exist (typo in Open Project path box, etc.)
+  'srv.dirNotFound': 'Directory not found: {path}',
   'srv.binaryNoDiff': 'Binary file ({path}) cannot be compared as text',
   'srv.notInWcNoDiff': 'This file is not in the current working copy; cannot show the diff: {path}',
   'srv.diffNotExist': '(nonexistent)',

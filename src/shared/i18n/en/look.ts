@@ -23,7 +23,7 @@ export const look = {
   'look.color.accent': 'Accent',
 
   // ---- 字体设置弹窗 ----
-  'look.font.title': '🔤 Font Settings',
+  'look.font.title': 'Font Settings',
   'look.font.size': 'Font Size',
   'look.font.ui': 'UI Font',
   'look.font.code': 'Code Font (diffs, code views)',

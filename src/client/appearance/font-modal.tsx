@@ -4,6 +4,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { ModalShell } from '../shell/modal-shell.js';
+import { IconFont } from '../ui/icons.js';
 import { get } from '../shared/api.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 
@@ -162,7 +163,8 @@ export function FontModal(props: {
   const unavailable = (v: string) => !familyAvailable(v, systemFonts);
   return (
     // 🔤 字体设置
-    <ModalShell title={t('look.font.title')} width={520} onClose={props.onClose}>
+    // 图标用 SVG（与工具栏「字体设置」同款 A 字标）——标题里的 🔤 emoji 在部分系统渲染成怪方块（用户实报）
+    <ModalShell icon={<IconFont size={16} />} title={t('look.font.title')} width={520} onClose={props.onClose}>
       {/* 字号滑块 */}
       <div style={{ marginBottom: 16 }}>
         <div className="row" style={{ justifyContent: 'space-between' }}>

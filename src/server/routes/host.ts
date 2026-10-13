@@ -28,8 +28,9 @@ function browseDirs(dir: string): { entries: { name: string; isDir: boolean }[];
   try {
     entries = fs.readdirSync(cur);
   } catch (err) {
-    // 无法读取目录: {msg}
-    throw new Error(t('srv.readDirFailed', { msg: (err as Error).message }));
+    // 抛**原始 errno 错误**（带 code）：路由层按 ENOENT 给"目录不存在"的友好文案——
+    // 原先包成新 Error 会把 code 丢掉，没法区分"不存在"与"没权限"等
+    throw err;
   }
   if (cur !== '/') out.push({ name: '..', isDir: true });
   const dirs: string[] = [];
@@ -76,8 +77,16 @@ export async function handle(ctx: Ctx): Promise<boolean> {
 
       if (p === '/api/browse') {
         const dir = String(url.searchParams.get('path') ?? START_DIR);
-        const result = browseDirs(dir);
-        sendJson(res, 200, { ...result, dir });
+        try {
+          const result = browseDirs(dir);
+          sendJson(res, 200, { ...result, dir });
+        } catch (e) {
+          // 打错路径（目录不存在）等：400 + 明确原因，前端错误条直接显示；
+          // 原先裸抛 → 全局 500「服务器内部错误」，用户输入错路径时不知所以
+          const err = e as NodeJS.ErrnoException;
+          const msg = err.code === 'ENOENT' ? t('srv.dirNotFound', { path: dir }) : t('srv.readDirFailed', { msg: err.message });
+          sendJson(res, 400, { error: msg });
+        }
         return true;
       }
 
