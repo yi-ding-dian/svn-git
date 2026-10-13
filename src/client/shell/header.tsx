@@ -2,7 +2,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo } from '../shared/api.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconServer } from '../ui/icons.js';
+import { useTasks, cancelTask, removeTask } from '../shared/tasks.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun } from '../ui/icons.js';
 import { type Modal } from './modal-types.js';
 import { type View } from './sidebar.js';
 import { ContextMenu } from '../ui/context-menu.js';
@@ -490,6 +491,8 @@ export function AppHeader(props: {
   unpushedCount?: number | null;
   /** 顶栏「浏览仓库」快捷入口（仅 SVN 项目；点击 = 打开当前项目的仓库浏览器，与右键菜单同一功能） */
   onBrowseRepo?: () => void;
+  /** 展开后台任务面板的信号（App 递增——完成 toast 点击时用；Header 据此打开面板） */
+  tasksOpenReq?: number;
   /** stash 条数（角标；git 仓库有效，未加载/异常为 null 不显示） */
   stashCount?: number | null;
   /** 工作区是否有可 stash 的改动（无改动时 Stash 按钮置灰） */
@@ -535,6 +538,20 @@ export function AppHeader(props: {
       /* 存储失败忽略 */
     }
   }, [layout]);
+  // 后台任务：指示器 + 面板（点「−」最小化后任务留在这里继续；完成 toast 点击也打开它）
+  const bgTasks = useTasks();
+  const runningCount = bgTasks.filter((tk) => tk.status === 'running').length;
+  const [taskPop, setTaskPop] = useState<{ x: number; y: number } | null>(null);
+  const taskBtnRef = useRef<HTMLButtonElement | null>(null);
+  const openTaskPop = () => {
+    const r = taskBtnRef.current?.getBoundingClientRect();
+    if (r) setTaskPop({ x: r.right, y: r.bottom + 6 });
+  };
+  // toast 点击 → App 递增 tasksOpenReq → 打开面板（等一帧：指示器可能本帧刚渲染出来）
+  useEffect(() => {
+    if (props.tasksOpenReq) requestAnimationFrame(() => openTaskPop());
+  }, [props.tasksOpenReq]);
+
   // 拖拽状态（手动 mousedown 实现，不依赖 HTML5 DnD：真实/模拟环境都可靠）：
   // 当前拖的项（按钮 key 或分隔符唯一 id）+ 插入位置（参考项 id；null=末尾）+ ⋯ 高亮 + ghost 位置
   const [dragKey, setDragKey] = useState<string | null>(null);
@@ -781,6 +798,24 @@ export function AppHeader(props: {
           <IconServer size={14} />
         </button>
       )}
+      {/* 后台任务指示器（有任务/有记录才显示）：运行中 = 流沙动画沙漏 + 数量；点击展开任务面板 */}
+      {bgTasks.length > 0 && (
+        <button
+          ref={taskBtnRef}
+          className="header-icon-btn"
+          title={runningCount > 0 ? t('shell.tasks.indicatorTip', { n: runningCount }) : t('shell.tasks.indicatorTipIdle')}
+          onClick={() => (taskPop ? setTaskPop(null) : openTaskPop())}
+        >
+          {runningCount > 0 ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              <IconHourglassRun size={15} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>{runningCount}</span>
+            </span>
+          ) : (
+            <IconOk size={13} />
+          )}
+        </button>
+      )}
       <span className="spacer" />
       {/* 可定制工具栏按钮 + 可拖拽分隔符（顺序 = 用户布局 shown；退出应用固定末尾不在此区） */}
       <span
@@ -988,6 +1023,92 @@ export function AppHeader(props: {
           })()}
         </span>
       )}
+      {/* 后台任务面板（贴指示器展开；fixed 定位，在 header 内渲染不影响布局） */}
+      {taskPop && <TaskPopover x={taskPop.x} y={taskPop.y} onClose={() => setTaskPop(null)} />}
     </div>
+  );
+}
+
+/** 后台任务面板：进行中（沙漏/已用秒/[取消]）+ 最近完成（✅/❌/⊘ + 消息 + [×]移除）。
+ *  运行中的"已用 n 秒"每秒刷新（面板开着才 tick）；点空白/Esc…… 面板同 ContextMenu 的 mask 手法 */
+function TaskPopover(props: { x: number; y: number; onClose: () => void }) {
+  const tasks = useTasks();
+  const [, force] = useState(0);
+  useEffect(() => {
+    const h = window.setInterval(() => force((n) => n + 1), 1000);
+    return () => window.clearInterval(h);
+  }, []);
+  // 记录被清空（全部 × 掉）后自动收起面板——指示器同时消失，空面板没有存在意义
+  // （留着它的遮罩会挡住界面点击——实测）
+  useEffect(() => {
+    if (tasks.length === 0) props.onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks.length]);
+  const running = tasks.filter((tk) => tk.status === 'running');
+  const finished = tasks.filter((tk) => tk.status !== 'running');
+  const now = Date.now();
+  return (
+    <>
+      {/* 点击面板外关闭（右键也关，避免菜单叠菜单） */}
+      <div
+        style={{ position: 'fixed', inset: 0, zIndex: 299 }}
+        onClick={props.onClose}
+        onContextMenu={(ev) => {
+          ev.preventDefault();
+          props.onClose();
+        }}
+      />
+      <div
+        className="ctx-menu"
+        style={{ position: 'fixed', right: Math.max(8, window.innerWidth - props.x), top: props.y, minWidth: 300, maxWidth: 380, padding: 8 }}
+      >
+        {running.length > 0 && (
+          <>
+            {/* 进行中 */}
+            <div className="dim small" style={{ padding: '2px 6px 4px' }}>{t('shell.tasks.running')}</div>
+            {running.map((tk) => (
+              <div key={tk.id} className="row" style={{ gap: 8, padding: 6, alignItems: 'center' }}>
+                <IconHourglassRun size={14} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.title}>{tk.title}</div>
+                  {/* 已用 {n} 秒 */}
+                  <div className="dim small">{t('shell.tasks.elapsed', { n: Math.max(0, Math.floor((now - tk.startedAt) / 1000)) })}</div>
+                </span>
+                {/* 取消 */}
+                <button className="mini" onClick={() => cancelTask(tk.id)}>{t('common.cancel')}</button>
+              </div>
+            ))}
+          </>
+        )}
+        {finished.length > 0 && (
+          <>
+            {/* 最近完成 */}
+            <div
+              className="dim small"
+              style={{ padding: '6px 6px 4px', marginTop: running.length ? 6 : 0, borderTop: running.length ? '1px solid var(--border2)' : undefined }}
+            >
+              {t('shell.tasks.finished')}
+            </div>
+            {finished.map((tk) => (
+              <div key={tk.id} className="row" style={{ gap: 8, padding: 6, alignItems: 'center' }}>
+                <span style={{ flexShrink: 0, display: 'inline-flex' }}>
+                  {tk.status === 'done' ? <IconOk /> : tk.status === 'cancelled' ? <span className="dim">⊘</span> : <IconErr />}
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tk.title}</div>
+                  {(tk.message || tk.status === 'cancelled') && (
+                    <div className="dim small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.message ?? t('shell.tasks.cancelled')}>
+                      {tk.message ?? t('shell.tasks.cancelled')}
+                    </div>
+                  )}
+                </span>
+                {/* 移除这条记录 */}
+                <button className="mini" title={t('shell.tasks.removeTip')} onClick={() => removeTask(tk.id)}>×</button>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </>
   );
 }

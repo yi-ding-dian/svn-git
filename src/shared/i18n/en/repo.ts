@@ -44,7 +44,7 @@ export const repo = {
   'repo.co.credHint': 'Used only for this checkout; not saved',
   'repo.co.retryWithCred': 'Retry with new account',
   'repo.co.needCred': 'Please enter the username and password',
-  'repo.co.minTip': 'Checkout in background (coming later)',
+  'repo.co.minTip': 'Minimize to background (checkout keeps running)',
   // Hover note for "current checkout account" next to the title (the label shows the username itself)
   'repo.co.whoTipTyped': 'Using the account entered for this checkout (not saved)',
   'repo.co.whoTipSaved': 'Using the saved SVN account',

@@ -48,7 +48,7 @@ export const repo = {
   'repo.co.credHint': '仅用于本次检出，不会保存',
   'repo.co.retryWithCred': '用新账号重试',
   'repo.co.needCred': '请填写用户名和密码',
-  'repo.co.minTip': '后台检出（后续支持）',
+  'repo.co.minTip': '最小化到后台（检出继续进行）',
   // 标题右侧「当前检出账号」的悬浮说明（账号本身直接显示用户名）
   'repo.co.whoTipTyped': '使用本次输入的账号（仅本次检出，不会保存）',
   'repo.co.whoTipSaved': '使用已保存的 SVN 账号',

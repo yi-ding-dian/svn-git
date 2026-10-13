@@ -893,6 +893,20 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   88% { opacity: 1; } /* 停留 ≈2.5s */
   100% { opacity: 0; }
 }
+/* 可点击的提示（后台任务完成通知——点击打开任务面板）：停留 ≈3.8s 供用户点击；
+   **必须覆盖 pointer-events: none**（基础样式是纯展示用，不接收点击）。
+   定义在 .err 之后：失败的可点通知（err+click）用这套更长的动画 */
+.toast-tip.click {
+  animation: toast-fade-click 4s ease forwards;
+  pointer-events: auto;
+  cursor: pointer;
+}
+@keyframes toast-fade-click {
+  0% { opacity: 0; }
+  4% { opacity: 1; }
+  95% { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 /* ---------- 无历史记录提示 ---------- */
 .no-hist-tip {
@@ -1281,3 +1295,9 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
   white-space: pre;                           /* 不折行：折了行号没法 1:1（用户选定方案） */
   overflow: auto;
 }
+
+/* ---------- 后台任务：沙漏（运行中动画——上瓶沙落、下瓶沙积，循环） ---------- */
+@keyframes hg-sand-top { 0% { transform: scaleY(1); } 78%, 100% { transform: scaleY(0); } }
+@keyframes hg-sand-bot { 0%, 22% { transform: scaleY(0); } 100% { transform: scaleY(1); } }
+.hg-sand-top { transform-origin: 12px 4.4px; animation: hg-sand-top 2.4s ease-in infinite; }
+.hg-sand-bot { transform-origin: 12px 19.6px; animation: hg-sand-bot 2.4s ease-in infinite; }

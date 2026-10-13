@@ -66,6 +66,16 @@ export const shell = {
   'shell.tool.envCheckTitle': '查看 SVN / Git 的安装状态与版本；缺失时可一键安装',
   'shell.tool.svnInfo': 'SVN 信息',
 
+  // ---- 后台任务（顶栏沙漏指示器 + 任务面板）----
+  'shell.tasks.indicatorTip': '后台任务：{n} 个进行中（点击查看）',
+  'shell.tasks.indicatorTipIdle': '后台任务（点击查看）',
+  'shell.tasks.running': '进行中',
+  'shell.tasks.finished': '最近完成',
+  'shell.tasks.elapsed': '已用 {n} 秒',
+  'shell.tasks.cancelled': '已取消',
+  'shell.tasks.removeTip': '移除这条记录',
+  'shell.tasks.toast': '{title}：{message}',
+
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': '分隔符',
   'shell.toolbar.sepTitle': '按住拖动：移动分隔位置 / 拖到 ⋯ 删除',

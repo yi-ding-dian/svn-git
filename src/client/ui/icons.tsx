@@ -602,6 +602,29 @@ export function IconFont({ size = 16 }: IconProps) {
 }
 
 /** 地球（语言切换）：圆 + 经线 + 纬线，纯线条与其它图标同一套描边风格 */
+/** 沙漏（运行中·流沙动画）：后台任务指示器——上瓶沙渐落、下瓶渐积、循环（keyframes 在
+ *  style.css 的 .hg-sand-top/.hg-sand-bot，scaleY + transform-origin 实现）。用户定稿：
+ *  "⏳ 要动，像沙漏一样，流沙，循环"。外框 currentColor、沙粒蓝（与机柜图标同族） */
+export function IconHourglassRun({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      {/* 玻璃外框 */}
+      <path
+        d="M6 2.5h12M6 21.5h12M7.5 2.5c0 4.4 4.5 6.2 4.5 9.5s-4.5 5.1-4.5 9.5M16.5 2.5c0 4.4-4.5 6.2-4.5 9.5s4.5 5.1 4.5 9.5"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      {/* 上瓶沙：满 → 空（顶部为原点收缩） */}
+      <path className="hg-sand-top" d="M8.3 4.2 L15.7 4.2 L12 10.6 Z" fill="#58a6ff" />
+      {/* 下瓶沙：空 → 满（底部为原点生长） */}
+      <path className="hg-sand-bot" d="M8.3 19.8 L15.7 19.8 L12 13.4 Z" fill="#58a6ff" />
+      {/* 中间落沙线（窄颈处，暗示"流"） */}
+      <line x1="12" y1="11" x2="12" y2="13" stroke="#58a6ff" strokeWidth="1.1" />
+    </svg>
+  );
+}
+
 /** 服务器机柜（两格 + 绿色指示灯·**彩色**）：「浏览仓库」（菜单/弹窗标题/顶栏快捷入口）——
  *  远程仓库在那台服务器上。机身蓝→紫渐变（与 IconLogin 同色系），灯绿色（运行中）。
  *  用户定稿（替换原单色地球；点灯从 1px 点改为圆点，14px 下也能看见颜色） */

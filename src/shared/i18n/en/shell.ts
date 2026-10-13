@@ -64,6 +64,16 @@ export const shell = {
   'shell.tool.envCheckTitle': 'View SVN / Git installation status and versions; one-click install if missing',
   'shell.tool.svnInfo': 'SVN Info',
 
+  // ---- Background tasks (header hourglass indicator + task panel) ----
+  'shell.tasks.indicatorTip': 'Background tasks: {n} running (click to view)',
+  'shell.tasks.indicatorTipIdle': 'Background tasks (click to view)',
+  'shell.tasks.running': 'Running',
+  'shell.tasks.finished': 'Recent',
+  'shell.tasks.elapsed': '{n}s elapsed',
+  'shell.tasks.cancelled': 'Cancelled',
+  'shell.tasks.removeTip': 'Remove this record',
+  'shell.tasks.toast': '{title}: {message}',
+
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': 'Separator',
   'shell.toolbar.sepTitle': 'Drag to move the divider / drop on ⋯ to delete',

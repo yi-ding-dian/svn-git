@@ -15,6 +15,7 @@ import { Sidebar, type View } from './sidebar.js';
 import { IconOk, IconErr } from '../ui/icons.js';
 import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
+import { useTasks } from '../shared/tasks.js';
 import { useLang } from '../shared/use-lang.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 
@@ -48,6 +49,11 @@ export function App() {
   const [tick, setTick] = useState(0);
   const [toast, setToast] = useState('');
   const [toastErr, setToastErr] = useState(false);
+  /** 可点 toast 的行为（后台任务完成通知：点击打开任务面板）。**对象包一层**——
+   *  函数直接进 useState 会被 React 当作更新函数调用（经典陷阱） */
+  const [toastAction, setToastAction] = useState<{ fn: () => void } | null>(null);
+  /** 打开后台任务面板的信号（toast 点击 → 递增 → Header 展开面板） */
+  const [tasksOpenReq, setTasksOpenReq] = useState(0);
   const [modal, setModal] = useState<Modal>(null);
   // modal 最新引用：后台校验（提交前检查）完成后判断用户是否已关窗/切换，避免结果打扰
   const modalRef = useRef<Modal>(null);
@@ -86,11 +92,15 @@ export function App() {
   }, []);
   useEffect(() => {
     if (!toast) return;
-    // 成功 1.5s 淡出；失败停留 3 秒（够读完一行报错，又不至于赖着不走）
+    // 成功 1.5s 淡出；失败停留 3 秒（够读完一行报错，又不至于赖着不走）；
+    // **可点**的（后台任务完成通知）留 4 秒给用户点击
     // 局部变量名用 timer 而非 t：本文件 import 了 i18n 的 t()，同名会遮蔽
-    const timer = setTimeout(() => setToast(''), toastErr ? 3000 : 1500);
+    const timer = setTimeout(() => {
+      setToast('');
+      setToastAction(null);
+    }, toastAction ? 4000 : toastErr ? 3000 : 1500);
     return () => clearTimeout(timer);
-  }, [toast, toastErr]);
+  }, [toast, toastErr, toastAction]);
   const [updateResult, setUpdateResult] = useState<{
     dir: string;
     ok: boolean;
@@ -137,10 +147,25 @@ export function App() {
    *  旧写法把裸 setToast 当 onToast 往下传，而 toastErr 只在错误分支被置 true、成功分支没人复位，
    *  于是一次失败之后所有普通提示都红着显示（实报：右键「复制完整路径」弹红 ✗）——
    *  红不红与那次操作毫无关系，只取决于这次会话之前有没有出过错。此处默认复位，由调用方声明错误。 */
-  const showToast = useCallback((msg: string, err = false) => {
+  const showToast = useCallback((msg: string, err = false, onClick?: () => void) => {
     setToastErr(err);
     setToast(msg);
+    setToastAction(onClick ? { fn: onClick } : null);
   }, []);
+
+  // 后台任务完成通知：**最小化过**的任务（detached）完成/失败时弹可点 toast → 打开任务面板。
+  // 弹窗还开着时结果就在眼前，不重复弹；取消不弹（用户自己点的）
+  const bgTasks = useTasks();
+  const notifiedTaskIdsRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    for (const tk of bgTasks) {
+      if (tk.status === 'running' || notifiedTaskIdsRef.current.has(tk.id)) continue;
+      notifiedTaskIdsRef.current.add(tk.id);
+      if (!tk.detached || tk.status === 'cancelled') continue;
+      // 「{title}：{message}」点击打开任务面板
+      showToast(t('shell.tasks.toast', { title: tk.title, message: tk.message ?? '' }), tk.status === 'error', () => setTasksOpenReq((n) => n + 1));
+    }
+  }, [bgTasks, showToast]);
 
   const refresh = useCallback(() => {
     setTick((t) => t + 1);
@@ -855,6 +880,7 @@ export function App() {
         onBrowseRepo={() => {
           if (repo?.root) openRepoBrowse(repo.root);
         }}
+        tasksOpenReq={tasksOpenReq}
         onRefresh={refresh}
         setModal={setModal}
         onToast={showToast}
@@ -1095,7 +1121,7 @@ export function App() {
       {/* 操作结果提示：鼠标位置悬浮，淡出；错误态停留更久（见 .toast-tip.err） */}
       {toast && (
         <div
-          className={`toast-tip${toastErr ? ' err' : ''}`}
+          className={`toast-tip${toastErr ? ' err' : ''}${toastAction ? ' click' : ''}`}
           style={{
             left: Math.min(mouseRef.current.x, window.innerWidth - 360),
             top: Math.max(8, mouseRef.current.y - 26),
@@ -1104,6 +1130,15 @@ export function App() {
             border: toastErr ? '1px solid var(--err)' : '1px solid var(--border)',
           }}
           title={toast}
+          onClick={
+            toastAction
+              ? () => {
+                  toastAction.fn();
+                  setToast('');
+                  setToastAction(null);
+                }
+              : undefined
+          }
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             {toastErr ? <IconErr /> : <IconOk />}

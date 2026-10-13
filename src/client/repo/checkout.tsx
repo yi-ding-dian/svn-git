@@ -1,11 +1,16 @@
 /** 仓库浏览右键「检出到本地」弹窗（不依赖已打开项目，URL 直连检出工作副本）：
- *  状态机 form（选所在目录/名称）→ run（进度 + 取消）→ done（打开项目 / 关闭）；
- *  认证失败 → 显示「当前账号[X]没有获取该仓库权限」+「待输入有权限的账号密码」（**只本次用、
- *  后端不落盘**）→ 带新凭据重试。「开跑即验」：有权限的账号不弹任何框，直接检出成功。
- *  右上角 - 号 = 第二步「后台任务机制」的占位（第一步禁用，见 record.md 设计稿）。
+ *  表单（选所在目录/名称）→ 进度（已用秒数 + 取消）→ 成功（打开项目 / 关闭）；
+ *  认证失败 → 「当前账号[X]没有获取该仓库权限」+「待输入有权限的账号密码」（**只本次用、
+ *  后端不落盘**）→ 带新凭据重试。「开跑即验」：有权限的账号不弹任何框。
+ *
+ *  **后台任务**：检出挂在本应用的任务 store（shared/tasks）上——
+ *   - `−` 最小化：弹窗收起、任务继续跑（顶栏沙漏指示器可见，完成弹 toast）；
+ *   - `✕` 关闭：取消进行中的任务（要后台继续用 −）；
+ *   - 任务状态由 store 持有 → 弹窗按任务状态渲染（进度/结果/凭据重试）。
  *  入口：repo-browse.tsx 树里右键（目录行 + 空白 = 仓库根）。 */
-import React, { useEffect, useRef, useState } from 'react';
-import { get, post, ApiError } from '../shared/api.js';
+import React, { useEffect, useState } from 'react';
+import { get, post } from '../shared/api.js';
+import { startTask, cancelTask, markDetached, useTasks } from '../shared/tasks.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { PickDirModal } from './pick-dir.js';
 import { FormRow } from '../ui/ui.js';
@@ -13,6 +18,8 @@ import { ResultLine } from '../ui/result-line.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { joinPath } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
+
+type CoResp = Awaited<ReturnType<typeof post.repoCheckout>>;
 
 /** URL 末段 → 默认本地名称（仓库根 URL 时即仓库名） */
 function defaultName(url: string): string {
@@ -23,8 +30,6 @@ function defaultName(url: string): string {
   }
 }
 
-type Phase = 'form' | 'run' | 'done';
-
 export function CheckoutDialog(props: {
   /** 要检出的远程目录 URL（树行 = 行 URL；空白右键 = 仓库根） */
   url: string;
@@ -32,31 +37,25 @@ export function CheckoutDialog(props: {
   /** 检出成功后「打开项目」：由外层把工作副本作为项目打开 */
   onOpenProject?: (dir: string) => void;
 }) {
-  const [phase, setPhase] = useState<Phase>('form');
   const [dir, setDir] = useState('');
   const [name, setName] = useState(() => defaultName(props.url));
   const [picker, setPicker] = useState(false);
+  /** 表单校验消息（任务自身的消息从任务读——都是"请填写…"级） */
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
-  const [donePath, setDonePath] = useState('');
-  // 认证失败信息：{user} = 本次后端实际使用的账号（空串 = 匿名）；显示「当前账号[X]没有获取该仓库权限」
-  const [authFail, setAuthFail] = useState<{ user: string } | null>(null);
   const [credOpen, setCredOpen] = useState(false);
   const [credUser, setCredUser] = useState('');
   const [credPass, setCredPass] = useState('');
-  const [elapsed, setElapsed] = useState(0);
-  const [slowNet, setSlowNet] = useState(false);
-  /** 标题右侧「当前检出账号」：已保存配置的用户名 + 系统凭据缓存身份（挂载时一次查全） */
+  /** 标题右侧「当前检出账号」：工具配置 + 系统凭据缓存（挂载时一次查全） */
   const [cfgUser, setCfgUser] = useState('');
   const [cacheUser, setCacheUser] = useState('');
   /** 上次重试用的临时凭据（标题显示"这次会用谁"用；不保存、仅本次） */
   const [usedCred, setUsedCred] = useState<{ username: string; password: string } | null>(null);
-  /** 本次检出的取消句柄：取消 / 关弹窗都靠它把请求连同后端 svn 子进程一起停掉（并清半截目录） */
-  const abortRef = useRef<AbortController | null>(null);
-  /** 检出上限：与后端一致（10 分钟） */
-  const CO_TIMEOUT_S = 600;
-  /** 多久还没有文件落盘就给"网络慢"提示（秒），同「获取仓库」 */
-  const SLOW_HINT_S = 10;
+  /** 当前检出的后台任务 id（任务在 store 里活过本弹窗——最小化后继续） */
+  const [taskId, setTaskId] = useState<number | null>(null);
+  /** 每秒重渲（“已用 n 秒”/探测状态） */
+  const [, setTick] = useState(0);
+  const [slowNet, setSlowNet] = useState(false);
 
   // 默认所在目录 = home（与「打开项目」默认一致）；顺带查 SVN 身份（标题显示用：
   // 工具配置 + 系统凭据缓存——裸跑时 svn 实际用的就是缓存身份）
@@ -78,33 +77,23 @@ export function CheckoutDialog(props: {
       });
   }, [props.url]);
 
-  /** 开始检出（cred = 本次临时凭据；缺省用后端已存配置/匿名） */
-  const start = (cred?: { username: string; password: string }) => {
-    if (!dir.trim() || !name.trim()) {
-      // 请填写目标和名称
-      setMsg(t('repo.get.needTargetName'));
-      setMsgErr(true);
-      return;
-    }
-    setPhase('run');
-    setMsg('');
-    setMsgErr(false);
-    setAuthFail(null);
-    setElapsed(0);
-    setSlowNet(false);
-    setUsedCred(cred ?? null); // 标题「当前检出账号」跟随这次实际要用的凭据
-    abortRef.current?.abort(); // 上一次还挂着的（重试场景）：先取消，免得两个请求打架
-    const ac = new AbortController();
-    abortRef.current = ac;
-    const tick = setInterval(() => setElapsed((n) => n + 1), 1000);
-    // 到点自动停：断开请求 → 后端 abort 掉 svn 子进程（两边都是 600s，这里先动）
-    const deadline = setTimeout(() => ac.abort(), CO_TIMEOUT_S * 1000);
-    // 进度探测：目标目录里有没有真文件落盘（/api/browse 天然过滤隐藏项，.svn 不算）。
-    // 到 SLOW_HINT_S 还没有文件 → 提示网络慢；一旦有文件 → 立刻撤掉。取首次读数为基线。
-    const probeTarget = joinPath(dir.trim(), name.trim());
+  const bgTasks = useTasks();
+  const task = taskId === null ? null : (bgTasks.find((tk) => tk.id === taskId) ?? null);
+  const running = task?.status === 'running';
+  const resp = (task?.data ?? undefined) as CoResp | undefined;
+  const donePath = task?.status === 'done' ? (resp?.repoDir ?? joinPath(dir, name)) : '';
+  /** 认证失败（任务 error 且后端标了 authError）：回表单态显示无权限提示块 */
+  const authFail = task?.status === 'error' && resp?.authError ? { user: resp.user ?? '' } : null;
+
+  // 运行中每秒 tick（已用秒数）；顺带"网络慢"探测（目标目录文件落盘——弹窗在时才有提示，
+  // 最小化后面板里已用秒数仍在涨；一旦有文件立刻撤掉提示）
+  useEffect(() => {
+    if (!running) return;
+    const h = window.setInterval(() => setTick((n) => n + 1), 1000);
+    const probeTarget = joinPath(dir, name);
     let baseline: number | null = null;
     let filesSeen = false;
-    const probe = setInterval(() => {
+    const probe = window.setInterval(() => {
       if (filesSeen) return;
       void (async () => {
         let n = 0;
@@ -123,42 +112,43 @@ export function CheckoutDialog(props: {
         }
       })();
     }, 2000);
-    const slowTimer = setTimeout(() => {
+    const slowTimer = window.setTimeout(() => {
       if (!filesSeen) setSlowNet(true);
-    }, SLOW_HINT_S * 1000);
-    const done = () => {
-      clearInterval(tick);
+    }, 10_000);
+    return () => {
+      clearInterval(h);
       clearInterval(probe);
       clearTimeout(slowTimer);
-      clearTimeout(deadline);
-      if (abortRef.current === ac) abortRef.current = null;
     };
-    post
-      .repoCheckout(props.url, dir.trim(), name.trim(), cred, ac.signal)
-      .then((r) => {
-        if (r.ok) {
-          setDonePath(r.repoDir ?? joinPath(dir.trim(), name.trim()));
-          setPhase('done');
-          return;
-        }
-        // 认证/授权失败：回表单态显示无权限提示块（可展开输入账号密码重试）
-        if (r.authError) {
-          setAuthFail({ user: r.user ?? '' });
-          setCredOpen(false);
-          setPhase('form');
-          return;
-        }
-        setMsg(r.message);
-        setMsgErr(true);
-        setPhase('form');
-      })
-      .catch((e: Error) => {
-        // 用户取消（ApiError.cancelled，消息即「已取消」）不算错误；其他异常如实报，回表单可重试
-        setMsg(e.message);
-        setPhase('form');
-        setMsgErr(!(e instanceof ApiError && e.cancelled));
-      })
-      .finally(done);
+    // dir/name 在运行中被禁用，闭包值即检出开始时的目标；只在 running 翻转时重建
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running]);
+
+  const elapsed = task ? Math.max(0, Math.floor((Date.now() - task.startedAt) / 1000)) : 0;
+
+  /** 开始检出（cred = 本次临时凭据；重试先取消上一个任务） */
+  const start = (cred?: { username: string; password: string }) => {
+    if (!dir.trim() || !name.trim()) {
+      // 请填写目标和名称
+      setMsg(t('repo.get.needTargetName'));
+      setMsgErr(true);
+      return;
+    }
+    setMsg('');
+    setMsgErr(false);
+    setSlowNet(false);
+    setUsedCred(cred ?? null); // 标题「当前检出账号」跟随这次实际要用的凭据
+    if (taskId) cancelTask(taskId); // 上一次还挂着的（重试场景）：先取消，免得两个任务打架
+    const id = startTask({
+      // 任务标题：检出到本地 · {name}
+      title: `${t('repo.co.title')} · ${name.trim()}`,
+      run: async (signal) => {
+        const r = await post.repoCheckout(props.url, dir.trim(), name.trim(), cred, signal);
+        // authError 也算"完成但失败"（ok=false）——细节（user）随 data 回给弹窗渲染凭据块
+        return { ok: r.ok, message: r.message, data: r };
+      },
+    });
+    setTaskId(id);
   };
 
   /** 用输入的账号密码重试（临时凭据只本次用；后端不落盘） */
@@ -172,42 +162,23 @@ export function CheckoutDialog(props: {
     start({ username: credUser.trim(), password: credPass });
   };
 
-  /** 关闭弹窗（含中止在飞的检出）：X / Esc / 取消都走它——直接关掉不等于停了，
-   *  必须 abort 让后端把 svn 子进程收掉、半截目录清掉 */
+  /** ✕ 关闭 = 取消进行中的任务（要后台继续请用「−」最小化） */
   const closeDialog = () => {
-    abortRef.current?.abort();
+    if (taskId && running) cancelTask(taskId);
     props.onClose();
   };
 
-  // foot：按阶段换按钮组
-  const foot =
-    phase === 'run' ? (
-      <button onClick={() => abortRef.current?.abort()} title={t('repo.co.cancelTip')}>
-        {/* 取消 */}
-        {t('common.cancel')}
-      </button>
-    ) : phase === 'done' ? (
-      <>
-        {/* 关闭 */}
-        <button onClick={props.onClose}>{t('common.close')}</button>
-        {/* 打开项目 */}
-        <button className="primary" onClick={() => props.onOpenProject?.(donePath)}>{t('repo.co.open')}</button>
-      </>
-    ) : (
-      <>
-        {/* 关闭 */}
-        <button onClick={closeDialog}>{t('common.close')}</button>
-        <button
-          className="primary"
-          disabled={!dir.trim() || !name.trim()}
-          onClick={() => start()}
-          title={cmdOfRepo('svn', 'checkout', { url: props.url, dir: joinPath(dir, name.trim() || '…') }) ?? ''}
-        >
-          {/* 检出 */}
-          {t('repo.co.start')}
-        </button>
-      </>
-    );
+  /** − 最小化：弹窗收起、任务继续（顶栏沙漏指示器可见，完成弹 toast） */
+  const minimize = () => {
+    if (taskId && running) markDetached(taskId);
+    props.onClose();
+  };
+
+  // 结果行：任务被取消/失败（非认证类）如实显示；表单校验消息优先
+  const cancelled = task?.status === 'cancelled';
+  const taskErrMsg = task?.status === 'error' && !resp?.authError ? (task.message ?? '') : '';
+  const showMsg = msg || (cancelled ? t('common.cancelled') : taskErrMsg);
+  const showErr = msg ? msgErr : Boolean(taskErrMsg);
 
   // 标题右侧「当前检出账号」：本次输入 > 上次重试的临时凭据 > 工具配置 > 系统凭据缓存 > 匿名
   const typedUser = credUser.trim();
@@ -220,6 +191,37 @@ export function CheckoutDialog(props: {
         : cacheUser
           ? t('repo.co.whoTipCache')
           : t('repo.co.whoTipAnon');
+
+  // foot：运行中 → 「取消」；完成 → 「关闭/打开项目」；其余（表单/失败/取消）→ 「关闭/检出」
+  const foot = running ? (
+    <button onClick={() => taskId && cancelTask(taskId)} title={t('repo.co.cancelTip')}>
+      {/* 取消 */}
+      {t('common.cancel')}
+    </button>
+  ) : task?.status === 'done' ? (
+    <>
+      {/* 关闭 */}
+      <button onClick={props.onClose}>{t('common.close')}</button>
+      {/* 打开项目 */}
+      <button className="primary" onClick={() => props.onOpenProject?.(donePath)}>{t('repo.co.open')}</button>
+    </>
+  ) : (
+    <>
+      {/* 关闭 */}
+      <button onClick={closeDialog}>{t('common.close')}</button>
+      <button
+        className="primary"
+        disabled={!dir.trim() || !name.trim()}
+        onClick={() => start()}
+        title={cmdOfRepo('svn', 'checkout', { url: props.url, dir: joinPath(dir, name.trim() || '…') }) ?? ''}
+      >
+        {/* 检出 */}
+        {t('repo.co.start')}
+      </button>
+    </>
+  );
+
+  const done = task?.status === 'done';
 
   return (
     <ModalShell
@@ -239,9 +241,15 @@ export function CheckoutDialog(props: {
       foot={foot}
       closeIcon
       titleExtra={
-        // - 号（第二步「后台任务」的位置）：第一步禁用，悬浮说明。
+        // - 号：运行中可点 = 最小化到后台（任务继续，完成 toast）；空闲时禁用。
         // right = 14(X 的 right) + 28(X 宽) + 6(间距)，与放大的 ✕ 对齐；class 用 modal-min（非 modal-x）
-        <button className="modal-min" style={{ right: 48, opacity: 0.45, cursor: 'not-allowed' }} disabled title={t('repo.co.minTip')}>
+        <button
+          className="modal-min"
+          style={{ right: 48, opacity: running ? 1 : 0.45, cursor: running ? 'pointer' : 'not-allowed' }}
+          disabled={!running}
+          onClick={minimize}
+          title={running ? t('repo.co.minTip') : undefined}
+        >
           −
         </button>
       }
@@ -250,14 +258,14 @@ export function CheckoutDialog(props: {
       <FormRow label={t('repo.co.remote')}>
         <div className="mono small" style={{ wordBreak: 'break-all', lineHeight: 1.5 }}>{props.url}</div>
       </FormRow>
-      {phase !== 'done' && (
+      {!done && (
         <>
           {/* 所在目录（父目录路径） */}
           <FormRow label={t('repo.parentDir')}>
             <div className="row" style={{ gap: 8 }}>
-              <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} disabled={phase === 'run'} />
+              <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} disabled={running} />
               {/* 打开文件夹浏览（可新建/重命名文件夹） */}
-              <button className="mini tool-btn" title={t('repo.browseTip')} onClick={() => setPicker(true)} disabled={phase === 'run'}>
+              <button className="mini tool-btn" title={t('repo.browseTip')} onClick={() => setPicker(true)} disabled={running}>
                 {/* 📂 浏览 */}
                 {t('repo.browse')}
               </button>
@@ -270,15 +278,15 @@ export function CheckoutDialog(props: {
               placeholder="my-project"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              disabled={phase === 'run'}
+              disabled={running}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && phase === 'form') start();
+                if (e.key === 'Enter' && !running) start();
               }}
             />
           </FormRow>
         </>
       )}
-      {phase === 'run' && (
+      {running && (
         <>
           <div className="dim small" style={{ marginTop: 6 }}>
             {/* 正在检出…已用 {n} 秒 */}
@@ -292,7 +300,7 @@ export function CheckoutDialog(props: {
           )}
         </>
       )}
-      {phase === 'done' && (
+      {done && (
         <div className="row" style={{ gap: 8, marginTop: 4 }}>
           <span style={{ color: 'var(--ok)' }}>✓</span>
           <span className="mono small" style={{ wordBreak: 'break-all' }}>
@@ -302,7 +310,7 @@ export function CheckoutDialog(props: {
         </div>
       )}
       {/* 认证失败提示块：当前账号[X]没有获取该仓库权限（X 空 = 匿名） + 取消/输入有权限的账号密码 */}
-      {phase === 'form' && authFail && (
+      {!running && authFail && (
         <div style={{ marginTop: 10, padding: '10px 12px', border: '1px solid var(--warn)', borderRadius: 6 }}>
           <div className="small" style={{ color: 'var(--warn)' }}>
             ⚠ {t('repo.co.noPerm', { user: authFail.user || t('repo.co.anonymous') })}
@@ -343,7 +351,7 @@ export function CheckoutDialog(props: {
           )}
         </div>
       )}
-      <ResultLine msg={msg} err={msgErr} />
+      <ResultLine msg={showMsg} err={showErr} />
       {/* 目录选择（与「打开项目」共用的目录浏览器）：选择所在目录 */}
       {picker && (
         <PickDirModal
