@@ -160,6 +160,10 @@ export function ResizableModal(props: {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as Node | null; // 变量名不用 t：本文件 import 了 i18n 的 t()，避免同名混淆
       const inside = !!target && el.contains(target);
+      // **任意**弹窗之内（含嵌套子弹窗——它的 DOM 不在本弹窗 el 内）都算"不穿透"。
+      // 多层弹窗时外层守卫若只认自己的 el，会把内层弹窗的输入按键全部掐死在 document 捕获阶段
+      //（回车提交/快捷键失效——实测：仓库浏览 × 下载到 嵌套时路径输入回车无反应）。
+      const inAnyModal = !!target && !!(target as Element).closest?.('.modal-mask');
       const tag = (e.target as HTMLElement)?.tagName;
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable;
       if (e.key === 'Escape') {
@@ -193,8 +197,8 @@ export function ResizableModal(props: {
         }
         return;
       }
-      // 其他按键：焦点在弹窗外，或弹窗内非输入元素上 → 不穿透到底层视图
-      if (!inside || !typing) e.stopPropagation();
+      // 其他按键：焦点在**任何弹窗之外**（真·底层视图），或弹窗内非输入元素上 → 不穿透到底层视图
+      if (!inAnyModal || !typing) e.stopPropagation();
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);

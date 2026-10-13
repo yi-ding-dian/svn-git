@@ -6,12 +6,12 @@
  *  cat 内容超过 2MB 由后端拒绝（提示用下载）。
  *  入口：最近项目里 SVN 项目右键「浏览仓库」（app 用 repo-root 接口取仓库根 URL 后打开）。 */
 import React, { useEffect, useRef, useState } from 'react';
-import { ModalShell, ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../shell/modal-shell.js';
 import { get, post } from '../shared/api.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { MiniIcon, IconServer } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
-import { DirPicker } from './dir-picker.js';
+import { PickDirModal } from './pick-dir.js';
 import { CheckoutDialog } from './checkout.js';
 import { ResultLine } from '../ui/result-line.js';
 import { t } from '../../shared/i18n/index.js';
@@ -380,28 +380,21 @@ export function RepoBrowseModal(props: {
           </div>
         </div>
       </ResizableModal>
-      {/* 下载目录选择（同名文件由后端拒绝，不覆盖） */}
+      {/* 下载目录选择（同名文件由后端拒绝，不覆盖）——与「打开项目」共用的目录浏览器（pick 模式） */}
       {picker && file && (
-        <div className="modal-mask">
-          <ModalShell
-            // 📂 下载到…
-            title={t('repo.browse.saveTo')}
-            onClose={() => setPicker(false)}
-            width={560}
-          >
-            <DirPicker
-              startDir=""
-              onPick={(p) => {
-                setPicker(false);
-                void post.repoSave(file.url, p).then((r) => {
-                  setMsg(r.ok ? t('repo.browse.saved', { path: r.path ?? '' }) : r.error ?? '');
-                  setMsgErr(!r.ok);
-                });
-              }}
-              onClose={() => setPicker(false)}
-            />
-          </ModalShell>
-        </div>
+        <PickDirModal
+          // 📂 下载到…
+          title={t('repo.browse.saveTo')}
+          startDir=""
+          onPick={(p) => {
+            setPicker(false);
+            void post.repoSave(file.url, p).then((r) => {
+              setMsg(r.ok ? t('repo.browse.saved', { path: r.path ?? '' }) : r.error ?? '');
+              setMsgErr(!r.ok);
+            });
+          }}
+          onClose={() => setPicker(false)}
+        />
       )}
       {/* 树右键菜单：目录行 / 空白（= 仓库根）→「检出到本地…」 */}
       {menu && (

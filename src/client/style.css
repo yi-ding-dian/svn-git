@@ -595,8 +595,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   cursor: pointer; border-radius: 4px;
 }
 .history-remove:hover { background: var(--err); color: #fff; }
-/* 标题栏右上角关闭按钮（ModalShell 的 closeIcon）：替代底部「关闭」 */
-.modal-x {
+/* 标题栏右上角按钮（ModalShell 的 closeIcon = .modal-x；检出弹窗的 - 号占位 = .modal-min）：
+ *  两者同款外观，分开类名——选择"真关闭按钮"时不会被 disabled 的 - 号混进来 */
+.modal-x,
+.modal-min {
   position: absolute; top: 50%; right: 14px; transform: translateY(-50%);
   width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
   border: none; background: transparent; color: var(--dim); font-size: 17px; line-height: 1;

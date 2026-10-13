@@ -1,9 +1,9 @@
 /** 新建 / 获取仓库弹窗：新建仓库（CreateRepoDialog，git init / svnadmin create）+ 获取仓库（GetRepoDialog，git clone / svn checkout） */
 import React, { useRef, useState } from 'react';
 import { get, post, type RepoCheck } from '../shared/api.js';
-import { ModalShell, ResizableModal } from '../shell/modal-shell.js';
+import { ModalShell } from '../shell/modal-shell.js';
 import { IconDownload, IconPlus } from '../ui/icons.js';
-import { DirPicker } from './dir-picker.js';
+import { PickDirModal } from './pick-dir.js';
 import { HelpNote, FormRow } from '../ui/ui.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
@@ -193,24 +193,18 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
           onCancel={() => setPending(null)}
         />
       )}
-      {/* 文件夹浏览选择器：新建/重命名，确定填充所在目录 */}
+      {/* 目录选择（与「打开项目」共用的目录浏览器）：新建/重命名，确定填充所在目录 */}
       {picker && (
-        <div className="modal-mask">
-          <ResizableModal width={640}>
-            {/* 📂 选择所在目录 */}
-            <h3>{t('repo.pickDirTitle')}</h3>
-            <div className="body">
-              <DirPicker
-                startDir={props.home ?? ''}
-                onPick={(p) => {
-                  setDir(p);
-                  setPicker(false);
-                }}
-                onClose={() => setPicker(false)}
-              />
-            </div>
-          </ResizableModal>
-        </div>
+        <PickDirModal
+          // 📂 选择所在目录
+          title={t('repo.pickDirTitle')}
+          startDir={props.home ?? ''}
+          onPick={(p) => {
+            setDir(p);
+            setPicker(false);
+          }}
+          onClose={() => setPicker(false)}
+        />
       )}
     </ModalShell>
   );
@@ -498,24 +492,18 @@ export function GetRepoDialog(props: { home?: string; onClose: () => void; onCre
           onCancel={() => setPending(null)}
         />
       )}
-      {/* 文件夹浏览选择器：选择所在目录 */}
+      {/* 目录选择（与「打开项目」共用的目录浏览器）：选择所在目录 */}
       {picker && (
-        <div className="modal-mask">
-          <ResizableModal width={640}>
-            {/* 📂 选择所在目录 */}
-            <h3>{t('repo.pickDirTitle')}</h3>
-            <div className="body">
-              <DirPicker
-                startDir={props.home ?? ''}
-                onPick={(p) => {
-                  setDir(p);
-                  setPicker(false);
-                }}
-                onClose={() => setPicker(false)}
-              />
-            </div>
-          </ResizableModal>
-        </div>
+        <PickDirModal
+          // 📂 选择所在目录
+          title={t('repo.pickDirTitle')}
+          startDir={props.home ?? ''}
+          onPick={(p) => {
+            setDir(p);
+            setPicker(false);
+          }}
+          onClose={() => setPicker(false)}
+        />
       )}
       {/* 认证失败（私有仓库 / 凭据不对）：复用推送那套认证弹窗，保存后自动重试克隆 */}
       {authAsk && (

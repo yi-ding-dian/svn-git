@@ -208,7 +208,7 @@ export const repo = {
   'repo.login.logoutCacheItem': '· 系统凭据缓存账号 {user}（{realm}）',
   'repo.login.logoutHint': '清除后该服务器的 svn 操作需要重新登录；本机其他 svn 客户端也会受影响，请确认相关密码已妥善保存',
 
-  // ---- 目录选择器（DirPicker）----
+  // ---- 目录选择（「打开项目」的 pick 模式：底部「选择此目录」+ 新建/重命名）----
   'repo.picker.created': '已创建 {name}',
   'repo.picker.createFailed': '创建失败: {msg}',
   'repo.picker.renamed': '已重命名 {from} → {to}',

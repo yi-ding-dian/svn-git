@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { get, post, ApiError } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
-import { DirPicker } from './dir-picker.js';
+import { PickDirModal } from './pick-dir.js';
 import { FormRow } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
@@ -240,8 +240,8 @@ export function CheckoutDialog(props: {
       closeIcon
       titleExtra={
         // - 号（第二步「后台任务」的位置）：第一步禁用，悬浮说明。
-        // right = 14(X 的 right) + 28(X 宽) + 6(间距)，与放大的 ✕ 对齐
-        <button className="modal-x" style={{ right: 48, opacity: 0.45, cursor: 'not-allowed' }} disabled title={t('repo.co.minTip')}>
+        // right = 14(X 的 right) + 28(X 宽) + 6(间距)，与放大的 ✕ 对齐；class 用 modal-min（非 modal-x）
+        <button className="modal-min" style={{ right: 48, opacity: 0.45, cursor: 'not-allowed' }} disabled title={t('repo.co.minTip')}>
           −
         </button>
       }
@@ -344,25 +344,18 @@ export function CheckoutDialog(props: {
         </div>
       )}
       <ResultLine msg={msg} err={msgErr} />
-      {/* 文件夹浏览选择器：选择所在目录 */}
+      {/* 目录选择（与「打开项目」共用的目录浏览器）：选择所在目录 */}
       {picker && (
-        <div className="modal-mask">
-          <ModalShell
-            // 📂 选择所在目录
-            title={t('repo.pickDirTitle')}
-            onClose={() => setPicker(false)}
-            width={640}
-          >
-            <DirPicker
-              startDir={dir}
-              onPick={(p) => {
-                setDir(p);
-                setPicker(false);
-              }}
-              onClose={() => setPicker(false)}
-            />
-          </ModalShell>
-        </div>
+        <PickDirModal
+          // 📂 选择所在目录
+          title={t('repo.pickDirTitle')}
+          startDir={dir}
+          onPick={(p) => {
+            setDir(p);
+            setPicker(false);
+          }}
+          onClose={() => setPicker(false)}
+        />
       )}
     </ModalShell>
   );
