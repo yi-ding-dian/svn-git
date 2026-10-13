@@ -77,9 +77,9 @@ export const shell = {
   // Task notifications (bell: shown only with notifications; click to view / dismiss one by one)
   'shell.notify.tip': 'Task notifications (click to view)',
   'shell.notify.removeTip': 'Dismiss this notification',
-  // Openable "update result" details (file list / warnings) in the notification panel
+  // Row hover hint (message is clamped to 2 lines; click to open the full content)
   'shell.notify.detail': 'Details',
-  'shell.notify.detailTip': 'Click to view update details',
+  'shell.notify.detailTip': 'Click to view details',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': 'Separator',

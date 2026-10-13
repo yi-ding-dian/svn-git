@@ -4,9 +4,10 @@ import { t } from '../../shared/i18n/index.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 
 /** 信息提示弹窗（单按钮，用于"不可操作"类说明提示） */
-export function InfoModal(props: { title: string; message: React.ReactNode; onClose: () => void }) {
+export function InfoModal(props: { title: string; message: React.ReactNode; onClose: () => void; zIndex?: number }) {
   return (
-    <div className="modal-mask">
+    // zIndex：从浮层面板（通知列表等，z 300）里点开时传高值，否则会被面板盖住
+    <div className="modal-mask" style={props.zIndex ? { zIndex: props.zIndex } : undefined}>
       <ResizableModal width={440} minWidth={420} onEsc={props.onClose}>
         <h3>{props.title}</h3>
         <div className="body" style={{ whiteSpace: 'pre-wrap' }}>

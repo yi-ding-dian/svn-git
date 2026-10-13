@@ -5,6 +5,7 @@ import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { useTasks, cancelTask } from '../shared/tasks.js';
 import { useNotices, markAllRead, removeNotice } from '../shared/notices.js';
 import { UpdateResultModal, type UpdateResultDetail } from '../ops/update-result.js';
+import { InfoModal } from '../ui/prompt.js';
 import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun, IconBell } from '../ui/icons.js';
 import { type Modal } from './modal-types.js';
 import { type View } from './sidebar.js';
@@ -555,6 +556,8 @@ export function AppHeader(props: {
   const openNoticePop = () => {
     const r = bellBtnRef.current?.getBoundingClientRect();
     if (r) setNoticePop({ x: r.right, y: r.bottom + 6 });
+    // 气泡（z 450）与面板同位重叠、会挡住面板顶部几行的点击——开面板即收气泡
+    setBubble(null);
   };
   // 通知到货：铃铛轻摆 + 铃铛正下方弹出小气泡（约 3.5 秒；无人点击播放"收回"动画消失——
   // 内容在铃铛里已留档；点击气泡 = 打开通知面板）。连续到达时后一条顶替前一条并重新计时
@@ -1095,7 +1098,21 @@ export function AppHeader(props: {
           <span style={{ flex: 1, minWidth: 0 }}>
             <div className="small" style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={bubble.title}>{bubble.title}</div>
             {bubble.message && (
-              <div className={bubble.err ? 'small' : 'dim small'} style={{ color: bubble.err ? 'var(--err)' : undefined, wordBreak: 'break-all', marginTop: 1 }}>{bubble.message}</div>
+              // 气泡消息同样**最多两行**（与通知列表一致——气泡高度稳定，细节点开看）
+              <div
+                className={bubble.err ? 'small' : 'dim small'}
+                style={{
+                  color: bubble.err ? 'var(--err)' : undefined,
+                  marginTop: 1,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {bubble.message}
+              </div>
             )}
           </span>
         </div>
@@ -1172,6 +1189,8 @@ function NoticePopover(props: { x: number; y: number; onClose: () => void }) {
   const notices = useNotices();
   /** 打开的「更新结果」详情窗（点面板里带「详情 ▸」的通知行） */
   const [detail, setDetail] = useState<UpdateResultDetail | null>(null);
+  /** 「全文」小窗（无更新详情的通知——消息被两行截断后，点开看完整内容） */
+  const [fullMsg, setFullMsg] = useState<{ title: string; message: string } | null>(null);
   // 打开即已读（放 effect 里，避免渲染期改 store）
   useEffect(() => {
     markAllRead();
@@ -1199,17 +1218,20 @@ function NoticePopover(props: { x: number; y: number; onClose: () => void }) {
       />
       <div
         className="ctx-menu"
-        style={{ position: 'fixed', right: Math.max(8, window.innerWidth - props.x), top: props.y, minWidth: 320, maxWidth: 430, padding: 8 }}
+        // maxHeight + 滚动：通知多了不顶出屏幕（用户定稿：列表超出加滚动）
+        style={{ position: 'fixed', right: Math.max(8, window.innerWidth - props.x), top: props.y, minWidth: 320, maxWidth: 430, padding: 8, maxHeight: 'min(70vh, 480px)', overflowY: 'auto' }}
       >
         {notices.map((n) => {
           const ud = asUpdateDetail(n.detail);
+          // 有更新详情 → 点开「更新结果」窗；否则有消息就点开「全文」小窗；都没有 = 不可点
+          const clickable = Boolean(ud || n.message);
           return (
             <div
               key={n.id}
               className="row"
-              style={{ gap: 8, padding: 6, alignItems: 'flex-start', cursor: ud ? 'pointer' : undefined }}
-              title={ud ? t('shell.notify.detailTip') : undefined}
-              onClick={ud ? () => setDetail(ud) : undefined}
+              style={{ gap: 8, padding: 6, alignItems: 'flex-start', cursor: clickable ? 'pointer' : undefined }}
+              title={clickable ? t('shell.notify.detailTip') : undefined}
+              onClick={clickable ? () => (ud ? setDetail(ud) : setFullMsg({ title: n.title, message: n.message })) : undefined}
             >
               <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2, color: n.err ? 'var(--err)' : 'var(--ok)' }}>
                 {n.err ? <IconErr /> : <IconOk />}
@@ -1220,7 +1242,20 @@ function NoticePopover(props: { x: number; y: number; onClose: () => void }) {
                   <span className="dim small nowrap" style={{ marginLeft: 'auto', flexShrink: 0 }}>{hm(n.at)}</span>
                 </div>
                 {n.message && (
-                  <div className={n.err ? 'small' : 'dim small'} style={{ color: n.err ? 'var(--err)' : undefined, wordBreak: 'break-all', marginTop: 1 }} title={n.message}>
+                  // 消息**最多两行**（超出截断成 …）——想细看点行开弹窗（用户定稿）
+                  <div
+                    className={n.err ? 'small' : 'dim small'}
+                    style={{
+                      color: n.err ? 'var(--err)' : undefined,
+                      marginTop: 1,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      wordBreak: 'break-all',
+                    }}
+                    title={n.message}
+                  >
                     {n.message}
                   </div>
                 )}
@@ -1237,6 +1272,15 @@ function NoticePopover(props: { x: number; y: number; onClose: () => void }) {
       </div>
       {/* 更新结果详情窗（从面板点开；关闭后回到面板） */}
       {detail && <UpdateResultModal {...detail} onClose={() => setDetail(null)} />}
+      {/* 通知全文小窗（消息两行截断后的完整内容；zIndex 460 高于面板与气泡） */}
+      {fullMsg && (
+        <InfoModal
+          title={fullMsg.title}
+          message={<span style={{ wordBreak: 'break-all' }}>{fullMsg.message}</span>}
+          onClose={() => setFullMsg(null)}
+          zIndex={460}
+        />
+      )}
     </>
   );
 }

@@ -79,9 +79,9 @@ export const shell = {
   // 任务通知（铃铛：有通知才显示，点开查看 / 逐条关闭，全关掉即消失）
   'shell.notify.tip': '任务通知（点击查看）',
   'shell.notify.removeTip': '关闭这条通知',
-  // 通知面板里可点开的「更新结果」详情（文件清单/警告）
+  // 通知行悬浮提示（消息两行截断后，点行弹窗看完整内容）
   'shell.notify.detail': '详情',
-  'shell.notify.detailTip': '点击查看更新详情',
+  'shell.notify.detailTip': '点击查看详情',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': '分隔符',
