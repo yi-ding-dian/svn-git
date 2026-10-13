@@ -11,6 +11,7 @@ import { get, post } from '../shared/api.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { loadMdTheme, mdThemeVars } from '../filesystem/md-theme.js';
+import { highlightMatch } from '../filesystem/search.js';
 import { MiniIcon, IconServer, IconPin } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { PickDirModal } from './pick-dir.js';
@@ -69,6 +70,9 @@ export function RepoBrowseModal(props: {
   const [locatedHL, setLocatedHL] = useState(false);
   /** 右键/单击选中行（用户定稿：右键时要选中该文件或目录）——与 file 共用 active 高亮 */
   const [ctxSel, setCtxSel] = useState<string | null>(null);
+  /** 搜索范围的行来源（见 selectRow）：只有**树里点选**才更新它——搜索结果定位会改 ctxSel 但不动它，
+   *  否则"点开一个结果"会把下次搜索的范围悄悄换到那个文件所在的目录，用户完全没察觉 */
+  const [scopeSel, setScopeSel] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   // kids 的 ref 镜像：locate 的异步循环里要读"最新已加载状态"（闭包里的 state 会陈旧）
   const kidsRef = useRef<Record<string, RepoEntry[] | 'loading'>>({});
@@ -76,6 +80,36 @@ export function RepoBrowseModal(props: {
   const [leftRatio, setLeftRatio] = useState(45);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ startX: number; startRatio: number; width: number } | null>(null);
+  // ---- 远程搜索（"搜索/列出该目录下所有文件"）：范围=树中选中目录（文件取其父目录；无选中=弹窗根）----
+  const [q, setQ] = useState('');
+  /** 下拉是否展示（点树/点结果后收起；再输入或聚焦重新打开） */
+  const [qOpen, setQOpen] = useState(true);
+  /** 搜索中（含 400ms 防抖期）：打字即置位（大目录上几秒没反应像卡死——与主界面搜索同语义） */
+  const [qBusy, setQBusy] = useState(false);
+  const [qErr, setQErr] = useState('');
+  const [qItems, setQItems] = useState<{ path: string; isDir: boolean }[] | null>(null);
+  /** 结果不完整的两种情形（后端标记）：limit=匹配已满上限；time=目录大搜索超时 */
+  const [qTrunc, setQTrunc] = useState<'limit' | 'time' | null>(null);
+  const [qIdx, setQIdx] = useState(0);
+  const [qAll, setQAll] = useState(false);
+  /** 发起这次搜索时的范围（结果行的"在 xx 下 N 个匹配"用它——范围后来变了也不误导出处） */
+  const [qScopeUrl, setQScopeUrl] = useState(root);
+  /** 请求序号：只认最新一次响应（先后请求可能乱序返回，防旧结果覆盖新查询） */
+  const qSeq = useRef(0);
+  const qAbort = useRef<AbortController | null>(null);
+  const qDebounce = useRef<ReturnType<typeof setTimeout>>();
+  /** 搜索行容器（输入框+下拉）：点容器之外的任何地方都收起下拉 */
+  const qWrapRef = useRef<HTMLDivElement | null>(null);
+
+  // 点下拉之外的任何地方（树/预览/标题栏）→ 收起下拉，让位给被挡的内容
+  useEffect(() => {
+    const onDocDown = (e: MouseEvent) => {
+      if (!qWrapRef.current || qWrapRef.current.contains(e.target as Node)) return;
+      setQOpen(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, []);
 
   /** 换文件回源码视图时一并重置（见 cat effect）；md 判定 */
   const isMd = !!file && /\.(md|markdown)$/i.test(file.name);
@@ -231,7 +265,7 @@ export function RepoBrowseModal(props: {
         // 只展开到目标的**父级**——目标自身保持折叠（用户定稿：定位到它即可；
         // 把它标成展开态但没有子项数据、也不拉，反而让下面同级的行看起来像它的内容）
         setExpanded((prev) => new Set([...prev, ...toExpand.slice(0, -1)]));
-        setCtxSel(null); // 定位接管高亮（清掉可能挂着的行选中）
+        selectRow(null); // 定位接管高亮（清掉可能挂着的行选中）
         setLocated(cur);
         setLocatedHL(true);
         // 等树渲染完再滚动居中（350ms 覆盖一帧渲染）
@@ -242,6 +276,118 @@ export function RepoBrowseModal(props: {
     } finally {
       setLocating(false);
     }
+  };
+
+  /** 树行选中（空白 = null）：选中什么就搜什么——同时作为搜索范围。
+   *  搜索结果定位（pickResult）刻意不走这里：定位不改变搜索范围 */
+  const selectRow = (url: string | null) => {
+    setCtxSel(url);
+    setScopeSel(url);
+  };
+
+  /** 搜索范围：树里点选的行是目录 → 它；是文件 → 其父目录；没点过 → 弹窗根 */
+  const scopeUrl = (() => {
+    if (!scopeSel) return root;
+    const i = scopeSel.lastIndexOf('/');
+    const list = kids[scopeSel.slice(0, i)];
+    const e = Array.isArray(list) ? list.find((x) => x.name === scopeSel.slice(i + 1)) : undefined;
+    return e && !e.isDir ? scopeSel.slice(0, i) : scopeSel;
+  })();
+  /** 范围显示名（占位符/结果计数用；弹窗根 = "仓库根"） */
+  const scopeLabel = (u: string): string => (u === root ? t('repo.search.rootName') : u.slice(u.lastIndexOf('/') + 1));
+  // effect 里读最新范围（依赖里不放 scopeUrl：换选中不自动重搜——避免下拉自己冒出来盖住树）
+  const scopeRef = useRef(scopeUrl);
+  scopeRef.current = scopeUrl;
+
+  // 远程搜索（防抖 400ms；与主界面搜索同门槛：≥2 字符或 1 个汉字）
+  useEffect(() => {
+    const query = q.trim();
+    const isCn = /[一-鿿]/.test(query); // i18n-ignore: 判定输入是否含中文的逻辑正则（非界面文案）
+    if (!query || query.length < (isCn ? 1 : 2)) {
+      qSeq.current += 1; // 门槛不满足：在途请求作废（它的 svn 进程由后端杀掉）
+      qAbort.current?.abort();
+      qAbort.current = null;
+      setQBusy(false);
+      setQErr('');
+      setQItems(null);
+      setQTrunc(null);
+      return;
+    }
+    setQBusy(true);
+    if (qDebounce.current) clearTimeout(qDebounce.current);
+    qDebounce.current = setTimeout(() => {
+      qAbort.current?.abort(); // 上一个查询还没回来：作废（后端随之杀掉它的 svn）
+      const ac = new AbortController();
+      qAbort.current = ac;
+      const seq = ++qSeq.current;
+      const scope = scopeRef.current; // 发起时的范围
+      get
+        .repoSearch(scope, query, ac.signal)
+        .then((r) => {
+          if (seq !== qSeq.current) return; // 迟到的旧响应：丢弃
+          setQBusy(false);
+          setQScopeUrl(scope);
+          if (!r.ok) {
+            setQErr(r.error ?? '');
+            setQItems(null);
+            setQTrunc(null);
+            return;
+          }
+          setQErr('');
+          setQItems(r.items ?? []);
+          setQTrunc(r.truncated ?? null);
+          setQIdx(0);
+          setQAll(false);
+        })
+        .catch((e: Error & { cancelled?: boolean }) => {
+          if (seq !== qSeq.current || e.cancelled) return; // 自己取消的（清空/换词）：静默
+          setQBusy(false);
+          setQErr(e.message);
+        });
+    }, 400);
+    return () => {
+      if (qDebounce.current) clearTimeout(qDebounce.current);
+    };
+  }, [q]);
+
+  // 弹窗关闭：掐掉在途搜索（后端随之杀掉它的 svn）
+  useEffect(() => () => qAbort.current?.abort(), []);
+
+  /** 点搜索结果：展开树定位到目标并预览——文件=展开父链+选中预览；目录=展开父链后再展开自身 */
+  const pickResult = async (it: { path: string; isDir: boolean }) => {
+    setQOpen(false); // 收起下拉，让位给树（定位要看树）
+    setMsg('');
+    // 结果路径相对【发起搜索的范围】：拼上范围相对弹窗根的段，才是从树根展开的完整路径
+    const baseRel = qScopeUrl === root ? '' : qScopeUrl.slice(root.length + 1);
+    const segs = [...(baseRel ? baseRel.split('/') : []), ...it.path.split('/')].filter(Boolean);
+    if (segs.length === 0) return;
+    const urlOf = (n: number) => (n === 0 ? root : `${root}/${segs.slice(0, n).join('/')}`);
+    // 逐级确保父链已加载（含目标的父目录——文件行要有父目录展开才可见）
+    for (let i = 0; i < segs.length; i++) {
+      const ok = await ensureKids(urlOf(i));
+      if (!ok) {
+        // 定位失败（{s} 读取不到，可能无权限）
+        setMsg(t('repo.browse.locateFail', { s: segs[i] ?? '' }));
+        setMsgErr(true);
+        return;
+      }
+    }
+    const targetUrl = urlOf(segs.length);
+    const expand = new Set<string>();
+    for (let i = 1; i < segs.length; i++) expand.add(urlOf(i));
+    if (it.isDir) {
+      await ensureKids(targetUrl); // 目录：展开自身（搜到目录多半想进去看）
+      expand.add(targetUrl);
+    }
+    setExpanded((prev) => new Set([...prev, ...expand]));
+    setCtxSel(targetUrl);
+    setLocatedHL(false);
+    if (it.isDir) setFile(null);
+    else setFile({ name: segs[segs.length - 1]!, url: targetUrl });
+    // 等树渲染完再滚动居中（同"定位到该项目"）
+    window.setTimeout(() => {
+      document.querySelector(`.repo-row[data-url="${CSS.escape(targetUrl)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 350);
   };
 
   // 左右拖拽（同并排对比的 sb-resizer 模式；delta 以弹窗内容宽为基准）
@@ -332,129 +478,245 @@ export function RepoBrowseModal(props: {
           {/* 主区：左树 / 可拖分隔（比并排对比的 6px 更窄，用户定稿）/ 右预览。
               面包屑已去掉（树本身表达层级；用户定稿） */}
           <div ref={bodyRef} style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <div
-              className="vcs-list repo-list"
-              style={{ flex: `0 0 ${leftRatio}%`, minWidth: 0 }}
-              // 空白处右键 = 仓库根（行内已 stopPropagation，不会冒到这里）；顺带清掉行选中与定位高亮
-              // （📍 钉子常驻不清——只灭蓝框）
-              onContextMenu={(ev) => {
-                ev.preventDefault();
-                setCtxSel(null);
-                setLocatedHL(false);
-                setMenu({ x: ev.clientX, y: ev.clientY, url: root });
-              }}
-              // 空白左键（行内点击由行自己处理，冒泡来的直接跳过）：取消选择与定位高亮
-              onClick={(ev) => {
-                if (ev.target !== ev.currentTarget) return;
-                setCtxSel(null);
-                setLocatedHL(false);
-              }}
-            >
-              {rootLoading && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.loading')}</div>}
-              {rootErr && (
-                <div className="error small" style={{ padding: '10px 6px', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ flex: 1, minWidth: 0 }}>{rootErr}</span>
-                  {/* ×：关掉这条提示 */}
-                  <button
-                    className="mini"
-                    style={{ flexShrink: 0 }}
-                    title={t('common.close')}
-                    onClick={() =>
-                      setErrs((e) => {
-                        const n = { ...e };
-                        delete n[root];
-                        return n;
-                      })
+            {/* 左列 = 搜索行 + 树（搜索下拉相对搜索行定位，浮在树上方） */}
+            <div style={{ flex: `0 0 ${leftRatio}%`, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              <div ref={qWrapRef} style={{ position: 'relative', flexShrink: 0, paddingBottom: 6 }}>
+                <input
+                  type="text"
+                  // 🔍 搜索该目录下所有文件…（占位符即当前范围：选中哪个目录就搜哪个）
+                  placeholder={t('repo.search.placeholder', { scope: scopeLabel(scopeUrl) })}
+                  value={q}
+                  onChange={(e) => {
+                    setQ(e.target.value);
+                    setQOpen(true);
+                    setQIdx(0);
+                    setQAll(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setQIdx((i) => Math.min((qItems?.length ?? 1) - 1, i + 1));
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setQIdx((i) => Math.max(0, i - 1));
+                    } else if (e.key === 'Enter') {
+                      const it = qItems?.[Math.min(qIdx, (qItems?.length ?? 1) - 1)];
+                      if (it) void pickResult(it);
                     }
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-              {/* 这个目录是空的 */}
-              {Array.isArray(kids[root]) && kids[root].length === 0 && (
-                <div className="dim small" style={{ padding: '10px 6px' }}>{t('repo.browse.empty')}</div>
-              )}
-              {rows.map(({ e, url, depth }) => {
-                const active = file?.url === url || (located === url && locatedHL) || ctxSel === url;
-                const open = e.isDir && expanded.has(url);
-                const busy = e.isDir && kids[url] === 'loading';
-                const subErr = e.isDir && open ? errs[url] : undefined;
-                return (
-                  <React.Fragment key={url}>
-                    <div
-                      className={`changed-row repo-row${active ? ' active' : ''}`}
-                      data-url={url}
-                      style={{ cursor: 'pointer', paddingLeft: 4 + depth * 14 }}
-                      // 单击展开 / 收起 / 单击预览
-                      title={`${e.name}\n${t(e.isDir ? 'repo.browse.clickDir' : 'repo.browse.clickFile')}`}
+                    // Esc 由弹窗外壳接管（关闭弹窗），清空用右侧 ×
+                  }}
+                  // 聚焦即重开下拉（点过树/结果后下拉收起，点回输入框能接着看结果列表）
+                  onFocus={() => setQOpen(true)}
+                  style={{ width: '100%', paddingRight: 24 }}
+                />
+                {/* 右侧同一位置：搜索中转圈 / 否则是清空按钮（同主界面搜索框） */}
+                {qBusy ? (
+                  // 正在搜索…
+                  <span className="search-spin search-box-spin" title={t('fs.search.searching')} />
+                ) : (
+                  q && (
+                    <button
+                      className="search-clear"
+                      // 清空
+                      title={t('fs.search.clear')}
                       onClick={() => {
-                        // 单击选中（与右键一致）；定位蓝框是"一次性指路"——点任何地方就让它让位
-                        setCtxSel(url);
-                        setLocatedHL(false);
-                        if (e.isDir) {
-                          toggleDir(url);
-                          setFile(null); // 点目录 = 取消文件的选中与预览（焦点只有一个——用户定稿）
-                        } else {
-                          setFile({ name: e.name, url });
-                        }
-                      }}
-                      onContextMenu={(ev) => {
-                        ev.preventDefault();
-                        ev.stopPropagation();
-                        setCtxSel(url); // 右键即选中该行（用户定稿）
-                        setLocatedHL(false); // 定位蓝框让位（📍 钉子常驻）
-                        if (e.isDir) {
-                          setFile(null); // 右键目录同样收敛焦点（避免文件+目录两个蓝框并存）
-                          setMenu({ x: ev.clientX, y: ev.clientY, url });
-                        } else {
-                          // 文件行不给菜单（检出只对目录/仓库根有意义，不弹浏览器原生菜单）；
-                          // 只选中、不清预览之外的东西
-                          setFile(null);
-                        }
+                        setQ('');
+                        setQOpen(false);
+                        setQIdx(0);
                       }}
                     >
-                      <span className="repo-arrow">{e.isDir ? (busy ? '…' : open ? '▾' : '▸') : ''}</span>
-                      <MiniIcon isDir={e.isDir} name={e.name} />
-                      <span className="mono small" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {e.name}
-                      </span>
-                      {/* 📍 定位钉子（彩色 SVG 图钉）：**常驻**（"工作副本在哪"的书签；再定位才换）——紧跟文件名后（用户定稿） */}
-                      {located === url && (
-                        <span style={{ flexShrink: 0, display: 'inline-flex' }} title={t('repo.browse.locate')}>
-                          <IconPin size={12} />
-                        </span>
-                      )}
-                      {/* 弹性占位：把大小/修订列推到行尾（替代 name 原本的 flex:1） */}
-                      <span style={{ flex: 1 }} />
-                      <span className="dim small nowrap" style={{ flexShrink: 0, width: 60, textAlign: 'right' }}>{fmtSize(e.size)}</span>
-                      <span className="dim small nowrap" style={{ flexShrink: 0, width: 70 }} title={`${e.author ?? ''} ${e.date?.slice(0, 10) ?? ''}`}>
-                        {e.rev ? `r${e.rev}` : ''}
-                      </span>
-                    </div>
-                    {/* 展开失败：该目录下就地报错（如无权限）；× 关掉这条提示 */}
-                    {subErr && (
-                      <div className="error small" style={{ padding: `2px 6px 4px ${20 + depth * 14}px`, wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ flex: 1, minWidth: 0 }}>{subErr}</span>
-                        <button
-                          className="mini"
-                          style={{ flexShrink: 0 }}
-                          title={t('common.close')}
-                          onClick={() =>
-                            setErrs((e) => {
-                              const n = { ...e };
-                              delete n[url];
-                              return n;
-                            })
-                          }
-                        >
-                          ×
-                        </button>
+                      ×
+                    </button>
+                  )
+                )}
+                {/* 结果下拉（点树/点结果后收起；再输入重开） */}
+                {qOpen && q.trim() && (qBusy || qErr || qItems) && (
+                  <div className="search-drop" style={{ width: '100%', maxHeight: 'min(60vh, 420px)' }}>
+                    {qBusy ? (
+                      // 搜索中不显示上一轮结果（对应当前输入之外的字，显示只会误导）
+                      <div className="dim row" style={{ padding: '6px 10px', gap: 6, alignItems: 'center' }}>
+                        <span className="search-spin" /> {t('fs.search.searching')}
                       </div>
+                    ) : qErr ? (
+                      <div className="error small" style={{ padding: '6px 10px', wordBreak: 'break-all' }}>{qErr}</div>
+                    ) : (qItems?.length ?? 0) === 0 ? (
+                      // 无匹配（超时的小目录外情况：0 条也说明"没搜完"，别显示成"真没有"）
+                      qTrunc ? (
+                        <div className="small" style={{ padding: '6px 10px', color: 'var(--warn)' }}>
+                          ⚠ {t(qTrunc === 'limit' ? 'repo.search.truncated' : 'repo.search.timeout', { n: 200 })}
+                        </div>
+                      ) : (
+                        <div className="dim" style={{ padding: '6px 10px' }}>{t('fs.search.none')}</div>
+                      )
+                    ) : (
+                      <>
+                        {/* 顶部固定块：出处 + 截断说明（sticky——长列表滚动时这两行常驻可见；
+                            否则"结果可能不全"的提示会被挤出视野，用户误以为拿到的是全部） */}
+                        <div style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--panel2)' }}>
+                          <div className="dim small" style={{ padding: '4px 10px' }}>
+                            {t('repo.search.count', { scope: scopeLabel(qScopeUrl), n: qItems?.length ?? 0 })}
+                          </div>
+                          {qTrunc && (
+                            <div className="small" style={{ padding: '0 10px 4px', color: 'var(--warn)' }}>
+                              {/* 仅显示前 N 个匹配（目录较大…） / 搜索超时（目录较大），结果可能不全 */}
+                              ⚠ {t(qTrunc === 'limit' ? 'repo.search.truncated' : 'repo.search.timeout', { n: 200 })}
+                            </div>
+                          )}
+                        </div>
+                        {(qAll ? qItems ?? [] : (qItems ?? []).slice(0, 10)).map((it, i) => (
+                          <div
+                            key={it.path}
+                            className={`search-item ${i === qIdx ? 'active' : ''}`}
+                            onClick={() => void pickResult(it)}
+                          >
+                            <span className="dim" style={{ flexShrink: 0 }}>{i + 1}.</span>
+                            <MiniIcon isDir={it.isDir} name={it.path.slice(it.path.lastIndexOf('/') + 1)} />
+                            <span className="search-path" title={it.path}>{highlightMatch(it.path, q.trim())}</span>
+                          </div>
+                        ))}
+                        {(qItems?.length ?? 0) > 10 && (
+                          <div
+                            className="search-item"
+                            style={{ justifyContent: 'center' }}
+                            // 收起列表 / 点击展开全部匹配
+                            title={qAll ? t('fs.search.collapse') : t('fs.search.expand')}
+                            onClick={() => setQAll(!qAll)}
+                          >
+                            <span className="dim">
+                              {qAll ? t('fs.search.collapsed', { n: qItems?.length ?? 0 }) : t('fs.search.expandAll', { n: qItems?.length ?? 0 })}
+                            </span>
+                          </div>
+                        )}
+                      </>
                     )}
-                  </React.Fragment>
-                );
-              })}
+                  </div>
+                )}
+              </div>
+              <div
+                className="vcs-list repo-list"
+                style={{ flex: 1, minHeight: 0 }}
+                // 空白处右键 = 仓库根（行内已 stopPropagation，不会冒到这里）；顺带清掉行选中与定位高亮
+                // （📍 钉子常驻不清——只灭蓝框）
+                onContextMenu={(ev) => {
+                  ev.preventDefault();
+                  selectRow(null);
+                  setLocatedHL(false);
+                  setMenu({ x: ev.clientX, y: ev.clientY, url: root });
+                }}
+                // 空白左键（行内点击由行自己处理，冒泡来的直接跳过）：取消选择与定位高亮
+                // （搜索下拉的收起由"点外部"的全局监听统一处理，不在这里做）
+                onClick={(ev) => {
+                  if (ev.target !== ev.currentTarget) return;
+                  selectRow(null);
+                  setLocatedHL(false);
+                }}
+              >
+                {rootLoading && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.loading')}</div>}
+                {rootErr && (
+                  <div className="error small" style={{ padding: '10px 6px', wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>{rootErr}</span>
+                    {/* ×：关掉这条提示 */}
+                    <button
+                      className="mini"
+                      style={{ flexShrink: 0 }}
+                      title={t('common.close')}
+                      onClick={() =>
+                        setErrs((e) => {
+                          const n = { ...e };
+                          delete n[root];
+                          return n;
+                        })
+                      }
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+                {/* 这个目录是空的 */}
+                {Array.isArray(kids[root]) && kids[root].length === 0 && (
+                  <div className="dim small" style={{ padding: '10px 6px' }}>{t('repo.browse.empty')}</div>
+                )}
+                {rows.map(({ e, url, depth }) => {
+                  const active = file?.url === url || (located === url && locatedHL) || ctxSel === url;
+                  const open = e.isDir && expanded.has(url);
+                  const busy = e.isDir && kids[url] === 'loading';
+                  const subErr = e.isDir && open ? errs[url] : undefined;
+                  return (
+                    <React.Fragment key={url}>
+                      <div
+                        className={`changed-row repo-row${active ? ' active' : ''}`}
+                        data-url={url}
+                        style={{ cursor: 'pointer', paddingLeft: 4 + depth * 14 }}
+                        // 单击展开 / 收起 / 单击预览
+                        title={`${e.name}\n${t(e.isDir ? 'repo.browse.clickDir' : 'repo.browse.clickFile')}`}
+                        onClick={() => {
+                          // 单击选中（与右键一致）；定位蓝框是"一次性指路"——点任何地方就让它让位
+                          selectRow(url);
+                          setLocatedHL(false);
+                          if (e.isDir) {
+                            toggleDir(url);
+                            setFile(null); // 点目录 = 取消文件的选中与预览（焦点只有一个——用户定稿）
+                          } else {
+                            setFile({ name: e.name, url });
+                          }
+                        }}
+                        onContextMenu={(ev) => {
+                          ev.preventDefault();
+                          ev.stopPropagation();
+                          selectRow(url); // 右键即选中该行（用户定稿）
+                          setLocatedHL(false); // 定位蓝框让位（📍 钉子常驻）
+                          if (e.isDir) {
+                            setFile(null); // 右键目录同样收敛焦点（避免文件+目录两个蓝框并存）
+                            setMenu({ x: ev.clientX, y: ev.clientY, url });
+                          } else {
+                            // 文件行不给菜单（检出只对目录/仓库根有意义，不弹浏览器原生菜单）；
+                            // 只选中、不清预览之外的东西
+                            setFile(null);
+                          }
+                        }}
+                      >
+                        <span className="repo-arrow">{e.isDir ? (busy ? '…' : open ? '▾' : '▸') : ''}</span>
+                        <MiniIcon isDir={e.isDir} name={e.name} />
+                        <span className="mono small" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {e.name}
+                        </span>
+                        {/* 📍 定位钉子（彩色 SVG 图钉）：**常驻**（"工作副本在哪"的书签；再定位才换）——紧跟文件名后（用户定稿） */}
+                        {located === url && (
+                          <span style={{ flexShrink: 0, display: 'inline-flex' }} title={t('repo.browse.locate')}>
+                            <IconPin size={12} />
+                          </span>
+                        )}
+                        {/* 弹性占位：把大小/修订列推到行尾（替代 name 原本的 flex:1） */}
+                        <span style={{ flex: 1 }} />
+                        <span className="dim small nowrap" style={{ flexShrink: 0, width: 60, textAlign: 'right' }}>{fmtSize(e.size)}</span>
+                        <span className="dim small nowrap" style={{ flexShrink: 0, width: 70 }} title={`${e.author ?? ''} ${e.date?.slice(0, 10) ?? ''}`}>
+                          {e.rev ? `r${e.rev}` : ''}
+                        </span>
+                      </div>
+                      {/* 展开失败：该目录下就地报错（如无权限）；× 关掉这条提示 */}
+                      {subErr && (
+                        <div className="error small" style={{ padding: `2px 6px 4px ${20 + depth * 14}px`, wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ flex: 1, minWidth: 0 }}>{subErr}</span>
+                          <button
+                            className="mini"
+                            style={{ flexShrink: 0 }}
+                            title={t('common.close')}
+                            onClick={() =>
+                              setErrs((e) => {
+                                const n = { ...e };
+                                delete n[url];
+                                return n;
+                              })
+                            }
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
             </div>
             {/* 可拖分隔（并排对比同款；宽度收窄为 4px——用户定稿"再小点"） */}
             <div className="sb-resizer" style={{ width: 4 }} onMouseDown={startDrag} title={t('repo.browse.dragTip')} />

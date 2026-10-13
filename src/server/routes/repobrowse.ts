@@ -5,7 +5,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
-import { run, type RunResult } from '../../vcs/exec.js';
+import { run, runStream, type RunResult } from '../../vcs/exec.js';
 import { resolveSvnBin } from '../../vcs/svn.js';
 import { loadConfig } from '../../config.js';
 import { decodeMixedText } from '../../shared/text.js';
@@ -102,6 +102,40 @@ function looksBinary(buf: Buffer): boolean {
   return n > 0 && odd / n > 0.3;
 }
 
+/** 远程搜索：单次最多返回的匹配数——也是"匹配够数就早停杀进程"的阈值 */
+const SEARCH_LIMIT = 200;
+/** 流式搜索时长上限：超时也返回已收集的匹配（结果带 truncated:'time'） */
+const SEARCH_TIMEOUT_MS = 20_000;
+/** 全量缓存：单目录最多缓存的行数（超过不缓存——下次重新流式搜） */
+const CACHE_MAX_LINES = 50_000;
+/** 缓存目录数上限（超出淘汰最早放入的） */
+const CACHE_DIRS = 8;
+/** 缓存有效期（仓库内容可能在别处变化，过期重拉） */
+const CACHE_TTL_MS = 10 * 60_000;
+
+/** 递归搜索缓存：目录 URL → svn ls -R 的全量行。只在流**完整跑完**时写入
+ *  （早停/超时的那次不完整，不缓存）。命中缓存后同目录搜索是内存过滤，毫秒级。 */
+const searchCache = new Map<string, { lines: string[]; at: number }>();
+
+function searchCacheGet(key: string): string[] | null {
+  const e = searchCache.get(key);
+  if (!e) return null;
+  if (Date.now() - e.at > CACHE_TTL_MS) {
+    searchCache.delete(key);
+    return null;
+  }
+  return e.lines;
+}
+
+function searchCachePut(key: string, lines: string[]): void {
+  if (searchCache.size >= CACHE_DIRS) {
+    // Map 迭代序 = 插入序：删最早放入的那个
+    const oldest = searchCache.keys().next().value;
+    if (oldest !== undefined) searchCache.delete(oldest);
+  }
+  searchCache.set(key, { lines, at: Date.now() });
+}
+
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
   const p = url.pathname;
@@ -128,6 +162,107 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     } catch (e) {
       sendJson(res, 200, { ok: false, error: (e as Error).message });
     }
+    return true;
+  }
+
+  if (p === '/api/repo-search' && req.method === 'GET') {
+    // 远程递归搜索（仓库浏览的"搜索/列出当前目录所有文件"）：svn ls -R 流式逐行过滤——
+    // 匹配够 SEARCH_LIMIT 条**立即杀进程早停**（大目录不必遍历完，常见词一两秒就有）；
+    // 单次最多 SEARCH_TIMEOUT_MS，超时返回已收集的（truncated:'time'）。
+    // 完整跑完的目录全量缓存：之后同目录搜索是内存过滤，毫秒级（truncated:'limit' 仅是显示截断）。
+    const target = String(url.searchParams.get('url') ?? '').trim().replace(/\/+$/, '');
+    const q = String(url.searchParams.get('q') ?? '').trim();
+    if (!URL_OK.test(target)) {
+      // 仓库地址无效（仅支持 svn / http(s) / file）
+      sendJson(res, 400, { error: t('srv.badRepoUrl') });
+      return true;
+    }
+    if (!q) {
+      sendJson(res, 200, { ok: true, items: [] });
+      return true;
+    }
+    const ql = q.toLowerCase();
+    /** 行 → 条目（svn ls -R：目录行尾带 /） */
+    const toItem = (line: string): { path: string; isDir: boolean } =>
+      line.endsWith('/') ? { path: line.slice(0, -1), isDir: true } : { path: line, isDir: false };
+    /** 缓存命中路径：内存过滤；超上限截断（more = 还有更多匹配没显示） */
+    const pick = (lines: string[]): { items: { path: string; isDir: boolean }[]; more: boolean } => {
+      const items: { path: string; isDir: boolean }[] = [];
+      for (const l of lines) {
+        if (!l.toLowerCase().includes(ql)) continue;
+        if (items.length >= SEARCH_LIMIT) return { items, more: true };
+        items.push(toItem(l));
+      }
+      return { items, more: false };
+    };
+    const cached = searchCacheGet(target);
+    if (cached) {
+      const { items, more } = pick(cached);
+      sendJson(res, 200, { ok: true, items, ...(more ? { truncated: 'limit' } : {}) });
+      return true;
+    }
+    // 未缓存：流式拉取（凭据同 svnRun；非 --xml 的纯文本模式输出"相对路径行"，可逐行过滤）
+    const cfg = loadConfig();
+    const args: string[] = [];
+    if (cfg.svn.username) args.push('--username', cfg.svn.username, '--password-from-stdin', '--non-interactive');
+    if (cfg.svn.trustServerCert) args.push('--trust-server-cert');
+    args.push('list', '-R', target);
+    // 前端断开（清空输入/关弹窗）→ 杀掉 svn（与检出同一套 close→abort 机制）
+    const ac = new AbortController();
+    const onClose = () => ac.abort();
+    res.on('close', onClose);
+    const items: { path: string; isDir: boolean }[] = [];
+    const lines: string[] = [];
+    /** 行数超缓存上限：不再收集（缓存放弃），流继续跑（匹配与超时规则不变） */
+    let overflowed = false;
+    /** 早停（匹配满上限杀的进程）：结果不完整，不缓存 */
+    let early = false;
+    let r: RunResult;
+    try {
+      r = await runStream(await resolveSvnBin(), args, {
+        cwd: os.tmpdir(),
+        stdinData: cfg.svn.username ? cfg.svn.password + '\n' : undefined,
+        timeoutMs: SEARCH_TIMEOUT_MS,
+        signal: ac.signal,
+        onLine: (line) => {
+          if (!line) return;
+          if (!overflowed) {
+            if (lines.length >= CACHE_MAX_LINES) {
+              overflowed = true;
+              lines.length = 0; // 大目录不缓存：尽早把内存还掉
+            } else {
+              lines.push(line);
+            }
+          }
+          if (line.toLowerCase().includes(ql)) items.push(toItem(line));
+          if (items.length >= SEARCH_LIMIT) {
+            early = true;
+            return true; // 够数：不等它跑完
+          }
+        },
+      });
+    } catch (e) {
+      res.off('close', onClose);
+      sendJson(res, 200, { ok: false, error: (e as Error).message });
+      return true;
+    }
+    res.off('close', onClose);
+    if (r.aborted) return true; // 前端已断开：响应没处发（svn 已被杀掉）
+    if (r.timedOut) {
+      sendJson(res, 200, { ok: true, items, truncated: 'time' });
+      return true;
+    }
+    if (!early && r.code !== 0) {
+      sendJson(res, 200, { ok: false, error: r.stderr.trim() || 'svn list failed' });
+      return true;
+    }
+    if (early) {
+      sendJson(res, 200, { ok: true, items, truncated: 'limit' });
+      return true;
+    }
+    // 完整跑完：缓存全量（超上限的不缓存——下次重新流式搜）
+    if (!overflowed) searchCachePut(target, lines);
+    sendJson(res, 200, { ok: true, items });
     return true;
   }
 

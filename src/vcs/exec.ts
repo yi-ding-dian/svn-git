@@ -41,6 +41,123 @@ export interface RunResult {
   aborted?: boolean;
 }
 
+/** 流式执行（spawn/超时/取消/组杀与 run 一致）：
+ *  stdout **按行回调**（字节层按 \n 拆行、剥行尾 \r、decodeMixedText 解码），不累积——
+ *  给"边收边筛、够数就停"的大输出场景用（如远程仓库递归搜索：匹配满上限立即杀进程，
+ *  大目录不用遍历完）。onLine 返回 true = 提前停止（杀进程组；调用方自己记早停标记）。
+ *  结果里 stdout 恒为空串（内容已随行消费）；stderr 照常收集（报错消息用）。 */
+export interface StreamRunOptions extends RunOptions {
+  onLine: (line: string) => boolean | void;
+}
+
+export function runStream(cmd: string, args: string[], opts: StreamRunOptions): Promise<RunResult> {
+  return new Promise((resolve, reject) => {
+    const spawnOpts = {
+      cwd: opts.cwd,
+      stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'],
+      env: opts.env ? { ...process.env, ...opts.env } : process.env,
+      // 独立进程组：超时/取消/早停都要能连孙进程一起杀（与 run 一致）
+      detached: process.platform !== 'win32',
+    };
+    const child = spawn(cmd, args, spawnOpts);
+
+    const killTree = () => {
+      try {
+        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+        else child.kill('SIGKILL');
+      } catch {
+        /* ESRCH（进程已退出）等：忽略 */
+      }
+    };
+
+    const stderr: Buffer[] = [];
+    let stderrLen = 0;
+    let done = false;
+    /** onLine 返回过 true（提前停止）：之后的输出不再回调 */
+    let stopped = false;
+    /** 未成行的残留字节（一个 chunk 可能截断在多字节字符/行中间） */
+    let pending: Buffer = Buffer.alloc(0);
+    const finish = (code: number, extra: Partial<RunResult> = {}): RunResult => ({
+      code,
+      stdout: '',
+      // 行/错误都走 decodeMixedText（UTF-8 优先，GB18030 兜底）——Windows 上 svn 的本地化报错是 GBK
+      stderr: decodeMixedText(Buffer.concat(stderr)),
+      ...extra,
+    });
+
+    const maxStderr = opts.maxBuffer ?? 1024 * 1024;
+    const timeout = opts.timeoutMs
+      ? setTimeout(() => {
+          if (!done) {
+            killTree();
+            resolve(finish(-1, { timedOut: true }));
+          }
+        }, opts.timeoutMs)
+      : null;
+
+    const onAbort = () => {
+      if (!done) {
+        killTree();
+        resolve(finish(-1, { aborted: true }));
+      }
+    };
+    if (opts.signal) {
+      if (opts.signal.aborted) onAbort();
+      else opts.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    const finalize = () => {
+      if (done) return;
+      done = true;
+      if (timeout) clearTimeout(timeout);
+      opts.signal?.removeEventListener('abort', onAbort);
+    };
+
+    child.stdout.on('data', (d: Buffer) => {
+      if (stopped) return;
+      pending = pending.length > 0 ? Buffer.concat([pending, d]) : d;
+      for (;;) {
+        const nl = pending.indexOf(10); // \n
+        if (nl < 0) break;
+        let line = pending.subarray(0, nl);
+        pending = pending.subarray(nl + 1);
+        if (line.length > 0 && line[line.length - 1] === 13) line = line.subarray(0, line.length - 1); // \r
+        if (opts.onLine(decodeMixedText(line)) === true) {
+          stopped = true;
+          killTree(); // 够数了：不再等它跑完
+          break;
+        }
+      }
+    });
+    child.stderr.on('data', (d: Buffer) => {
+      if (stderrLen < maxStderr) {
+        stderr.push(d);
+        stderrLen += d.length;
+      }
+    });
+
+    child.on('error', (err) => {
+      finalize();
+      reject(err);
+    });
+
+    child.on('close', (code) => {
+      finalize();
+      resolve(finish(code ?? -1));
+    });
+
+    if (opts.stdinData !== undefined) {
+      child.stdin.on('error', () => {
+        /* 子进程提前退出时忽略 */
+      });
+      child.stdin.write(opts.stdinData);
+      child.stdin.end();
+    } else {
+      child.stdin.end();
+    }
+  });
+}
+
 export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     // 继承系统 locale（不能强制 LC_ALL=C：C locale 下 svn 无法转换中文文件名导致 E000022）

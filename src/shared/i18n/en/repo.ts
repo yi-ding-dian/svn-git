@@ -30,6 +30,14 @@ export const repo = {
   'repo.browse.locating': 'Locating…',
   'repo.browse.locateFail': 'Locate failed ({s} unreadable, possibly no permission)',
   'repo.browse.errNoRoot': 'Failed to resolve repository URL: {msg}',
+  // ---- Repo browser: search all files under the selected directory (streaming recursive search) ----
+  'repo.search.placeholder': 'Search all files under {scope}…',
+  'repo.search.rootName': 'repository root',
+  'repo.search.count': '{n} matches under {scope}',
+  // Match cap reached (early stop); {n} = cap
+  'repo.search.truncated': 'Showing the first {n} matches only (large directory — try a more specific keyword)',
+  // Search timed out (large directory, stream not finished) — partial results are shown
+  'repo.search.timeout': 'Search timed out (large directory) — results may be incomplete',
   // ---- Repo browser context menu: Checkout to Local (CheckoutDialog) ----
   'repo.co.menu': 'Checkout to Local…',
   'repo.co.title': 'Checkout to Local',

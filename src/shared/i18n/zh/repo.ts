@@ -34,6 +34,14 @@ export const repo = {
   'repo.browse.locating': '定位中…',
   'repo.browse.locateFail': '定位失败（{s} 读取不到，可能无权限）',
   'repo.browse.errNoRoot': '取仓库地址失败：{msg}',
+  // ---- 仓库浏览：搜索该目录下所有文件（流式递归搜；{scope}=搜索范围，选中哪个目录搜哪个）----
+  'repo.search.placeholder': '搜索 {scope} 下所有文件…',
+  'repo.search.rootName': '仓库根',
+  'repo.search.count': '{scope} 下 {n} 个匹配',
+  // 匹配已满上限（早停）；{n}=上限数
+  'repo.search.truncated': '仅显示前 {n} 个匹配（目录较大，可输入更具体的关键字缩小范围）',
+  // 搜索超时（目录大，未跑完）——已找到的部分照常显示
+  'repo.search.timeout': '搜索超时（目录较大），结果可能不全',
   // ---- 仓库浏览右键「检出到本地」（CheckoutDialog）----
   'repo.co.menu': '检出到本地…',
   'repo.co.title': '检出到本地',

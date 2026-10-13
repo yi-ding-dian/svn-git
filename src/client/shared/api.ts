@@ -300,6 +300,13 @@ export const get = {
     api<{ ok: boolean; text?: string; error?: string; /** 二进制文件：不支持文本预览（前端显示"请下载"并隐藏复制） */ binary?: boolean }>(
       `/api/repo-cat?url=${encodeURIComponent(url)}`,
     ),
+  /** 远程递归搜索（仓库浏览：搜该目录下所有层级文件；后端流式边搜边停）
+   *  truncated：'limit' = 匹配已满上限（仅显示前 N 条）；'time' = 目录大搜索超时（结果可能不全） */
+  repoSearch: (url: string, q: string, signal?: AbortSignal) =>
+    api<{ ok: boolean; items?: { path: string; isDir: boolean }[]; truncated?: 'limit' | 'time'; error?: string }>(
+      `/api/repo-search?url=${encodeURIComponent(url)}&q=${encodeURIComponent(q)}`,
+      { signal },
+    ),
   /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */
   svnIdentity: (url: string) =>
     api<{ ok: boolean; config: { username: string } | null; cache: { username: string; realms: string[] } | null }>(

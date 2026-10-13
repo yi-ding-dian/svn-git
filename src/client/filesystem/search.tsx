@@ -53,8 +53,9 @@ export function useFileSearch(dir: string) {
   return { fileQuery, setFileQuery, searchResults, showResults, setShowResults, searching, activeIdx, setActiveIdx, searchExpanded, setSearchExpanded };
 }
 
-/** 把命中的片段包成 <mark>（大小写不敏感，与后端 includes 判定一致） */
-function highlightMatch(text: string, q: string): React.ReactNode {
+/** 把命中的片段包成 <mark>（大小写不敏感，与后端 includes 判定一致）。
+ *  导出供仓库浏览的远程搜索复用（同一套命中高亮） */
+export function highlightMatch(text: string, q: string): React.ReactNode {
   if (!q) return text;
   const low = text.toLowerCase();
   const lq = q.toLowerCase();
