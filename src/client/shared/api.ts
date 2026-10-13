@@ -297,6 +297,11 @@ export const get = {
       `/api/repo-list?url=${encodeURIComponent(url)}`,
     ),
   repoCat: (url: string) => api<{ ok: boolean; text?: string; error?: string }>(`/api/repo-cat?url=${encodeURIComponent(url)}`),
+  /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */
+  svnIdentity: (url: string) =>
+    api<{ ok: boolean; config: { username: string } | null; cache: { username: string; realms: string[] } | null }>(
+      `/api/svn-identity?url=${encodeURIComponent(url)}`,
+    ),
   stashFiles: (index: number) => api<{ files: { path: string; code: string }[] }>(`/api/stash?index=${index}`),
   blame: (path: string) => api<{ lines: { rev: string; author: string; date: string; line: number; text: string }[] }>(`/api/blame?path=${encodeURIComponent(path)}`),
   gitClean: () => api<{ files: string[] }>('/api/git-clean'),
@@ -407,6 +412,8 @@ export const post = {
   pullAny: (dir: string) => api<VcsResult>('/api/pull-any', json({ path: dir })),
   /** 远程文件保存到本地（「下载到…」）：目标已存在则后端拒绝 */
   repoSave: (url: string, dir: string) => api<{ ok: boolean; path?: string; error?: string }>('/api/repo-save', json({ url, dir })),
+  /** 清除系统凭据缓存中匹配该 URL 的条目（退出登录/切换账号用；**前端必须二次确认**——影响其他 svn 客户端） */
+  svnForgetCache: (url: string) => api<{ ok: boolean; cleared: string[] }>('/api/svn-forget-cache', json({ url })),
   /** 仓库浏览右键「检出到本地」：URL 直连检出工作副本。
    *  cred = 本次临时账号密码（认证失败后重试用；**只用于本次检出、后端不落盘**，缺省用已存配置）。 */
   repoCheckout: (

@@ -150,6 +150,7 @@ export function ModalHost(props: ModalHostProps) {
       {modal?.type === 'login' && (
         <LoginModal
           username={configUser}
+          repoUrl={info?.url ?? ''}
           onClose={() => setModal(null)}
           onSaved={() => {
             setConfigUser('');

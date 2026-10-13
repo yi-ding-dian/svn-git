@@ -14,6 +14,8 @@ export function ModalShell(props: {
   foot?: React.ReactNode;
   /** 标题栏右上角显示 × 关闭按钮（选择型弹窗用，替代底部「关闭」） */
   closeIcon?: boolean;
+  /** × 按钮的悬浮提示（默认「关闭」；两级视图的弹窗在"返回上级"时可传「返回」） */
+  closeIconTitle?: string;
   /** 不渲染底部操作区（与 closeIcon 搭配：只靠右上角 × 关闭） */
   hideFoot?: boolean;
   /** 标题栏右上角附加按钮（在 × 左侧，如「检出到本地」的 - 号后台占位） */
@@ -29,8 +31,13 @@ export function ModalShell(props: {
           {props.title}
           {props.titleExtra}
           {props.closeIcon && (
-            // 关闭
-            <button className="modal-x" title={t('common.close')} aria-label={t('common.close')} onClick={props.onClose}>
+            // 关闭（或「返回」：两级视图时由调用方指定）
+            <button
+              className="modal-x"
+              title={props.closeIconTitle ?? t('common.close')}
+              aria-label={props.closeIconTitle ?? t('common.close')}
+              onClick={props.onClose}
+            >
               ✕
             </button>
           )}

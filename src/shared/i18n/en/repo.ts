@@ -46,6 +46,7 @@ export const repo = {
   // Hover note for "current checkout account" next to the title (the label shows the username itself)
   'repo.co.whoTipTyped': 'Using the account entered for this checkout (not saved)',
   'repo.co.whoTipSaved': 'Using the saved SVN account',
+  'repo.co.whoTipCache': 'Using the account from the system credential cache (signed in via another svn client)',
   'repo.co.whoTipAnon': 'No account configured — accessing anonymously',
   'repo.parentDir': 'Parent Directory',
   'repo.browse': '📂 Browse',
@@ -181,18 +182,27 @@ export const repo = {
   'repo.auth.saveAndPush': 'Save & Push',
   'repo.auth.saveAndGet': 'Save & Fetch',
 
-  // ---- SVN 账号设置 ----
-  'repo.login.title': 'SVN Account Settings',
+  // ---- SVN Info / account (LoginModal) ----
+  'repo.login.title': 'SVN Info',
   'repo.login.saved': 'SVN account saved',
+  'repo.login.savedCacheCleared': 'SVN account saved; old cached account {user} was cleared',
   'repo.login.cleared': 'SVN account cleared',
-  'repo.login.loggedOut': 'Signed out of SVN (using the official credential cache instead)',
-  'repo.login.currentAccount': 'Signed-in Account',
-  'repo.login.accountHint': '(used for operations on SVN repositories)',
+  'repo.login.loggedOut': 'Signed out of SVN',
+  'repo.login.currentAccount': 'Current SVN Identity',
+  'repo.login.srcConfig': '(tool config)',
+  'repo.login.srcCache': '(svn official credential cache)',
+  'repo.login.cacheBackup': '{user} is also in the system cache (a failed auth falls back to it)',
   'repo.login.switch': '🔄 Switch Account',
-  'repo.login.logout': '🚪 Sign Out',
+  'repo.login.logout': 'Sign Out',
   'repo.login.usernameLabel': 'Username (leave empty to use the svn credential cache)',
   'repo.login.password': 'Password',
   'repo.login.trustCert': 'Trust self-signed HTTPS certificates',
+  'repo.login.switchCacheWarn': 'Saving will clear the old cached account {user} for this server (other svn clients on this machine will need to sign in again)',
+  'repo.login.logoutConfirmTitle': 'Sign out of SVN?',
+  'repo.login.logoutWillClear': 'Will clear:',
+  'repo.login.logoutCfgItem': '· Tool-config account {user}',
+  'repo.login.logoutCacheItem': '· Cached credential {user} ({realm})',
+  'repo.login.logoutHint': 'After clearing, svn operations on this server will need a fresh sign-in; other svn clients on this machine are affected too — make sure the password is safely kept',
 
   // ---- 目录选择器 ----
   'repo.picker.created': 'Created {name}',

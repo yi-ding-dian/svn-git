@@ -592,8 +592,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 /* 标题栏右上角关闭按钮（ModalShell 的 closeIcon）：替代底部「关闭」 */
 .modal-x {
   position: absolute; top: 50%; right: 14px; transform: translateY(-50%);
-  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
-  border: none; background: transparent; color: var(--dim); font-size: 14px; line-height: 1;
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--dim); font-size: 17px; line-height: 1;
   cursor: pointer; border-radius: 4px;
 }
 .modal-x:hover { background: var(--panel2); color: var(--text); }

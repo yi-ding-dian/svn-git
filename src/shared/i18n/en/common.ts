@@ -13,6 +13,7 @@ export const common = {
   'common.ok': 'OK',
   'common.cancel': 'Cancel',
   'common.close': 'Close',
+  'common.back': 'Back',
   'common.save': 'Save',
   'common.delete': 'Delete',
   'common.edit': 'Edit',

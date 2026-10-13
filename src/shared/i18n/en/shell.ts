@@ -62,8 +62,7 @@ export const shell = {
   'shell.tool.gitInfo': 'Git Info & Config',
   'shell.tool.envCheck': 'Environment Check',
   'shell.tool.envCheckTitle': 'View SVN / Git installation status and versions; one-click install if missing',
-  'shell.tool.svnAccount': 'SVN Account: {user}',
-  'shell.tool.svnLogin': 'SVN Login',
+  'shell.tool.svnInfo': 'SVN Info',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': 'Separator',

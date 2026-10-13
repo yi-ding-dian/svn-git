@@ -446,8 +446,8 @@ const TOOLS: ToolDef[] = [
     key: 'login', zone: 'menu', visible: (c) => c.repoType === 'svn',
     render: (c) => ({
       icon: <IconLogin />,
-      // SVN 账号: {user} / SVN 登录
-      label: c.configUser ? t('shell.tool.svnAccount', { user: c.configUser }) : t('shell.tool.svnLogin'),
+      // SVN 信息
+      label: t('shell.tool.svnInfo'),
       onClick: () => c.setModal({ type: 'login' }),
     }),
   },

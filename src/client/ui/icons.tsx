@@ -267,6 +267,17 @@ export function IconRefresh({ size = 14 }: IconProps) {
   );
 }
 
+/** 退出登录：门框 + 向外箭头（log-out 语义；currentColor 跟随按钮文字色——红按钮里就是红的）。
+ *  （原先用 🚪 emoji：视觉主体是"一扇门"，不像"退出"，用户实报） */
+export function IconLogout({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16 17l5-5-5-5M21 12H9" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /** SVN 登录：金色钥匙 */
 export function IconLogin({ size = 16 }: IconProps) {
   return (

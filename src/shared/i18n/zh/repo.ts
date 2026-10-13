@@ -50,6 +50,7 @@ export const repo = {
   // 标题右侧「当前检出账号」的悬浮说明（账号本身直接显示用户名）
   'repo.co.whoTipTyped': '使用本次输入的账号（仅本次检出，不会保存）',
   'repo.co.whoTipSaved': '使用已保存的 SVN 账号',
+  'repo.co.whoTipCache': '使用系统凭据缓存里的账号（在别的 svn 客户端登录过）',
   'repo.co.whoTipAnon': '未配置账号，将匿名访问',
   'repo.parentDir': '所在目录（父目录路径）',
   'repo.browse': '📂 浏览',
@@ -183,18 +184,27 @@ export const repo = {
   'repo.auth.saveAndPush': '保存并推送',
   'repo.auth.saveAndGet': '保存并获取仓库',
 
-  // ---- SVN 账号设置（LoginModal）----
-  'repo.login.title': 'SVN 账号设置',
+  // ---- SVN 信息 / 账号（LoginModal）----
+  'repo.login.title': 'SVN 信息',
   'repo.login.saved': 'SVN 账号已保存',
+  'repo.login.savedCacheCleared': 'SVN 账号已保存，并清除系统缓存中的旧账号 {user}',
   'repo.login.cleared': 'SVN 账号已清除',
-  'repo.login.loggedOut': '已退出 SVN 登录（改用官方凭据缓存）',
-  'repo.login.currentAccount': '当前已登录账号',
-  'repo.login.accountHint': '（SVN 仓库操作使用此账号）',
+  'repo.login.loggedOut': '已退出 SVN 登录',
+  'repo.login.currentAccount': '当前 SVN 身份',
+  'repo.login.srcConfig': '（本工具配置）',
+  'repo.login.srcCache': '（svn 官方凭据缓存）',
+  'repo.login.cacheBackup': '系统缓存中还有 {user}（该账号认证失败时会回落到它）',
   'repo.login.switch': '🔄 切换账号',
-  'repo.login.logout': '🚪 退出登录',
+  'repo.login.logout': '退出登录',
   'repo.login.usernameLabel': '用户名（留空表示使用 svn 官方凭据缓存）',
   'repo.login.password': '密码',
   'repo.login.trustCert': '信任 HTTPS 自签名证书',
+  'repo.login.switchCacheWarn': '保存后将清除系统凭据缓存中该服务器的旧账号 {user}（本机其他 svn 客户端需要重新登录）',
+  'repo.login.logoutConfirmTitle': '退出 SVN 登录？',
+  'repo.login.logoutWillClear': '将清除：',
+  'repo.login.logoutCfgItem': '· 工具配置的账号 {user}',
+  'repo.login.logoutCacheItem': '· 系统凭据缓存账号 {user}（{realm}）',
+  'repo.login.logoutHint': '清除后该服务器的 svn 操作需要重新登录；本机其他 svn 客户端也会受影响，请确认相关密码已妥善保存',
 
   // ---- 目录选择器（DirPicker）----
   'repo.picker.created': '已创建 {name}',

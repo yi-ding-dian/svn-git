@@ -46,8 +46,9 @@ export function CheckoutDialog(props: {
   const [credPass, setCredPass] = useState('');
   const [elapsed, setElapsed] = useState(0);
   const [slowNet, setSlowNet] = useState(false);
-  /** 标题右侧「当前检出账号」：已保存配置的用户名（挂载时取一次） */
+  /** 标题右侧「当前检出账号」：已保存配置的用户名 + 系统凭据缓存身份（挂载时一次查全） */
   const [cfgUser, setCfgUser] = useState('');
+  const [cacheUser, setCacheUser] = useState('');
   /** 上次重试用的临时凭据（标题显示"这次会用谁"用；不保存、仅本次） */
   const [usedCred, setUsedCred] = useState<{ username: string; password: string } | null>(null);
   /** 本次检出的取消句柄：取消 / 关弹窗都靠它把请求连同后端 svn 子进程一起停掉（并清半截目录） */
@@ -57,7 +58,8 @@ export function CheckoutDialog(props: {
   /** 多久还没有文件落盘就给"网络慢"提示（秒），同「获取仓库」 */
   const SLOW_HINT_S = 10;
 
-  // 默认所在目录 = home（与「打开项目」默认一致）；顺带取已保存的 SVN 账号（标题显示用）
+  // 默认所在目录 = home（与「打开项目」默认一致）；顺带查 SVN 身份（标题显示用：
+  // 工具配置 + 系统凭据缓存——裸跑时 svn 实际用的就是缓存身份）
   useEffect(() => {
     get
       .info()
@@ -66,12 +68,15 @@ export function CheckoutDialog(props: {
         /* 拿不到就用空值，用户自行输入/浏览 */
       });
     get
-      .config()
-      .then((c) => setCfgUser(c.username))
+      .svnIdentity(props.url)
+      .then((r) => {
+        setCfgUser(r.config?.username ?? '');
+        setCacheUser(r.cache?.username ?? '');
+      })
       .catch(() => {
-        /* 拿不到配置按匿名显示 */
+        /* 拿不到身份按匿名显示 */
       });
-  }, []);
+  }, [props.url]);
 
   /** 开始检出（cred = 本次临时凭据；缺省用后端已存配置/匿名） */
   const start = (cred?: { username: string; password: string }) => {
@@ -204,10 +209,17 @@ export function CheckoutDialog(props: {
       </>
     );
 
-  // 标题右侧「当前检出账号」：本次输入 > 上次重试的临时凭据 > 已保存配置 > 匿名（悬浮说明来源）
+  // 标题右侧「当前检出账号」：本次输入 > 上次重试的临时凭据 > 工具配置 > 系统凭据缓存 > 匿名
   const typedUser = credUser.trim();
-  const who = typedUser || usedCred?.username || cfgUser;
-  const whoTip = typedUser || usedCred ? t('repo.co.whoTipTyped') : cfgUser ? t('repo.co.whoTipSaved') : t('repo.co.whoTipAnon');
+  const who = typedUser || usedCred?.username || cfgUser || cacheUser;
+  const whoTip =
+    typedUser || usedCred
+      ? t('repo.co.whoTipTyped')
+      : cfgUser
+        ? t('repo.co.whoTipSaved')
+        : cacheUser
+          ? t('repo.co.whoTipCache')
+          : t('repo.co.whoTipAnon');
 
   return (
     <ModalShell
@@ -227,8 +239,9 @@ export function CheckoutDialog(props: {
       foot={foot}
       closeIcon
       titleExtra={
-        // - 号（第二步「后台任务」的位置）：第一步禁用，悬浮说明
-        <button className="modal-x" style={{ right: 44, opacity: 0.45, cursor: 'not-allowed' }} disabled title={t('repo.co.minTip')}>
+        // - 号（第二步「后台任务」的位置）：第一步禁用，悬浮说明。
+        // right = 14(X 的 right) + 28(X 宽) + 6(间距)，与放大的 ✕ 对齐
+        <button className="modal-x" style={{ right: 48, opacity: 0.45, cursor: 'not-allowed' }} disabled title={t('repo.co.minTip')}>
           −
         </button>
       }
