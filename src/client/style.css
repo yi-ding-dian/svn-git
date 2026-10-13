@@ -546,6 +546,12 @@ button.btn-accent:hover { background: rgba(9,105,218,.12); }
 button.mini { padding: 3px 10px; font-size: 0.88em; border-radius: 6px; }
 .mini.tool-btn { display: inline-flex; align-items: center; gap: 5px; }
 .mini.tool-btn svg { display: block; }
+/* 顶栏无边框图标按钮（浏览仓库快捷入口）：平时纯图标，悬浮才出淡背景 */
+.header-icon-btn {
+  border: none; background: transparent; padding: 2px; border-radius: 5px;
+  cursor: pointer; display: inline-flex; align-items: center; flex-shrink: 0;
+}
+.header-icon-btn:hover { background: var(--panel2); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ---------- 最近项目（打开页） ---------- */

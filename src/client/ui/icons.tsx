@@ -602,6 +602,26 @@ export function IconFont({ size = 16 }: IconProps) {
 }
 
 /** 地球（语言切换）：圆 + 经线 + 纬线，纯线条与其它图标同一套描边风格 */
+/** 服务器机柜（两格 + 绿色指示灯·**彩色**）：「浏览仓库」（菜单/弹窗标题/顶栏快捷入口）——
+ *  远程仓库在那台服务器上。机身蓝→紫渐变（与 IconLogin 同色系），灯绿色（运行中）。
+ *  用户定稿（替换原单色地球；点灯从 1px 点改为圆点，14px 下也能看见颜色） */
+export function IconServer({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <defs>
+        <linearGradient id="ic-server" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#58a6ff" />
+          <stop offset="1" stopColor="#a371f7" />
+        </linearGradient>
+      </defs>
+      <rect x="3" y="4" width="18" height="7" rx="1.6" stroke="url(#ic-server)" strokeWidth="2" />
+      <rect x="3" y="13" width="18" height="7" rx="1.6" stroke="url(#ic-server)" strokeWidth="2" />
+      <circle cx="7.3" cy="7.5" r="1.3" fill="#3fb950" />
+      <circle cx="7.3" cy="16.5" r="1.3" fill="#3fb950" />
+    </svg>
+  );
+}
+
 export function IconGlobe({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>

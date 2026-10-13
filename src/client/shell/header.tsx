@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo } from '../shared/api.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk } from '../ui/icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconServer } from '../ui/icons.js';
 import { type Modal } from './modal-types.js';
 import { type View } from './sidebar.js';
 import { ContextMenu } from '../ui/context-menu.js';
@@ -488,6 +488,8 @@ export function AppHeader(props: {
   onUpdate: () => void;
   /** 未推送提交数（git；null=未知/svn 不显示角标） */
   unpushedCount?: number | null;
+  /** 顶栏「浏览仓库」快捷入口（仅 SVN 项目；点击 = 打开当前项目的仓库浏览器，与右键菜单同一功能） */
+  onBrowseRepo?: () => void;
   /** stash 条数（角标；git 仓库有效，未加载/异常为 null 不显示） */
   stashCount?: number | null;
   /** 工作区是否有可 stash 的改动（无改动时 Stash 按钮置灰） */
@@ -772,6 +774,13 @@ export function AppHeader(props: {
       {repo?.url ? <span className="dim small nowrap">{repo.url}</span> : null}
       {repo?.revOrBranch ? <span className="dim small nowrap">[{repo.revOrBranch}]</span> : null}
       {repo?.url ? <NetLight hostCheckKey={repo.url + repo.revOrBranch} /> : null}
+      {/* 浏览仓库（仅 SVN）：点一下直接打开仓库浏览器（与最近项目右键「浏览仓库」同功能）；
+          无边框纯图标按钮（用户定稿），悬浮出淡背景 */}
+      {repo?.type === 'svn' && props.onBrowseRepo && (
+        <button className="header-icon-btn" title={t('repo.browse.entryTip')} onClick={props.onBrowseRepo}>
+          <IconServer size={14} />
+        </button>
+      )}
       <span className="spacer" />
       {/* 可定制工具栏按钮 + 可拖拽分隔符（顺序 = 用户布局 shown；退出应用固定末尾不在此区） */}
       <span

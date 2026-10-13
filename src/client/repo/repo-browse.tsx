@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ModalShell, ResizableModal } from '../shell/modal-shell.js';
 import { get, post } from '../shared/api.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
-import { MiniIcon } from '../ui/icons.js';
+import { MiniIcon, IconServer } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { DirPicker } from './dir-picker.js';
 import { CheckoutDialog } from './checkout.js';
@@ -242,9 +242,9 @@ export function RepoBrowseModal(props: {
     <div className="modal-mask">
       <ResizableModal width={1130} height={500} maxed={maxed} onToggleMax={() => setMaxed((m) => !m)}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* 📡 仓库浏览 */}
+          {/* 仓库浏览（IconServer：远程仓库在服务器上） */}
           <span style={{ flex: 1 }}>
-            📡 {t('repo.browse.title')} <span className="dim small mono">{host}</span>
+            <IconServer size={15} /> {t('repo.browse.title')} <span className="dim small mono">{host}</span>
             {/* 定位到该项目：逐级展开树并高亮工作副本所在目录（只在从项目右键进入时有 wcRel） */}
             {!!props.wcRel && (
               <button

@@ -1,6 +1,6 @@
 /** 侧边栏：视图导航 + 最近项目列表（右键设常用/备注/删除）+ 版本号 */
 import React, { useEffect, useState } from 'react';
-import { IconClock, IconEye, IconEyeClosed, IconFolder, IconGlobe, IconRename } from '../ui/icons.js';
+import { IconClock, IconEye, IconEyeClosed, IconFolder, IconRename, IconServer } from '../ui/icons.js';
 // import { IconDiff } from '../ui/icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from '../ui/context-menu.js';
 import { RemarkModal } from '../repo/remark.js';
@@ -421,7 +421,7 @@ export function Sidebar(props: {
                         ...(rmMenu.type === 'svn'
                           ? [
                               {
-                                icon: <IconGlobe size={14} />,
+                                icon: <IconServer size={14} />,
                                 // 浏览仓库（说明放悬浮：菜单里四个字清爽）
                                 label: t('repo.browse.entry'),
                                 title: t('repo.browse.entryTip'),

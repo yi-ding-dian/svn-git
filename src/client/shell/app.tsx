@@ -851,6 +851,10 @@ export function App() {
         repo={repo}
         conflictCount={conflictCount}
         configUser={configUser}
+        // 顶栏「浏览仓库」快捷入口（仅 SVN）：与最近项目右键同一逻辑——取仓库根 URL 后开仓库浏览
+        onBrowseRepo={() => {
+          if (repo?.root) openRepoBrowse(repo.root);
+        }}
         onRefresh={refresh}
         setModal={setModal}
         onToast={showToast}
