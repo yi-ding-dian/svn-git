@@ -167,4 +167,12 @@ export const srv = {
   // ---- 分块暂存 / 工作副本（stage.ts / wc.ts）----
   'srv.missingPathParam': 'Missing path parameter',
   'srv.repoTypeUnsupported': 'Not supported for the current repository type',
+
+  // ---- GitHub repo info (github.ts) / open external link (host.ts) ----
+  'srv.ghGitOnly': 'Only supported for Git repositories',
+  'srv.ghNotGithub': 'This repository remote is not GitHub',
+  'srv.ghNotFound': 'Repository not found or private (anonymous access denied)',
+  'srv.ghRateLimited': 'GitHub API rate-limited (anonymous quota — try again later)',
+  'srv.ghTimeout': 'GitHub request timed out ({sec}s)',
+  'srv.badUrl': 'Only http/https links are allowed',
 };

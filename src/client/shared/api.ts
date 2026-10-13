@@ -40,6 +40,32 @@ export interface RepoInfo {
   instanceId?: string;
 }
 
+/** GitHub 仓库信息（/api/gh-repo；语言构成为"语言名 → 字节数"） */
+export interface GhRepoResult {
+  ok: boolean;
+  /** api = GitHub 官方数据；local = 降级本地统计（error 带原因） */
+  source?: 'api' | 'local';
+  error?: string;
+  remote?: string;
+  languages?: Record<string, number> | null;
+  repo?: {
+    fullName: string;
+    description: string | null;
+    homepage: string | null;
+    stars: number;
+    forks: number;
+    watchers: number;
+    issues: number;
+    license: string | null;
+    pushedAt: string | null;
+    topics: string[];
+    defaultBranch: string;
+    archived: boolean;
+    private: boolean;
+    htmlUrl: string;
+  };
+}
+
 export interface FileStatus {
   path: string;
   /** 仅重命名（code='R'）有值：从哪个路径移过来的（后端 git status 解析带出，用于提示 + 提交时补全） */
@@ -307,6 +333,10 @@ export const get = {
       `/api/repo-search?url=${encodeURIComponent(url)}&q=${encodeURIComponent(q)}`,
       { signal },
     ),
+  /** GitHub 仓库信息（⋯ 菜单，仅 origin 指向 github.com 的 git 项目）。
+   *  source='api' 为 GitHub 官方数据；'local' 为降级本地统计（此时 error 带原因）；
+   *  force 跳过服务端 30 分钟缓存重新拉 */
+  ghRepo: (force?: boolean) => api<GhRepoResult>(`/api/gh-repo${force ? '?force=1' : ''}`),
   /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */
   svnIdentity: (url: string) =>
     api<{ ok: boolean; config: { username: string } | null; cache: { username: string; realms: string[] } | null }>(
@@ -381,6 +411,8 @@ export const post = {
   /** 安装到系统应用菜单（POST）；卸载走 DELETE */
   appMenuInstall: () => api<{ ok: boolean; message: string }>('/api/app-menu', json({})),
   appMenuUninstall: () => api<{ ok: boolean; message: string }>('/api/app-menu', { method: 'DELETE' }),
+  /** 用系统默认浏览器打开外链（仅 http/https） */
+  openUrl: (url: string) => api<{ ok: boolean }>('/api/open-url', json({ url })),
   /** 模块索引注入/更新（included：勾选保留的 path 清单，null/缺省=全保留）；clear=清除作用目录注入 */
   moduleIndexSet: (dir: string, md: string, included: string[] | null) =>
     api<{ ok: boolean; count: number }>('/api/module-index', json({ dir, md, included })),

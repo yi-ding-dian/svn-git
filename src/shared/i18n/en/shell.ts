@@ -58,6 +58,9 @@ export const shell = {
   'shell.tool.terminalTitle': 'Run git / svn commands in the repository directory (or press Ctrl+`). Non-interactive commands only: no pipes/redirection; use a system terminal for commands that need a TTY',
   'shell.tool.font': 'Fonts',
   'shell.tool.gitInfo': 'Git Info & Config',
+  // GitHub repository info (⋯ menu; only for git projects whose origin points to github.com)
+  'shell.tool.ghRepo': 'GitHub Repo Info',
+  'shell.tool.ghRepoTitle': 'View remote GitHub repository info (description, stars, languages, …)',
   'shell.tool.envCheck': 'Environment Check',
   'shell.tool.envCheckTitle': 'View SVN / Git installation status and versions; one-click install if missing',
   'shell.tool.svnInfo': 'SVN Info',
@@ -157,6 +160,10 @@ export const shell = {
   'shell.time.today': 'Today {time}',
   'shell.time.yesterday': 'Yesterday {time}',
   'shell.time.daysAgo': '{n} day ago|{n} days ago',
+  // For the GitHub info modal's "last pushed" relative time (recent projects only need days)
+  'shell.time.hoursAgo': '{n} hour ago|{n} hours ago',
+  'shell.time.monthsAgo': '{n} month ago|{n} months ago',
+  'shell.time.yearsAgo': '{n} year ago|{n} years ago',
   'shell.theme.more': 'More themes · Custom colors',
 
   // ---- 侧边栏：最近项目 ----

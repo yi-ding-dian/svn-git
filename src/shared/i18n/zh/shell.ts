@@ -60,6 +60,9 @@ export const shell = {
   'shell.tool.terminalTitle': '在仓库目录下执行 git / svn 命令（Ctrl+` 也可打开）。只支持非交互命令：不支持管道/重定向，需要 TTY 的命令请用系统终端',
   'shell.tool.font': '字体设置',
   'shell.tool.gitInfo': 'Git 信息与配置',
+  // GitHub 仓库信息（⋯ 菜单；origin 指向 github.com 的 git 项目才出现）
+  'shell.tool.ghRepo': 'GitHub 仓库信息',
+  'shell.tool.ghRepoTitle': '查看远程 GitHub 仓库信息（描述、Star、语言构成等）',
   'shell.tool.envCheck': '环境检测',
   'shell.tool.envCheckTitle': '查看 SVN / Git 的安装状态与版本；缺失时可一键安装',
   'shell.tool.svnInfo': 'SVN 信息',
@@ -159,6 +162,10 @@ export const shell = {
   'shell.time.today': '今天 {time}',
   'shell.time.yesterday': '昨天 {time}',
   'shell.time.daysAgo': '{n} 天前',
+  // GitHub 信息弹窗的"最近推送"相对时间用（最近项目只用得到 天 一档）
+  'shell.time.hoursAgo': '{n} 小时前',
+  'shell.time.monthsAgo': '{n} 个月前',
+  'shell.time.yearsAgo': '{n} 年前',
   'shell.theme.more': '更多主题 · 自定义配色',
 
   // ---- 侧边栏：最近项目 ----

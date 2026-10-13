@@ -38,6 +38,24 @@ export const repo = {
   'repo.search.truncated': 'Showing the first {n} matches only (large directory — try a more specific keyword)',
   // Search timed out (large directory, stream not finished) — partial results are shown
   'repo.search.timeout': 'Search timed out (large directory) — results may be incomplete',
+  // ---- GitHub repository info modal (⋯ menu; only projects whose origin points to github.com) ----
+  'repo.gh.title': 'GitHub Repository Info',
+  'repo.gh.openInBrowser': 'Open in Browser',
+  'repo.gh.refreshTip': 'Refresh (skip cache)',
+  'repo.gh.noDesc': '(no description)',
+  'repo.gh.homepage': 'Homepage',
+  'repo.gh.stars': 'Stars',
+  'repo.gh.forks': 'Forks',
+  'repo.gh.issues': 'Issues',
+  'repo.gh.watchers': 'Watchers',
+  'repo.gh.pushed': 'Last pushed',
+  'repo.gh.archived': 'Archived',
+  'repo.gh.langs': 'Languages',
+  // GitHub API unavailable (network/rate limit/private repo): local-count fallback, reason shown; {msg}=reason
+  'repo.gh.localNote': 'GitHub API unavailable ({msg}) — languages shown from local counting (git ls-files by type)',
+  'repo.gh.localSuffix': ' (local count)',
+  'repo.gh.otherLangs': 'Other',
+  'repo.gh.noLangs': '(no countable code files)',
   // ---- Repo browser context menu: Checkout to Local (CheckoutDialog) ----
   'repo.co.menu': 'Checkout to Local…',
   'repo.co.title': 'Checkout to Local',

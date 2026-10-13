@@ -123,6 +123,21 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/open-url' && req.method === 'POST') {
+        // 用系统默认浏览器打开外链（GitHub 仓库页等）——仅 http(s)：
+        // xdg-open/start 能打开的东西很多（file://、注册协议…），限协议把命令面收窄
+        const body = await readBody(req);
+        const target = String(body.url ?? '');
+        if (!/^https?:\/\//i.test(target)) {
+          // 仅支持 http/https 链接
+          sendJson(res, 400, { error: t('srv.badUrl') });
+          return true;
+        }
+        platform.openUrl(target);
+        sendJson(res, 200, { ok: true });
+        return true;
+      }
+
       if (p === '/api/pick-dir') {
         // 系统目录选择对话框（Electron 打包版可用；纯 node 返回不支持）
         if (!pickDirHandler) {

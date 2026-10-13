@@ -14,6 +14,7 @@ import { CommitSelectModal } from '../ops/commit-select.js';
 import { BranchDialog } from '../ops/branch.js';
 import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
 import { TagDialog, GitInfoModal } from '../ops/tag-git-info.js';
+import { GitHubRepoModal } from '../repo/github-repo.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
 import { LoginModal } from '../repo/login.js';
 import { EnvInstallModal } from '../repo/env-install.js';
@@ -289,6 +290,7 @@ export function ModalHost(props: ModalHostProps) {
         />
       )}
       {modal?.type === 'git-info' && <GitInfoModal onClose={() => setModal(null)} onToast={showToast} />}
+      {modal?.type === 'gh-repo' && <GitHubRepoModal onClose={() => setModal(null)} />}
       {pushAuth && (
         <GitPushAuthModal
           type={pushAuth.type}

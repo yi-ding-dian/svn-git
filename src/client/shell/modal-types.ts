@@ -13,6 +13,7 @@ export type Modal =
   | { type: 'create-repo' }
   | { type: 'get-repo' }
   | { type: 'git-info' }
+  | { type: 'gh-repo' }
   | { type: 'git-push-auth'; authType: 'github' | 'server' | 'ssh' }
   | { type: 'push-confirm' }
   | { type: 'clean' }

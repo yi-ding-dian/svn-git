@@ -42,6 +42,25 @@ export const repo = {
   'repo.search.truncated': '仅显示前 {n} 个匹配（目录较大，可输入更具体的关键字缩小范围）',
   // 搜索超时（目录大，未跑完）——已找到的部分照常显示
   'repo.search.timeout': '搜索超时（目录较大），结果可能不全',
+  // ---- GitHub 仓库信息弹窗（⋯ 菜单；仅 origin 指向 github.com 的项目）----
+  'repo.gh.title': 'GitHub 仓库信息',
+  'repo.gh.openInBrowser': '在浏览器打开',
+  'repo.gh.refreshTip': '重新获取（跳过缓存）',
+  'repo.gh.noDesc': '（没有描述）',
+  'repo.gh.homepage': '主页',
+  // 术语保持 GitHub 原词（中文用户也更熟悉 Stars / Forks / Issues / Watchers）
+  'repo.gh.stars': 'Stars',
+  'repo.gh.forks': 'Forks',
+  'repo.gh.issues': 'Issues',
+  'repo.gh.watchers': 'Watchers',
+  'repo.gh.pushed': '最近推送',
+  'repo.gh.archived': '已归档',
+  'repo.gh.langs': '语言构成',
+  // GitHub 接口不可用（网络/限流/私有库）：降级本地统计并说明原因；{msg}=原因
+  'repo.gh.localNote': 'GitHub 接口不可用（{msg}）——语言构成为本地统计（git ls-files 按类型汇总）',
+  'repo.gh.localSuffix': '（本地统计）',
+  'repo.gh.otherLangs': '其他语言',
+  'repo.gh.noLangs': '（没有可统计的代码文件）',
   // ---- 仓库浏览右键「检出到本地」（CheckoutDialog）----
   'repo.co.menu': '检出到本地…',
   'repo.co.title': '检出到本地',

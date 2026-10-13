@@ -9,7 +9,7 @@ import { launchMagicFlight } from './magic-flight.js';
 import { baseName } from '../shared/utils.js';
 import { UpdateResultModal, type UpdateResultDetail } from '../ops/update-result.js';
 import { InfoModal } from '../ui/prompt.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun, IconBell } from '../ui/icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun, IconBell, IconGitHub } from '../ui/icons.js';
 import { type Modal } from './modal-types.js';
 import { type View } from './sidebar.js';
 import { ContextMenu } from '../ui/context-menu.js';
@@ -197,6 +197,8 @@ type ToolCtx = {
   /** 当前仓库根（清理等任务标题里显示项目名用） */
   repoRoot?: string | null;
   repoType: 'git' | 'svn' | null;
+  /** 当前仓库的远程地址（git；/api/info 带回）；GitHub 信息菜单的可见性判断用 */
+  repoUrl?: string | null;
   conflictCount: number;
   unpushedCount?: number | null;
   stashCount?: number | null;
@@ -464,6 +466,20 @@ const TOOLS: ToolDef[] = [
     }),
   },
   {
+    // GitHub 仓库信息（描述/Star/语言构成）：**只对 origin 指向 github.com 的项目存在**——
+    // 其他远程（自建 git/GitLab/无远程）这项整个不出现（用户定稿），不是灰置
+    key: 'ghRepo', zone: 'menu', menuLabelKey: 'shell.tool.ghRepo',
+    visible: (c) => c.repoType === 'git' && /github\.com/i.test(c.repoUrl ?? ''),
+    render: (c) => ({
+      icon: <IconGitHub />,
+      // GitHub 仓库信息
+      label: t('shell.tool.ghRepo'),
+      // 查看远程 GitHub 仓库信息（描述、Star、语言构成等）
+      title: t('shell.tool.ghRepoTitle'),
+      onClick: () => c.setModal({ type: 'gh-repo' }),
+    }),
+  },
+  {
     key: 'login', zone: 'menu', visible: (c) => c.repoType === 'svn',
     render: (c) => ({
       icon: <IconLogin />,
@@ -680,6 +696,7 @@ export function AppHeader(props: {
   const ctx: ToolCtx = {
     repoRoot: repo?.root ?? null,
     repoType: repo?.type ?? null,
+    repoUrl: repo?.url ?? null,
     conflictCount: props.conflictCount,
     unpushedCount: props.unpushedCount,
     stashCount: props.stashCount,

@@ -182,4 +182,12 @@ export const srv = {
   // ---- 分块暂存 / 工作副本（stage.ts / wc.ts）----
   'srv.missingPathParam': '缺少 path 参数',
   'srv.repoTypeUnsupported': '当前仓库类型不支持',
+
+  // ---- GitHub 仓库信息（github.ts）/ 打开外链（host.ts）----
+  'srv.ghGitOnly': '仅 Git 仓库支持',
+  'srv.ghNotGithub': '当前仓库的远程地址不是 GitHub',
+  'srv.ghNotFound': '仓库不存在或为私有（匿名无权读取）',
+  'srv.ghRateLimited': 'GitHub 接口访问受限（匿名限流，稍后再试）',
+  'srv.ghTimeout': '请求 GitHub 超时（{sec} 秒）',
+  'srv.badUrl': '仅支持 http/https 链接',
 } as const;
