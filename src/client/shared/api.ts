@@ -296,7 +296,10 @@ export const get = {
     api<{ ok: boolean; entries?: { name: string; isDir: boolean; size?: number; rev?: string; author?: string; date?: string }[]; error?: string }>(
       `/api/repo-list?url=${encodeURIComponent(url)}`,
     ),
-  repoCat: (url: string) => api<{ ok: boolean; text?: string; error?: string }>(`/api/repo-cat?url=${encodeURIComponent(url)}`),
+  repoCat: (url: string) =>
+    api<{ ok: boolean; text?: string; error?: string; /** 二进制文件：不支持文本预览（前端显示"请下载"并隐藏复制） */ binary?: boolean }>(
+      `/api/repo-cat?url=${encodeURIComponent(url)}`,
+    ),
   /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */
   svnIdentity: (url: string) =>
     api<{ ok: boolean; config: { username: string } | null; cache: { username: string; realms: string[] } | null }>(

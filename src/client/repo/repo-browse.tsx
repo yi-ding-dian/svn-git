@@ -48,6 +48,8 @@ export function RepoBrowseModal(props: {
   const [file, setFile] = useState<{ name: string; url: string } | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [fileErr, setFileErr] = useState('');
+  /** 二进制文件（后端判定）：不渲染内容、显示"请下载后再浏览"，且不给「复制」 */
+  const [fileBin, setFileBin] = useState(false);
   const [copied, setCopied] = useState(false);
   const [picker, setPicker] = useState(false);
   const [msg, setMsg] = useState('');
@@ -101,21 +103,24 @@ export function RepoBrowseModal(props: {
     loadDir(root);
   }, [root]);
 
-  // 选中文件 → cat
+  // 选中文件 → cat（二进制文件后端带 binary 标记：不渲染乱码内容，提示下载）
   useEffect(() => {
     if (!file) {
       setText(null);
       setFileErr('');
+      setFileBin(false);
       return;
     }
     let alive = true;
     setText(null);
     setFileErr('');
+    setFileBin(false);
     get
       .repoCat(file.url)
       .then((r) => {
         if (!alive) return;
-        if (r.ok) setText(r.text ?? '');
+        if (r.binary) setFileBin(true);
+        else if (r.ok) setText(r.text ?? '');
         else setFileErr(r.error ?? '');
       })
       .catch((e: Error) => alive && setFileErr(e.message));
@@ -328,33 +333,44 @@ export function RepoBrowseModal(props: {
             <div className="sb-resizer" style={{ width: 4 }} onMouseDown={startDrag} title={t('repo.browse.dragTip')} />
             {/* 预览区 */}
             <div className="vcs-list" style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-              {!file && !fileErr && <div className="dim small" style={{ padding: '10px 6px' }}>{t('repo.browse.pickFile')}</div>}
-              {file && !text && !fileErr && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.loading')}</div>}
-              {fileErr && <div className="error small" style={{ padding: '10px 6px', wordBreak: 'break-all' }}>{fileErr}</div>}
-              {file && text !== null && (
+              {!file && <div className="dim small" style={{ padding: '10px 6px' }}>{t('repo.browse.pickFile')}</div>}
+              {/* 选中文件即出文件名行（复制/下载按钮立即可用——loading/出错/二进制时下载都需要） */}
+              {file && (
                 <>
                   <div className="row" style={{ padding: '4px 6px', borderBottom: '1px solid var(--border2)', marginBottom: 6, gap: 8 }}>
                     <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
-                    <button
-                      className="mini"
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(text).then(() => {
-                          setCopied(true);
-                          setTimeout(() => setCopied(false), 1500);
-                        });
-                      }}
-                    >
-                      {/* 已复制 / 复制 */}
-                      {copied ? t('fs.pv.copied') : t('fs.pv.copyCode')}
-                    </button>
-                    {/* 下载到… */}
+                    {/* 「复制」只有文本预览才给——二进制"不支持浏览"没有可复制的内容（用户定稿） */}
+                    {text !== null && (
+                      <button
+                        className="mini"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(text).then(() => {
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 1500);
+                          });
+                        }}
+                      >
+                        {/* 已复制 / 复制 */}
+                        {copied ? t('fs.pv.copied') : t('fs.pv.copyCode')}
+                      </button>
+                    )}
+                    {/* 下载到…（文件太大/二进制提示"请下载"时就在旁边，用户实报曾找不到） */}
                     <button className="mini" onClick={() => setPicker(true)}>{t('repo.browse.saveTo')}</button>
                   </div>
-                  <pre className="mono" style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>
-                    {text.split('\n').map((l, i) => (
-                      <div key={i} dangerouslySetInnerHTML={{ __html: highlightLine(l, langOf(file.name)) || '&nbsp;' }} />
-                    ))}
-                  </pre>
+                  {fileBin ? (
+                    // 不支持浏览，请下载后再浏览
+                    <div className="small" style={{ padding: '10px 6px', color: 'var(--warn)' }}>⚠ {t('repo.browse.binary')}</div>
+                  ) : fileErr ? (
+                    <div className="error small" style={{ padding: '2px 6px', wordBreak: 'break-all' }}>{fileErr}</div>
+                  ) : text === null ? (
+                    <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.loading')}</div>
+                  ) : (
+                    <pre className="mono" style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>
+                      {text.split('\n').map((l, i) => (
+                        <div key={i} dangerouslySetInnerHTML={{ __html: highlightLine(l, langOf(file.name)) || '&nbsp;' }} />
+                      ))}
+                    </pre>
+                  )}
                 </>
               )}
             </div>

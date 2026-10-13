@@ -9,7 +9,7 @@ import { run, type RunResult } from '../../vcs/exec.js';
 import { resolveSvnBin } from '../../vcs/svn.js';
 import { loadConfig } from '../../config.js';
 import { decodeMixedText } from '../../shared/text.js';
-import { sendJson, readBody, type Ctx } from './util.js';
+import { sendJson, readBody, isBinaryFile, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
 
 const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
@@ -87,6 +87,20 @@ function parseList(stdout: string): RepoEntry[] {
   return out;
 }
 
+/** 内容级二进制探测：前 8KB 出现 NUL 字节，或非文本控制字符占比过高（>30%）。
+ *  兜住"扩展名不在 BINARY_EXTS 表里"的二进制（如 .emmx / 无扩展名）——光看扩展名会漏。
+ *  UTF-8 / GBK 的中文多字节都 ≥0x80，不会落进控制字符区间，不误判（只扫前 8KB，微秒级） */
+function looksBinary(buf: Buffer): boolean {
+  const n = Math.min(buf.length, 8192);
+  let odd = 0;
+  for (let i = 0; i < n; i++) {
+    const b = buf[i]!;
+    if (b === 0) return true; // NUL 一票否决（文本文件不会有）
+    if (b < 9 || (b > 13 && b < 32)) odd++; // 允许 \t \n \r；其余控制字符计入
+  }
+  return n > 0 && odd / n > 0.3;
+}
+
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
   const p = url.pathname;
@@ -124,6 +138,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       sendJson(res, 400, { error: t('srv.badRepoUrl') });
       return true;
     }
+    // 二进制判定**优先于**"文件太大"：文档/图片/压缩包无论多大都是"不支持浏览"
+    //（用户实报：7.5MB 的 .doc 只提示"文件太大"，没说清是根本没法预览）。
+    // 扩展名已知的二进制**连下载都不必**（省一次 7.5MB 的白拉）——先判、直接返回
+    if (isBinaryFile(target)) {
+      sendJson(res, 200, { ok: true, binary: true });
+      return true;
+    }
     try {
       const r = await svnRun(['cat', target], { raw: true });
       if (r.code !== 0) {
@@ -131,6 +152,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
       const buf = r.stdoutBuf ?? Buffer.from(r.stdout ?? '', 'utf8');
+      // 内容探测也在"太大"之前：表外扩展名的二进制（如 .emmx）同样报"不支持浏览"
+      if (looksBinary(buf)) {
+        sendJson(res, 200, { ok: true, binary: true });
+        return true;
+      }
+      // 走到这里都是**文本**——太大才提示"文件太大"（请用「下载到…」）
       if (buf.length > 2 * 1024 * 1024) {
         // 文件太大（超过 2MB），请「下载到…」查看
         sendJson(res, 200, { ok: false, error: t('srv.repoFileTooBig') });

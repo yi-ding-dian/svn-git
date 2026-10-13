@@ -19,6 +19,8 @@ export const repo = {
   'repo.browse.pickFile': '单击左侧文件预览内容',
   'repo.browse.saveTo': '下载到…',
   'repo.browse.saved': '已保存到 {path}',
+  // 二进制文件（docx/xlsx/压缩包等）不支持文本预览：提示下载（附件类不渲染乱码、不给复制）
+  'repo.browse.binary': '不支持浏览，请下载后再浏览',
   'repo.browse.entry': '浏览仓库',
   'repo.browse.entryTip': '浏览仓库（不检出，直接看远程）',
   'repo.browse.dragTip': '拖动调整宽度',
