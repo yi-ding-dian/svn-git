@@ -152,7 +152,15 @@ export function ModuleIndexDialog(props: {
         {/* 说明来源 / （解析「路径 ← 描述」树图 / 「 / 路径 / 描述 / 」表格；勾选后注入，重新注入可更新） */}
         <br />· <b>{t('fs.moduleIndex.source')}</b>：{props.md}{t('fs.moduleIndex.sourceSuffixPre')}{`| ${t('fs.moduleIndex.colPath')} | ${t('fs.moduleIndex.colDesc')} |`}{t('fs.moduleIndex.sourceSuffixPost')}
       </div>
-      {err && <div className="error" style={{ marginTop: 6 }}>{err}</div>}
+      {err && (
+        <div className="error" style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ flex: 1, minWidth: 0 }}>{err}</span>
+          {/* ×：关掉这条提示 */}
+          <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setErr('')}>
+            ×
+          </button>
+        </div>
+      )}
       <div className="row" style={{ margin: '8px 0 4px' }}>
         <button className="mini" onClick={() => setChecked(new Set(checkAll ? [] : (entries ?? []).map((e) => e.path)))}>
           {/* 取消全选 / 全选 */}

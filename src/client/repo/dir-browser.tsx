@@ -157,7 +157,15 @@ export function DirBrowser(props: {
         </div>
         {props.slots?.toolbar}
       </div>
-      {props.error && <div className="error">{props.error}</div>}
+      {props.error && (
+        <div className="error" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ flex: 1, minWidth: 0 }}>{props.error}</span>
+          {/* ×：关掉这条提示（走 onError 通道清父层状态——父层都是 setError 直传） */}
+          <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => props.onError?.('')}>
+            ×
+          </button>
+        </div>
+      )}
       {props.slots?.notice}
       {/* ⏳ 读取目录… */}
       {props.dir && !props.data && !props.error && <div className="loading">{t('repo.open.loading')}</div>}

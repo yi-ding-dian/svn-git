@@ -187,7 +187,15 @@ export function LoginModal(props: {
               )}
             </>
           )}
-          {err && <div className="error">{err}</div>}
+          {err && (
+            <div className="error" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ flex: 1, minWidth: 0 }}>{err}</span>
+              {/* ×：关掉这条提示 */}
+              <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setErr('')}>
+                ×
+              </button>
+            </div>
+          )}
       </ModalShell>
       {/* 退出二次确认：列出将清除的凭据（包括系统缓存——会影响本机其他 svn 客户端） */}
       {confirmLogout && (

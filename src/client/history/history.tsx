@@ -353,7 +353,15 @@ export function HistoryView(props: Props) {
             style={{ width: 220, fontSize: 12 }}
           />
         </div>
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ flex: 1, minWidth: 0 }}>{error}</span>
+            {/* ×：关掉这条提示 */}
+            <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setError('')}>
+              ×
+            </button>
+          </div>
+        )}
         {notice && (
           <div className="row" style={{ alignItems: 'center', gap: 6, color: noticeErr ? 'var(--err)' : 'var(--ok)', margin: '4px 0' }}>
             {noticeErr ? <IconErr /> : <IconOk />}
@@ -723,8 +731,12 @@ export function HistoryView(props: Props) {
                 />
               )}
               {amendNotice && (
-                <div className="error small" style={{ marginTop: 6, wordBreak: 'break-all' }}>
-                  {amendNotice}
+                <div className="error small" style={{ marginTop: 6, wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>{amendNotice}</span>
+                  {/* ×：关掉这条提示 */}
+                  <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setAmendNotice('')}>
+                    ×
+                  </button>
                 </div>
               )}
             </div>

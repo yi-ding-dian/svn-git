@@ -79,7 +79,15 @@ export function StageHunksModal(props: {
       {/* ✂ 选择要提交的改动 */}
       <h3>{t('ops.stageHunks.title')} — {props.path}</h3>
       <div className="body">
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ flex: 1, minWidth: 0 }}>{error}</span>
+            {/* ×：关掉这条提示 */}
+            <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setError('')}>
+              ×
+            </button>
+          </div>
+        )}
         {/* 正在读取改动… */}
         {!parsed && !error && <div className="dim">{t('ops.stageHunks.loading')}</div>}
         {/* 该文件没有可提交的改动 */}

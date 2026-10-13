@@ -480,7 +480,15 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                   <IconFolder /> {t('conflict.reveal')}
                 </button>
                 <span className="grow" />
-                {msg && <span className={`small ${msgErr ? 'dim' : ''}`} style={{ color: msgErr ? 'var(--err)' : 'var(--ok)' }}>{msg}</span>}
+                {msg && (
+                  <>
+                    <span className={`small ${msgErr ? 'dim' : ''}`} style={{ color: msgErr ? 'var(--err)' : 'var(--ok)' }}>{msg}</span>
+                    {/* ×：关掉这条提示 */}
+                    <button className="mini" title={t('common.close')} onClick={() => setMsg('')}>
+                      ×
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}

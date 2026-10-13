@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { HelpNote } from '../ui/ui.js';
+import { ResultLine } from '../ui/result-line.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 推送认证弹窗：GitHub 用户名+Token / 服务器用户名+密码 / SSH 提示 */
@@ -67,10 +68,12 @@ export function GitPushAuthModal(props: {
         </h3>
         <div className="body">
           {props.error && (
-            <div className="error" style={{ marginBottom: 10, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-              {/* ⚠ 认证失败：{msg} */}
-              {t('repo.auth.failed', { msg: props.error })}
-            </div>
+            <>
+              {/* ⚠ 认证失败：{msg}（ResultLine 自带 × 可关闭） */}
+              <div style={{ marginBottom: 10 }}>
+                <ResultLine msg={t('repo.auth.failed', { msg: props.error })} err />
+              </div>
+            </>
           )}
           {props.type === 'ssh' ? (
             <HelpNote>

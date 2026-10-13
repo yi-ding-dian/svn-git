@@ -208,7 +208,15 @@ export function CommitSelectModal(props: {
               placeholder={t('ops.commit.msgPlaceholder')}
             />
           </div>
-          {err && <div className="error mt8">{err}</div>}
+          {err && (
+            <div className="error mt8" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ flex: 1, minWidth: 0 }}>{err}</span>
+              {/* ×：关掉这条提示 */}
+              <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setErr('')}>
+                ×
+              </button>
+            </div>
+          )}
         </div>
         <div className="foot">
           {/* 取消 */}

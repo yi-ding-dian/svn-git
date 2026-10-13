@@ -395,7 +395,11 @@ export function OpenBrowser(props: {
                 }}
               >
                 {noticeErr ? <IconErr /> : <IconOk />}
-                <span>{notice}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>{notice}</span>
+                {/* ×：关掉这条提示（用户实报：新建失败的错误条一直挂着没法消） */}
+                <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setNotice('')}>
+                  ×
+                </button>
               </div>
             ) : null
           ) : (

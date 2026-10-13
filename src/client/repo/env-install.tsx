@@ -141,9 +141,15 @@ export function EnvInstallModal(props: {
                 </div>
               )}
               {status === 'error' && (
-                <div className="error" style={{ marginTop: 10 }}>
-                  {/* 安装失败。请在终端手动执行： */}
-                  {t('repo.env.failed')}<code className="mono">{manual || 'sudo apt-get install -y subversion git'}</code>
+                <div className="error" style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    {/* 安装失败。请在终端手动执行： */}
+                    {t('repo.env.failed')}<code className="mono">{manual || 'sudo apt-get install -y subversion git'}</code>
+                  </span>
+                  {/* ×：关掉这条提示（回到可重试安装的初始态） */}
+                  <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setStatus('idle')}>
+                    ×
+                  </button>
                 </div>
               )}
             </>

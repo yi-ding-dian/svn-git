@@ -564,7 +564,15 @@ export function DiffView(props: Props) {
           <button className="mini" onClick={() => setStaleTip(false)}>{t('hist.dismiss')}</button>
         </div>
       )}
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ flex: 1, minWidth: 0 }}>{error}</span>
+          {/* ×：关掉这条提示 */}
+          <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setError('')}>
+            ×
+          </button>
+        </div>
+      )}
       {/* ⏳ 加载对比… */}
       {loading && !error && <div className="loading">{t('hist.loadingCompare')}</div>}
       {!loading && !error && sideMode && versions && (

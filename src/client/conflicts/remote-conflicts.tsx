@@ -74,7 +74,15 @@ export function RemoteConflictModal(props: { riskFiles: { path: string; lines: n
           </div>
           {/* 右：双 diff（冲突行标黄） */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {err && <div className="error">{err}</div>}
+            {err && (
+              <div className="error" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ flex: 1, minWidth: 0 }}>{err}</span>
+                {/* ×：关掉这条提示 */}
+                <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setErr('')}>
+                  ×
+                </button>
+              </div>
+            )}
             {/* 加载对比… */}
             {loading && !err && <div className="dim small">{t('conflict.remote.loading')}</div>}
             {detail && cur && (

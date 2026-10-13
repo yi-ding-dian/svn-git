@@ -52,6 +52,9 @@ export function PushConfirmModal(props: {
   const [noticeErr, setNoticeErr] = useState(false);
   /** 修改注释弹窗自己的错误提示：父级的 notice 在弹窗下层，会被盖住看不见（表现为"点了确认没反应"） */
   const [amendNotice, setAmendNotice] = useState('');
+  /** 数据驱动的警告条各自可关闭（远程落后 / 冲突风险；重新打开弹窗即重置） */
+  const [hideBehind, setHideBehind] = useState(false);
+  const [hideRisk, setHideRisk] = useState(false);
   /** 非 HEAD 提交右键操作的说明弹窗 */
   const [infoTip, setInfoTip] = useState('');
   /** 跟随鼠标提示（修改注释成功显示在点击处） */
@@ -163,10 +166,16 @@ export function PushConfirmModal(props: {
               // ⏳ 检查远程状态…
               <div className="dim small">{t('ops.push.checking')}</div>
             ) : pf ? (
-              pf.behind > 0 ? (
-                <div className="error" style={{ marginBottom: 0 }}>
-                  {/* ⚠ 远程有 {n} 个新提交，当前分支落后。直接推送会被拒绝，建议先「更新」拉取合并。 */}
-                  {t('ops.push.behind', { n: pf.behind })}
+              pf.behind > 0 && !hideBehind ? (
+                <div className="error" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    {/* ⚠ 远程有 {n} 个新提交，当前分支落后。直接推送会被拒绝，建议先「更新」拉取合并。 */}
+                    {t('ops.push.behind', { n: pf.behind })}
+                  </span>
+                  {/* ×：关掉这条提示 */}
+                  <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setHideBehind(true)}>
+                    ×
+                  </button>
                 </div>
               ) : (
                 // ✅ 远程状态正常（无新提交），可以推送
@@ -176,11 +185,17 @@ export function PushConfirmModal(props: {
               // 远程状态检查失败，可尝试直接推送
               <div className="dim small">{t('ops.push.checkFailed')}</div>
             )}
-            {pf && pf.conflictRisk.length > 0 && (
-              <div className="error" style={{ margin: '8px 0 0' }}>
-                {/* ⚠ 以下文件双方都有修改，推送后拉取时可能冲突： */}
-                {t('ops.push.conflictRisk')}
-                {pf.conflictRisk.map((f) => f.path).join(t('common.listSep'))}
+            {pf && pf.conflictRisk.length > 0 && !hideRisk && (
+              <div className="error" style={{ margin: '8px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  {/* ⚠ 以下文件双方都有修改，推送后拉取时可能冲突： */}
+                  {t('ops.push.conflictRisk')}
+                  {pf.conflictRisk.map((f) => f.path).join(t('common.listSep'))}
+                </span>
+                {/* ×：关掉这条提示 */}
+                <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setHideRisk(true)}>
+                  ×
+                </button>
               </div>
             )}
           </div>
@@ -248,7 +263,13 @@ export function PushConfirmModal(props: {
             ))}
           </div>
           {notice && (
-            <div className={noticeErr ? 'error' : 'small'} style={{ marginTop: 8 }}>{notice}</div>
+            <div className={noticeErr ? 'error' : 'small'} style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ flex: 1, minWidth: 0 }}>{notice}</span>
+              {/* ×：关掉这条提示 */}
+              <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setNotice('')}>
+                ×
+              </button>
+            </div>
           )}
         </div>
         <div className="foot">
@@ -349,8 +370,12 @@ export function PushConfirmModal(props: {
                 />
               )}
               {amendNotice && (
-                <div className="error small" style={{ marginTop: 6, wordBreak: 'break-all' }}>
-                  {amendNotice}
+                <div className="error small" style={{ marginTop: 6, wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>{amendNotice}</span>
+                  {/* ×：关掉这条提示 */}
+                  <button className="mini" style={{ flexShrink: 0 }} title={t('common.close')} onClick={() => setAmendNotice('')}>
+                    ×
+                  </button>
                 </div>
               )}
             </div>
