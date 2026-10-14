@@ -126,6 +126,15 @@ export function ModalHost(props: ModalHostProps) {
   const { setModal, setPushAuth, setThemePop, setConfigUser, setInfo, setOnboard, setView, showToast, setDiffReturnModal } = set;
   const { doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow } = actions;
 
+  /** 会改动分支/远程地址的操作完成后调它：refresh() 的 tick 链只带文件列表与推送角标，
+   *  顶栏的远程地址 / [分支名]（以及 ⋯ 菜单里按远程地址显隐的 GitHub 各项）读的是 info，
+   *  不显式重拉就停留在旧值（用户实报：`git branch -m` 后顶栏挂着旧分支名；
+   *  GitHub 新建仓库成功后顶栏不显示仓库地址） */
+  const refreshInfo = () => {
+    refresh();
+    get.info().then((r) => setInfo(r)).catch(() => {});
+  };
+
   /** 「新建仓库」弹窗选「GitHub 仓库」类型：本地建好并打开后，继续建远程仓库并设 origin（服务端自动 setRemote）。
    *  失败不回滚本地仓库——如实提示原因并指引去 ⋯ 菜单「GitHub 新建仓库」重试；新仓库必无提交，成功提示"提交后可推送"。 */
   const ghSetup = async (gh: GhSetupOpts) => {
@@ -147,6 +156,8 @@ export function ModalHost(props: ModalHostProps) {
       return;
     }
     showToast(t('repo.ghCreate.doneNoCommit', { name: gr.fullName ?? gh.name }));
+    // origin 已指向新仓库：顶栏补上远程地址（本地 open 时拉的 info 还没有 origin）
+    refreshInfo();
   };
 
   return (
@@ -207,16 +218,8 @@ export function ModalHost(props: ModalHostProps) {
           repoRoot={repo?.root ?? ''}
           repoType={repo?.type ?? ''}
           // 命令跑完就刷新（与 branches/tags 弹窗同一套）：终端能改的东西最宽 ——
-          // 分支名 / 工作区 / 索引 / 标签都可能被一条命令改掉，refresh() 只管 tick 链上的
-          // （文件列表、未推送数），顶栏 [分支名] 得显式重拉 info（用户实报：`git branch -m`
-          // 成功后顶栏还挂着旧分支名）
-          onChanged={() => {
-            refresh();
-            get
-              .info()
-              .then((r) => setInfo(r))
-              .catch(() => {});
-          }}
+          // 分支名 / 工作区 / 索引 / 标签都可能被一条命令改掉
+          onChanged={refreshInfo}
           onClose={() => setModal(null)}
         />
       )}
@@ -231,26 +234,14 @@ export function ModalHost(props: ModalHostProps) {
             // 就完全看不到（用户实报"点了没反应"）——两处都保留
             showToast(m, Boolean(err));
           }}
-          onChanged={() => {
-            refresh();
-            get
-              .info()
-              .then((r) => setInfo(r))
-              .catch(() => {});
-          }}
+          onChanged={refreshInfo}
         />
       )}
       {modal?.type === 'tags' && repo?.type && (
         <TagDialog
           repoType={repo.type}
           onClose={() => setModal(null)}
-          onChanged={() => {
-            refresh();
-            get
-              .info()
-              .then((r) => setInfo(r))
-              .catch(() => {});
-          }}
+          onChanged={refreshInfo}
         />
       )}
       {modal?.type === 'stash' && <StashDialog onClose={() => setModal(null)} onChanged={() => refresh()} />}
@@ -315,7 +306,10 @@ export function ModalHost(props: ModalHostProps) {
           onPreview={theme.previewTheme}
         />
       )}
-      {modal?.type === 'git-info' && <GitInfoModal onClose={() => setModal(null)} onToast={showToast} />}
+      {/* onChanged：这里能改 origin 地址，保存成功后顶栏（远程地址 / ⋯ 菜单 GitHub 各项）要跟着换 */}
+      {modal?.type === 'git-info' && (
+        <GitInfoModal onClose={() => setModal(null)} onToast={showToast} onChanged={refreshInfo} />
+      )}
       {modal?.type === 'gh-create-repo' && (
         <GitHubCreateModal
           root={repo?.root ?? null}
@@ -328,7 +322,7 @@ export function ModalHost(props: ModalHostProps) {
               showToast(t('repo.ghCreate.remoteFail', { msg: r.remoteMsg || r.cloneUrl || '' }), true);
               return;
             }
-            refresh(); // origin 已变：刷新顶栏（菜单显隐、推送角标）
+            refreshInfo(); // origin 已变：刷新顶栏（远程地址、菜单显隐、推送角标）
             // 有提交 → 立即推送（pushNow 是后台任务；认证失败会自动弹认证引导）；没提交 → 提示提交后再推
             if (r.hasCommit) {
               showToast(t('repo.ghCreate.donePush', { name }));
@@ -354,6 +348,8 @@ export function ModalHost(props: ModalHostProps) {
           onClose={() => setModal(null)}
           // Fork 成功且有提交：自动走现有推送任务（含认证引导/横幅；结果不阻塞弹窗）
           onForked={() => pushNow()}
+          // Fork 成功且 origin 已改指 fork：顶栏远程地址跟着换
+          onRemoteChanged={refreshInfo}
         />
       )}
       {modal?.type === 'gh-repo' && <GitHubRepoModal onClose={() => setModal(null)} />}

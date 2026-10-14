@@ -156,7 +156,12 @@ function RemoteList() {
 // ==================== Git 信息与配置 ====================
 
 /** Git 信息弹窗：分支 / 远程 / 上游 / 最近提交，可修改远程地址 */
-export function GitInfoModal(props: { onClose: () => void; onToast: (m: string, err?: boolean) => void }) {
+export function GitInfoModal(props: {
+  onClose: () => void;
+  onToast: (m: string, err?: boolean) => void;
+  /** 远程地址保存成功：宿主重拉仓库信息（顶栏远程地址 / ⋯ 菜单 GitHub 各项随之更新） */
+  onChanged?: () => void;
+}) {
   const [info, setInfo] = useState<{
     branch: string;
     remote: string;
@@ -188,7 +193,10 @@ export function GitInfoModal(props: { onClose: () => void; onToast: (m: string, 
       .gitConfig(url.trim())
       .then((r) => {
         props.onToast(r.message, !r.ok);
-        if (r.ok) load();
+        if (r.ok) {
+          load();
+          props.onChanged?.();
+        }
       })
       // 配置失败: {msg}
       .catch((e: Error) => props.onToast(t('ops.gitInfo.err.save', { msg: (e as Error).message }), true))

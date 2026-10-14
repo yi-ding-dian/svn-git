@@ -37,6 +37,8 @@ export function GitHubForkModal(props: {
   onClose: () => void;
   /** Fork 成功且本地有提交：交给宿主走现有推送任务；弹窗随即进成功态 */
   onForked: () => void;
+  /** Fork 成功且服务端已把 origin 改指 fork：宿主重拉仓库信息（顶栏远程地址随之更新） */
+  onRemoteChanged: () => void;
 }) {
   const [phase, setPhase] = useState<'checking' | 'confirm' | 'busy' | 'done' | 'error'>('checking');
   const [info, setInfo] = useState<ForkInfo | null>(null);
@@ -105,6 +107,8 @@ export function GitHubForkModal(props: {
           remoteMsg: r.remoteMsg ?? '',
         });
         setPhase('done');
+        // origin 已改指 fork（remoteSet=false 时仍是原仓库）：顶栏远程地址要跟着换
+        if (r.remoteSet === true) props.onRemoteChanged();
         // 有提交：自动走推送任务（推送可能慢——不阻塞本弹窗，结果看任务横幅/铃铛）
         if (unpushed > 0) props.onForked();
       })
