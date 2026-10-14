@@ -67,6 +67,9 @@ export const shell = {
   // Delete GitHub repository (⋯ menu; same condition as Repo Info)
   'shell.tool.ghDelete': 'Delete GitHub Repo',
   'shell.tool.ghDeleteTitle': 'Permanently delete the GitHub repository origin points to (irreversible; type the repo name to confirm)',
+  // Fork to my account (⋯ menu; only when origin is github.com and not your own account — for open-source contributions)
+  'shell.tool.ghFork': 'Fork to My Account',
+  'shell.tool.ghForkTitle': 'Fork this repository to your GitHub account (needed before contributing to open source)',
   'shell.tool.envCheck': 'Environment Check',
   'shell.tool.envCheckTitle': 'View SVN / Git installation status and versions; one-click install if missing',
   'shell.tool.svnInfo': 'SVN Info',

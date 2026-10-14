@@ -542,6 +542,21 @@ export function IconGitHub({ size = 16 }: IconProps) {
   );
 }
 
+/** Fork 图标：分叉三节点（「Fork 到自己账号」菜单项） */
+export function IconFork({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <g fill="none" stroke="#8b949e" strokeWidth="1.4" strokeLinecap="round">
+        <circle cx="8" cy="3.2" r="1.7" fill="#8b949e" stroke="none" />
+        <circle cx="3.5" cy="12.6" r="1.7" fill="#8b949e" stroke="none" />
+        <circle cx="12.5" cy="12.6" r="1.7" fill="#8b949e" stroke="none" />
+        <path d="M8 4.9v2.3M8 7.2C8 9.5 3.5 9.6 3.5 11" />
+        <path d="M8 7.2c0 2.3 4.5 2.4 4.5 3.8" />
+      </g>
+    </svg>
+  );
+}
+
 /** GitHub 标志 + 右下绿色加号（「GitHub 新建仓库」菜单项；与纯标志的「仓库信息」图标区分） */
 export function IconGitHubPlus({ size = 16 }: IconProps) {
   return (

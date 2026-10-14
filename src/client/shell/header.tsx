@@ -9,7 +9,8 @@ import { launchMagicFlight } from './magic-flight.js';
 import { baseName } from '../shared/utils.js';
 import { UpdateResultModal, type UpdateResultDetail } from '../ops/update-result.js';
 import { InfoModal } from '../ui/prompt.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun, IconBell, IconGitHub, IconGitHubPlus, IconTrash } from '../ui/icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun, IconBell, IconGitHub, IconGitHubPlus, IconTrash, IconFork } from '../ui/icons.js';
+import { parseGithub } from '../../shared/github.js';
 import { type Modal } from './modal-types.js';
 import { type View } from './sidebar.js';
 import { ContextMenu } from '../ui/context-menu.js';
@@ -204,6 +205,8 @@ type ToolCtx = {
   stashCount?: number | null;
   canStash?: boolean;
   configUser: string;
+  /** git 凭据里的 GitHub 用户名（Fork 菜单按 owner 粗判"是不是别人的仓库"；空 = 未知，宁多显勿漏显） */
+  gitUser?: string;
   onRefresh: () => void;
   setModal: (m: Modal) => void;
   onToast: (m: string, err?: boolean) => void;
@@ -508,6 +511,23 @@ const TOOLS: ToolDef[] = [
     }),
   },
   {
+    // Fork 到自己账号：origin 指向 github.com 且 owner 不是本人时出现（自己账号的仓库无需 Fork）。
+    // gitUser 未知（未配 git 凭据）时也显示——宁多显勿漏显，进弹窗后服务端判定归属兜底
+    key: 'ghFork', zone: 'menu', menuLabelKey: 'shell.tool.ghFork',
+    visible: (c) =>
+      c.repoType === 'git' &&
+      /github\.com/i.test(c.repoUrl ?? '') &&
+      (!c.gitUser || parseGithub(c.repoUrl ?? '')?.owner.toLowerCase() !== c.gitUser.toLowerCase()),
+    render: (c) => ({
+      icon: <IconFork />,
+      // Fork 到自己账号
+      label: t('shell.tool.ghFork'),
+      // 把该仓库 Fork 到你的 GitHub 账号（给开源项目贡献代码前需要先 Fork）
+      title: t('shell.tool.ghForkTitle'),
+      onClick: () => c.setModal({ type: 'gh-fork' }),
+    }),
+  },
+  {
     key: 'login', zone: 'menu', visible: (c) => c.repoType === 'svn',
     render: (c) => ({
       icon: <IconLogin />,
@@ -544,6 +564,8 @@ export function AppHeader(props: {
   repo: RepoInfo | null;
   conflictCount: number;
   configUser: string;
+  /** git 凭据里的 GitHub 用户名（Fork 菜单可见性判断用） */
+  gitUser?: string;
   onRefresh: () => void;
   setModal: (m: Modal) => void;
   onToast: (m: string, err?: boolean) => void;
@@ -733,6 +755,7 @@ export function AppHeader(props: {
     stashCount: props.stashCount,
     canStash: props.canStash,
     configUser: props.configUser,
+    gitUser: props.gitUser,
     onRefresh: props.onRefresh,
     setModal: props.setModal,
     onToast: props.onToast,

@@ -184,6 +184,12 @@ export const srv = {
   'srv.ghDeleteForbidden': 'Token lacks permission: deleting a repository requires delete_repo (classic) or Administration write (fine-grained); nothing was deleted',
   'srv.ghDeleteNotFound': 'Repository not found or no access (it may already be deleted)',
   'srv.ghDeleteFailed': 'Failed to delete repository: {msg}',
+  // ---- GitHub fork ----
+  'srv.ghForkNeedAuth': 'No GitHub credential configured — cannot fork (set a token in Git Info & Config first)',
+  'srv.ghForkIsOwn': 'This repository belongs to your own account — no fork needed',
+  'srv.ghForkBadToken': 'GitHub token invalid or expired',
+  'srv.ghForkForbidden': 'Cannot fork: token lacks permission or the repository is inaccessible (public repos need repo / public_repo scope)',
+  'srv.ghForkFailed': 'Fork failed: {msg}',
   // ---- GitHub create repository ----
   'srv.ghCreateNoName': 'Repository name is required',
   'srv.ghCreateNameInvalid': 'Invalid repository name: cannot consist only of - / .',

@@ -874,8 +874,8 @@ export class GitVcs {
     if (remotes.length === 0) return { ok: false, message: t('vcs.noRemotePush') };
     const cred = loadConfig().git;
     let res = await this.exec(['push'], { timeoutMs: 600_000, signal });
-    // 推送已取消
-    if (res.aborted) return { ok: false, message: t('vcs.pushCancelled') };
+    // 推送已取消（code=ABORTED：前端据此区分"用户主动取消"与"失败"，取消不走 Fork 引导等后续判断）
+    if (res.aborted) return { ok: false, message: t('vcs.pushCancelled'), code: 'ABORTED' };
     // 推送成功
     if (res.code === 0) return { ok: true, message: t('vcs.pushOk') };
     // 无上游分支：自动 git push -u origin <当前分支>（-u 建立上游跟踪，角标才能正确归零；与 pull 的无上游自动重试一致）
@@ -883,8 +883,8 @@ export class GitVcs {
       const branch = await this.branch();
       if (branch && branch !== 'HEAD') {
         const r2 = await this.exec(['push', '-u', 'origin', branch], { timeoutMs: 600_000, signal });
-        // 推送已取消
-        if (r2.aborted) return { ok: false, message: t('vcs.pushCancelled') };
+        // 推送已取消（同上：ABORTED 标识）
+        if (r2.aborted) return { ok: false, message: t('vcs.pushCancelled'), code: 'ABORTED' };
         // 推送成功
         if (r2.code === 0) return { ok: true, message: t('vcs.pushOk') };
         res = r2;
@@ -903,12 +903,22 @@ export class GitVcs {
         { timeoutMs: 600_000, signal, env: { GIT_ASKPASS: ask.path } }
       );
       ask.cleanup();
-      // 推送已取消
-      if (retry.aborted) return { ok: false, message: t('vcs.pushCancelled') };
+      // 推送已取消（同上：ABORTED 标识）
+      if (retry.aborted) return { ok: false, message: t('vcs.pushCancelled'), code: 'ABORTED' };
       // 推送成功
       if (retry.code === 0) return { ok: true, message: t('vcs.pushOk') };
+      // 重试仍失败：按**重试这次**的错误重新分类——不加这一步的话，网络故障（连接超时/失败）与
+      // 403 无写权限都会被无条件当成"认证失败"弹认证窗误导用户（实测：推他人仓库/断网都弹了认证窗）。
+      // 非认证类失败（网络/403）不带 authType，交给上层显示原报错或走 Fork 引导
+      const retryErr = retry.stderr + retry.stdout;
+      const retryAuth = /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(retryErr); // i18n-ignore: 解析 git push 的中英文报错
       // git push 失败
-      return { ok: false, message: retry.stderr.trim() || t('vcs.gitPushFailed'), authType: authTypeOf(await this.remote()), code: 'AUTH' };
+      return {
+        ok: false,
+        message: retry.stderr.trim() || t('vcs.gitPushFailed'),
+        authType: retryAuth ? authTypeOf(await this.remote()) : undefined,
+        code: retryAuth ? 'AUTH' : undefined,
+      };
     }
     return {
       ok: false,

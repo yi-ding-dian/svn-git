@@ -1,4 +1,4 @@
-/** GitHub 集成（顶栏 ⋯ 菜单三条，均只对 git 项目出现）：
+/** GitHub 集成（顶栏 ⋯ 菜单四条 + 内部查询接口，均只对 git 项目出现）：
  *  - GET /api/gh-repo「GitHub 仓库信息」（origin 指向 github.com 时出现）：服务端代问
  *    api.github.com——仓库元信息（描述/star/fork/issues/license/推送时间/topics）+ 语言构成。
  *    **有已存凭据就带上**（自己的私有仓库也能读；没配凭据则匿名，仅公开库）。结果内存缓存 30 分钟
@@ -11,7 +11,11 @@
  *  - POST /api/gh-delete-repo「GitHub 删除仓库」（与「仓库信息」同条件出现）：删除 origin 指向的
  *    远程仓库（DELETE /repos/{owner}/{repo}，不可恢复——前端要求输入完整仓库名二次确认，服务端再校验
  *    一次防绕过）。本地 origin 不自动改动（删完如实显示仓库已不存在，用户按需自行调整）。
- *    classic Token 需要 delete_repo 权限、fine-grained 需要 Administration 写权限。 */
+ *    classic Token 需要 delete_repo 权限、fine-grained 需要 Administration 写权限。
+ *  - GET /api/gh-permissions：查 origin 仓库的访问权限（permissions.push、owner===login）——
+ *    推送失败后判定「无写权限」用（不猜 git 报错文本，正则不可靠）；纯读，前端据此决定是否引导 Fork。
+ *  - POST /api/gh-fork「Fork 到自己账号」：把 origin 仓库 fork 到本人账号，origin 改指 fork、
+ *    原仓库记入 upstream（贡献开源的主流程，推送/拉取链路全部复用；前端随后按需自动推送）。 */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -395,6 +399,161 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     } catch (e) {
       const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GH_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
       send({ ok: false, message: t('srv.ghDeleteFailed', { msg: err }) });
+    } finally {
+      clearTimeout(timer);
+      res.off('close', onClose);
+    }
+    return true;
+  }
+
+  if (p === '/api/gh-permissions' && req.method === 'GET') {
+    // 查 origin 仓库的访问权限（推送失败后的「无写权限」判定用；纯读）。
+    // 不用正则猜 git 报错文本（不可靠），直接用带凭据的 API：permissions.push + owner===login。
+    const { vcs, repo } = vcsOf();
+    if (repo.type !== 'git') {
+      sendJson(res, 400, { ok: false, message: t('srv.ghGitOnly') });
+      return true;
+    }
+    let remoteUrl = '';
+    try {
+      remoteUrl = (await vcs.remote?.()) ?? '';
+    } catch {
+      /* 未配置 origin：按"不是 GitHub"处理 */
+    }
+    const gh = parseGithub(remoteUrl);
+    if (!gh) {
+      sendJson(res, 200, { ok: true, isGithub: false });
+      return true;
+    }
+    const base = { isGithub: true, owner: gh.owner, repo: gh.repo, fullName: `${gh.owner}/${gh.repo}` };
+    const token = loadConfig().git?.password ?? '';
+    if (!token) {
+      // 没凭据：查不了权限（canPush=null），前端按"不引导 Fork"处理
+      sendJson(res, 200, { ok: true, ...base, canPush: null, login: '', isOwn: false, defaultBranch: '' });
+      return true;
+    }
+    const ctl = new AbortController();
+    const onClose = () => ctl.abort();
+    res.on('close', onClose);
+    const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const [meRaw, repoRaw] = await Promise.all([
+        ghFetch('/user', ctl.signal, token),
+        ghFetch(`/repos/${gh.owner}/${gh.repo}`, ctl.signal, token),
+      ]);
+      const login = String((meRaw as Record<string, unknown>).login ?? '');
+      const rj = repoRaw as Record<string, unknown>;
+      const perms = rj.permissions as Record<string, unknown> | undefined;
+      if (res.destroyed || res.writableEnded) return true;
+      sendJson(res, 200, {
+        ok: true,
+        ...base,
+        canPush: typeof perms?.push === 'boolean' ? perms.push : null,
+        login,
+        isOwn: login !== '' && login.toLowerCase() === gh.owner.toLowerCase(),
+        defaultBranch: String(rj.default_branch ?? ''),
+      });
+    } catch (e) {
+      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: FETCH_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      // 查询失败：canPush 未知（前端按"不引导"处理），原因随响应回传
+      if (!res.destroyed && !res.writableEnded) sendJson(res, 200, { ok: false, ...base, message: err });
+    } finally {
+      clearTimeout(timer);
+      res.off('close', onClose);
+    }
+    return true;
+  }
+
+  if (p === '/api/gh-fork' && req.method === 'POST') {
+    // Fork origin 指向的 GitHub 仓库到自己的账号（给开源项目贡献用），成功后：
+    // origin 改指 fork（贡献场景常规姿势，推送/拉取链路全部复用）、原仓库记入 upstream（失败不阻断，仅备注）。
+    // 前端随后按需自动走推送流程。fork 接口幂等：已 fork 过会返回既有的 fork
+    const { vcs, repo } = vcsOf();
+    if (repo.type !== 'git') {
+      sendJson(res, 400, { ok: false, message: t('srv.ghGitOnly') });
+      return true;
+    }
+    const send = (data: unknown) => {
+      if (!res.destroyed && !res.writableEnded) sendJson(res, 200, data);
+    };
+    let remoteUrl = '';
+    try {
+      remoteUrl = (await vcs.remote?.()) ?? '';
+    } catch {
+      /* 未配置 origin：按"不是 GitHub"处理 */
+    }
+    const gh = parseGithub(remoteUrl);
+    if (!gh) {
+      send({ ok: false, message: t('srv.ghNotGithub') });
+      return true;
+    }
+    const token = loadConfig().git?.password ?? '';
+    if (!token) {
+      send({ ok: false, message: t('srv.ghForkNeedAuth') });
+      return true;
+    }
+    const ctl = new AbortController();
+    const onClose = () => ctl.abort();
+    res.on('close', onClose);
+    const timer = setTimeout(() => ctl.abort(), GH_WRITE_TIMEOUT_MS);
+    try {
+      // 先拿登录名：判「自己的仓库」（fork 自己的仓库无意义）并回显
+      const meRaw = await ghFetch('/user', ctl.signal, token);
+      const login = String((meRaw as Record<string, unknown>).login ?? '');
+      if (login && login.toLowerCase() === gh.owner.toLowerCase()) {
+        send({ ok: false, isOwn: true, message: t('srv.ghForkIsOwn') });
+        return true;
+      }
+      const fr = await fetch(`${GH_API}/repos/${gh.owner}/${gh.repo}/forks`, {
+        method: 'POST',
+        signal: ctl.signal,
+        headers: {
+          'User-Agent': GH_UA,
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      if (!fr.ok) {
+        // 401 凭据无效；403/404 权限不足/不可访问；其余带 GitHub 原文
+        let detail = '';
+        try {
+          detail = String(((await fr.json()) as Record<string, unknown>).message ?? '');
+        } catch {
+          /* 非 JSON 响应体：走兜底文案 */
+        }
+        const message =
+          fr.status === 401
+            ? t('srv.ghForkBadToken')
+            : fr.status === 403 || fr.status === 404
+              ? t('srv.ghForkForbidden')
+              : t('srv.ghForkFailed', { msg: `HTTP ${fr.status}${detail ? ` — ${detail}` : ''}` });
+        send({ ok: false, message });
+        return true;
+      }
+      const fj = (await fr.json()) as Record<string, unknown>;
+      const forkFullName = String(fj.full_name ?? `${login}/${gh.repo}`);
+      const forkUrl = String(fj.clone_url ?? '') || `https://github.com/${forkFullName}.git`;
+      // origin 改指 fork（复用现有 setRemote）；原仓库记入 upstream（已存在则 set-url，失败忽略——只是备注）
+      const sr = await vcs.setRemote?.(forkUrl);
+      const addUp = await run('git', ['-C', repo.root, 'remote', 'add', 'upstream', remoteUrl], { timeoutMs: 10_000 });
+      if (addUp.code !== 0) {
+        await run('git', ['-C', repo.root, 'remote', 'set-url', 'upstream', remoteUrl], { timeoutMs: 10_000 });
+      }
+      send({
+        ok: true,
+        forkFullName,
+        forkUrl,
+        login,
+        defaultBranch: String(fj.default_branch ?? ''),
+        upstreamUrl: remoteUrl,
+        remoteSet: sr?.ok === true,
+        remoteMsg: sr?.ok === true ? '' : (sr?.message ?? ''),
+      });
+    } catch (e) {
+      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GH_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      send({ ok: false, message: t('srv.ghForkFailed', { msg: err }) });
     } finally {
       clearTimeout(timer);
       res.off('close', onClose);

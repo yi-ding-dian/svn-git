@@ -15,6 +15,7 @@ export type Modal =
   | { type: 'git-info' }
   | { type: 'gh-create-repo' }
   | { type: 'gh-delete-repo' }
+  | { type: 'gh-fork' }
   | { type: 'gh-repo' }
   | { type: 'git-push-auth'; authType: 'github' | 'server' | 'ssh' }
   | { type: 'push-confirm' }

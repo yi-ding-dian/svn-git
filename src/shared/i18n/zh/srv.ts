@@ -199,6 +199,12 @@ export const srv = {
   'srv.ghDeleteForbidden': 'Token 权限不足：删除仓库需要 delete_repo 权限（classic）或 Administration 写权限（fine-grained），本次未执行删除',
   'srv.ghDeleteNotFound': '仓库不存在或无权访问（可能已被删除）',
   'srv.ghDeleteFailed': '删除仓库失败：{msg}',
+  // ---- GitHub Fork ----
+  'srv.ghForkNeedAuth': '未配置 GitHub 凭据——无法 Fork（请先在「Git 信息与配置」填写 Token）',
+  'srv.ghForkIsOwn': '这是你自己账号下的仓库，无需 Fork',
+  'srv.ghForkBadToken': 'GitHub Token 无效或已过期',
+  'srv.ghForkForbidden': '无法 Fork：Token 权限不足或仓库不可访问（公开仓库需 repo / public_repo 权限）',
+  'srv.ghForkFailed': 'Fork 失败：{msg}',
   // ---- GitHub 新建仓库 ----
   'srv.ghCreateNoName': '请填写仓库名',
   'srv.ghCreateNameInvalid': '仓库名不合法：不能只由 - / . 组成',

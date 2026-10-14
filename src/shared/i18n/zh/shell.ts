@@ -69,6 +69,9 @@ export const shell = {
   // GitHub 删除仓库（⋯ 菜单；与「GitHub 仓库信息」同条件显示）
   'shell.tool.ghDelete': 'GitHub 删除仓库',
   'shell.tool.ghDeleteTitle': '永久删除 origin 指向的 GitHub 远程仓库（不可恢复，需输入仓库名确认）',
+  // Fork 到自己账号（⋯ 菜单；origin 是 github 且非本人账号的仓库才出现——贡献开源入口）
+  'shell.tool.ghFork': 'Fork 到自己账号',
+  'shell.tool.ghForkTitle': '把该仓库 Fork 到你的 GitHub 账号（给开源项目贡献代码前需要先 Fork）',
   'shell.tool.envCheck': '环境检测',
   'shell.tool.envCheckTitle': '查看 SVN / Git 的安装状态与版本；缺失时可一键安装',
   'shell.tool.svnInfo': 'SVN 信息',

@@ -16,6 +16,7 @@ import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
 import { TagDialog, GitInfoModal } from '../ops/tag-git-info.js';
 import { GitHubCreateModal } from '../repo/gh-create-repo.js';
 import { GitHubDeleteModal } from '../repo/gh-delete-repo.js';
+import { GitHubForkModal } from '../repo/gh-fork.js';
 import { GitHubRepoModal } from '../repo/github-repo.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
 import { LoginModal } from '../repo/login.js';
@@ -346,6 +347,13 @@ export function ModalHost(props: ModalHostProps) {
             showToast(t('repo.ghDelete.done', { name }));
             refresh(); // 仓库已不存在：刷新顶栏/状态（origin 未动，如实显示）
           }}
+        />
+      )}
+      {modal?.type === 'gh-fork' && (
+        <GitHubForkModal
+          onClose={() => setModal(null)}
+          // Fork 成功且有提交：自动走现有推送任务（含认证引导/横幅；结果不阻塞弹窗）
+          onForked={() => pushNow()}
         />
       )}
       {modal?.type === 'gh-repo' && <GitHubRepoModal onClose={() => setModal(null)} />}

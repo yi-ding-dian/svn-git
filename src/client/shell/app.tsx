@@ -61,6 +61,8 @@ export function App() {
    *  不带它的话，历史视图用的是**上一次查看过的路径**（或整仓库）——用户实报"点击历史不是当前目录的历史"。 */
   const browseDirRef = useRef('');
   const [configUser, setConfigUser] = useState('');
+  /** git 凭据里的 GitHub 用户名（⋯ 菜单「Fork 到自己账号」按 owner 粗判可见性用；空=未知，宁多显勿漏显） */
+  const [gitUser, setGitUser] = useState('');
   // 点开过但打不开的项目（目录已删/不是工作副本）：路径 → 错误消息。
   // 列表项上常驻一个 × 供直接移除；鼠标悬浮该项时用同一条消息做浮层提示
   const [invalidPaths, setInvalidPaths] = useState<Record<string, string>>({});
@@ -174,6 +176,8 @@ export function App() {
       .then((r) => setInfo(r))
       .catch(() => setInfo(null));
     get.config().then((c) => setConfigUser(c.username)).catch(() => {});
+    // git 凭据的 GitHub 用户名（Fork 菜单可见性粗判；凭据更新后下次刷新生效即可）
+    get.gitAuth().then((a) => setGitUser(a.username)).catch(() => {});
     loadHistory();
     // 环境检测：缺失 svn/git 时顶部横幅提示安装
     get
@@ -325,10 +329,21 @@ export function App() {
         if (r.ok) refresh();
         // 认证失败 → 弹认证引导（带失败原因）；其余失败只回给任务（横幅/铃铛提示，详情点铃铛看）
         else if (r.authType) setPushAuth({ type: r.authType, error: r.message });
+        else if (r.code !== 'ABORTED') {
+          // 非认证类失败：可能是"推别人的仓库、没有写权限"→ 查一次权限（带凭据的只读接口）确认后引导 Fork。
+          // 不用正则猜 git 报错文本（措辞不可靠）；仅 canPush===false 才引导，其余原因保持原样只回报错。
+          // ABORTED（用户主动取消）不引导——取消是用户意志，不是"推不上去"
+          try {
+            const perm = await get.ghPermissions();
+            if (perm.ok && perm.isGithub && perm.canPush === false) setModal({ type: 'gh-fork' });
+          } catch {
+            /* 权限查询失败不改变原报错路径 */
+          }
+        }
         return { ok: r.ok, message: r.message, data: r };
       },
     });
-  }, [refresh, repo?.root, repo?.revOrBranch]);
+  }, [refresh, repo?.root, repo?.revOrBranch, setModal]);
   // 推送入口：弹出「确认推送」窗口（未推送提交列表 + 推送条件），确认后执行
   const doPush = useCallback(() => {
     if (unpushedCount != null && unpushedCount <= 0) return; // 无未推送提交（按钮已置灰，双保险）
@@ -875,6 +890,7 @@ export function App() {
         repo={repo}
         conflictCount={conflictCount}
         configUser={configUser}
+        gitUser={gitUser}
         // 顶栏「浏览仓库」快捷入口（仅 SVN）：与最近项目右键同一逻辑——取仓库根 URL 后开仓库浏览
         onBrowseRepo={() => {
           if (repo?.root) openRepoBrowse(repo.root);

@@ -112,6 +112,8 @@ export interface VcsResult {
   ok: boolean;
   message: string;
   authError?: boolean;
+  /** 结构化错误分类（服务端透传）：AUTH=认证失败 / ABORTED=用户取消 / NO_CHANGES=无变化 */
+  code?: 'AUTH' | 'ABORTED' | 'NO_CHANGES';
   /** svn 命令输出警告行（如 W205011 外部定义失败） */
   warnings?: string[];
   /** git 推送认证失败类型（github / server / ssh），前端据此引导认证 */
@@ -364,6 +366,22 @@ export const get = {
    *  source='api' 为 GitHub 官方数据；'local' 为降级本地统计（此时 error 带原因）；
    *  force 跳过服务端 30 分钟缓存重新拉 */
   ghRepo: (force?: boolean) => api<GhRepoResult>(`/api/gh-repo${force ? '?force=1' : ''}`),
+  /** origin 仓库的访问权限（推送失败后判「无写权限」用；纯读）。
+   *  ok=false 查询失败（原因在 message）；canPush=null 表示无凭据查不了；isGithub=false 表示 origin 不是 GitHub。
+   *  前端只在 canPush === false 时引导 Fork（宁可不引导，不误弹）。 */
+  ghPermissions: () =>
+    api<{
+      ok: boolean;
+      isGithub: boolean;
+      canPush?: boolean | null;
+      isOwn?: boolean;
+      login?: string;
+      owner?: string;
+      repo?: string;
+      fullName?: string;
+      defaultBranch?: string;
+      message?: string;
+    }>('/api/gh-permissions'),
   /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */
   svnIdentity: (url: string) =>
     api<{ ok: boolean; config: { username: string } | null; cache: { username: string; realms: string[] } | null }>(
@@ -459,6 +477,21 @@ export const post = {
    *  服务端用已存凭据调 GitHub API 建空仓库，成功后自动把 origin 指向新仓库。 */
   ghCreateRepo: (name: string, description: string, isPrivate: boolean) =>
     api<GhCreateResult>('/api/gh-create-repo', json({ name, description, private: isPrivate })),
+  /** Fork origin 仓库到自己的账号（贡献开源；服务端顺带把 origin 改指 fork、原仓库记入 upstream）。
+   *  isOwn=true 表示 origin 是自己的仓库（无需 Fork）。 */
+  ghFork: () =>
+    api<{
+      ok: boolean;
+      isOwn?: boolean;
+      forkFullName?: string;
+      forkUrl?: string;
+      login?: string;
+      defaultBranch?: string;
+      upstreamUrl?: string;
+      remoteSet?: boolean;
+      remoteMsg?: string;
+      message?: string;
+    }>('/api/gh-fork', json({})),
   /** GitHub 删除仓库（⋯ 菜单；删除 origin 指向的远程仓库，不可恢复——前端要求输入完整仓库名二次确认）。
    *  凭据用已存 Git 凭据（classic Token 需 delete_repo）；本地 origin 不自动改动。 */
   ghDeleteRepo: (confirm: string) =>
