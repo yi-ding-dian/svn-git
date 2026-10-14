@@ -185,11 +185,21 @@ export const srv = {
   'srv.missingPathParam': '缺少 path 参数',
   'srv.repoTypeUnsupported': '当前仓库类型不支持',
 
-  // ---- GitHub 仓库信息（github.ts）/ 打开外链（host.ts）----
+  // ---- GitHub 仓库信息 / 新建仓库（github.ts）/ 打开外链（host.ts）----
   'srv.ghGitOnly': '仅 Git 仓库支持',
   'srv.ghNotGithub': '当前仓库的远程地址不是 GitHub',
   'srv.ghNotFound': '仓库不存在或为私有（匿名无权读取）',
   'srv.ghRateLimited': 'GitHub 接口访问受限（匿名限流，稍后再试）',
   'srv.ghTimeout': '请求 GitHub 超时（{sec} 秒）',
+  // ---- GitHub 新建仓库 ----
+  'srv.ghCreateNoName': '请填写仓库名',
+  'srv.ghCreateNameInvalid': '仓库名不合法：不能只由 - / . 组成',
+  'srv.ghCreateNoAuth': '未配置 GitHub 凭据——请先在弹窗中填写用户名和 Token',
+  'srv.ghCreateBadToken': 'GitHub Token 无效或已过期，请重新填写',
+  'srv.ghCreateForbidden': 'Token 权限不足：创建仓库需勾选 repo / public_repo（classic）或 Repository creation + Administration 写权限（fine-grained）',
+  'srv.ghCreateRateLimited': 'GitHub 接口限流（Token 配额用尽），稍后再试',
+  'srv.ghCreateExists': 'GitHub 上已存在同名仓库 {name}——换个名字，或用「获取仓库」克隆它',
+  'srv.ghCreateBadName': '仓库名不合法：{msg}',
+  'srv.ghCreateFailed': '创建仓库失败：{msg}',
   'srv.badUrl': '仅支持 http/https 链接',
 } as const;

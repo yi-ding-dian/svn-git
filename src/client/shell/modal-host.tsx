@@ -14,6 +14,7 @@ import { CommitSelectModal } from '../ops/commit-select.js';
 import { BranchDialog } from '../ops/branch.js';
 import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
 import { TagDialog, GitInfoModal } from '../ops/tag-git-info.js';
+import { GitHubCreateModal } from '../repo/gh-create-repo.js';
 import { GitHubRepoModal } from '../repo/github-repo.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
 import { LoginModal } from '../repo/login.js';
@@ -290,6 +291,29 @@ export function ModalHost(props: ModalHostProps) {
         />
       )}
       {modal?.type === 'git-info' && <GitInfoModal onClose={() => setModal(null)} onToast={showToast} />}
+      {modal?.type === 'gh-create-repo' && (
+        <GitHubCreateModal
+          root={repo?.root ?? null}
+          onClose={() => setModal(null)}
+          onCreated={(r) => {
+            setModal(null);
+            const name = r.fullName ?? '';
+            // origin 没设上：如实提示（带原因；没有原因就带克隆地址，方便手动 remote add），不假装成功
+            if (!r.remoteSet) {
+              showToast(t('repo.ghCreate.remoteFail', { msg: r.remoteMsg || r.cloneUrl || '' }), true);
+              return;
+            }
+            refresh(); // origin 已变：刷新顶栏（菜单显隐、推送角标）
+            // 有提交 → 立即推送（pushNow 是后台任务；认证失败会自动弹认证引导）；没提交 → 提示提交后再推
+            if (r.hasCommit) {
+              showToast(t('repo.ghCreate.donePush', { name }));
+              pushNow();
+            } else {
+              showToast(t('repo.ghCreate.doneNoCommit', { name }));
+            }
+          }}
+        />
+      )}
       {modal?.type === 'gh-repo' && <GitHubRepoModal onClose={() => setModal(null)} />}
       {pushAuth && (
         <GitPushAuthModal

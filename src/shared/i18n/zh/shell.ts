@@ -60,6 +60,9 @@ export const shell = {
   'shell.tool.terminalTitle': '在仓库目录下执行 git / svn 命令（Ctrl+` 也可打开）。只支持非交互命令：不支持管道/重定向，需要 TTY 的命令请用系统终端',
   'shell.tool.font': '字体设置',
   'shell.tool.gitInfo': 'Git 信息与配置',
+  // GitHub 新建仓库（⋯ 菜单；git 项目且 origin 尚未指向 github.com 才出现——与「GitHub 仓库信息」互补）
+  'shell.tool.ghCreate': 'GitHub 新建仓库',
+  'shell.tool.ghCreateTitle': '在当前 GitHub 账号下新建远程仓库，并把 origin 指向它',
   // GitHub 仓库信息（⋯ 菜单；origin 指向 github.com 的 git 项目才出现）
   'shell.tool.ghRepo': 'GitHub 仓库信息',
   'shell.tool.ghRepoTitle': '查看远程 GitHub 仓库信息（描述、Star、语言构成等）',

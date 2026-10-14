@@ -170,11 +170,21 @@ export const srv = {
   'srv.missingPathParam': 'Missing path parameter',
   'srv.repoTypeUnsupported': 'Not supported for the current repository type',
 
-  // ---- GitHub repo info (github.ts) / open external link (host.ts) ----
+  // ---- GitHub repo info / create repo (github.ts) / open external link (host.ts) ----
   'srv.ghGitOnly': 'Only supported for Git repositories',
   'srv.ghNotGithub': 'This repository remote is not GitHub',
   'srv.ghNotFound': 'Repository not found or private (anonymous access denied)',
   'srv.ghRateLimited': 'GitHub API rate-limited (anonymous quota — try again later)',
   'srv.ghTimeout': 'GitHub request timed out ({sec}s)',
+  // ---- GitHub create repository ----
+  'srv.ghCreateNoName': 'Repository name is required',
+  'srv.ghCreateNameInvalid': 'Invalid repository name: cannot consist only of - / .',
+  'srv.ghCreateNoAuth': 'No GitHub credential — enter username and token in the dialog first',
+  'srv.ghCreateBadToken': 'GitHub token invalid or expired — please enter a new one',
+  'srv.ghCreateForbidden': 'Token lacks permission: repository creation requires repo / public_repo (classic) or Repository creation + Administration write (fine-grained)',
+  'srv.ghCreateRateLimited': 'GitHub API rate-limited (token quota exhausted) — try again later',
+  'srv.ghCreateExists': 'A repository named {name} already exists on GitHub — pick another name or clone it via Get Repository',
+  'srv.ghCreateBadName': 'Invalid repository name: {msg}',
+  'srv.ghCreateFailed': 'Failed to create repository: {msg}',
   'srv.badUrl': 'Only http/https links are allowed',
 };

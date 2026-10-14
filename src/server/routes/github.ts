@@ -1,20 +1,29 @@
-/** GitHub 仓库信息（顶栏 ⋯ 菜单「GitHub 仓库信息」；仅 origin 指向 github.com 的 git 项目会调用）：
- *  服务端代问 api.github.com——仓库元信息（描述/star/fork/issues/license/推送时间/topics）
- *  + 语言构成。**匿名**请求（不带任何推送凭据）；匿名配额 60 次/时/IP，故结果内存缓存 30 分钟
- *  （重开秒出、不浪费配额；?force=1 跳过缓存重新拉）。
- *  拿不到时（网络不通 / 限流 / 私有库 404）**降级**：本地统计语言构成顶上
- *  （git ls-files 按扩展名汇总字节数），失败原因随响应回传，界面如实说明。
- *  只读：不发任何写请求。 */
+/** GitHub 集成（顶栏 ⋯ 菜单两条，均只对 git 项目出现）：
+ *  - GET /api/gh-repo「GitHub 仓库信息」（origin 指向 github.com 时出现）：服务端**匿名**代问
+ *    api.github.com——仓库元信息（描述/star/fork/issues/license/推送时间/topics）+ 语言构成。
+ *    匿名配额 60 次/时/IP，故结果内存缓存 30 分钟（重开秒出、不浪费配额；?force=1 跳过缓存重新拉）。
+ *    拿不到时（网络不通 / 限流 / 私有库 404）**降级**：本地统计语言构成顶上
+ *    （git ls-files 按扩展名汇总字节数），失败原因随响应回传，界面如实说明。
+ *  - POST /api/gh-create-repo「GitHub 新建仓库」（origin 尚未指向 github.com 时出现）：用已存的
+ *    Git 凭据（config.git 的 GitHub 用户名+Token）调 POST /user/repos 建**空仓库**（auto_init=false，
+ *    避免与本地已有提交冲突），成功后自动把 origin 指向它，并回传本地是否已有提交
+ *    （前端据此决定创建后要不要立即推送）。 */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { run } from '../../vcs/exec.js';
-import { sendJson, vcsOf, type Ctx } from './util.js';
+import { sendJson, readBody, vcsOf, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
+import { loadConfig } from '../../config.js';
+import { normalizeGhRepoName } from '../../shared/github.js';
 
 const GH_API = 'https://api.github.com';
+/** 调用 GitHub API 统一的 User-Agent（读/写共用；⚠ 产品名 token 含 "svn" 会被 WAF 403，见 ghFetch 注释） */
+const GH_UA = 'vcs-client/1.0 (+https://github.com/yi-ding-dian/svn-git)';
 /** 单次请求超时（元信息与语言构成两接口并发；网络差时尽快降级） */
 const FETCH_TIMEOUT_MS = 8_000;
+/** 建仓库请求超时（写请求，比元信息读取宽松些；超时后 GitHub 侧可能已建好，前端重试会提示重名） */
+const CREATE_TIMEOUT_MS = 15_000;
 /** 缓存有效期（防匿名限流；仓库热度这类信息也不常变） */
 const CACHE_TTL_MS = 30 * 60_000;
 
@@ -66,7 +75,7 @@ async function ghFetch(pathname: string, signal: AbortSignal): Promise<unknown> 
   const res = await fetch(`${GH_API}${pathname}`, {
     signal,
     headers: {
-      'User-Agent': 'vcs-client/1.0 (+https://github.com/yi-ding-dian/svn-git)',
+      'User-Agent': GH_UA,
       Accept: 'application/vnd.github+json',
     },
   });
@@ -205,6 +214,114 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     if (res.destroyed || res.writableEnded) return true; // 前端已断开：响应没处发
     if (data.source === 'api') ghCache.set(key, { data, at: Date.now() });
     sendJson(res, 200, data);
+    return true;
+  }
+
+  if (p === '/api/gh-create-repo' && req.method === 'POST') {
+    // 新建 GitHub 仓库并设为 origin。凭据从 config.git 读（弹窗内联填写时前端会先存到 git-auth 再调这里）；
+    // 仓库名**必须本地先规范化**：GitHub 对非法名不报错、会把「测试 仓库!!」静默建成名为 '-' 的仓库（实测），
+    // 其余交给 GitHub 判（422 的 message/errors 映射成准确文案）
+    const { vcs, repo } = vcsOf();
+    if (repo.type !== 'git') {
+      sendJson(res, 400, { ok: false, message: t('srv.ghGitOnly') });
+      return true;
+    }
+    // 前端断开（关弹窗）后响应没处发；用 send 统一挡住（fetch 期间断开是常态）
+    const send = (data: unknown) => {
+      if (!res.destroyed && !res.writableEnded) sendJson(res, 200, data);
+    };
+    const body = await readBody(req);
+    const raw = String(body.name ?? '').trim();
+    if (!raw) {
+      send({ ok: false, message: t('srv.ghCreateNoName') });
+      return true;
+    }
+    const name = normalizeGhRepoName(raw);
+    if (!name) {
+      send({ ok: false, message: t('srv.ghCreateNameInvalid') });
+      return true;
+    }
+    const token = loadConfig().git?.password ?? '';
+    if (!token) {
+      send({ ok: false, message: t('srv.ghCreateNoAuth') });
+      return true;
+    }
+    const ctl = new AbortController();
+    const onClose = () => ctl.abort();
+    res.on('close', onClose);
+    const timer = setTimeout(() => ctl.abort(), CREATE_TIMEOUT_MS);
+    try {
+      const ghRes = await fetch(`${GH_API}/user/repos`, {
+        method: 'POST',
+        signal: ctl.signal,
+        headers: {
+          'User-Agent': GH_UA,
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name,
+          description: String(body.description ?? '').trim() || undefined,
+          private: body.private !== false,
+          auto_init: false,
+        }),
+      });
+      if (!ghRes.ok) {
+        // 错误映射：401 凭据无效；403/404 权限不足（限流单独区分）；422 名字问题（重名/不合法）
+        let detail = '';
+        let codes: string[] = [];
+        /** errors[].message 汇总：GitHub 重名返回 code='custom' + message='name already exists on this account'，
+         *  单看 code 认不出重名，必须连 message 一起判（实测） */
+        let subMessages = '';
+        try {
+          const ej = (await ghRes.json()) as Record<string, unknown>;
+          detail = String(ej.message ?? '');
+          if (Array.isArray(ej.errors)) {
+            const errs = ej.errors as Record<string, unknown>[];
+            codes = errs.map((x) => String(x?.code ?? ''));
+            subMessages = errs.map((x) => String(x?.message ?? '')).filter(Boolean).join('; ');
+          }
+        } catch {
+          /* 非 JSON 响应体：detail/codes/subMessages 留空，走兜底文案 */
+        }
+        const message =
+          ghRes.status === 401
+            ? t('srv.ghCreateBadToken')
+            : ghRes.status === 403 || ghRes.status === 404
+              ? /rate limit/i.test(detail) ? t('srv.ghCreateRateLimited') : t('srv.ghCreateForbidden')
+              : ghRes.status === 422
+                ? codes.includes('already_exists') || /already exists/i.test(subMessages)
+                  ? t('srv.ghCreateExists', { name })
+                  : t('srv.ghCreateBadName', { msg: subMessages || detail })
+                : t('srv.ghCreateFailed', { msg: `HTTP ${ghRes.status}${detail ? ` — ${detail}` : ''}` });
+        send({ ok: false, message });
+        return true;
+      }
+      const j = (await ghRes.json()) as Record<string, unknown>;
+      const fullName = String(j.full_name ?? name);
+      const cloneUrl = String(j.clone_url ?? '') || `https://github.com/${fullName}.git`;
+      // 仓库已建成，origin 设置失败不回滚（如实返回 remoteSet=false + 原因，前端提示用户手动处理）
+      const sr = await vcs.setRemote?.(cloneUrl);
+      const remoteSet = sr?.ok === true;
+      // 本地当前分支是否已有提交（HEAD 不存在 = 空仓库；前端决定创建后要不要立即推送）
+      const hasCommit = (await run('git', ['rev-parse', '--verify', 'HEAD'], { cwd: repo.root })).code === 0;
+      send({
+        ok: true,
+        fullName,
+        htmlUrl: String(j.html_url ?? `https://github.com/${fullName}`),
+        cloneUrl,
+        hasCommit,
+        remoteSet,
+        remoteMsg: remoteSet ? '' : (sr?.message ?? ''),
+      });
+    } catch (e) {
+      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: CREATE_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      send({ ok: false, message: t('srv.ghCreateFailed', { msg: err }) });
+    } finally {
+      clearTimeout(timer);
+      res.off('close', onClose);
+    }
     return true;
   }
 

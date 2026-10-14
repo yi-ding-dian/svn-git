@@ -58,6 +58,9 @@ export const shell = {
   'shell.tool.terminalTitle': 'Run git / svn commands in the repository directory (or press Ctrl+`). Non-interactive commands only: no pipes/redirection; use a system terminal for commands that need a TTY',
   'shell.tool.font': 'Fonts',
   'shell.tool.gitInfo': 'Git Info & Config',
+  // New GitHub repository (⋯ menu; only for git projects whose origin does NOT point to github.com yet)
+  'shell.tool.ghCreate': 'New GitHub Repo',
+  'shell.tool.ghCreateTitle': 'Create a remote repository on your GitHub account and point origin to it',
   // GitHub repository info (⋯ menu; only for git projects whose origin points to github.com)
   'shell.tool.ghRepo': 'GitHub Repo Info',
   'shell.tool.ghRepoTitle': 'View remote GitHub repository info (description, stars, languages, …)',

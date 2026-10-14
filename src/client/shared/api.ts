@@ -66,6 +66,20 @@ export interface GhRepoResult {
   };
 }
 
+/** GitHub 新建仓库（/api/gh-create-repo）：ok 时 origin 已指向新仓库。
+ *  hasCommit=本地当前分支已有提交（前端据此决定创建后是否立即推送）；
+ *  remoteSet=false 时 remoteMsg 带原因（仓库已建成，仅 origin 没设上，前端提示手动处理）。 */
+export interface GhCreateResult {
+  ok: boolean;
+  fullName?: string;
+  htmlUrl?: string;
+  cloneUrl?: string;
+  hasCommit?: boolean;
+  remoteSet?: boolean;
+  remoteMsg?: string;
+  message?: string;
+}
+
 export interface FileStatus {
   path: string;
   /** 仅重命名（code='R'）有值：从哪个路径移过来的（后端 git status 解析带出，用于提示 + 提交时补全） */
@@ -441,6 +455,10 @@ export const post = {
   restoreVersion: (path: string, rev: string) => api<VcsResult>('/api/restore-version', json({ path, rev })),
   delete: (paths: string[], keep = false) => api<VcsResult>('/api/delete', json({ paths, keep })),
   push: (signal?: AbortSignal) => api<VcsResult>('/api/push', json({}, signal)),
+  /** GitHub 新建仓库（⋯ 菜单，git 项目且 origin 尚未指向 github.com 时可用）。
+   *  服务端用已存凭据调 GitHub API 建空仓库，成功后自动把 origin 指向新仓库。 */
+  ghCreateRepo: (name: string, description: string, isPrivate: boolean) =>
+    api<GhCreateResult>('/api/gh-create-repo', json({ name, description, private: isPrivate })),
   branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete', name: string, force = false, signal?: AbortSignal, base?: string) =>
     api<VcsResult>('/api/branch', json({ action, name, force, base }, signal)),
   /** 终端：执行 git / svn 命令（护栏见 routes/terminal.ts）。

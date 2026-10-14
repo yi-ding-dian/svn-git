@@ -9,7 +9,7 @@ import { launchMagicFlight } from './magic-flight.js';
 import { baseName } from '../shared/utils.js';
 import { UpdateResultModal, type UpdateResultDetail } from '../ops/update-result.js';
 import { InfoModal } from '../ui/prompt.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun, IconBell, IconGitHub } from '../ui/icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconInfo, IconTerminal, IconGlobe, IconOk, IconErr, IconServer, IconHourglassRun, IconBell, IconGitHub, IconGitHubPlus } from '../ui/icons.js';
 import { type Modal } from './modal-types.js';
 import { type View } from './sidebar.js';
 import { ContextMenu } from '../ui/context-menu.js';
@@ -463,6 +463,20 @@ const TOOLS: ToolDef[] = [
       // Git 信息与配置
       label: t('shell.tool.gitInfo'),
       onClick: () => c.setModal({ type: 'git-info' }),
+    }),
+  },
+  {
+    // GitHub 新建仓库（在当前 GitHub 账号下建远程仓库并设为 origin）：git 项目且 origin 尚未指向
+    // github.com 时出现——与下面的「GitHub 仓库信息」（origin 指向 github.com 才出现）互补，两项不重叠
+    key: 'ghCreate', zone: 'menu', menuLabelKey: 'shell.tool.ghCreate',
+    visible: (c) => c.repoType === 'git' && !/github\.com/i.test(c.repoUrl ?? ''),
+    render: (c) => ({
+      icon: <IconGitHubPlus />,
+      // GitHub 新建仓库
+      label: t('shell.tool.ghCreate'),
+      // 在当前 GitHub 账号下新建远程仓库，并把 origin 指向它
+      title: t('shell.tool.ghCreateTitle'),
+      onClick: () => c.setModal({ type: 'gh-create-repo' }),
     }),
   },
   {
