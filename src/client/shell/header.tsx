@@ -471,49 +471,49 @@ const TOOLS: ToolDef[] = [
   {
     // GitHub 新建仓库（在当前 GitHub 账号下建远程仓库并设为 origin）：git 项目且 origin 尚未指向
     // github.com 时出现——与下面的「GitHub 仓库信息」（origin 指向 github.com 才出现）互补，两项不重叠
-    key: 'githubCreate', zone: 'menu', menuLabelKey: 'shell.tool.ghCreate',
+    key: 'githubCreate', zone: 'menu', menuLabelKey: 'shell.tool.githubCreate',
     visible: (c) => c.repoType === 'git' && !/github\.com/i.test(c.repoUrl ?? ''),
     render: (c) => ({
       icon: <IconGitHubPlus />,
       // GitHub 新建仓库
-      label: t('shell.tool.ghCreate'),
+      label: t('shell.tool.githubCreate'),
       // 在当前 GitHub 账号下新建远程仓库，并把 origin 指向它
-      title: t('shell.tool.ghCreateTitle'),
+      title: t('shell.tool.githubCreateTitle'),
       onClick: () => c.setModal({ type: 'github-create-repo' }),
     }),
   },
   {
     // GitHub 仓库信息（描述/Star/语言构成）：**只对 origin 指向 github.com 的项目存在**——
     // 其他远程（自建 git/GitLab/无远程）这项整个不出现（用户定稿），不是灰置
-    key: 'githubRepo', zone: 'menu', menuLabelKey: 'shell.tool.ghRepo',
+    key: 'githubRepo', zone: 'menu', menuLabelKey: 'shell.tool.githubRepo',
     visible: (c) => c.repoType === 'git' && /github\.com/i.test(c.repoUrl ?? ''),
     render: (c) => ({
       icon: <IconGitHub />,
       // GitHub 仓库信息
-      label: t('shell.tool.ghRepo'),
+      label: t('shell.tool.githubRepo'),
       // 查看远程 GitHub 仓库信息（描述、Star、语言构成等）
-      title: t('shell.tool.ghRepoTitle'),
+      title: t('shell.tool.githubRepoTitle'),
       onClick: () => c.setModal({ type: 'github-repo' }),
     }),
   },
   {
     // GitHub 删除仓库：与「GitHub 仓库信息」同条件（origin 指向 github.com 才出现）。
     // 危险操作：远程仓库删除不可恢复，弹窗里要求输入完整仓库名才解锁删除按钮
-    key: 'githubDelete', zone: 'menu', menuLabelKey: 'shell.tool.ghDelete',
+    key: 'githubDelete', zone: 'menu', menuLabelKey: 'shell.tool.githubDelete',
     visible: (c) => c.repoType === 'git' && /github\.com/i.test(c.repoUrl ?? ''),
     render: (c) => ({
       icon: <IconTrash />,
       // GitHub 删除仓库
-      label: t('shell.tool.ghDelete'),
+      label: t('shell.tool.githubDelete'),
       // 永久删除 origin 指向的 GitHub 远程仓库（不可恢复，需输入仓库名确认）
-      title: t('shell.tool.ghDeleteTitle'),
+      title: t('shell.tool.githubDeleteTitle'),
       onClick: () => c.setModal({ type: 'github-delete-repo' }),
     }),
   },
   {
     // Fork 到自己账号：origin 指向 github.com 且 owner 不是本人时出现（自己账号的仓库无需 Fork）。
     // gitUser 未知（未配 git 凭据）时也显示——宁多显勿漏显，进弹窗后服务端判定归属兜底
-    key: 'githubFork', zone: 'menu', menuLabelKey: 'shell.tool.ghFork',
+    key: 'githubFork', zone: 'menu', menuLabelKey: 'shell.tool.githubFork',
     visible: (c) =>
       c.repoType === 'git' &&
       /github\.com/i.test(c.repoUrl ?? '') &&
@@ -521,9 +521,9 @@ const TOOLS: ToolDef[] = [
     render: (c) => ({
       icon: <IconFork />,
       // Fork 到自己账号
-      label: t('shell.tool.ghFork'),
+      label: t('shell.tool.githubFork'),
       // 把该仓库 Fork 到你的 GitHub 账号（给开源项目贡献代码前需要先 Fork）
-      title: t('shell.tool.ghForkTitle'),
+      title: t('shell.tool.githubForkTitle'),
       onClick: () => c.setModal({ type: 'github-fork' }),
     }),
   },

@@ -40,7 +40,7 @@ export interface RepoInfo {
   instanceId?: string;
 }
 
-/** GitHub 仓库信息（/api/gh-repo；语言构成为"语言名 → 字节数"） */
+/** GitHub 仓库信息（/api/github-repo；语言构成为"语言名 → 字节数"） */
 export interface GitHubRepoResult {
   ok: boolean;
   /** api = GitHub 官方数据；local = 降级本地统计（error 带原因） */
@@ -66,7 +66,7 @@ export interface GitHubRepoResult {
   };
 }
 
-/** GitHub 新建仓库（/api/gh-create-repo）：ok 时 origin 已指向新仓库。
+/** GitHub 新建仓库（/api/github-create-repo）：ok 时 origin 已指向新仓库。
  *  hasCommit=本地当前分支已有提交（前端据此决定创建后是否立即推送）；
  *  remoteSet=false 时 remoteMsg 带原因（仓库已建成，仅 origin 没设上，前端提示手动处理）。 */
 export interface GitHubCreateResult {
@@ -365,7 +365,7 @@ export const get = {
   /** GitHub 仓库信息（⋯ 菜单，仅 origin 指向 github.com 的 git 项目）。
    *  source='api' 为 GitHub 官方数据；'local' 为降级本地统计（此时 error 带原因）；
    *  force 跳过服务端 30 分钟缓存重新拉 */
-  githubRepo: (force?: boolean) => api<GitHubRepoResult>(`/api/gh-repo${force ? '?force=1' : ''}`),
+  githubRepo: (force?: boolean) => api<GitHubRepoResult>(`/api/github-repo${force ? '?force=1' : ''}`),
   /** origin 仓库的访问权限（推送失败后判「无写权限」用；纯读）。
    *  ok=false 查询失败（原因在 message）；canPush=null 表示无凭据查不了；isGithub=false 表示 origin 不是 GitHub。
    *  前端只在 canPush === false 时引导 Fork（宁可不引导，不误弹）。 */
@@ -381,7 +381,7 @@ export const get = {
       fullName?: string;
       defaultBranch?: string;
       message?: string;
-    }>('/api/gh-permissions'),
+    }>('/api/github-permissions'),
   /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */
   svnIdentity: (url: string) =>
     api<{ ok: boolean; config: { username: string } | null; cache: { username: string; realms: string[] } | null }>(
@@ -476,7 +476,7 @@ export const post = {
   /** GitHub 新建仓库（⋯ 菜单，git 项目且 origin 尚未指向 github.com 时可用）。
    *  服务端用已存凭据调 GitHub API 建空仓库，成功后自动把 origin 指向新仓库。 */
   githubCreateRepo: (name: string, description: string, isPrivate: boolean) =>
-    api<GitHubCreateResult>('/api/gh-create-repo', json({ name, description, private: isPrivate })),
+    api<GitHubCreateResult>('/api/github-create-repo', json({ name, description, private: isPrivate })),
   /** Fork origin 仓库到自己的账号（贡献开源；服务端顺带把 origin 改指 fork、原仓库记入 upstream）。
    *  isOwn=true 表示 origin 是自己的仓库（无需 Fork）。 */
   githubFork: () =>
@@ -491,11 +491,11 @@ export const post = {
       remoteSet?: boolean;
       remoteMsg?: string;
       message?: string;
-    }>('/api/gh-fork', json({})),
+    }>('/api/github-fork', json({})),
   /** GitHub 删除仓库（⋯ 菜单；删除 origin 指向的远程仓库，不可恢复——前端要求输入完整仓库名二次确认）。
    *  凭据用已存 Git 凭据（classic Token 需 delete_repo）；本地 origin 不自动改动。 */
   githubDeleteRepo: (confirm: string) =>
-    api<{ ok: boolean; fullName?: string; message?: string }>('/api/gh-delete-repo', json({ confirm })),
+    api<{ ok: boolean; fullName?: string; message?: string }>('/api/github-delete-repo', json({ confirm })),
   branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete', name: string, force = false, signal?: AbortSignal, base?: string) =>
     api<VcsResult>('/api/branch', json({ action, name, force, base }, signal)),
   /** 终端：执行 git / svn 命令（护栏见 routes/terminal.ts）。

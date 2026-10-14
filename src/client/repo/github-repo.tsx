@@ -1,6 +1,6 @@
 /** GitHub 仓库信息弹窗（顶栏 ⋯ 菜单入口；仅 origin 指向 github.com 的项目可见）：
  *  一屏卡片——描述 / Stars·Forks·Issues·Watchers / 许可 / 最近推送 / Topics / 语言构成条。
- *  数据来自 /api/gh-repo（服务端代问 GitHub 官方，缓存 30 分钟）；接口不通时降级
+ *  数据来自 /api/github-repo（服务端代问 GitHub 官方，缓存 30 分钟）；接口不通时降级
  *  本地统计（顶部如实说明原因）。「在浏览器打开」走 /api/open-url（系统默认浏览器）；
  *  刷新按钮 = force 跳过服务端缓存重新拉（网络恢复后不用等缓存过期）。 */
 
@@ -37,7 +37,7 @@ function langRows(langs: Record<string, number>): { name: string; pct: number; c
   }));
   const rest = sorted.slice(8);
   if (rest.length > 0) {
-    rows.push({ name: t('repo.gh.otherLangs'), pct: (rest.reduce((a, [, b]) => a + b, 0) / total) * 100, color: '#6e7681' });
+    rows.push({ name: t('repo.github.otherLangs'), pct: (rest.reduce((a, [, b]) => a + b, 0) / total) * 100, color: '#6e7681' });
   }
   return rows;
 }
@@ -62,7 +62,7 @@ function relTime(iso: string): string {
 function LangBar(props: { rows: { name: string; pct: number; color: string }[] }) {
   if (props.rows.length === 0) {
     // （没有可统计的代码文件）
-    return <div className="dim small">{t('repo.gh.noLangs')}</div>;
+    return <div className="dim small">{t('repo.github.noLangs')}</div>;
   }
   return (
     <>
@@ -110,7 +110,7 @@ export function GitHubRepoModal(props: { onClose: () => void }) {
   return (
     <ModalShell
       icon={<IconGitHub size={16} />}
-      title={t('repo.gh.title')}
+      title={t('repo.github.title')}
       width={560}
       onClose={props.onClose}
       closeIcon
@@ -127,11 +127,11 @@ export function GitHubRepoModal(props: { onClose: () => void }) {
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <IconExternal size={12} />
                 {/* 在浏览器打开 */}
-                {t('repo.gh.openInBrowser')}
+                {t('repo.github.openInBrowser')}
               </span>
             </button>
           )}
-          <button className="mini" onClick={() => load(true)} disabled={busy} title={t('repo.gh.refreshTip')}>
+          <button className="mini" onClick={() => load(true)} disabled={busy} title={t('repo.github.refreshTip')}>
             <IconRefresh size={12} />
           </button>
         </span>
@@ -149,7 +149,7 @@ export function GitHubRepoModal(props: { onClose: () => void }) {
           {data?.source === 'local' && (
             <div className="small" style={{ color: 'var(--warn)', marginBottom: 8, wordBreak: 'break-all' }}>
               {/* ⚠ GitHub 接口不可用（{msg}）——语言构成为本地统计 */}
-              ⚠ {t('repo.gh.localNote', { msg: data.error ?? '' })}
+              ⚠ {t('repo.github.localNote', { msg: data.error ?? '' })}
             </div>
           )}
           {meta && (
@@ -159,33 +159,33 @@ export function GitHubRepoModal(props: { onClose: () => void }) {
                 {meta.archived && (
                   <span className="dim small" style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px' }}>
                     {/* 已归档 */}
-                    {t('repo.gh.archived')}
+                    {t('repo.github.archived')}
                   </span>
                 )}
               </div>
               {/* 描述（没有描述时也是 dim 的占位文案） */}
               <div className="small" style={{ margin: '6px 0', color: meta.description ? 'var(--text)' : 'var(--dim)' }}>
-                {meta.description || t('repo.gh.noDesc')}
+                {meta.description || t('repo.github.noDesc')}
               </div>
               {meta.homepage && (
                 <div className="small" style={{ marginBottom: 6, wordBreak: 'break-all' }}>
-                  <span className="dim">{t('repo.gh.homepage')}: </span>
+                  <span className="dim">{t('repo.github.homepage')}: </span>
                   {meta.homepage}
                 </div>
               )}
               {/* 数字行：Stars / Forks / Issues / Watchers / 许可 / 最近推送 */}
               <div className="row small" style={{ gap: 14, flexWrap: 'wrap', margin: '8px 0', alignItems: 'center' }}>
-                <span className="row" style={{ gap: 4, alignItems: 'center' }} title={t('repo.gh.stars')}>
+                <span className="row" style={{ gap: 4, alignItems: 'center' }} title={t('repo.github.stars')}>
                   <IconStar size={13} /> {meta.stars}
                 </span>
-                <span>{meta.forks} {t('repo.gh.forks')}</span>
-                <span>{meta.issues} {t('repo.gh.issues')}</span>
-                <span className="row" style={{ gap: 4, alignItems: 'center' }} title={t('repo.gh.watchers')}>
+                <span>{meta.forks} {t('repo.github.forks')}</span>
+                <span>{meta.issues} {t('repo.github.issues')}</span>
+                <span className="row" style={{ gap: 4, alignItems: 'center' }} title={t('repo.github.watchers')}>
                   <IconEye size={13} /> {meta.watchers}
                 </span>
                 {meta.license && <span>{meta.license}</span>}
                 {meta.pushedAt && (
-                  <span className="row" style={{ gap: 4, alignItems: 'center' }} title={t('repo.gh.pushed')}>
+                  <span className="row" style={{ gap: 4, alignItems: 'center' }} title={t('repo.github.pushed')}>
                     <IconClock size={13} /> {relTime(meta.pushedAt)}
                   </span>
                 )}
@@ -206,8 +206,8 @@ export function GitHubRepoModal(props: { onClose: () => void }) {
           <div style={{ marginTop: 10 }}>
             <div className="dim small" style={{ marginBottom: 5 }}>
               {/* 语言构成（本地统计） */}
-              {t('repo.gh.langs')}
-              {data?.source === 'local' ? t('repo.gh.localSuffix') : ''}
+              {t('repo.github.langs')}
+              {data?.source === 'local' ? t('repo.github.localSuffix') : ''}
             </div>
             <LangBar rows={rows} />
           </div>

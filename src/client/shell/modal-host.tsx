@@ -142,20 +142,20 @@ export function ModalHost(props: ModalHostProps) {
     if (github.cred) {
       const sr = await post.gitAuthSave(github.cred.user, github.cred.token);
       if (!sr.ok) {
-        showToast(t('repo.ghCreate.saveFailed', { msg: sr.message }), true);
+        showToast(t('repo.githubCreate.saveFailed', { msg: sr.message }), true);
         return;
       }
     }
     const gr = await post.githubCreateRepo(github.name, github.desc, github.isPrivate);
     if (!gr.ok) {
-      showToast(t('repo.create.ghRemoteFail', { msg: gr.message ?? '' }), true);
+      showToast(t('repo.create.githubRemoteFail', { msg: gr.message ?? '' }), true);
       return;
     }
     if (!gr.remoteSet) {
-      showToast(t('repo.ghCreate.remoteFail', { msg: gr.remoteMsg || gr.cloneUrl || '' }), true);
+      showToast(t('repo.githubCreate.remoteFail', { msg: gr.remoteMsg || gr.cloneUrl || '' }), true);
       return;
     }
-    showToast(t('repo.ghCreate.doneNoCommit', { name: gr.fullName ?? github.name }));
+    showToast(t('repo.githubCreate.doneNoCommit', { name: gr.fullName ?? github.name }));
     // origin 已指向新仓库：顶栏补上远程地址（本地 open 时拉的 info 还没有 origin）
     refreshInfo();
   };
@@ -319,16 +319,16 @@ export function ModalHost(props: ModalHostProps) {
             const name = r.fullName ?? '';
             // origin 没设上：如实提示（带原因；没有原因就带克隆地址，方便手动 remote add），不假装成功
             if (!r.remoteSet) {
-              showToast(t('repo.ghCreate.remoteFail', { msg: r.remoteMsg || r.cloneUrl || '' }), true);
+              showToast(t('repo.githubCreate.remoteFail', { msg: r.remoteMsg || r.cloneUrl || '' }), true);
               return;
             }
             refreshInfo(); // origin 已变：刷新顶栏（远程地址、菜单显隐、推送角标）
             // 有提交 → 立即推送（pushNow 是后台任务；认证失败会自动弹认证引导）；没提交 → 提示提交后再推
             if (r.hasCommit) {
-              showToast(t('repo.ghCreate.donePush', { name }));
+              showToast(t('repo.githubCreate.donePush', { name }));
               pushNow();
             } else {
-              showToast(t('repo.ghCreate.doneNoCommit', { name }));
+              showToast(t('repo.githubCreate.doneNoCommit', { name }));
             }
           }}
         />
@@ -338,7 +338,7 @@ export function ModalHost(props: ModalHostProps) {
           onClose={() => setModal(null)}
           onDeleted={(name) => {
             setModal(null);
-            showToast(t('repo.ghDelete.done', { name }));
+            showToast(t('repo.githubDelete.done', { name }));
             refresh(); // 仓库已不存在：刷新顶栏/状态（origin 未动，如实显示）
           }}
         />

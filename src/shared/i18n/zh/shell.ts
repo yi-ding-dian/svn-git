@@ -61,17 +61,17 @@ export const shell = {
   'shell.tool.font': '字体设置',
   'shell.tool.gitInfo': 'Git 信息与配置',
   // GitHub 新建仓库（⋯ 菜单；git 项目且 origin 尚未指向 github.com 才出现——与「GitHub 仓库信息」互补）
-  'shell.tool.ghCreate': 'GitHub 新建仓库',
-  'shell.tool.ghCreateTitle': '在当前 GitHub 账号下新建远程仓库，并把 origin 指向它',
+  'shell.tool.githubCreate': 'GitHub 新建仓库',
+  'shell.tool.githubCreateTitle': '在当前 GitHub 账号下新建远程仓库，并把 origin 指向它',
   // GitHub 仓库信息（⋯ 菜单；origin 指向 github.com 的 git 项目才出现）
-  'shell.tool.ghRepo': 'GitHub 仓库信息',
-  'shell.tool.ghRepoTitle': '查看远程 GitHub 仓库信息（描述、Star、语言构成等）',
+  'shell.tool.githubRepo': 'GitHub 仓库信息',
+  'shell.tool.githubRepoTitle': '查看远程 GitHub 仓库信息（描述、Star、语言构成等）',
   // GitHub 删除仓库（⋯ 菜单；与「GitHub 仓库信息」同条件显示）
-  'shell.tool.ghDelete': 'GitHub 删除仓库',
-  'shell.tool.ghDeleteTitle': '永久删除 origin 指向的 GitHub 远程仓库（不可恢复，需输入仓库名确认）',
+  'shell.tool.githubDelete': 'GitHub 删除仓库',
+  'shell.tool.githubDeleteTitle': '永久删除 origin 指向的 GitHub 远程仓库（不可恢复，需输入仓库名确认）',
   // Fork 到自己账号（⋯ 菜单；origin 是 github 且非本人账号的仓库才出现——贡献开源入口）
-  'shell.tool.ghFork': 'Fork 到自己账号',
-  'shell.tool.ghForkTitle': '把该仓库 Fork 到你的 GitHub 账号（给开源项目贡献代码前需要先 Fork）',
+  'shell.tool.githubFork': 'Fork 到自己账号',
+  'shell.tool.githubForkTitle': '把该仓库 Fork 到你的 GitHub 账号（给开源项目贡献代码前需要先 Fork）',
   'shell.tool.envCheck': '环境检测',
   'shell.tool.envCheckTitle': '查看 SVN / Git 的安装状态与版本；缺失时可一键安装',
   'shell.tool.svnInfo': 'SVN 信息',

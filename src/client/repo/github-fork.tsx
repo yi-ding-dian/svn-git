@@ -55,13 +55,13 @@ export function GitHubForkModal(props: {
         const [perm, un, gi] = await Promise.all([get.githubPermissions(), get.gitUnpushed(), get.gitInfo()]);
         if (cancelled) return;
         if (!perm.ok || !perm.isGithub) {
-          setErr(perm.message ?? t('srv.ghNotGithub'));
+          setErr(perm.message ?? t('srv.githubNotGithub'));
           setPhase('error');
           return;
         }
         if (perm.isOwn) {
           // 这是你自己账号下的仓库，无需 Fork
-          setErr(t('srv.ghForkIsOwn'));
+          setErr(t('srv.githubForkIsOwn'));
           setPhase('error');
           return;
         }
@@ -122,50 +122,50 @@ export function GitHubForkModal(props: {
     <div className="modal-mask">
       <ResizableModal width={500} minWidth={420}>
         {/* Fork 到自己账号 */}
-        <h3>{t('repo.ghFork.title')}</h3>
+        <h3>{t('repo.githubFork.title')}</h3>
         <div className="body">
           {phase === 'checking' && (
             <div className="dim row" style={{ gap: 6, alignItems: 'center' }}>
               <span className="search-spin" />
               {/* 正在检查仓库权限… */}
-              {t('repo.ghFork.checking')}
+              {t('repo.githubFork.checking')}
             </div>
           )}
           {phase === 'confirm' && info && (
             <>
               <div className="small" style={{ marginBottom: 8, wordBreak: 'break-all' }}>
                 {/* 将把 {src} Fork 到你的账号：{dst}（origin 改指你的 Fork，原仓库记入 upstream） */}
-                {t('repo.ghFork.note', { src: info.fullName, dst: `${info.login}/${info.repo}` })}
+                {t('repo.githubFork.note', { src: info.fullName, dst: `${info.login}/${info.repo}` })}
               </div>
               <div className="small dim">
                 {unpushed > 0
                   // 本地有 {n} 个提交待推送——Fork 后自动推送
-                  ? t('repo.ghFork.willPush', { n: unpushed })
+                  ? t('repo.githubFork.willPush', { n: unpushed })
                   // 本地暂无提交——Fork 后仅切换 origin，提交后再推送
-                  : t('repo.ghFork.willPushNone')}
+                  : t('repo.githubFork.willPushNone')}
               </div>
             </>
           )}
           {phase === 'busy' && (
             // Fork 中…
-            <div className="dim small">{t('repo.ghFork.busy')}</div>
+            <div className="dim small">{t('repo.githubFork.busy')}</div>
           )}
           {phase === 'done' && result && (
             <>
               <div className="small" style={{ color: 'var(--ok)', marginBottom: 6, wordBreak: 'break-all' }}>
                 {/* ✅ 已 Fork 到 {name} 并切换 origin */}
-                {t('repo.ghFork.done', { name: result.forkFullName })}
+                {t('repo.githubFork.done', { name: result.forkFullName })}
               </div>
               {!result.remoteSet && (
                 <div className="small" style={{ color: 'var(--warn)', marginBottom: 6, wordBreak: 'break-all' }}>
                   {/* ⚠ origin 未设置成功：{msg} */}
-                  ⚠ {t('repo.ghFork.remoteFail', { msg: result.remoteMsg || result.forkUrl })}
+                  ⚠ {t('repo.githubFork.remoteFail', { msg: result.remoteMsg || result.forkUrl })}
                 </div>
               )}
               {unpushed > 0 && result.remoteSet && (
                 <div className="dim small" style={{ marginBottom: 8 }}>
                   {/* 正在推送——进度与结果看顶栏任务横幅 */}
-                  {t('repo.ghFork.pushing')}
+                  {t('repo.githubFork.pushing')}
                 </div>
               )}
               {unpushed > 0 && result.remoteSet && branch && info && (
@@ -178,7 +178,7 @@ export function GitHubForkModal(props: {
                   }
                 >
                   {/* 去 GitHub 提 PR */}
-                  {t('repo.ghFork.openPR')}
+                  {t('repo.githubFork.openPR')}
                 </button>
               )}
             </>
@@ -195,7 +195,7 @@ export function GitHubForkModal(props: {
               {/* 取消 */}
               <button onClick={props.onClose}>{t('common.cancel')}</button>
               {/* Fork */}
-              <button className="primary" onClick={doFork}>{t('repo.ghFork.fork')}</button>
+              <button className="primary" onClick={doFork}>{t('repo.githubFork.fork')}</button>
             </>
           )}
           {phase === 'checking' && (
@@ -212,7 +212,7 @@ export function GitHubForkModal(props: {
           )}
           {phase === 'done' && (
             // 完成
-            <button className="primary" onClick={props.onClose}>{t('repo.ghFork.doneBtn')}</button>
+            <button className="primary" onClick={props.onClose}>{t('repo.githubFork.doneBtn')}</button>
           )}
           {phase === 'error' && (
             // 关闭

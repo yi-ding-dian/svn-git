@@ -53,12 +53,12 @@ export function GitHubCreateModal(props: {
     if (busy) return;
     if (!n) {
       // 仓库名不合法：不能只由 - / . 组成
-      setErr(t('repo.ghCreate.nameInvalid'));
+      setErr(t('repo.githubCreate.nameInvalid'));
       return;
     }
     if (cred.mode === 'input' && (!cred.user.trim() || !cred.token)) {
       // 请填写用户名和 Token
-      setErr(t('repo.ghCreate.needCred'));
+      setErr(t('repo.githubCreate.needCred'));
       return;
     }
     setBusy(true);
@@ -70,7 +70,7 @@ export function GitHubCreateModal(props: {
           const sr = await post.gitAuthSave(cred.user.trim(), cred.token);
           if (!sr.ok) {
             // 凭据保存失败：{msg}
-            setErr(t('repo.ghCreate.saveFailed', { msg: sr.message }));
+            setErr(t('repo.githubCreate.saveFailed', { msg: sr.message }));
             return;
           }
         }
@@ -93,13 +93,13 @@ export function GitHubCreateModal(props: {
     <div className="modal-mask">
       <ResizableModal width={480} minWidth={420}>
         {/* GitHub 新建仓库 */}
-        <h3>{t('repo.ghCreate.title')}</h3>
+        <h3>{t('repo.githubCreate.title')}</h3>
         <div className="body">
           {/* 将在 GitHub 上创建空仓库（不带 README），并把 origin 指向它 */}
-          <div className="dim small" style={{ marginBottom: 10 }}>{t('repo.ghCreate.note')}</div>
+          <div className="dim small" style={{ marginBottom: 10 }}>{t('repo.githubCreate.note')}</div>
           <div className="form-row">
             {/* 仓库名 */}
-            <label>{t('repo.ghCreate.name')}</label>
+            <label>{t('repo.githubCreate.name')}</label>
             <input
               type="text"
               value={name}
@@ -113,12 +113,12 @@ export function GitHubCreateModal(props: {
           </div>
           <div className="form-row">
             {/* 描述（可选） */}
-            <label>{t('repo.ghCreate.desc')}</label>
+            <label>{t('repo.githubCreate.desc')}</label>
             <input type="text" value={desc} onChange={(e) => setDesc(e.target.value)} />
           </div>
           <div className="form-row">
             {/* 可见性 */}
-            <label>{t('repo.ghCreate.visibility')}</label>
+            <label>{t('repo.githubCreate.visibility')}</label>
             <div className="row" style={{ gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
               {/* display:flex 必须 inline：.form-row label 的 display:block (0,1,1) 会压过 .row (0,1,0)，否则 gap 不生效 */}
               <label
@@ -127,9 +127,9 @@ export function GitHubCreateModal(props: {
               >
                 <input type="radio" checked={isPrivate} onChange={() => setIsPrivate(true)} />
                 {/* 私有 */}
-                <span>{t('repo.ghCreate.private')}</span>
+                <span>{t('repo.githubCreate.private')}</span>
                 {/* 仅自己可见 */}
-                <span className="dim small">{t('repo.ghCreate.privateHint')}</span>
+                <span className="dim small">{t('repo.githubCreate.privateHint')}</span>
               </label>
               <label
                 className="row"
@@ -137,9 +137,9 @@ export function GitHubCreateModal(props: {
               >
                 <input type="radio" checked={!isPrivate} onChange={() => setIsPrivate(false)} />
                 {/* 公开 */}
-                <span>{t('repo.ghCreate.public')}</span>
+                <span>{t('repo.githubCreate.public')}</span>
                 {/* 所有人可见 */}
-                <span className="dim small">{t('repo.ghCreate.publicHint')}</span>
+                <span className="dim small">{t('repo.githubCreate.publicHint')}</span>
               </label>
             </div>
           </div>
@@ -148,7 +148,7 @@ export function GitHubCreateModal(props: {
           {originUrl && (
             <div className="small" style={{ color: 'var(--warn)', marginBottom: 8, wordBreak: 'break-all' }}>
               {/* ⚠ 当前 origin 指向 {url}，创建后 origin 将改为新仓库 */}
-              ⚠ {t('repo.ghCreate.originWarn', { url: originUrl })}
+              ⚠ {t('repo.githubCreate.originWarn', { url: originUrl })}
             </div>
           )}
           {err && (
@@ -162,7 +162,7 @@ export function GitHubCreateModal(props: {
           <button onClick={props.onClose} disabled={busy}>{t('common.cancel')}</button>
           <button className="primary" disabled={busy || !name.trim() || cred.mode === 'checking'} onClick={submit}>
             {/* 创建中… / 创建仓库 */}
-            {busy ? t('repo.ghCreate.busy') : t('repo.ghCreate.create')}
+            {busy ? t('repo.githubCreate.busy') : t('repo.githubCreate.create')}
           </button>
         </div>
       </ResizableModal>

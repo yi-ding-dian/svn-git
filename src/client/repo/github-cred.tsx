@@ -1,7 +1,7 @@
 /** GitHub 凭据区（「GitHub 新建仓库」弹窗与「新建仓库」弹窗的 GitHub 类型共用）：
  *  优先复用已存的 Git 凭据（config.git，GitHub 用户名+Token——建仓库与推送共用一套）；
  *  没存过时内联填写（点「使用其他凭据」可切换）——提交方在真正调 GitHub 前先 gitAuthSave（复用 /api/git-auth）。
- *  useGitHubCred 管状态、GitHubCredBox 管渲染：两处弹窗字段与交互完全一致，文案也共用 repo.ghCreate.cred*。 */
+ *  useGitHubCred 管状态、GitHubCredBox 管渲染：两处弹窗字段与交互完全一致，文案也共用 repo.githubCreate.cred*。 */
 
 import React, { useEffect, useState } from 'react';
 import { get } from '../shared/api.js';
@@ -63,10 +63,10 @@ export function GitHubCredBox({ cred, onEnter }: { cred: GitHubCred; onEnter?: (
     return (
       <div className="row small" style={{ gap: 8, alignItems: 'center', marginBottom: 10 }}>
         {/* 使用已保存的 GitHub 凭据（{user}） */}
-        <span className="dim">{t('repo.ghCreate.credSaved', { user: cred.savedUser })}</span>
+        <span className="dim">{t('repo.githubCreate.credSaved', { user: cred.savedUser })}</span>
         <button className="mini" onClick={cred.useOther}>
           {/* 使用其他凭据 */}
-          {t('repo.ghCreate.credChange')}
+          {t('repo.githubCreate.credChange')}
         </button>
       </div>
     );
@@ -75,12 +75,12 @@ export function GitHubCredBox({ cred, onEnter }: { cred: GitHubCred; onEnter?: (
     <>
       <div className="form-row">
         {/* GitHub 用户名 */}
-        <label>{t('repo.ghCreate.credUser')}</label>
+        <label>{t('repo.githubCreate.credUser')}</label>
         <input type="text" placeholder="your-github-username" value={cred.user} onChange={(e) => cred.setUser(e.target.value)} />
       </div>
       <div className="form-row">
         {/* Personal Access Token */}
-        <label>{t('repo.ghCreate.credToken')}</label>
+        <label>{t('repo.githubCreate.credToken')}</label>
         <input
           type="password"
           // ghp_xxx（Settings → Developer settings → Tokens）
@@ -98,7 +98,7 @@ export function GitHubCredBox({ cred, onEnter }: { cred: GitHubCred; onEnter?: (
       </div>
       <div className="dim small" style={{ marginBottom: 8 }}>
         {/* 创建仓库需 token 勾选 <b>repo / public_repo</b> 权限（classic），或勾选 Repository creation（fine-grained） */}
-        {t('repo.ghCreate.credHint1')}<b>repo / public_repo</b>{t('repo.ghCreate.credHint2')}
+        {t('repo.githubCreate.credHint1')}<b>repo / public_repo</b>{t('repo.githubCreate.credHint2')}
       </div>
     </>
   );

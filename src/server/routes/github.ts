@@ -1,20 +1,20 @@
 /** GitHub 集成（顶栏 ⋯ 菜单四条 + 内部查询接口，均只对 git 项目出现）：
- *  - GET /api/gh-repo「GitHub 仓库信息」（origin 指向 github.com 时出现）：服务端代问
+ *  - GET /api/github-repo「GitHub 仓库信息」（origin 指向 github.com 时出现）：服务端代问
  *    api.github.com——仓库元信息（描述/star/fork/issues/license/推送时间/topics）+ 语言构成。
  *    **有已存凭据就带上**（自己的私有仓库也能读；没配凭据则匿名，仅公开库）。结果内存缓存 30 分钟
  *    （重开秒出、省配额；?force=1 跳过缓存重新拉）。拿不到时（网络不通 / 限流 / 无权限 404）
  *    **降级**：本地统计语言构成顶上（git ls-files 按扩展名汇总字节数），失败原因随响应回传，界面如实说明。
- *  - POST /api/gh-create-repo「GitHub 新建仓库」（origin 尚未指向 github.com 时出现）：用已存的
+ *  - POST /api/github-create-repo「GitHub 新建仓库」（origin 尚未指向 github.com 时出现）：用已存的
  *    Git 凭据（config.git 的 GitHub 用户名+Token）调 POST /user/repos 建**空仓库**（auto_init=false，
  *    避免与本地已有提交冲突），成功后自动把 origin 指向它，并回传本地是否已有提交
  *    （前端据此决定创建后要不要立即推送）。
- *  - POST /api/gh-delete-repo「GitHub 删除仓库」（与「仓库信息」同条件出现）：删除 origin 指向的
+ *  - POST /api/github-delete-repo「GitHub 删除仓库」（与「仓库信息」同条件出现）：删除 origin 指向的
  *    远程仓库（DELETE /repos/{owner}/{repo}，不可恢复——前端要求输入完整仓库名二次确认，服务端再校验
  *    一次防绕过）。本地 origin 不自动改动（删完如实显示仓库已不存在，用户按需自行调整）。
  *    classic Token 需要 delete_repo 权限、fine-grained 需要 Administration 写权限。
- *  - GET /api/gh-permissions：查 origin 仓库的访问权限（permissions.push、owner===login）——
+ *  - GET /api/github-permissions：查 origin 仓库的访问权限（permissions.push、owner===login）——
  *    推送失败后判定「无写权限」用（不猜 git 报错文本，正则不可靠）；纯读，前端据此决定是否引导 Fork。
- *  - POST /api/gh-fork「Fork 到自己账号」：把 origin 仓库 fork 到本人账号，origin 改指 fork、
+ *  - POST /api/github-fork「Fork 到自己账号」：把 origin 仓库 fork 到本人账号，origin 改指 fork、
  *    原仓库记入 upstream（贡献开源的主流程，推送/拉取链路全部复用；前端随后按需自动推送）。 */
 
 import fs from 'node:fs';
@@ -83,8 +83,8 @@ async function githubFetch(pathname: string, signal: AbortSignal, token = ''): P
   });
   if (!res.ok) {
     // 404：仓库不存在（带凭据）或私有不可见（匿名）；403/429：多为限流（两种身份文案不同）
-    if (res.status === 404) throw new Error(token ? t('srv.ghNotFound') : t('srv.ghNotFoundAnon'));
-    if (res.status === 403 || res.status === 429) throw new Error(token ? t('srv.ghRateLimitedAuth') : t('srv.ghRateLimited'));
+    if (res.status === 404) throw new Error(token ? t('srv.githubNotFound') : t('srv.githubNotFoundAnon'));
+    if (res.status === 403 || res.status === 429) throw new Error(token ? t('srv.githubRateLimitedAuth') : t('srv.githubRateLimited'));
     throw new Error(`HTTP ${res.status}`);
   }
   return res.json();
@@ -142,10 +142,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
   const p = url.pathname;
 
-  if (p === '/api/gh-repo' && req.method === 'GET') {
+  if (p === '/api/github-repo' && req.method === 'GET') {
     const { repo, vcs } = vcsOf();
     if (repo.type !== 'git') {
-      sendJson(res, 400, { error: t('srv.ghGitOnly') });
+      sendJson(res, 400, { error: t('srv.githubGitOnly') });
       return true;
     }
     let remoteUrl = '';
@@ -156,7 +156,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     }
     const github = parseGithub(remoteUrl);
     if (!github) {
-      sendJson(res, 200, { ok: false, error: t('srv.ghNotGithub'), remote: remoteUrl });
+      sendJson(res, 200, { ok: false, error: t('srv.githubNotGithub'), remote: remoteUrl });
       return true;
     }
     const key = `${github.owner}/${github.repo}`.toLowerCase();
@@ -208,7 +208,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       };
     } catch (e) {
       // 降级：本地统计 + 原因（网络不通 / 限流 / 私有库都走这里）
-      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: FETCH_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: FETCH_TIMEOUT_MS / 1000 }) : (e as Error).message;
       const langs = await localLanguages(repo.root);
       data = { ok: true, source: 'local', error: err, remote: remoteUrl, languages: langs };
     } finally {
@@ -221,13 +221,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     return true;
   }
 
-  if (p === '/api/gh-create-repo' && req.method === 'POST') {
+  if (p === '/api/github-create-repo' && req.method === 'POST') {
     // 新建 GitHub 仓库并设为 origin。凭据从 config.git 读（弹窗内联填写时前端会先存到 git-auth 再调这里）；
     // 仓库名**必须本地先规范化**：GitHub 对非法名不报错、会把「测试 仓库!!」静默建成名为 '-' 的仓库（实测），
     // 其余交给 GitHub 判（422 的 message/errors 映射成准确文案）
     const { vcs, repo } = vcsOf();
     if (repo.type !== 'git') {
-      sendJson(res, 400, { ok: false, message: t('srv.ghGitOnly') });
+      sendJson(res, 400, { ok: false, message: t('srv.githubGitOnly') });
       return true;
     }
     // 前端断开（关弹窗）后响应没处发；用 send 统一挡住（fetch 期间断开是常态）
@@ -237,17 +237,17 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const body = await readBody(req);
     const raw = String(body.name ?? '').trim();
     if (!raw) {
-      send({ ok: false, message: t('srv.ghCreateNoName') });
+      send({ ok: false, message: t('srv.githubCreateNoName') });
       return true;
     }
     const name = normalizeGhRepoName(raw);
     if (!name) {
-      send({ ok: false, message: t('srv.ghCreateNameInvalid') });
+      send({ ok: false, message: t('srv.githubCreateNameInvalid') });
       return true;
     }
     const token = loadConfig().git?.password ?? '';
     if (!token) {
-      send({ ok: false, message: t('srv.ghCreateNoAuth') });
+      send({ ok: false, message: t('srv.githubCreateNoAuth') });
       return true;
     }
     const ctl = new AbortController();
@@ -291,14 +291,14 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const message =
           githubRes.status === 401
-            ? t('srv.ghCreateBadToken')
+            ? t('srv.githubCreateBadToken')
             : githubRes.status === 403 || githubRes.status === 404
-              ? /rate limit/i.test(detail) ? t('srv.ghCreateRateLimited') : t('srv.ghCreateForbidden')
+              ? /rate limit/i.test(detail) ? t('srv.githubCreateRateLimited') : t('srv.githubCreateForbidden')
               : githubRes.status === 422
                 ? codes.includes('already_exists') || /already exists/i.test(subMessages)
-                  ? t('srv.ghCreateExists', { name })
-                  : t('srv.ghCreateBadName', { msg: subMessages || detail })
-                : t('srv.ghCreateFailed', { msg: `HTTP ${githubRes.status}${detail ? ` — ${detail}` : ''}` });
+                  ? t('srv.githubCreateExists', { name })
+                  : t('srv.githubCreateBadName', { msg: subMessages || detail })
+                : t('srv.githubCreateFailed', { msg: `HTTP ${githubRes.status}${detail ? ` — ${detail}` : ''}` });
         send({ ok: false, message });
         return true;
       }
@@ -320,8 +320,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         remoteMsg: remoteSet ? '' : (sr?.message ?? ''),
       });
     } catch (e) {
-      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GITHUB_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
-      send({ ok: false, message: t('srv.ghCreateFailed', { msg: err }) });
+      const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: GITHUB_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      send({ ok: false, message: t('srv.githubCreateFailed', { msg: err }) });
     } finally {
       clearTimeout(timer);
       res.off('close', onClose);
@@ -329,13 +329,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     return true;
   }
 
-  if (p === '/api/gh-delete-repo' && req.method === 'POST') {
+  if (p === '/api/github-delete-repo' && req.method === 'POST') {
     // 删除 origin 指向的 GitHub 仓库（不可恢复）。confirm 必须是完整的 owner/repo（前端已让用户手动输入，
     // 服务端再校验一次防绕过——confirm 不匹配时**连 GitHub 都不请求**）；
     // 本地 origin 不自动改动（删完顶栏如实显示仓库已不存在，用户按需自行调整远程）
     const { vcs, repo } = vcsOf();
     if (repo.type !== 'git') {
-      sendJson(res, 400, { ok: false, message: t('srv.ghGitOnly') });
+      sendJson(res, 400, { ok: false, message: t('srv.githubGitOnly') });
       return true;
     }
     const send = (data: unknown) => {
@@ -350,17 +350,17 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     }
     const github = parseGithub(remoteUrl);
     if (!github) {
-      send({ ok: false, message: t('srv.ghNotGithub') });
+      send({ ok: false, message: t('srv.githubNotGithub') });
       return true;
     }
     const fullName = `${github.owner}/${github.repo}`;
     if (String(body.confirm ?? '').trim() !== fullName) {
-      send({ ok: false, message: t('srv.ghDeleteConfirmMismatch', { name: fullName }) });
+      send({ ok: false, message: t('srv.githubDeleteConfirmMismatch', { name: fullName }) });
       return true;
     }
     const token = loadConfig().git?.password ?? '';
     if (!token) {
-      send({ ok: false, message: t('srv.ghDeleteNoAuth') });
+      send({ ok: false, message: t('srv.githubDeleteNoAuth') });
       return true;
     }
     const ctl = new AbortController();
@@ -387,18 +387,18 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const message =
           githubRes.status === 403
-            ? /rate limit/i.test(detail) ? t('srv.ghRateLimitedAuth') : t('srv.ghDeleteForbidden')
+            ? /rate limit/i.test(detail) ? t('srv.githubRateLimitedAuth') : t('srv.githubDeleteForbidden')
             : githubRes.status === 404
-              ? t('srv.ghDeleteNotFound')
-              : t('srv.ghDeleteFailed', { msg: `HTTP ${githubRes.status}${detail ? ` — ${detail}` : ''}` });
+              ? t('srv.githubDeleteNotFound')
+              : t('srv.githubDeleteFailed', { msg: `HTTP ${githubRes.status}${detail ? ` — ${detail}` : ''}` });
         send({ ok: false, message });
         return true;
       }
       // DELETE 成功返回 204（无响应体）
       send({ ok: true, fullName });
     } catch (e) {
-      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GITHUB_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
-      send({ ok: false, message: t('srv.ghDeleteFailed', { msg: err }) });
+      const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: GITHUB_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      send({ ok: false, message: t('srv.githubDeleteFailed', { msg: err }) });
     } finally {
       clearTimeout(timer);
       res.off('close', onClose);
@@ -406,12 +406,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     return true;
   }
 
-  if (p === '/api/gh-permissions' && req.method === 'GET') {
+  if (p === '/api/github-permissions' && req.method === 'GET') {
     // 查 origin 仓库的访问权限（推送失败后的「无写权限」判定用；纯读）。
     // 不用正则猜 git 报错文本（不可靠），直接用带凭据的 API：permissions.push + owner===login。
     const { vcs, repo } = vcsOf();
     if (repo.type !== 'git') {
-      sendJson(res, 400, { ok: false, message: t('srv.ghGitOnly') });
+      sendJson(res, 400, { ok: false, message: t('srv.githubGitOnly') });
       return true;
     }
     let remoteUrl = '';
@@ -454,7 +454,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         defaultBranch: String(rj.default_branch ?? ''),
       });
     } catch (e) {
-      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: FETCH_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: FETCH_TIMEOUT_MS / 1000 }) : (e as Error).message;
       // 查询失败：canPush 未知（前端按"不引导"处理），原因随响应回传
       if (!res.destroyed && !res.writableEnded) sendJson(res, 200, { ok: false, ...base, message: err });
     } finally {
@@ -464,13 +464,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     return true;
   }
 
-  if (p === '/api/gh-fork' && req.method === 'POST') {
+  if (p === '/api/github-fork' && req.method === 'POST') {
     // Fork origin 指向的 GitHub 仓库到自己的账号（给开源项目贡献用），成功后：
     // origin 改指 fork（贡献场景常规姿势，推送/拉取链路全部复用）、原仓库记入 upstream（失败不阻断，仅备注）。
     // 前端随后按需自动走推送流程。fork 接口幂等：已 fork 过会返回既有的 fork
     const { vcs, repo } = vcsOf();
     if (repo.type !== 'git') {
-      sendJson(res, 400, { ok: false, message: t('srv.ghGitOnly') });
+      sendJson(res, 400, { ok: false, message: t('srv.githubGitOnly') });
       return true;
     }
     const send = (data: unknown) => {
@@ -484,12 +484,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     }
     const github = parseGithub(remoteUrl);
     if (!github) {
-      send({ ok: false, message: t('srv.ghNotGithub') });
+      send({ ok: false, message: t('srv.githubNotGithub') });
       return true;
     }
     const token = loadConfig().git?.password ?? '';
     if (!token) {
-      send({ ok: false, message: t('srv.ghForkNeedAuth') });
+      send({ ok: false, message: t('srv.githubForkNeedAuth') });
       return true;
     }
     const ctl = new AbortController();
@@ -501,7 +501,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       const meRaw = await githubFetch('/user', ctl.signal, token);
       const login = String((meRaw as Record<string, unknown>).login ?? '');
       if (login && login.toLowerCase() === github.owner.toLowerCase()) {
-        send({ ok: false, isOwn: true, message: t('srv.ghForkIsOwn') });
+        send({ ok: false, isOwn: true, message: t('srv.githubForkIsOwn') });
         return true;
       }
       const fr = await fetch(`${GITHUB_API}/repos/${github.owner}/${github.repo}/forks`, {
@@ -525,10 +525,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const message =
           fr.status === 401
-            ? t('srv.ghForkBadToken')
+            ? t('srv.githubForkBadToken')
             : fr.status === 403 || fr.status === 404
-              ? t('srv.ghForkForbidden')
-              : t('srv.ghForkFailed', { msg: `HTTP ${fr.status}${detail ? ` — ${detail}` : ''}` });
+              ? t('srv.githubForkForbidden')
+              : t('srv.githubForkFailed', { msg: `HTTP ${fr.status}${detail ? ` — ${detail}` : ''}` });
         send({ ok: false, message });
         return true;
       }
@@ -552,8 +552,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         remoteMsg: sr?.ok === true ? '' : (sr?.message ?? ''),
       });
     } catch (e) {
-      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GITHUB_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
-      send({ ok: false, message: t('srv.ghForkFailed', { msg: err }) });
+      const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: GITHUB_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      send({ ok: false, message: t('srv.githubForkFailed', { msg: err }) });
     } finally {
       clearTimeout(timer);
       res.off('close', onClose);

@@ -18,7 +18,7 @@ import { useGitHubCred, GitHubCredBox } from './github-cred.js';
 // ==================== 创建 / 克隆仓库 ====================
 
 /** 「GitHub 仓库」类型创建后交给宿主继续的 GitHub 步骤参数（本地仓库已建好并打开后执行：
- *  宿主保存内联凭据 → 调 /api/gh-create-repo 建远程仓库并设 origin） */
+ *  宿主保存内联凭据 → 调 /api/github-create-repo 建远程仓库并设 origin） */
 export interface GitHubSetupOpts {
   name: string;
   desc: string;
@@ -56,7 +56,7 @@ export function CreateRepoDialog(props: {
     // GitHub 类型：内联凭据必填（没填就不去建远程；用已存凭据时不用填）
     if (type === 'github' && cred.mode === 'input' && (!cred.user.trim() || !cred.token)) {
       // 请填写用户名和 Token
-      setMsg(t('repo.ghCreate.needCred'));
+      setMsg(t('repo.githubCreate.needCred'));
       setMsgErr(true);
       return;
     }
@@ -204,25 +204,25 @@ export function CreateRepoDialog(props: {
       {/* GitHub 类型专用：描述 / 公开私有 / 凭据（建远程仓库用；本地部分与 git 相同） */}
       {type === 'github' && (
         <>
-          <FormRow label={t('repo.ghCreate.desc')}>
+          <FormRow label={t('repo.githubCreate.desc')}>
             <input type="text" value={desc} onChange={(e) => setDesc(e.target.value)} />
           </FormRow>
-          <FormRow label={t('repo.ghCreate.visibility')}>
+          <FormRow label={t('repo.githubCreate.visibility')}>
             <div className="row" style={{ gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
               {/* display:flex 必须 inline：.form-row label 的 display:block 会压过 .row，否则 gap 不生效 */}
               <label className="row" style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', marginBottom: 0 }}>
                 <input type="radio" checked={isPrivate} onChange={() => setIsPrivate(true)} />
                 {/* 私有 */}
-                <span>{t('repo.ghCreate.private')}</span>
+                <span>{t('repo.githubCreate.private')}</span>
                 {/* 仅自己可见 */}
-                <span className="dim small">{t('repo.ghCreate.privateHint')}</span>
+                <span className="dim small">{t('repo.githubCreate.privateHint')}</span>
               </label>
               <label className="row" style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', marginBottom: 0 }}>
                 <input type="radio" checked={!isPrivate} onChange={() => setIsPrivate(false)} />
                 {/* 公开 */}
-                <span>{t('repo.ghCreate.public')}</span>
+                <span>{t('repo.githubCreate.public')}</span>
                 {/* 所有人可见 */}
-                <span className="dim small">{t('repo.ghCreate.publicHint')}</span>
+                <span className="dim small">{t('repo.githubCreate.publicHint')}</span>
               </label>
             </div>
           </FormRow>

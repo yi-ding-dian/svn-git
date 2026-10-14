@@ -61,15 +61,15 @@ export function GitHubDeleteModal(props: {
     <div className="modal-mask">
       <ResizableModal width={480} minWidth={420}>
         {/* GitHub 删除仓库 */}
-        <h3>{t('repo.ghDelete.title')}</h3>
+        <h3>{t('repo.githubDelete.title')}</h3>
         <div className="body">
           {/* 此操作不可撤销：将永久删除 GitHub 上的 {name} 及其全部提交、Issue 等数据（本地项目不受影响，origin 保留不动） */}
           <div className="error small" style={{ marginBottom: 10, wordBreak: 'break-all' }}>
-            ⚠ {t('repo.ghDelete.warn', { name: fullName })}
+            ⚠ {t('repo.githubDelete.warn', { name: fullName })}
           </div>
           <div className="form-row" style={{ marginBottom: 0 }}>
             {/* 输入 {name} 以确认删除 */}
-            <label>{t('repo.ghDelete.inputLabel', { name: fullName })}</label>
+            <label>{t('repo.githubDelete.inputLabel', { name: fullName })}</label>
             <input
               type="text"
               className="mono"
@@ -93,7 +93,7 @@ export function GitHubDeleteModal(props: {
           <button onClick={props.onClose} disabled={busy}>{t('common.cancel')}</button>
           <button className="danger" disabled={busy || !matched} onClick={submit}>
             {/* 删除中… / 永久删除 */}
-            {busy ? t('repo.ghDelete.deleting') : t('repo.ghDelete.delete')}
+            {busy ? t('repo.githubDelete.deleting') : t('repo.githubDelete.delete')}
           </button>
         </div>
       </ResizableModal>
