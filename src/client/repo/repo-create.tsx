@@ -14,12 +14,12 @@ import { ResultLine } from '../ui/result-line.js';
 import { joinPath } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 import { GitPushAuthModal } from './git-auth.js';
-import { useGitHubCred, GitHubCredBox } from './gh-cred.js';
+import { useGitHubCred, GitHubCredBox } from './github-cred.js';
 // ==================== 创建 / 克隆仓库 ====================
 
 /** 「GitHub 仓库」类型创建后交给宿主继续的 GitHub 步骤参数（本地仓库已建好并打开后执行：
  *  宿主保存内联凭据 → 调 /api/gh-create-repo 建远程仓库并设 origin） */
-export interface GhSetupOpts {
+export interface GitHubSetupOpts {
   name: string;
   desc: string;
   isPrivate: boolean;
@@ -30,8 +30,8 @@ export interface GhSetupOpts {
 export function CreateRepoDialog(props: {
   home?: string;
   onClose: () => void;
-  /** 创建完成（本地仓库已建好）；gh 有值 = 选的是「GitHub 仓库」类型，由宿主继续 GitHub 步骤 */
-  onCreated: (dir: string, gh?: GhSetupOpts) => void;
+  /** 创建完成（本地仓库已建好）；github 有值 = 选的是「GitHub 仓库」类型，由宿主继续 GitHub 步骤 */
+  onCreated: (dir: string, github?: GitHubSetupOpts) => void;
 }) {
   const [type, setType] = useState<'git' | 'svn' | 'github'>('git');
   const [dir, setDir] = useState(props.home ?? '');

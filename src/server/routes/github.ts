@@ -25,18 +25,18 @@ import { t } from '../../shared/i18n/index.js';
 import { loadConfig } from '../../config.js';
 import { normalizeGhRepoName, parseGithub } from '../../shared/github.js';
 
-const GH_API = 'https://api.github.com';
-/** 调用 GitHub API 统一的 User-Agent（读/写共用；⚠ 产品名 token 含 "svn" 会被 WAF 403，见 ghFetch 注释） */
-const GH_UA = 'vcs-client/1.0 (+https://github.com/yi-ding-dian/svn-git)';
+const GITHUB_API = 'https://api.github.com';
+/** 调用 GitHub API 统一的 User-Agent（读/写共用；⚠ 产品名 token 含 "svn" 会被 WAF 403，见 githubFetch 注释） */
+const GITHUB_UA = 'vcs-client/1.0 (+https://github.com/yi-ding-dian/svn-git)';
 /** 单次请求超时（元信息与语言构成两接口并发；网络差时尽快降级） */
 const FETCH_TIMEOUT_MS = 8_000;
 /** 写请求超时（建/删仓库；比元信息读取宽松些。建仓库超时时 GitHub 侧可能已建好，前端重试会提示重名） */
-const GH_WRITE_TIMEOUT_MS = 15_000;
+const GITHUB_WRITE_TIMEOUT_MS = 15_000;
 /** 缓存有效期（防匿名限流；仓库热度这类信息也不常变） */
 const CACHE_TTL_MS = 30 * 60_000;
 
 /** GitHub 元信息（只挑界面用到的字段） */
-interface GhMeta {
+interface GitHubMeta {
   fullName: string;
   description: string | null;
   homepage: string | null;
@@ -53,7 +53,7 @@ interface GhMeta {
   htmlUrl: string;
 }
 
-interface GhResult {
+interface GitHubResult {
   ok: boolean;
   /** api = GitHub 官方数据；local = 降级本地统计（此时 error 带原因） */
   source?: 'api' | 'local';
@@ -61,22 +61,22 @@ interface GhResult {
   remote?: string;
   /** 语言名 → 字节数（api 为 GitHub 官方统计——Linguist 已排除三方库/生成文件；local 为本地统计） */
   languages?: Record<string, number> | null;
-  repo?: GhMeta;
+  repo?: GitHubMeta;
 }
 
 /** 成功结果缓存（失败/降级不缓存——网络恢复后重开即可拿到官方数据） */
-const ghCache = new Map<string, { data: GhResult; at: number }>();
+const githubCache = new Map<string, { data: GitHubResult; at: number }>();
 
 /** 调 GitHub 接口（读；Accept 用当前推荐的 vnd.github+json）。
  *  ⚠ UA 有讲究：GitHub 的 WAF 对**产品名 token 含 "svn" 的 UA 一律 403**（实测 "svn-git/1.0"、
  *  "svngit/1.0" 全被拦——历史遗留规则，疑为早年 SVN 客户端滥用后遗症；URL 部分含 svn-git 无碍）。
  *  故用中性产品名 + 来源 URL 的形式（GitHub 官方推荐的 UA 格式）。
  *  token 可选：有凭据就带 Authorization（私有仓库也能读）；404/限流的文案按匿名/带凭据区分。 */
-async function ghFetch(pathname: string, signal: AbortSignal, token = ''): Promise<unknown> {
-  const res = await fetch(`${GH_API}${pathname}`, {
+async function githubFetch(pathname: string, signal: AbortSignal, token = ''): Promise<unknown> {
+  const res = await fetch(`${GITHUB_API}${pathname}`, {
     signal,
     headers: {
-      'User-Agent': GH_UA,
+      'User-Agent': GITHUB_UA,
       Accept: 'application/vnd.github+json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
@@ -154,15 +154,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     } catch {
       /* 未配置 origin：remoteUrl 留空 → 按"不是 GitHub"处理 */
     }
-    const gh = parseGithub(remoteUrl);
-    if (!gh) {
+    const github = parseGithub(remoteUrl);
+    if (!github) {
       sendJson(res, 200, { ok: false, error: t('srv.ghNotGithub'), remote: remoteUrl });
       return true;
     }
-    const key = `${gh.owner}/${gh.repo}`.toLowerCase();
+    const key = `${github.owner}/${github.repo}`.toLowerCase();
     const force = url.searchParams.get('force') === '1';
     if (!force) {
-      const hit = ghCache.get(key);
+      const hit = githubCache.get(key);
       if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
         sendJson(res, 200, hit.data);
         return true;
@@ -175,11 +175,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
     // 有已存凭据就带上：自己账号下的私有仓库也能读（没配凭据保持匿名，仅公开库）
     const token = loadConfig().git?.password ?? '';
-    let data: GhResult;
+    let data: GitHubResult;
     try {
       const [metaRaw, langsRaw] = await Promise.all([
-        ghFetch(`/repos/${gh.owner}/${gh.repo}`, ctl.signal, token),
-        ghFetch(`/repos/${gh.owner}/${gh.repo}/languages`, ctl.signal, token),
+        githubFetch(`/repos/${github.owner}/${github.repo}`, ctl.signal, token),
+        githubFetch(`/repos/${github.owner}/${github.repo}/languages`, ctl.signal, token),
       ]);
       const m = metaRaw as Record<string, unknown>;
       const license = (m.license as Record<string, unknown> | null)?.spdx_id;
@@ -216,7 +216,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       res.off('close', onClose);
     }
     if (res.destroyed || res.writableEnded) return true; // 前端已断开：响应没处发
-    if (data.source === 'api') ghCache.set(key, { data, at: Date.now() });
+    if (data.source === 'api') githubCache.set(key, { data, at: Date.now() });
     sendJson(res, 200, data);
     return true;
   }
@@ -253,13 +253,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const ctl = new AbortController();
     const onClose = () => ctl.abort();
     res.on('close', onClose);
-    const timer = setTimeout(() => ctl.abort(), GH_WRITE_TIMEOUT_MS);
+    const timer = setTimeout(() => ctl.abort(), GITHUB_WRITE_TIMEOUT_MS);
     try {
-      const ghRes = await fetch(`${GH_API}/user/repos`, {
+      const githubRes = await fetch(`${GITHUB_API}/user/repos`, {
         method: 'POST',
         signal: ctl.signal,
         headers: {
-          'User-Agent': GH_UA,
+          'User-Agent': GITHUB_UA,
           Accept: 'application/vnd.github+json',
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -271,7 +271,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           auto_init: false,
         }),
       });
-      if (!ghRes.ok) {
+      if (!githubRes.ok) {
         // 错误映射：401 凭据无效；403/404 权限不足（限流单独区分）；422 名字问题（重名/不合法）
         let detail = '';
         let codes: string[] = [];
@@ -279,7 +279,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
          *  单看 code 认不出重名，必须连 message 一起判（实测） */
         let subMessages = '';
         try {
-          const ej = (await ghRes.json()) as Record<string, unknown>;
+          const ej = (await githubRes.json()) as Record<string, unknown>;
           detail = String(ej.message ?? '');
           if (Array.isArray(ej.errors)) {
             const errs = ej.errors as Record<string, unknown>[];
@@ -290,19 +290,19 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           /* 非 JSON 响应体：detail/codes/subMessages 留空，走兜底文案 */
         }
         const message =
-          ghRes.status === 401
+          githubRes.status === 401
             ? t('srv.ghCreateBadToken')
-            : ghRes.status === 403 || ghRes.status === 404
+            : githubRes.status === 403 || githubRes.status === 404
               ? /rate limit/i.test(detail) ? t('srv.ghCreateRateLimited') : t('srv.ghCreateForbidden')
-              : ghRes.status === 422
+              : githubRes.status === 422
                 ? codes.includes('already_exists') || /already exists/i.test(subMessages)
                   ? t('srv.ghCreateExists', { name })
                   : t('srv.ghCreateBadName', { msg: subMessages || detail })
-                : t('srv.ghCreateFailed', { msg: `HTTP ${ghRes.status}${detail ? ` — ${detail}` : ''}` });
+                : t('srv.ghCreateFailed', { msg: `HTTP ${githubRes.status}${detail ? ` — ${detail}` : ''}` });
         send({ ok: false, message });
         return true;
       }
-      const j = (await ghRes.json()) as Record<string, unknown>;
+      const j = (await githubRes.json()) as Record<string, unknown>;
       const fullName = String(j.full_name ?? name);
       const cloneUrl = String(j.clone_url ?? '') || `https://github.com/${fullName}.git`;
       // 仓库已建成，origin 设置失败不回滚（如实返回 remoteSet=false + 原因，前端提示用户手动处理）
@@ -320,7 +320,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         remoteMsg: remoteSet ? '' : (sr?.message ?? ''),
       });
     } catch (e) {
-      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GH_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GITHUB_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
       send({ ok: false, message: t('srv.ghCreateFailed', { msg: err }) });
     } finally {
       clearTimeout(timer);
@@ -348,12 +348,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     } catch {
       /* 未配置 origin：按"不是 GitHub"处理 */
     }
-    const gh = parseGithub(remoteUrl);
-    if (!gh) {
+    const github = parseGithub(remoteUrl);
+    if (!github) {
       send({ ok: false, message: t('srv.ghNotGithub') });
       return true;
     }
-    const fullName = `${gh.owner}/${gh.repo}`;
+    const fullName = `${github.owner}/${github.repo}`;
     if (String(body.confirm ?? '').trim() !== fullName) {
       send({ ok: false, message: t('srv.ghDeleteConfirmMismatch', { name: fullName }) });
       return true;
@@ -366,38 +366,38 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const ctl = new AbortController();
     const onClose = () => ctl.abort();
     res.on('close', onClose);
-    const timer = setTimeout(() => ctl.abort(), GH_WRITE_TIMEOUT_MS);
+    const timer = setTimeout(() => ctl.abort(), GITHUB_WRITE_TIMEOUT_MS);
     try {
-      const ghRes = await fetch(`${GH_API}/repos/${gh.owner}/${gh.repo}`, {
+      const githubRes = await fetch(`${GITHUB_API}/repos/${github.owner}/${github.repo}`, {
         method: 'DELETE',
         signal: ctl.signal,
         headers: {
-          'User-Agent': GH_UA,
+          'User-Agent': GITHUB_UA,
           Accept: 'application/vnd.github+json',
           Authorization: `Bearer ${token}`,
         },
       });
-      if (!ghRes.ok) {
+      if (!githubRes.ok) {
         // 403：Token 无 delete_repo / 对仓库无管理权（限流单独区分）；404：不存在或无权访问（可能已删）
         let detail = '';
         try {
-          detail = String(((await ghRes.json()) as Record<string, unknown>).message ?? '');
+          detail = String(((await githubRes.json()) as Record<string, unknown>).message ?? '');
         } catch {
           /* 非 JSON 响应体：走兜底文案 */
         }
         const message =
-          ghRes.status === 403
+          githubRes.status === 403
             ? /rate limit/i.test(detail) ? t('srv.ghRateLimitedAuth') : t('srv.ghDeleteForbidden')
-            : ghRes.status === 404
+            : githubRes.status === 404
               ? t('srv.ghDeleteNotFound')
-              : t('srv.ghDeleteFailed', { msg: `HTTP ${ghRes.status}${detail ? ` — ${detail}` : ''}` });
+              : t('srv.ghDeleteFailed', { msg: `HTTP ${githubRes.status}${detail ? ` — ${detail}` : ''}` });
         send({ ok: false, message });
         return true;
       }
       // DELETE 成功返回 204（无响应体）
       send({ ok: true, fullName });
     } catch (e) {
-      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GH_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GITHUB_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
       send({ ok: false, message: t('srv.ghDeleteFailed', { msg: err }) });
     } finally {
       clearTimeout(timer);
@@ -420,12 +420,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     } catch {
       /* 未配置 origin：按"不是 GitHub"处理 */
     }
-    const gh = parseGithub(remoteUrl);
-    if (!gh) {
+    const github = parseGithub(remoteUrl);
+    if (!github) {
       sendJson(res, 200, { ok: true, isGithub: false });
       return true;
     }
-    const base = { isGithub: true, owner: gh.owner, repo: gh.repo, fullName: `${gh.owner}/${gh.repo}` };
+    const base = { isGithub: true, owner: github.owner, repo: github.repo, fullName: `${github.owner}/${github.repo}` };
     const token = loadConfig().git?.password ?? '';
     if (!token) {
       // 没凭据：查不了权限（canPush=null），前端按"不引导 Fork"处理
@@ -438,8 +438,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
     try {
       const [meRaw, repoRaw] = await Promise.all([
-        ghFetch('/user', ctl.signal, token),
-        ghFetch(`/repos/${gh.owner}/${gh.repo}`, ctl.signal, token),
+        githubFetch('/user', ctl.signal, token),
+        githubFetch(`/repos/${github.owner}/${github.repo}`, ctl.signal, token),
       ]);
       const login = String((meRaw as Record<string, unknown>).login ?? '');
       const rj = repoRaw as Record<string, unknown>;
@@ -450,7 +450,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         ...base,
         canPush: typeof perms?.push === 'boolean' ? perms.push : null,
         login,
-        isOwn: login !== '' && login.toLowerCase() === gh.owner.toLowerCase(),
+        isOwn: login !== '' && login.toLowerCase() === github.owner.toLowerCase(),
         defaultBranch: String(rj.default_branch ?? ''),
       });
     } catch (e) {
@@ -482,8 +482,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     } catch {
       /* 未配置 origin：按"不是 GitHub"处理 */
     }
-    const gh = parseGithub(remoteUrl);
-    if (!gh) {
+    const github = parseGithub(remoteUrl);
+    if (!github) {
       send({ ok: false, message: t('srv.ghNotGithub') });
       return true;
     }
@@ -495,20 +495,20 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const ctl = new AbortController();
     const onClose = () => ctl.abort();
     res.on('close', onClose);
-    const timer = setTimeout(() => ctl.abort(), GH_WRITE_TIMEOUT_MS);
+    const timer = setTimeout(() => ctl.abort(), GITHUB_WRITE_TIMEOUT_MS);
     try {
       // 先拿登录名：判「自己的仓库」（fork 自己的仓库无意义）并回显
-      const meRaw = await ghFetch('/user', ctl.signal, token);
+      const meRaw = await githubFetch('/user', ctl.signal, token);
       const login = String((meRaw as Record<string, unknown>).login ?? '');
-      if (login && login.toLowerCase() === gh.owner.toLowerCase()) {
+      if (login && login.toLowerCase() === github.owner.toLowerCase()) {
         send({ ok: false, isOwn: true, message: t('srv.ghForkIsOwn') });
         return true;
       }
-      const fr = await fetch(`${GH_API}/repos/${gh.owner}/${gh.repo}/forks`, {
+      const fr = await fetch(`${GITHUB_API}/repos/${github.owner}/${github.repo}/forks`, {
         method: 'POST',
         signal: ctl.signal,
         headers: {
-          'User-Agent': GH_UA,
+          'User-Agent': GITHUB_UA,
           Accept: 'application/vnd.github+json',
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -533,7 +533,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
       const fj = (await fr.json()) as Record<string, unknown>;
-      const forkFullName = String(fj.full_name ?? `${login}/${gh.repo}`);
+      const forkFullName = String(fj.full_name ?? `${login}/${github.repo}`);
       const forkUrl = String(fj.clone_url ?? '') || `https://github.com/${forkFullName}.git`;
       // origin 改指 fork（复用现有 setRemote）；原仓库记入 upstream（已存在则 set-url，失败忽略——只是备注）
       const sr = await vcs.setRemote?.(forkUrl);
@@ -552,7 +552,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         remoteMsg: sr?.ok === true ? '' : (sr?.message ?? ''),
       });
     } catch (e) {
-      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GH_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GITHUB_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
       send({ ok: false, message: t('srv.ghForkFailed', { msg: err }) });
     } finally {
       clearTimeout(timer);

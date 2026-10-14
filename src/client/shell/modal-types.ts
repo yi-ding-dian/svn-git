@@ -13,10 +13,10 @@ export type Modal =
   | { type: 'create-repo' }
   | { type: 'get-repo' }
   | { type: 'git-info' }
-  | { type: 'gh-create-repo' }
-  | { type: 'gh-delete-repo' }
-  | { type: 'gh-fork' }
-  | { type: 'gh-repo' }
+  | { type: 'github-create-repo' }
+  | { type: 'github-delete-repo' }
+  | { type: 'github-fork' }
+  | { type: 'github-repo' }
   | { type: 'git-push-auth'; authType: 'github' | 'server' | 'ssh' }
   | { type: 'push-confirm' }
   | { type: 'clean' }

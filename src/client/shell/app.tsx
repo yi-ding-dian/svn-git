@@ -334,8 +334,8 @@ export function App() {
           // 不用正则猜 git 报错文本（措辞不可靠）；仅 canPush===false 才引导，其余原因保持原样只回报错。
           // ABORTED（用户主动取消）不引导——取消是用户意志，不是"推不上去"
           try {
-            const perm = await get.ghPermissions();
-            if (perm.ok && perm.isGithub && perm.canPush === false) setModal({ type: 'gh-fork' });
+            const perm = await get.githubPermissions();
+            if (perm.ok && perm.isGithub && perm.canPush === false) setModal({ type: 'github-fork' });
           } catch {
             /* 权限查询失败不改变原报错路径 */
           }

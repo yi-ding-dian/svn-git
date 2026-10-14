@@ -52,7 +52,7 @@ export function GitHubForkModal(props: {
     void (async () => {
       try {
         // 并行：权限（canPush/isOwn/defaultBranch）+ 待推送数 + 当前分支
-        const [perm, un, gi] = await Promise.all([get.ghPermissions(), get.gitUnpushed(), get.gitInfo()]);
+        const [perm, un, gi] = await Promise.all([get.githubPermissions(), get.gitUnpushed(), get.gitInfo()]);
         if (cancelled) return;
         if (!perm.ok || !perm.isGithub) {
           setErr(perm.message ?? t('srv.ghNotGithub'));
@@ -91,7 +91,7 @@ export function GitHubForkModal(props: {
     setPhase('busy');
     setErr('');
     void post
-      .ghFork()
+      .githubFork()
       .then((r) => {
         if (!r.ok) {
           setErr(r.message ?? '');

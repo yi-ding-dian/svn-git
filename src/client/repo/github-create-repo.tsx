@@ -5,11 +5,11 @@
  *  没存过时弹窗内联填写，点「创建仓库」先保存（复用 /api/git-auth，推送也一并配好）再建。 */
 
 import React, { useEffect, useState } from 'react';
-import { get, post, type GhCreateResult } from '../shared/api.js';
+import { get, post, type GitHubCreateResult } from '../shared/api.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { t } from '../../shared/i18n/index.js';
 import { normalizeGhRepoName, sanitizeGhRepoName } from '../../shared/github.js';
-import { useGitHubCred, GitHubCredBox } from './gh-cred.js';
+import { useGitHubCred, GitHubCredBox } from './github-cred.js';
 
 /** 目录名 → 合法 GitHub 仓库名（默认值）：非法字符（含中文）换成 -，去首尾 - / .；结果为空回退 'repo' */
 function defaultRepoName(root: string | null): string {
@@ -21,8 +21,8 @@ export function GitHubCreateModal(props: {
   /** 当前仓库根目录（默认仓库名 = 目录名） */
   root: string | null;
   onClose: () => void;
-  /** 创建成功（origin 已指向新仓库）；hasCommit / remoteSet 语义见 GhCreateResult */
-  onCreated: (r: GhCreateResult) => void;
+  /** 创建成功（origin 已指向新仓库）；hasCommit / remoteSet 语义见 GitHubCreateResult */
+  onCreated: (r: GitHubCreateResult) => void;
 }) {
   const [name, setName] = useState(() => defaultRepoName(props.root));
   const [desc, setDesc] = useState('');
@@ -74,7 +74,7 @@ export function GitHubCreateModal(props: {
             return;
           }
         }
-        const r = await post.ghCreateRepo(n, desc.trim(), isPrivate);
+        const r = await post.githubCreateRepo(n, desc.trim(), isPrivate);
         if (!r.ok) {
           // 失败原因来自服务端（重名 / 权限不足 / 网络不通等）
           setErr(r.message ?? '');
@@ -143,7 +143,7 @@ export function GitHubCreateModal(props: {
               </label>
             </div>
           </div>
-          {/* 凭据区（已存显示用户名+可换 / 未存内联填写；与「新建仓库」弹窗共用 gh-cred） */}
+          {/* 凭据区（已存显示用户名+可换 / 未存内联填写；与「新建仓库」弹窗共用 github-cred） */}
           <GitHubCredBox cred={cred} onEnter={submit} />
           {originUrl && (
             <div className="small" style={{ color: 'var(--warn)', marginBottom: 8, wordBreak: 'break-all' }}>

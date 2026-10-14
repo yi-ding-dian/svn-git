@@ -27,8 +27,8 @@ export function GitHubDeleteModal(props: {
       .gitInfo()
       .then((r) => {
         if (cancelled) return;
-        const gh = parseGithub(r.remote ?? '');
-        setFullName(gh ? `${gh.owner}/${gh.repo}` : '');
+        const github = parseGithub(r.remote ?? '');
+        setFullName(github ? `${github.owner}/${github.repo}` : '');
       })
       .catch(() => {});
     return () => {
@@ -44,7 +44,7 @@ export function GitHubDeleteModal(props: {
     setBusy(true);
     setErr('');
     void post
-      .ghDeleteRepo(confirm.trim())
+      .githubDeleteRepo(confirm.trim())
       .then((r) => {
         if (!r.ok) {
           // 失败原因来自服务端（权限不足 / 仓库不存在 / 网络不通等）

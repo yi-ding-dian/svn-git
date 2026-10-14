@@ -14,15 +14,15 @@ import { CommitSelectModal } from '../ops/commit-select.js';
 import { BranchDialog } from '../ops/branch.js';
 import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
 import { TagDialog, GitInfoModal } from '../ops/tag-git-info.js';
-import { GitHubCreateModal } from '../repo/gh-create-repo.js';
-import { GitHubDeleteModal } from '../repo/gh-delete-repo.js';
-import { GitHubForkModal } from '../repo/gh-fork.js';
+import { GitHubCreateModal } from '../repo/github-create-repo.js';
+import { GitHubDeleteModal } from '../repo/github-delete-repo.js';
+import { GitHubForkModal } from '../repo/github-fork.js';
 import { GitHubRepoModal } from '../repo/github-repo.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
 import { LoginModal } from '../repo/login.js';
 import { EnvInstallModal } from '../repo/env-install.js';
 import { RepoBrowseModal } from '../repo/repo-browse.js';
-import { CreateRepoDialog, GetRepoDialog, type GhSetupOpts } from '../repo/repo-create.js';
+import { CreateRepoDialog, GetRepoDialog, type GitHubSetupOpts } from '../repo/repo-create.js';
 import { RevertModal } from '../filesystem/revert.js';
 import { RenameModal } from '../filesystem/rename.js';
 import { ConfirmModal } from '../ui/prompt.js';
@@ -137,16 +137,16 @@ export function ModalHost(props: ModalHostProps) {
 
   /** 「新建仓库」弹窗选「GitHub 仓库」类型：本地建好并打开后，继续建远程仓库并设 origin（服务端自动 setRemote）。
    *  失败不回滚本地仓库——如实提示原因并指引去 ⋯ 菜单「GitHub 新建仓库」重试；新仓库必无提交，成功提示"提交后可推送"。 */
-  const ghSetup = async (gh: GhSetupOpts) => {
+  const githubSetup = async (github: GitHubSetupOpts) => {
     // 内联凭据先保存（不拿无效凭据去建仓库）
-    if (gh.cred) {
-      const sr = await post.gitAuthSave(gh.cred.user, gh.cred.token);
+    if (github.cred) {
+      const sr = await post.gitAuthSave(github.cred.user, github.cred.token);
       if (!sr.ok) {
         showToast(t('repo.ghCreate.saveFailed', { msg: sr.message }), true);
         return;
       }
     }
-    const gr = await post.ghCreateRepo(gh.name, gh.desc, gh.isPrivate);
+    const gr = await post.githubCreateRepo(github.name, github.desc, github.isPrivate);
     if (!gr.ok) {
       showToast(t('repo.create.ghRemoteFail', { msg: gr.message ?? '' }), true);
       return;
@@ -155,7 +155,7 @@ export function ModalHost(props: ModalHostProps) {
       showToast(t('repo.ghCreate.remoteFail', { msg: gr.remoteMsg || gr.cloneUrl || '' }), true);
       return;
     }
-    showToast(t('repo.ghCreate.doneNoCommit', { name: gr.fullName ?? gh.name }));
+    showToast(t('repo.ghCreate.doneNoCommit', { name: gr.fullName ?? github.name }));
     // origin 已指向新仓库：顶栏补上远程地址（本地 open 时拉的 info 还没有 origin）
     refreshInfo();
   };
@@ -310,7 +310,7 @@ export function ModalHost(props: ModalHostProps) {
       {modal?.type === 'git-info' && (
         <GitInfoModal onClose={() => setModal(null)} onToast={showToast} onChanged={refreshInfo} />
       )}
-      {modal?.type === 'gh-create-repo' && (
+      {modal?.type === 'github-create-repo' && (
         <GitHubCreateModal
           root={repo?.root ?? null}
           onClose={() => setModal(null)}
@@ -333,7 +333,7 @@ export function ModalHost(props: ModalHostProps) {
           }}
         />
       )}
-      {modal?.type === 'gh-delete-repo' && (
+      {modal?.type === 'github-delete-repo' && (
         <GitHubDeleteModal
           onClose={() => setModal(null)}
           onDeleted={(name) => {
@@ -343,7 +343,7 @@ export function ModalHost(props: ModalHostProps) {
           }}
         />
       )}
-      {modal?.type === 'gh-fork' && (
+      {modal?.type === 'github-fork' && (
         <GitHubForkModal
           onClose={() => setModal(null)}
           // Fork 成功且有提交：自动走现有推送任务（含认证引导/横幅；结果不阻塞弹窗）
@@ -352,7 +352,7 @@ export function ModalHost(props: ModalHostProps) {
           onRemoteChanged={refreshInfo}
         />
       )}
-      {modal?.type === 'gh-repo' && <GitHubRepoModal onClose={() => setModal(null)} />}
+      {modal?.type === 'github-repo' && <GitHubRepoModal onClose={() => setModal(null)} />}
       {pushAuth && (
         <GitPushAuthModal
           type={pushAuth.type}
@@ -385,7 +385,7 @@ export function ModalHost(props: ModalHostProps) {
         <CreateRepoDialog
           home={info?.home}
           onClose={() => setModal(null)}
-          onCreated={(dir, gh) => {
+          onCreated={(dir, github) => {
             setModal(null);
             // 打开新创建的仓库
             void post
@@ -402,7 +402,7 @@ export function ModalHost(props: ModalHostProps) {
                   showToast(t('shell.repo.opened', { root: r.root ?? '' }));
                 }
                 // 「GitHub 仓库」类型：本地已打开，继续建远程仓库并设 origin
-                if (gh) await ghSetup(gh);
+                if (github) await githubSetup(github);
               })
               // 创建完成，但打开失败: {msg}
               .catch((e: Error) => showToast(t('shell.repo.createOpenFailed', { msg: (e as Error).message }), true));

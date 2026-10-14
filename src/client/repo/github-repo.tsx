@@ -6,7 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { ModalShell } from '../shell/modal-shell.js';
-import { get, post, type GhRepoResult } from '../shared/api.js';
+import { get, post, type GitHubRepoResult } from '../shared/api.js';
 import { IconGitHub, IconStar, IconClock, IconEye, IconRefresh, IconExternal } from '../ui/icons.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -84,7 +84,7 @@ function LangBar(props: { rows: { name: string; pct: number; color: string }[] }
 }
 
 export function GitHubRepoModal(props: { onClose: () => void }) {
-  const [data, setData] = useState<GhRepoResult | null>(null);
+  const [data, setData] = useState<GitHubRepoResult | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(true);
 
@@ -92,7 +92,7 @@ export function GitHubRepoModal(props: { onClose: () => void }) {
     setBusy(true);
     setErr('');
     get
-      .ghRepo(force)
+      .githubRepo(force)
       .then((r) => {
         setData(r);
         if (!r.ok) setErr(r.error ?? '');
