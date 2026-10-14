@@ -188,9 +188,17 @@ export const srv = {
   // ---- GitHub 仓库信息 / 新建仓库（github.ts）/ 打开外链（host.ts）----
   'srv.ghGitOnly': '仅 Git 仓库支持',
   'srv.ghNotGithub': '当前仓库的远程地址不是 GitHub',
-  'srv.ghNotFound': '仓库不存在或为私有（匿名无权读取）',
+  'srv.ghNotFound': '仓库不存在或无权访问',
+  'srv.ghNotFoundAnon': '仓库不存在、或为私有（未配置凭据，无法读取私有仓库）',
   'srv.ghRateLimited': 'GitHub 接口访问受限（匿名限流，稍后再试）',
+  'srv.ghRateLimitedAuth': 'GitHub 接口限流（Token 配额），稍后再试',
   'srv.ghTimeout': '请求 GitHub 超时（{sec} 秒）',
+  // ---- GitHub 删除仓库 ----
+  'srv.ghDeleteConfirmMismatch': '确认的仓库名不匹配（需输入 {name}）',
+  'srv.ghDeleteNoAuth': '未配置 GitHub 凭据——无法删除仓库',
+  'srv.ghDeleteForbidden': 'Token 权限不足：删除仓库需要 delete_repo 权限（classic）或 Administration 写权限（fine-grained），本次未执行删除',
+  'srv.ghDeleteNotFound': '仓库不存在或无权访问（可能已被删除）',
+  'srv.ghDeleteFailed': '删除仓库失败：{msg}',
   // ---- GitHub 新建仓库 ----
   'srv.ghCreateNoName': '请填写仓库名',
   'srv.ghCreateNameInvalid': '仓库名不合法：不能只由 - / . 组成',

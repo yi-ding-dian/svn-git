@@ -87,6 +87,13 @@ export const repo = {
   'repo.ghCreate.donePush': '✅ 已创建 {name} 并设为 origin，正在推送…',
   'repo.ghCreate.doneNoCommit': '✅ 已创建 {name} 并设为 origin（暂无提交，提交后可推送）',
   'repo.ghCreate.remoteFail': '⚠ 仓库已创建，但设置 origin 失败：{msg}',
+  // ---- GitHub 删除仓库弹窗（⋯ 菜单；危险操作，输入完整仓库名确认）----
+  'repo.ghDelete.title': 'GitHub 删除仓库',
+  'repo.ghDelete.warn': '此操作不可撤销：将永久删除 GitHub 上的 {name} 及其全部提交、Issue 等数据（本地项目不受影响，origin 保留不动）',
+  'repo.ghDelete.inputLabel': '输入 {name} 以确认删除',
+  'repo.ghDelete.delete': '永久删除',
+  'repo.ghDelete.deleting': '删除中…',
+  'repo.ghDelete.done': '✅ 已删除 GitHub 仓库 {name}（本地 origin 未改动，可按需在「Git 信息与配置」调整）',
   // ---- 仓库浏览右键「检出到本地」（CheckoutDialog）----
   'repo.co.menu': '检出到本地…',
   'repo.co.title': '检出到本地',

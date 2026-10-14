@@ -64,6 +64,9 @@ export const shell = {
   // GitHub repository info (⋯ menu; only for git projects whose origin points to github.com)
   'shell.tool.ghRepo': 'GitHub Repo Info',
   'shell.tool.ghRepoTitle': 'View remote GitHub repository info (description, stars, languages, …)',
+  // Delete GitHub repository (⋯ menu; same condition as Repo Info)
+  'shell.tool.ghDelete': 'Delete GitHub Repo',
+  'shell.tool.ghDeleteTitle': 'Permanently delete the GitHub repository origin points to (irreversible; type the repo name to confirm)',
   'shell.tool.envCheck': 'Environment Check',
   'shell.tool.envCheckTitle': 'View SVN / Git installation status and versions; one-click install if missing',
   'shell.tool.svnInfo': 'SVN Info',

@@ -15,6 +15,7 @@ import { BranchDialog } from '../ops/branch.js';
 import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
 import { TagDialog, GitInfoModal } from '../ops/tag-git-info.js';
 import { GitHubCreateModal } from '../repo/gh-create-repo.js';
+import { GitHubDeleteModal } from '../repo/gh-delete-repo.js';
 import { GitHubRepoModal } from '../repo/github-repo.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
 import { LoginModal } from '../repo/login.js';
@@ -311,6 +312,16 @@ export function ModalHost(props: ModalHostProps) {
             } else {
               showToast(t('repo.ghCreate.doneNoCommit', { name }));
             }
+          }}
+        />
+      )}
+      {modal?.type === 'gh-delete-repo' && (
+        <GitHubDeleteModal
+          onClose={() => setModal(null)}
+          onDeleted={(name) => {
+            setModal(null);
+            showToast(t('repo.ghDelete.done', { name }));
+            refresh(); // 仓库已不存在：刷新顶栏/状态（origin 未动，如实显示）
           }}
         />
       )}

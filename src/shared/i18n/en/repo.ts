@@ -82,6 +82,13 @@ export const repo = {
   'repo.ghCreate.donePush': '✅ Created {name} and set as origin — pushing…',
   'repo.ghCreate.doneNoCommit': '✅ Created {name} and set as origin (no commits yet — push after committing)',
   'repo.ghCreate.remoteFail': '⚠ Repository created, but setting origin failed: {msg}',
+  // ---- Delete GitHub repository modal (⋯ menu; dangerous, type the full repo name to confirm) ----
+  'repo.ghDelete.title': 'Delete GitHub Repository',
+  'repo.ghDelete.warn': 'This cannot be undone: {name} and all its commits, issues etc. will be permanently deleted (your local project is unaffected; origin stays as-is)',
+  'repo.ghDelete.inputLabel': 'Type {name} to confirm deletion',
+  'repo.ghDelete.delete': 'Delete Permanently',
+  'repo.ghDelete.deleting': 'Deleting…',
+  'repo.ghDelete.done': '✅ Deleted GitHub repository {name} (local origin unchanged; adjust in Git Info & Config if needed)',
   // ---- Repo browser context menu: Checkout to Local (CheckoutDialog) ----
   'repo.co.menu': 'Checkout to Local…',
   'repo.co.title': 'Checkout to Local',

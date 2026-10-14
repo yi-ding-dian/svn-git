@@ -66,6 +66,9 @@ export const shell = {
   // GitHub 仓库信息（⋯ 菜单；origin 指向 github.com 的 git 项目才出现）
   'shell.tool.ghRepo': 'GitHub 仓库信息',
   'shell.tool.ghRepoTitle': '查看远程 GitHub 仓库信息（描述、Star、语言构成等）',
+  // GitHub 删除仓库（⋯ 菜单；与「GitHub 仓库信息」同条件显示）
+  'shell.tool.ghDelete': 'GitHub 删除仓库',
+  'shell.tool.ghDeleteTitle': '永久删除 origin 指向的 GitHub 远程仓库（不可恢复，需输入仓库名确认）',
   'shell.tool.envCheck': '环境检测',
   'shell.tool.envCheckTitle': '查看 SVN / Git 的安装状态与版本；缺失时可一键安装',
   'shell.tool.svnInfo': 'SVN 信息',

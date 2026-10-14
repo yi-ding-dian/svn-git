@@ -1,13 +1,17 @@
-/** GitHub 集成（顶栏 ⋯ 菜单两条，均只对 git 项目出现）：
- *  - GET /api/gh-repo「GitHub 仓库信息」（origin 指向 github.com 时出现）：服务端**匿名**代问
+/** GitHub 集成（顶栏 ⋯ 菜单三条，均只对 git 项目出现）：
+ *  - GET /api/gh-repo「GitHub 仓库信息」（origin 指向 github.com 时出现）：服务端代问
  *    api.github.com——仓库元信息（描述/star/fork/issues/license/推送时间/topics）+ 语言构成。
- *    匿名配额 60 次/时/IP，故结果内存缓存 30 分钟（重开秒出、不浪费配额；?force=1 跳过缓存重新拉）。
- *    拿不到时（网络不通 / 限流 / 私有库 404）**降级**：本地统计语言构成顶上
- *    （git ls-files 按扩展名汇总字节数），失败原因随响应回传，界面如实说明。
+ *    **有已存凭据就带上**（自己的私有仓库也能读；没配凭据则匿名，仅公开库）。结果内存缓存 30 分钟
+ *    （重开秒出、省配额；?force=1 跳过缓存重新拉）。拿不到时（网络不通 / 限流 / 无权限 404）
+ *    **降级**：本地统计语言构成顶上（git ls-files 按扩展名汇总字节数），失败原因随响应回传，界面如实说明。
  *  - POST /api/gh-create-repo「GitHub 新建仓库」（origin 尚未指向 github.com 时出现）：用已存的
  *    Git 凭据（config.git 的 GitHub 用户名+Token）调 POST /user/repos 建**空仓库**（auto_init=false，
  *    避免与本地已有提交冲突），成功后自动把 origin 指向它，并回传本地是否已有提交
- *    （前端据此决定创建后要不要立即推送）。 */
+ *    （前端据此决定创建后要不要立即推送）。
+ *  - POST /api/gh-delete-repo「GitHub 删除仓库」（与「仓库信息」同条件出现）：删除 origin 指向的
+ *    远程仓库（DELETE /repos/{owner}/{repo}，不可恢复——前端要求输入完整仓库名二次确认，服务端再校验
+ *    一次防绕过）。本地 origin 不自动改动（删完如实显示仓库已不存在，用户按需自行调整）。
+ *    classic Token 需要 delete_repo 权限、fine-grained 需要 Administration 写权限。 */
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,25 +19,17 @@ import { run } from '../../vcs/exec.js';
 import { sendJson, readBody, vcsOf, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
 import { loadConfig } from '../../config.js';
-import { normalizeGhRepoName } from '../../shared/github.js';
+import { normalizeGhRepoName, parseGithub } from '../../shared/github.js';
 
 const GH_API = 'https://api.github.com';
 /** 调用 GitHub API 统一的 User-Agent（读/写共用；⚠ 产品名 token 含 "svn" 会被 WAF 403，见 ghFetch 注释） */
 const GH_UA = 'vcs-client/1.0 (+https://github.com/yi-ding-dian/svn-git)';
 /** 单次请求超时（元信息与语言构成两接口并发；网络差时尽快降级） */
 const FETCH_TIMEOUT_MS = 8_000;
-/** 建仓库请求超时（写请求，比元信息读取宽松些；超时后 GitHub 侧可能已建好，前端重试会提示重名） */
-const CREATE_TIMEOUT_MS = 15_000;
+/** 写请求超时（建/删仓库；比元信息读取宽松些。建仓库超时时 GitHub 侧可能已建好，前端重试会提示重名） */
+const GH_WRITE_TIMEOUT_MS = 15_000;
 /** 缓存有效期（防匿名限流；仓库热度这类信息也不常变） */
 const CACHE_TTL_MS = 30 * 60_000;
-
-/** remote URL → owner/repo（https:// / git@ / ssh:// 形式都认；非 github 或认不出 → null） */
-function parseGithub(url: string): { owner: string; repo: string } | null {
-  const clean = url.trim().replace(/\/+$/, '').replace(/\.git$/i, '');
-  const m = /github\.com[:/]([^/\s]+)\/([^/\s]+)$/i.exec(clean);
-  if (!m) return null;
-  return { owner: m[1]!, repo: m[2]! };
-}
 
 /** GitHub 元信息（只挑界面用到的字段） */
 interface GhMeta {
@@ -67,22 +63,24 @@ interface GhResult {
 /** 成功结果缓存（失败/降级不缓存——网络恢复后重开即可拿到官方数据） */
 const ghCache = new Map<string, { data: GhResult; at: number }>();
 
-/** 调 GitHub 接口（Accept 用当前推荐的 vnd.github+json）。
+/** 调 GitHub 接口（读；Accept 用当前推荐的 vnd.github+json）。
  *  ⚠ UA 有讲究：GitHub 的 WAF 对**产品名 token 含 "svn" 的 UA 一律 403**（实测 "svn-git/1.0"、
  *  "svngit/1.0" 全被拦——历史遗留规则，疑为早年 SVN 客户端滥用后遗症；URL 部分含 svn-git 无碍）。
- *  故用中性产品名 + 来源 URL 的形式（GitHub 官方推荐的 UA 格式）。 */
-async function ghFetch(pathname: string, signal: AbortSignal): Promise<unknown> {
+ *  故用中性产品名 + 来源 URL 的形式（GitHub 官方推荐的 UA 格式）。
+ *  token 可选：有凭据就带 Authorization（私有仓库也能读）；404/限流的文案按匿名/带凭据区分。 */
+async function ghFetch(pathname: string, signal: AbortSignal, token = ''): Promise<unknown> {
   const res = await fetch(`${GH_API}${pathname}`, {
     signal,
     headers: {
       'User-Agent': GH_UA,
       Accept: 'application/vnd.github+json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
   if (!res.ok) {
-    // 404：仓库不存在或私有（匿名看不见）；403/429：多为匿名限流
-    if (res.status === 404) throw new Error(t('srv.ghNotFound'));
-    if (res.status === 403 || res.status === 429) throw new Error(t('srv.ghRateLimited'));
+    // 404：仓库不存在（带凭据）或私有不可见（匿名）；403/429：多为限流（两种身份文案不同）
+    if (res.status === 404) throw new Error(token ? t('srv.ghNotFound') : t('srv.ghNotFoundAnon'));
+    if (res.status === 403 || res.status === 429) throw new Error(token ? t('srv.ghRateLimitedAuth') : t('srv.ghRateLimited'));
     throw new Error(`HTTP ${res.status}`);
   }
   return res.json();
@@ -171,11 +169,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const onClose = () => ctl.abort();
     res.on('close', onClose);
     const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+    // 有已存凭据就带上：自己账号下的私有仓库也能读（没配凭据保持匿名，仅公开库）
+    const token = loadConfig().git?.password ?? '';
     let data: GhResult;
     try {
       const [metaRaw, langsRaw] = await Promise.all([
-        ghFetch(`/repos/${gh.owner}/${gh.repo}`, ctl.signal),
-        ghFetch(`/repos/${gh.owner}/${gh.repo}/languages`, ctl.signal),
+        ghFetch(`/repos/${gh.owner}/${gh.repo}`, ctl.signal, token),
+        ghFetch(`/repos/${gh.owner}/${gh.repo}/languages`, ctl.signal, token),
       ]);
       const m = metaRaw as Record<string, unknown>;
       const license = (m.license as Record<string, unknown> | null)?.spdx_id;
@@ -249,7 +249,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const ctl = new AbortController();
     const onClose = () => ctl.abort();
     res.on('close', onClose);
-    const timer = setTimeout(() => ctl.abort(), CREATE_TIMEOUT_MS);
+    const timer = setTimeout(() => ctl.abort(), GH_WRITE_TIMEOUT_MS);
     try {
       const ghRes = await fetch(`${GH_API}/user/repos`, {
         method: 'POST',
@@ -316,8 +316,85 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         remoteMsg: remoteSet ? '' : (sr?.message ?? ''),
       });
     } catch (e) {
-      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: CREATE_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GH_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
       send({ ok: false, message: t('srv.ghCreateFailed', { msg: err }) });
+    } finally {
+      clearTimeout(timer);
+      res.off('close', onClose);
+    }
+    return true;
+  }
+
+  if (p === '/api/gh-delete-repo' && req.method === 'POST') {
+    // 删除 origin 指向的 GitHub 仓库（不可恢复）。confirm 必须是完整的 owner/repo（前端已让用户手动输入，
+    // 服务端再校验一次防绕过——confirm 不匹配时**连 GitHub 都不请求**）；
+    // 本地 origin 不自动改动（删完顶栏如实显示仓库已不存在，用户按需自行调整远程）
+    const { vcs, repo } = vcsOf();
+    if (repo.type !== 'git') {
+      sendJson(res, 400, { ok: false, message: t('srv.ghGitOnly') });
+      return true;
+    }
+    const send = (data: unknown) => {
+      if (!res.destroyed && !res.writableEnded) sendJson(res, 200, data);
+    };
+    const body = await readBody(req);
+    let remoteUrl = '';
+    try {
+      remoteUrl = (await vcs.remote?.()) ?? '';
+    } catch {
+      /* 未配置 origin：按"不是 GitHub"处理 */
+    }
+    const gh = parseGithub(remoteUrl);
+    if (!gh) {
+      send({ ok: false, message: t('srv.ghNotGithub') });
+      return true;
+    }
+    const fullName = `${gh.owner}/${gh.repo}`;
+    if (String(body.confirm ?? '').trim() !== fullName) {
+      send({ ok: false, message: t('srv.ghDeleteConfirmMismatch', { name: fullName }) });
+      return true;
+    }
+    const token = loadConfig().git?.password ?? '';
+    if (!token) {
+      send({ ok: false, message: t('srv.ghDeleteNoAuth') });
+      return true;
+    }
+    const ctl = new AbortController();
+    const onClose = () => ctl.abort();
+    res.on('close', onClose);
+    const timer = setTimeout(() => ctl.abort(), GH_WRITE_TIMEOUT_MS);
+    try {
+      const ghRes = await fetch(`${GH_API}/repos/${gh.owner}/${gh.repo}`, {
+        method: 'DELETE',
+        signal: ctl.signal,
+        headers: {
+          'User-Agent': GH_UA,
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!ghRes.ok) {
+        // 403：Token 无 delete_repo / 对仓库无管理权（限流单独区分）；404：不存在或无权访问（可能已删）
+        let detail = '';
+        try {
+          detail = String(((await ghRes.json()) as Record<string, unknown>).message ?? '');
+        } catch {
+          /* 非 JSON 响应体：走兜底文案 */
+        }
+        const message =
+          ghRes.status === 403
+            ? /rate limit/i.test(detail) ? t('srv.ghRateLimitedAuth') : t('srv.ghDeleteForbidden')
+            : ghRes.status === 404
+              ? t('srv.ghDeleteNotFound')
+              : t('srv.ghDeleteFailed', { msg: `HTTP ${ghRes.status}${detail ? ` — ${detail}` : ''}` });
+        send({ ok: false, message });
+        return true;
+      }
+      // DELETE 成功返回 204（无响应体）
+      send({ ok: true, fullName });
+    } catch (e) {
+      const err = (e as Error).name === 'AbortError' ? t('srv.ghTimeout', { sec: GH_WRITE_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      send({ ok: false, message: t('srv.ghDeleteFailed', { msg: err }) });
     } finally {
       clearTimeout(timer);
       res.off('close', onClose);

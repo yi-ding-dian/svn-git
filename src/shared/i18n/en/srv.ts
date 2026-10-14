@@ -173,9 +173,17 @@ export const srv = {
   // ---- GitHub repo info / create repo (github.ts) / open external link (host.ts) ----
   'srv.ghGitOnly': 'Only supported for Git repositories',
   'srv.ghNotGithub': 'This repository remote is not GitHub',
-  'srv.ghNotFound': 'Repository not found or private (anonymous access denied)',
+  'srv.ghNotFound': 'Repository not found or no access',
+  'srv.ghNotFoundAnon': 'Repository not found, or private (no credential configured — private repos cannot be read anonymously)',
   'srv.ghRateLimited': 'GitHub API rate-limited (anonymous quota — try again later)',
+  'srv.ghRateLimitedAuth': 'GitHub API rate-limited (token quota) — try again later',
   'srv.ghTimeout': 'GitHub request timed out ({sec}s)',
+  // ---- GitHub delete repository ----
+  'srv.ghDeleteConfirmMismatch': 'Confirmation name mismatch (type {name})',
+  'srv.ghDeleteNoAuth': 'No GitHub credential configured — cannot delete the repository',
+  'srv.ghDeleteForbidden': 'Token lacks permission: deleting a repository requires delete_repo (classic) or Administration write (fine-grained); nothing was deleted',
+  'srv.ghDeleteNotFound': 'Repository not found or no access (it may already be deleted)',
+  'srv.ghDeleteFailed': 'Failed to delete repository: {msg}',
   // ---- GitHub create repository ----
   'srv.ghCreateNoName': 'Repository name is required',
   'srv.ghCreateNameInvalid': 'Invalid repository name: cannot consist only of - / .',
