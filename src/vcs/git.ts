@@ -310,6 +310,9 @@ export class GitVcs {
 
   /** 提交总数（rev-list --count 秒级精确） */
   async logTotal(pathRel?: string): Promise<{ count: number; exact: boolean }> {
+    // 尚无提交（unborn HEAD）：总数就是 0。此时 `rev-list HEAD` 会报 'unknown revision'，
+    // 原来直接把异常抛给调用方（历史视图开在新建的空仓库上就报错，实测）
+    if (!(await this.hasHead())) return { count: 0, exact: true };
     const args = ['rev-list', '--count', 'HEAD'];
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args);
@@ -737,7 +740,11 @@ export class GitVcs {
         const stagedNow = await this.stagedFiles();
         const drop = stagedNow.filter((p) => !relPaths.includes(p));
         if (drop.length) {
-          const resetRes = await this.exec(['reset', '-q', 'HEAD', '--', ...drop]);
+          // 尚无提交（unborn HEAD）时 reset HEAD 会报 "Not a valid object name HEAD"：
+          // 此时"从 index 撤下"等价于 rm --cached（两者都只动 index，不碰工作区）
+          const resetRes = (await this.hasHead())
+            ? await this.exec(['reset', '-q', 'HEAD', '--', ...drop])
+            : await this.exec(['rm', '--cached', '-r', '--quiet', ...drop]);
           // 暂存区清理失败: {err}
           if (resetRes.code !== 0) return { ok: false, message: t('vcs.stagedCleanupFailed', { err: resetRes.stderr.trim() }) };
           // 同步清登记：index 已被清空，登记若留着，该文件下次提交会跳过 add → git 拒绝空提交（死锁）
@@ -839,12 +846,26 @@ export class GitVcs {
    *  注意与 restoreMissing 的 checkout -- 区分：那是恢复缺失文件，不能动 */
   /** 还原：staged/工作区统一覆盖。A（未提交新增，HEAD 无此路径）→ git rm --cached 撤销暂存（磁盘保留变 ?）；
    *  其余 → checkout HEAD -- 覆盖工作区+暂存区（staged 修改也一并还原） */
+  /** HEAD 是否已指向某个提交（**仓库尚无任何提交时为 false**）。unborn HEAD 下 `ls-tree HEAD`
+   *  等命令会直接报 "Not a valid object name HEAD"，调用方据此绕开（用户实报：新仓库里右键
+   *  「取消添加」弹出这句原始报错）。 */
+  private async hasHead(): Promise<boolean> {
+    return (await this.exec(['rev-parse', '--verify', '--quiet', 'HEAD'])).code === 0;
+  }
+
   async revert(relPaths: string[]): Promise<VcsResult> {
+    // 尚无提交时各路径必然不在 HEAD 里，跳过 ls-tree HEAD（它会直接报 "Not a valid object name HEAD"，
+    // 原来把这个原始报错当失败抛给了用户）——一律按"新添加的文件"走取消添加
+    const head = await this.hasHead();
     for (const p of relPaths) {
-      const inHead = await this.exec(['ls-tree', 'HEAD', '--', p]);
-      // git 还原失败
-      if (inHead.code !== 0) return { ok: false, message: inHead.stderr.trim() || t('vcs.gitRevertFailed') };
-      const r = inHead.stdout.trim()
+      let inHead = '';
+      if (head) {
+        const lt = await this.exec(['ls-tree', 'HEAD', '--', p]);
+        // git 还原失败
+        if (lt.code !== 0) return { ok: false, message: lt.stderr.trim() || t('vcs.gitRevertFailed') };
+        inHead = lt.stdout.trim();
+      }
+      const r = inHead
         ? await this.exec(['checkout', 'HEAD', '--', p])
         : await this.exec(['rm', '--cached', '-r', '--quiet', p]);
       // git 还原失败
