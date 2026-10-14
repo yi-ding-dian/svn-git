@@ -572,21 +572,21 @@ export function App() {
       } else if (op === 'revert') {
         void confirmRevert(paths);
       } else if (op === 'fs-delete') {
-        // 磁盘删除（未版本化 ? / 忽略 I 文件/目录）：仅删本地文件、不做版本库操作
+        // 移到回收站（未版本化 ? / 忽略 I 文件/目录）：仅动本地文件、不做版本库操作
         setModal({
           type: 'confirm',
-          // 删除磁盘文件
+          // 移到回收站
           title: t('shell.fsDelete.title'),
           danger: true,
           message: (
             <div>
-              {/* 将从 / 磁盘永久删除 /  {n} 项（不在版本库中的文件）。 */}
+              {/* 将把 / 移到系统回收站 /  {n} 项（不在版本库中的文件）。 */}
               {t('shell.fsDelete.lead')}<b>{t('shell.fsDelete.bold')}</b>{t('shell.fsDelete.tail', { n: paths.length })}
-              {/* 不可恢复，确认删除？ */}
+              {/* 可从回收站恢复，确认移入？ */}
               <div style={{ marginTop: 6 }}>{t('shell.fsDelete.warn')}</div>
             </div>
           ),
-          // 删除磁盘文件
+          // 移到回收站
           confirmLabel: t('shell.fsDelete.confirm'),
           action: () => void runOp('fs-delete', paths),
         });

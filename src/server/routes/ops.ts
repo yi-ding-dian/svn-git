@@ -247,7 +247,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       }
 
       if (p === '/api/fs-delete' && req.method === 'POST') {
-        // 磁盘删除（未版本化 ? 文件/目录专属入口：不做版本库调度，仅删本地文件）
+        // 移到回收站（未版本化 ? / 忽略 I 专属入口：不做版本库调度，仅动本地文件；回收站不可用回退直接删除）
         const { repo } = vcsOf();
         const body = await readBody(req);
         const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean) : [];
@@ -272,10 +272,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             }
           }
           invalidateStatusCache(repo.root); // 磁盘文件集变化（? 项被删），防状态缓存/过滤树显示旧文件
-          // 已删除磁盘文件 {n} 项
+          // 已移到回收站 {n} 项
           sendJson(res, 200, { ok: true, message: t('srv.fsDeleted', { n: paths.length }) });
         } catch (e) {
-          // 删除失败: {msg}
+          // 移到回收站失败: {msg}
           sendJson(res, 500, { error: t('srv.deleteFailed', { msg: (e as Error).message }) });
         }
         return true;

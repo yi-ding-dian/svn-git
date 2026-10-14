@@ -252,11 +252,11 @@ export function buildMultiItems(
   }
   if (tFsDel.length) {
     items.push({
-      icon: <IconClean />,
-      // 删除磁盘文件（{n} 项）
+      icon: <IconTrash />,
+      // 移到回收站（{n} 项）
       label: t('fs.menu.deleteDiskN', { n: tFsDel.length }),
       danger: true,
-      // 从磁盘永久删除 {n} 项（不在版本库中的文件），不可恢复，不影响版本库
+      // 把 {n} 项移到系统回收站（不在版本库中的文件），可从回收站恢复；不影响版本库
       title: t('fs.menu.deleteDiskNTitle', { n: tFsDel.length }),
       action: () => s.onAction('fs-delete', tFsDel.map((x) => x.rel)),
     });
@@ -366,7 +366,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       items.push(renameItem(row.code, s.repoType, row.rel, true, s.onAction, s.startRename));
       if (s.repoType === 'git') {
         items.push({ sep: true });
-        // 删除磁盘文件 / 从磁盘永久删除该目录，不可恢复（不影响版本库）
+        // 移到回收站 / 把该目录移入系统回收站，可从回收站恢复（不影响版本库）
         items.push({ icon: <IconTrash />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteDirDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
       }
     } else if (row.code !== '?') {
@@ -423,7 +423,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
         action: s.repoType === 'git' ? undefined : () => s.ignoreFile(row),
       });
       items.push(renameItem(row.code, s.repoType, row.rel, true, s.onAction, s.startRename));
-      // 删除磁盘文件 / 从磁盘永久删除该目录，不可恢复（不影响版本库）
+      // 移到回收站 / 把该目录移入系统回收站，可从回收站恢复（不影响版本库）
       items.push({ icon: <IconTrash />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteDirDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
       // 常用文件夹（仅 svn：git 加载快无需预加载）
       if (s.repoType === 'svn') {
@@ -444,7 +444,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       items.push(renameItem(row.code, s.repoType, row.rel, false, s.onAction, s.startRename));
       if (s.repoType === 'git') {
         items.push({ sep: true });
-        // 删除磁盘文件 / 从磁盘永久删除该文件，不可恢复（不影响版本库）
+        // 移到回收站 / 把该文件移入系统回收站，可从回收站恢复（不影响版本库）
         items.push({ icon: <IconTrash />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteFileDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
       }
       items.push({ sep: true });
@@ -472,7 +472,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
           ] : undefined,
           action: s.repoType === 'git' ? undefined : () => s.ignoreFile(row),
         });
-        // 删除磁盘文件 / 从磁盘永久删除该文件，不可恢复（不影响版本库）
+        // 移到回收站 / 把该文件移入系统回收站，可从回收站恢复（不影响版本库）
         items.push({ icon: <IconTrash />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteFileDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
       } else {
         const modified = row.code === 'M' || row.code === 'A' || row.code === 'D' || row.code === 'R' || row.code === 'C';

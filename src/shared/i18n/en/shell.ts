@@ -214,7 +214,7 @@ export const shell = {
   'shell.busy.update': 'Updating…',
   'shell.busy.revert': 'Reverting…',
   'shell.busy.delete': 'Deleting…',
-  'shell.busy.fsDelete': 'Deleting files from disk…',
+  'shell.busy.fsDelete': 'Moving to Trash…',
   'shell.busy.push': 'Pushing…',
   'shell.busy.move': 'Renaming…',
   'shell.busy.fsMove': 'Renaming files on disk…',
@@ -246,13 +246,13 @@ export const shell = {
   'shell.commitSelect.noChanges': 'No changed files in this directory',
   'shell.commitSelect.readFailed': 'Failed to read changes: {msg}',
 
-  // ---- 删除磁盘文件 / 从版本库移除（确认框）----
-  'shell.fsDelete.title': 'Delete Files from Disk',
-  'shell.fsDelete.confirm': 'Delete',
-  'shell.fsDelete.lead': 'This will ',
-  'shell.fsDelete.bold': 'permanently delete from disk',
+  // ---- 移到回收站 / 从版本库移除（确认框）----
+  'shell.fsDelete.title': 'Move to Trash',
+  'shell.fsDelete.confirm': 'Move to Trash',
+  'shell.fsDelete.lead': 'This will move ',
+  'shell.fsDelete.bold': 'to the system Trash',
   'shell.fsDelete.tail': ' {n} item not under version control.| {n} items not under version control.',
-  'shell.fsDelete.warn': 'This cannot be undone. Delete anyway?',
+  'shell.fsDelete.warn': 'Recoverable from the Trash. Move anyway?',
   'shell.remove.title': 'Remove from Repository',
   'shell.remove.confirm': 'Remove',
   'shell.remove.lead': 'This will remove ',

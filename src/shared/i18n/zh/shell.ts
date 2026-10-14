@@ -223,7 +223,7 @@ export const shell = {
   'shell.busy.update': '正在更新…',
   'shell.busy.revert': '正在还原…',
   'shell.busy.delete': '正在删除…',
-  'shell.busy.fsDelete': '正在删除磁盘文件…',
+  'shell.busy.fsDelete': '正在移到回收站…',
   'shell.busy.push': '正在推送…',
   'shell.busy.move': '正在重命名…',
   'shell.busy.fsMove': '正在重命名磁盘文件…',
@@ -255,13 +255,13 @@ export const shell = {
   'shell.commitSelect.noChanges': '当前目录下没有变更文件',
   'shell.commitSelect.readFailed': '读取变更失败: {msg}',
 
-  // ---- 删除磁盘文件 / 从版本库移除（确认框）----
-  'shell.fsDelete.title': '删除磁盘文件',
-  'shell.fsDelete.confirm': '删除磁盘文件',
-  'shell.fsDelete.lead': '将从',
-  'shell.fsDelete.bold': '磁盘永久删除',
+  // ---- 移到回收站 / 从版本库移除（确认框）----
+  'shell.fsDelete.title': '移到回收站',
+  'shell.fsDelete.confirm': '移到回收站',
+  'shell.fsDelete.lead': '将把',
+  'shell.fsDelete.bold': '移到系统回收站',
   'shell.fsDelete.tail': ' {n} 项（不在版本库中的文件）。',
-  'shell.fsDelete.warn': '不可恢复，确认删除？',
+  'shell.fsDelete.warn': '可从回收站恢复，确认移入？',
   'shell.remove.title': '从版本库移除',
   'shell.remove.confirm': '从版本库移除',
   'shell.remove.lead': '将',

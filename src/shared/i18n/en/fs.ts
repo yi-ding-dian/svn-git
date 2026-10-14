@@ -153,7 +153,7 @@ export const fs = {
   'fs.menu.commitNTc': 'Commit Changes ({n} items, {tc} tree conflicts excluded)…',
   'fs.menu.excludedTcTitle': 'Excluded {tc} selected tree conflicts — the server will reject their commit; use "Accept Server Deletion" above to resolve them first',
   'fs.menu.removeFromRepoN': 'Remove from Repository ({n} item)|Remove from Repository ({n} items)',
-  'fs.menu.deleteDiskN': 'Delete from Disk ({n} item)|Delete from Disk ({n} items)',
+  'fs.menu.deleteDiskN': 'Move to Trash ({n} item)|Move to Trash ({n} items)',
   'fs.menu.deleteDiskNTitle': 'Move {n} item(s) to the system Trash (files not in the repository); recoverable from Trash; does not affect the repository',
   'fs.menu.copyPathN': 'Copy Full Paths ({n} item)|Copy Full Paths ({n} items)',
   'fs.menu.pathsCopied': 'Copied {n} full path|Copied {n} full paths',

@@ -153,7 +153,7 @@ export const fs = {
   'fs.menu.commitNTc': '提交修改（{n} 项，已排除 {tc} 项树冲突）…',
   'fs.menu.excludedTcTitle': '已排除选中的 {tc} 项树冲突——它们提交会被服务器拒绝，先用上方「放弃本地添加」处理',
   'fs.menu.removeFromRepoN': '从版本库移除（{n} 项）',
-  'fs.menu.deleteDiskN': '删除磁盘文件（{n} 项）',
+  'fs.menu.deleteDiskN': '移到回收站（{n} 项）',
   'fs.menu.deleteDiskNTitle': '把 {n} 项移到系统回收站（不在版本库中的文件），可从回收站恢复；不影响版本库',
   'fs.menu.copyPathN': '复制完整路径（{n} 项）',
   'fs.menu.pathsCopied': '已复制 {n} 个完整路径',
