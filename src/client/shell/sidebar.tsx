@@ -191,16 +191,24 @@ export function Sidebar(props: {
   const [remoteBehinds, setRemoteBehinds] = useState<Record<string, { behind?: number; failed?: boolean }>>({});
   useEffect(() => {
     let alive = true;
-    for (const h of props.history) {
-      get
-        .remoteProbe(h.path)
-        .then((r) => {
+    // **限并发 2**：弱网下每个探测（git fetch / svn status -u）最长 15~20s；全部项目一起发
+    // 会占满浏览器同域连接槽（HTTP/1.1 为 6 个），把文件列表等主操作挤到队尾——用户实报
+    // 打开项目时"正在加载…"迟迟不结束（网络好时探测秒回、无感，所以是"有时"）
+    const queue = [...props.history];
+    const worker = async (): Promise<void> => {
+      while (alive) {
+        const h = queue.shift();
+        if (!h) return;
+        try {
+          const r = await get.remoteProbe(h.path);
           if (alive) setRemoteBehinds((p) => ({ ...p, [h.path]: r.error ? { failed: true } : { behind: r.behind ?? 0 } }));
-        })
-        .catch(() => {
+        } catch {
           if (alive) setRemoteBehinds((p) => ({ ...p, [h.path]: { failed: true } }));
-        });
-    }
+        }
+      }
+    };
+    void worker();
+    void worker(); // 两个并发 worker 消费同一队列
     return () => {
       alive = false;
     };

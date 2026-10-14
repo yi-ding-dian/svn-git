@@ -1366,9 +1366,11 @@ export class GitVcs {
     if (c && now - c.time < (c.ok ? 60_000 : 10_000)) {
       return { behind: c.behind, ahead: c.ahead, updatedFiles: c.updatedFiles, remoteLogs: c.remoteLogs };
     }
-    // 拉取远程元数据（静默，失败不阻塞）
-    // 15s 快速失败（网络不通时 60s 挂起会占住浏览器连接槽,阻塞目录加载）
-    const fetched = await this.exec(['fetch', '--quiet', 'origin'], { timeoutMs: 15_000 }).catch((e) => ({ code: -1, stdout: '', stderr: String(e?.message ?? '') }));
+    // 拉取远程元数据（静默，失败不阻塞）。
+    // 15s 快速失败（网络不通时 60s 挂起会占住浏览器连接槽,阻塞目录加载）；
+    // --no-tags：后台检查只需要 ahead/behind，不需要标签数据（慢网络下拉 tag 开销可观；
+    // 正常的「拉取」照常同步标签，只有"光探测不拉取"时本地标签列表暂不刷新）
+    const fetched = await this.exec(['fetch', '--quiet', '--no-tags', 'origin'], { timeoutMs: 15_000 }).catch((e) => ({ code: -1, stdout: '', stderr: String(e?.message ?? '') }));
     const branch = await this.branch();
     const upstream = `origin/${branch}`;
     // ahead/behind 计数：git rev-list --left-right --count HEAD...origin/xxx
