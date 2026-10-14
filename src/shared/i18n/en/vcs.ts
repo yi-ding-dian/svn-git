@@ -116,6 +116,8 @@ export const vcs = {
   'vcs.gitAddFailed': 'git add failed',
   'vcs.stagedCount': 'Staged {n} item|Staged {n} items',
   'vcs.gitCommitFailed': 'git commit failed',
+  'vcs.identitySaved': 'Git identity saved: {name} <{email}>',
+  'vcs.identitySaveFailed': 'Failed to set the Git identity',
   'vcs.commitOkRef': 'Committed {ref} {hash}',
   'vcs.stagedCleanupFailed': 'Failed to clean the staging area: {err}',
 

@@ -1,7 +1,7 @@
-/** 配置域端点：全局配置与凭据读写（config / git-auth）+ git 远程地址配置（git-config）+ 界面语言（lang）。
- * 读写 ~/.config/svngit/config.json（见 src/config.ts）；git-config 为当前仓库 origin 远程设置（非 VCS 写操作，归本域）。
+/** 配置域端点：全局配置与凭据读写（config / git-auth）+ git 远程地址配置（git-config）+ git 身份（git-identity）+ 界面语言（lang）。
+ * 读写 ~/.config/svngit/config.json（见 src/config.ts）；git-config / git-identity 为当前仓库的 git 配置（非 VCS 写操作，归本域）。
  * lang 放在本域：它就是 config.json 的一个字段，且改完要立刻生效（setLang 直接改主进程变量，server/vcs/main 同时切）。 */
-import { sendJson, readBody, vcsOf } from './util.js';
+import { sendJson, readBody, vcsOf, MSG_UNSUPPORTED_OP } from './util.js';
 import { loadConfig, saveConfig } from '../../config.js';
 import { t, setLang, getLang, isLang } from '../../shared/i18n/index.js';
 import type { Ctx } from './util.js';
@@ -88,6 +88,39 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     }
     sendJson(res, 200, await vcs.setRemote?.(url));
     return true;
+  }
+
+  if (p === '/api/git-identity') {
+    // git 身份（user.name / user.email）：提交被 git 以「Author identity unknown」拒绝时，
+    // 前端弹「设置身份」窗——GET 回显当前值与作用域，POST 写全局或仅本仓库
+    const { vcs, repo } = vcsOf();
+    if (repo.type !== 'git') {
+      // 非 Git 仓库
+      sendJson(res, 400, { error: t('srv.notGitRepo') });
+      return true;
+    }
+    if (req.method === 'GET') {
+      sendJson(res, 200, (await vcs.identity?.()) ?? { name: '', email: '', scope: '' });
+      return true;
+    }
+    if (req.method === 'POST') {
+      const body = await readBody(req);
+      const name = String(body.name ?? '').trim();
+      const email = String(body.email ?? '').trim();
+      // 姓名不能为空 / 邮箱不能为空
+      if (!name) {
+        sendJson(res, 400, { error: t('srv.identityNameEmpty') });
+        return true;
+      }
+      if (!email) {
+        sendJson(res, 400, { error: t('srv.identityEmailEmpty') });
+        return true;
+      }
+      // 只有明确 global 才写全局——缺省一律只写本仓库（少动全局配置，出错影响面小）
+      const scope = body.scope === 'global' ? 'global' : 'repo';
+      sendJson(res, 200, (await vcs.setIdentity?.(name, email, scope)) ?? { ok: false, message: MSG_UNSUPPORTED_OP() });
+      return true;
+    }
   }
 
   return false;

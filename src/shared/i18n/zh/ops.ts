@@ -146,6 +146,26 @@ export const ops = {
   'ops.gitInfo.remoteHint': '修改后推送/拉取将使用新地址（已有 origin 则更新，没有则添加）',
   'ops.gitInfo.err.noUrl': '远程地址不能为空',
   'ops.gitInfo.err.save': '配置失败: {msg}',
+  'ops.gitInfo.identity': '身份',
+  'ops.gitInfo.identityUnset': '未配置（提交会被 git 拒绝）',
+  'ops.gitInfo.identityEdit': '修改',
+
+  // ---- Git 身份（提交被 git 拒绝时代填；git-identity）----
+  'ops.gitIdentity.title': '设置 Git 身份',
+  'ops.gitIdentity.lead': '提交需要作者姓名和邮箱，当前 Git 没配置（本仓库和全局都没有）。填一次，之后提交都用它。',
+  'ops.gitIdentity.name': '姓名',
+  'ops.gitIdentity.email': '邮箱',
+  'ops.gitIdentity.emailHint': '建议填 GitHub 账号的邮箱，提交才能在 GitHub 上归属到你名下',
+  'ops.gitIdentity.scope': '保存到',
+  'ops.gitIdentity.scopeGlobal': '全局',
+  'ops.gitIdentity.scopeGlobalHint': '所有仓库通用',
+  'ops.gitIdentity.scopeRepo': '仅本仓库',
+  'ops.gitIdentity.scopeRepoHint': '只写进本仓库的 .git/config',
+  'ops.gitIdentity.needName': '请填写姓名',
+  'ops.gitIdentity.needEmail': '请填写邮箱',
+  'ops.gitIdentity.emailInvalid': '邮箱格式不对（形如 you@example.com）',
+  'ops.gitIdentity.saving': '保存中…',
+  'ops.gitIdentity.saveAndRetry': '保存并重试提交',
 
   // ---- 分支管理（branch）----
   'ops.branch.title': '分支管理',

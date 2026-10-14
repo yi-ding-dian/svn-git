@@ -112,8 +112,9 @@ export interface VcsResult {
   ok: boolean;
   message: string;
   authError?: boolean;
-  /** 结构化错误分类（服务端透传）：AUTH=认证失败 / ABORTED=用户取消 / NO_CHANGES=无变化 */
-  code?: 'AUTH' | 'ABORTED' | 'NO_CHANGES';
+  /** 结构化错误分类（服务端透传，定义源头在 src/vcs/types.ts）：AUTH=认证失败 / ABORTED=用户取消 /
+   *  NO_CHANGES=无变化 / NO_IDENTITY=git 身份未配置（提交被拒 → 前端弹「设置身份」窗） */
+  code?: 'AUTH' | 'ABORTED' | 'NO_CHANGES' | 'NO_IDENTITY';
   /** svn 命令输出警告行（如 W205011 外部定义失败） */
   warnings?: string[];
   /** git 推送认证失败类型（github / server / ssh），前端据此引导认证 */
@@ -396,6 +397,8 @@ export const get = {
       '/api/git-info',
     ),
   gitAuth: () => api<{ username: string; hasPassword: boolean }>('/api/git-auth'),
+  /** git 身份（user.name / user.email 的有效值 + 作用域）：提交失败弹「设置身份」窗与 Git 信息弹窗回显用 */
+  gitIdentity: () => api<{ name: string; email: string; scope: 'repo' | 'global' | '' }>('/api/git-identity'),
   /** 提交完整说明（标题+正文）：改注释弹窗回显用（列表接口只带 %s 标题，不含正文） */
   commitMessage: (rev: string) => api<{ message: string }>(`/api/commit-message?rev=${encodeURIComponent(rev)}`),
   gitUnpushedCount: () => api<{ count: number }>('/api/git-unpushed-count'),
@@ -581,6 +584,9 @@ export const post = {
   newFile: (path: string) => api<{ ok: boolean; message?: string }>('/api/new-file', json({ path })),
   rename: (from: string, to: string) => api<{ ok: boolean }>('/api/rename', json({ from, to })),
   gitConfig: (remoteUrl: string) => api<VcsResult>('/api/git-config', json({ remoteUrl })),
+  /** 保存 git 身份（scope=global 写全局配置，repo 只写本仓库）——提交被拒后的「设置身份」窗用 */
+  gitIdentitySave: (name: string, email: string, scope: 'repo' | 'global') =>
+    api<VcsResult>('/api/git-identity', json({ name, email, scope })),
   gitAuthSave: (username: string, password: string) => api<VcsResult>('/api/git-auth', json({ username, password })),
   gitAmend: (message: string) => api<VcsResult>('/api/git-amend', json({ message })),
   /** 批量提交完整说明（rev → 标题+正文）：提交列表悬浮提示用 */

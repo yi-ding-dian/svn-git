@@ -794,6 +794,11 @@ export function App() {
       if (r.ok) {
         showToast(r.message);
         refresh();
+      } else if (r.code === 'NO_IDENTITY') {
+        // git 身份未配置（git 拒绝提交，报 NO_IDENTITY）：不糊原始报错，改弹「设置身份」窗，
+        // 保存后自动重试本次提交（重试逻辑在 modal-host，凭这里带上的 retry 数据原样重放）
+        setModal({ type: 'git-identity', retry: { paths, message, stagedOnly: [] } });
+        return; // 提前返回：下面的 setModal(null) 会把刚弹的身份窗关掉
       } else {
         showCommitFail(r.message, paths);
       }
@@ -864,6 +869,9 @@ export function App() {
         if (r.ok) {
           showToast(r.message);
           refresh();
+        } else if (r.code === 'NO_IDENTITY') {
+          // 同 doCommit：身份未配置 → 弹「设置身份」窗（勾选清单/消息原样带上，保存后自动重试）
+          setModal({ type: 'git-identity', retry: { paths, message, stagedOnly } });
         } else {
           showCommitFail(r.message, paths);
         }

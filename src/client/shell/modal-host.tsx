@@ -18,6 +18,7 @@ import { GitHubCreateModal } from '../repo/github-create-repo.js';
 import { GitHubDeleteModal } from '../repo/github-delete-repo.js';
 import { GitHubForkModal } from '../repo/github-fork.js';
 import { GitHubRepoModal } from '../repo/github-repo.js';
+import { GitIdentityModal } from '../ops/git-identity.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
 import { LoginModal } from '../repo/login.js';
 import { EnvInstallModal } from '../repo/env-install.js';
@@ -308,7 +309,27 @@ export function ModalHost(props: ModalHostProps) {
       )}
       {/* onChanged：这里能改 origin 地址，保存成功后顶栏（远程地址 / ⋯ 菜单 GitHub 各项）要跟着换 */}
       {modal?.type === 'git-info' && (
-        <GitInfoModal onClose={() => setModal(null)} onToast={showToast} onChanged={refreshInfo} />
+        <GitInfoModal
+          onClose={() => setModal(null)}
+          onToast={showToast}
+          onChanged={refreshInfo}
+          // 「修改」身份 → 弹「设置身份」窗；returnTo 让关窗后回到本窗（否则关掉就回文件浏览器了）
+          onEditIdentity={() => setModal({ type: 'git-identity', returnTo: { type: 'git-info' } })}
+        />
+      )}
+      {modal?.type === 'git-identity' && (
+        <GitIdentityModal
+          retry={!!modal.retry}
+          onClose={() => setModal(modal.returnTo ?? null)}
+          onSaved={(message) => {
+            showToast(message);
+            const retry = modal.retry;
+            setModal(modal.returnTo ?? null);
+            // 身份刚配好：自动重试刚才那次提交（与「保存凭据后自动重试推送」同一惯例）；
+            // 重试用 doCommitSelected —— 对 git 它与 doCommit 等价（svn 的预 add 分支不会走到，身份只属 git）
+            if (retry) doCommitSelected(retry.paths, retry.message, retry.stagedOnly);
+          }}
+        />
       )}
       {modal?.type === 'github-create-repo' && (
         <GitHubCreateModal

@@ -53,6 +53,8 @@ export const srv = {
   'srv.gitAuthEmpty': 'Username and password are required',
   'srv.gitAuthSaved': 'Push credentials saved',
   'srv.remoteUrlEmpty': 'Remote URL is required',
+  'srv.identityNameEmpty': 'Name is required',
+  'srv.identityEmailEmpty': 'Email is required',
 
   // ---- 分支 / 标签 / Stash（branch.ts）----
   'srv.missingBranch': 'Missing branch name',

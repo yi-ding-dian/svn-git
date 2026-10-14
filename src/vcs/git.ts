@@ -215,6 +215,33 @@ export class GitVcs {
     return { ok: true, message: hasOrigin ? t('vcs.remoteUpdated') : t('vcs.remoteAdded') };
   }
 
+  /** 当前 git 身份（user.name / user.email 的有效值，git config 链上取到的那份）+ 设在哪一级。
+   *  提交被 git 以「Author identity unknown」拒绝时，前端弹「设置身份」窗并用它回显/预填。 */
+  async identity(): Promise<{ name: string; email: string; scope: 'repo' | 'global' | '' }> {
+    const [name, email, local, global] = await Promise.all([
+      // 不带 --local/--global：返回 local→global→system 链上的有效值
+      this.exec(['config', 'user.name']),
+      this.exec(['config', 'user.email']),
+      this.exec(['config', '--local', 'user.email']),
+      this.exec(['config', '--global', 'user.email']),
+    ]);
+    // 作用域按邮箱判定（name/email 通常一起设）：local 有值=仅本仓库；否则 global 有值=全局；否则未配置
+    const scope = local.stdout.trim() ? 'repo' : global.stdout.trim() ? 'global' : '';
+    return { name: name.stdout.trim(), email: email.stdout.trim(), scope };
+  }
+
+  /** 写 git 身份（姓名 + 邮箱）：scope='global' 写用户级配置（所有仓库生效），'repo' 只写本仓库 .git/config */
+  async setIdentity(name: string, email: string, scope: 'repo' | 'global'): Promise<VcsResult> {
+    const scopeFlag = scope === 'global' ? ['--global'] : [];
+    for (const [key, value] of [['user.name', name], ['user.email', email]] as const) {
+      const r = await this.exec(['config', ...scopeFlag, key, value]);
+      // 设置 Git 身份失败
+      if (r.code !== 0) return { ok: false, message: r.stderr.trim() || t('vcs.identitySaveFailed') };
+    }
+    // Git 身份已保存：{name} <{email}>
+    return { ok: true, message: t('vcs.identitySaved', { name, email }) };
+  }
+
   /** git status --porcelain=v1 */
   async status(pathRel?: string): Promise<FileStatus[]> {
     // 注意：git 2.20 的 -u 不接受分离参数（-u normal 会把 normal 当路径），必须 -unormal
@@ -633,6 +660,19 @@ export class GitVcs {
   }
 
   /** git add -A + commit */
+  /** 提交失败的统一出口：**不解析报错文案**（git 报错随系统语言本地化，文案不可靠），
+   *  改用 `git var GIT_AUTHOR_IDENT` 判定身份是否可用——它失败说明 author 身份取不到
+   *  （user.name/email 各级配置与环境变量都没有），这正是 git 拒绝提交的原因；
+   *  命中时带 code:NO_IDENTITY，前端据此弹「设置身份」窗而不是糊原始报错。 */
+  private async commitFailed(stderr: string): Promise<VcsResult> {
+    const ident = await this.exec(['var', 'GIT_AUTHOR_IDENT']);
+    return {
+      ok: false,
+      message: stderr.trim() || t('vcs.gitCommitFailed'),
+      code: ident.code === 0 ? undefined : 'NO_IDENTITY',
+    };
+  }
+
   async commit(relPaths: string[], msg: string, stagedOnly: string[] = []): Promise<VcsResult> {
     // 合并进行中（MERGE_HEAD 存在）：git 禁止部分提交（cannot do a partial commit during a merge）。
     // 冲突解决器 resolve 时已 add 好文件，这里忽略勾选、提交整个合并即可（部分提交在合并态无意义）
@@ -642,8 +682,8 @@ export class GitVcs {
       // 暂存失败: {err}
       if (addAll.code !== 0) return { ok: false, message: t('vcs.stageFailedErr', { err: addAll.stderr.trim() }) };
       const res = await this.exec(['commit', '-m', msg], { timeoutMs: 120_000 });
-      // git commit 失败
-      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitCommitFailed') };
+      // git commit 失败（身份未配置时带 code:NO_IDENTITY）
+      if (res.code !== 0) return this.commitFailed(res.stderr);
       const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
       // 提交成功 {ref} {hash} / 提交成功
       return { ok: true, message: m ? t('vcs.commitOkRef', { ref: m[1] ?? '', hash: m[2]?.slice(0, 7) ?? '' }) : t('vcs.commitOk') };
@@ -704,8 +744,8 @@ export class GitVcs {
           clearHunkStaged(this.repo.root, drop);
         }
         const res = await this.exec(['commit', '-m', msg], { timeoutMs: 120_000 });
-        // git commit 失败
-        if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitCommitFailed') };
+        // git commit 失败（身份未配置时带 code:NO_IDENTITY）
+        if (res.code !== 0) return this.commitFailed(res.stderr);
         clearHunkStaged(this.repo.root, relPaths); // 已提交，登记失效
         const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
         // 提交成功 {ref} {hash} / 提交成功
@@ -716,8 +756,8 @@ export class GitVcs {
       // 所以只有工作区真的和 HEAD 不同才提交得动。已删除(D)且文件仍在磁盘上的（`git rm --cached`），
       // 走这条路会误判成"无文件要提交、干净的工作区"（实测），必须用不带 pathspec 的 commit。
       const res = await this.exec(['commit', '-m', msg, '--', ...relPaths], { timeoutMs: 120_000 });
-      // git commit 失败
-      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitCommitFailed') };
+      // git commit 失败（身份未配置时带 code:NO_IDENTITY）
+      if (res.code !== 0) return this.commitFailed(res.stderr);
       const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
       // 提交成功 {ref} {hash} / 提交成功
       return { ok: true, message: m ? t('vcs.commitOkRef', { ref: m[1] ?? '', hash: m[2]?.slice(0, 7) ?? '' }) : t('vcs.commitOk') };
@@ -727,8 +767,8 @@ export class GitVcs {
     // 暂存失败: {err}
     if (addRes.code !== 0) return { ok: false, message: t('vcs.stageFailedErr', { err: addRes.stderr.trim() }) };
     const res = await this.exec(['commit', '-m', msg], { timeoutMs: 120_000 });
-    // git commit 失败
-    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitCommitFailed') };
+    // git commit 失败（身份未配置时带 code:NO_IDENTITY）
+    if (res.code !== 0) return this.commitFailed(res.stderr);
     const m = res.stdout.match(/\[(\S+)\s+([0-9a-f]+)\]/);
     // 提交成功 {ref} {hash} / 提交成功
     return { ok: true, message: m ? t('vcs.commitOkRef', { ref: m[1] ?? '', hash: m[2]?.slice(0, 7) ?? '' }) : t('vcs.commitOk') };

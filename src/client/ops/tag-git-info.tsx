@@ -161,6 +161,8 @@ export function GitInfoModal(props: {
   onToast: (m: string, err?: boolean) => void;
   /** 远程地址保存成功：宿主重拉仓库信息（顶栏远程地址 / ⋯ 菜单 GitHub 各项随之更新） */
   onChanged?: () => void;
+  /** 点「修改」→ 打开「设置 Git 身份」窗（宿主负责弹窗链路的往返） */
+  onEditIdentity: () => void;
 }) {
   const [info, setInfo] = useState<{
     branch: string;
@@ -168,6 +170,8 @@ export function GitInfoModal(props: {
     upstream: string;
     lastCommit: { hash: string; author: string; date: string; msg: string } | null;
   } | null>(null);
+  /** git 身份（user.name/email + 作用域）：未配置时提交会被 git 拒绝，这里如实显示给「修改」入口兜底 */
+  const [identity, setIdentity] = useState<{ name: string; email: string; scope: 'repo' | 'global' | '' } | null>(null);
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -179,6 +183,10 @@ export function GitInfoModal(props: {
         setUrl(r.remote);
       })
       .catch((e: Error) => props.onToast((e as Error).message, true));
+    get
+      .gitIdentity()
+      .then(setIdentity)
+      .catch(() => {});
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -226,6 +234,24 @@ export function GitInfoModal(props: {
                     <span className="dim" style={{ width: 72 }}>{t('ops.gitInfo.upstream')}</span>
                     {/* 未设置（更新时自动按 origin/分支拉取） */}
                     <span className="mono">{info.upstream || <span style={{ color: 'var(--warn)' }}>{t('ops.gitInfo.noUpstream')}</span>}</span>
+                  </div>
+                  <div className="row" style={{ gap: 8 }}>
+                    {/* 身份 */}
+                    <span className="dim" style={{ width: 72 }}>{t('ops.gitInfo.identity')}</span>
+                    <span className="small" style={{ flex: 1, minWidth: 0, wordBreak: 'break-all' }}>
+                      {identity && identity.name && identity.email ? (
+                        <>
+                          <span className="mono">{identity.name} &lt;{identity.email}&gt;</span>
+                          {/* · 全局 / · 仅本仓库 */}
+                          <span className="dim"> · {identity.scope === 'repo' ? t('ops.gitIdentity.scopeRepo') : t('ops.gitIdentity.scopeGlobal')}</span>
+                        </>
+                      ) : (
+                        // 未配置（提交会被 git 拒绝）
+                        <span style={{ color: 'var(--warn)' }}>{t('ops.gitInfo.identityUnset')}</span>
+                      )}
+                    </span>
+                    {/* 修改 */}
+                    <button className="mini" onClick={props.onEditIdentity}>{t('ops.gitInfo.identityEdit')}</button>
                   </div>
                   {info.lastCommit && (
                     <>

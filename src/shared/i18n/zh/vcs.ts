@@ -121,6 +121,8 @@ export const vcs = {
   'vcs.gitAddFailed': 'git add 失败',
   'vcs.stagedCount': '已暂存 {n} 项',
   'vcs.gitCommitFailed': 'git commit 失败',
+  'vcs.identitySaved': 'Git 身份已保存：{name} <{email}>',
+  'vcs.identitySaveFailed': '设置 Git 身份失败',
   'vcs.commitOkRef': '提交成功 {ref} {hash}',
   'vcs.stagedCleanupFailed': '暂存区清理失败: {err}',
 

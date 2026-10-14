@@ -64,8 +64,10 @@ export interface VcsResult {
   ok: boolean;
   message: string;
   stderr?: string;
-  /** 结构化错误分类：AUTH=认证失败（服务层据 code 透传 authError,不再靠正则匹配中文文案） */
-  code?: 'AUTH' | 'ABORTED' | 'NO_CHANGES';
+  /** 结构化错误分类：AUTH=认证失败（服务层据 code 透传 authError,不再靠正则匹配中文文案）；
+   *  NO_IDENTITY=git 身份未配置（user.name/email 缺失，commit 被 git 拒绝）——前端据此弹「设置身份」窗，
+   *  而不是把 git 的原始报错糊给用户 */
+  code?: 'AUTH' | 'ABORTED' | 'NO_CHANGES' | 'NO_IDENTITY';
   /** 命令输出的警告行（如 svn W205011 外部定义失败），原样保留，便于界面展示 */
   warnings?: string[];
 }
@@ -174,6 +176,10 @@ export interface Vcs {
   remote?(): Promise<string>;
   gitInfo?(): Promise<{ branch: string; remote: string; upstream: string; lastCommit: { hash: string; author: string; date: string; msg: string } | null }>;
   setRemote?(url: string): Promise<VcsResult>;
+  /** 当前 git 身份（user.name/user.email 的有效值）+ 设在哪一级：repo=仅本仓库 / global=全局 / ''=未配置 */
+  identity?(): Promise<{ name: string; email: string; scope: 'repo' | 'global' | '' }>;
+  /** 写 git 身份：scope=global 写用户级配置（--global，所有仓库生效），repo 只写本仓库 .git/config */
+  setIdentity?(name: string, email: string, scope: 'repo' | 'global'): Promise<VcsResult>;
   unpushed?(): Promise<string[]>;
   unpushedCount?(): Promise<number>;
   unpushedLog?(): Promise<LogEntry[]>;

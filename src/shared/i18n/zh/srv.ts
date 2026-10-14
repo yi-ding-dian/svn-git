@@ -68,6 +68,8 @@ export const srv = {
   'srv.gitAuthEmpty': '用户名和密码不能为空',
   'srv.gitAuthSaved': '推送认证已保存',
   'srv.remoteUrlEmpty': '远程地址不能为空',
+  'srv.identityNameEmpty': '姓名不能为空',
+  'srv.identityEmailEmpty': '邮箱不能为空',
 
   // ---- 分支 / 标签 / Stash（branch.ts）----
   'srv.missingBranch': '缺少分支名',

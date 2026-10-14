@@ -145,6 +145,26 @@ export const ops = {
   'ops.gitInfo.remoteHint': 'After the change, push/pull uses the new URL (an existing origin is updated, otherwise one is added)',
   'ops.gitInfo.err.noUrl': 'Remote URL cannot be empty',
   'ops.gitInfo.err.save': 'Failed to save the configuration: {msg}',
+  'ops.gitInfo.identity': 'Identity',
+  'ops.gitInfo.identityUnset': 'Not configured (Git will reject commits)',
+  'ops.gitInfo.identityEdit': 'Change',
+
+  // ---- Git identity (prompted when Git rejects a commit; git-identity) ----
+  'ops.gitIdentity.title': 'Set Git Identity',
+  'ops.gitIdentity.lead': 'Committing needs an author name and email, and Git has none configured (neither for this repository nor globally). Set them once and every commit will use them.',
+  'ops.gitIdentity.name': 'Name',
+  'ops.gitIdentity.email': 'Email',
+  'ops.gitIdentity.emailHint': 'Use your GitHub account email so commits are attributed to you on GitHub',
+  'ops.gitIdentity.scope': 'Save to',
+  'ops.gitIdentity.scopeGlobal': 'Global',
+  'ops.gitIdentity.scopeGlobalHint': 'Applies to all repositories',
+  'ops.gitIdentity.scopeRepo': 'This repository only',
+  'ops.gitIdentity.scopeRepoHint': 'Writes only to this repo’s .git/config',
+  'ops.gitIdentity.needName': 'Enter a name',
+  'ops.gitIdentity.needEmail': 'Enter an email',
+  'ops.gitIdentity.emailInvalid': 'Invalid email format (e.g. you@example.com)',
+  'ops.gitIdentity.saving': 'Saving…',
+  'ops.gitIdentity.saveAndRetry': 'Save and Retry Commit',
 
   // ---- 分支管理（branch）----
   'ops.branch.title': 'Branch Manager',
