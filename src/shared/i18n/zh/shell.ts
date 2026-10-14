@@ -156,6 +156,7 @@ export const shell = {
 
   // ---- 侧边栏：导航与相对时间 ----
   'shell.nav.history': '历史',
+  'shell.sidebarResize': '拖动调整侧栏宽度（双击恢复默认）',
   'shell.nav.files': '文件夹',
   'shell.time.justNow': '刚刚',
   'shell.time.minutesAgo': '{n} 分钟前',

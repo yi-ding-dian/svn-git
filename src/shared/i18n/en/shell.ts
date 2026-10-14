@@ -154,6 +154,7 @@ export const shell = {
 
   // ---- 侧边栏：导航与相对时间 ----
   'shell.nav.history': 'History',
+  'shell.sidebarResize': 'Drag to resize the sidebar (double-click to reset)',
   'shell.nav.files': 'Files',
   'shell.time.justNow': 'Just now',
   'shell.time.minutesAgo': '{n} min ago',

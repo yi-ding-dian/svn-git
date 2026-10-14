@@ -366,7 +366,12 @@ body {
   width: 160px; background: var(--panel); border-right: 1px solid var(--border);
   /* overflow: hidden = 兜底：极矮窗口下宁可裁掉也不让侧边栏把页面撑出滚动条 */
   padding: 12px 0; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden;
+  /* 右边缘拖拽手柄的定位基准（宽度由内联 style 覆盖；160px 只是记忆值缺失时的兜底） */
+  position: relative;
 }
+/* 侧栏右边缘拖拽手柄：常态隐形（热区贴内侧，overflow:hidden 下不会被裁），hover 显形提示可拖 */
+.sidebar-resize { position: absolute; right: 0; top: 0; bottom: 0; width: 5px; cursor: col-resize; z-index: 5; }
+.sidebar-resize:hover { background: var(--accent); opacity: .35; }
 .sidebar .item {
   padding: 10px 20px; cursor: pointer; color: var(--dim); user-select: none;
   display: flex; align-items: center; gap: 8px; border-left: 3px solid transparent;

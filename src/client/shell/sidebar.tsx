@@ -1,5 +1,5 @@
 /** 侧边栏：视图导航 + 最近项目列表（右键设常用/备注/删除）+ 版本号 */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { IconClock, IconEye, IconEyeClosed, IconFolder, IconRename, IconServer } from '../ui/icons.js';
 // import { IconDiff } from '../ui/icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from '../ui/context-menu.js';
@@ -115,6 +115,12 @@ function probeTip(st: ProjectProbe, live = false, remoteFailed = false): string 
   if ((st.conflict ?? 0) > 0) out.push(t('shell.recent.tipConflict', { n: st.conflict! }));
   return out.join('\n');
 }
+
+/** 侧栏宽度持久化 key 与范围（右边缘拖拽调整；上限拖拽时再压 min(400, 40% 视口) 防小窗挤压内容区） */
+const SIDEBAR_W_KEY = 'sidebar.width';
+const SIDEBAR_W_DEFAULT = 160;
+const SIDEBAR_W_MIN = 140;
+const SIDEBAR_W_MAX = 400;
 
 export function Sidebar(props: {
   view: View;
@@ -271,6 +277,44 @@ export function Sidebar(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyKey, props.currentRoot, props.refreshTick]);
 
+  /** 侧栏宽度：右边缘拖拽调整，localStorage 持久化；双击手柄恢复默认（项目路径长时可拉宽看全） */
+  const [barWidth, setBarWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(SIDEBAR_W_KEY));
+    return Number.isFinite(saved) && saved >= SIDEBAR_W_MIN && saved <= SIDEBAR_W_MAX ? saved : SIDEBAR_W_DEFAULT;
+  });
+  /** 最新宽度（mouseup 落盘用）——事件闭包拿不到最新 state，走 ref */
+  const barWidthRef = useRef(barWidth);
+  /** 拖拽右边缘：左右移动调宽。拖动期间定格全页光标/禁选中（与文件搜索框手柄同款交互） */
+  const onBarResizeDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const start = { x: e.clientX, w: barWidthRef.current };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev: MouseEvent) => {
+      // 上限取 min(400, 40% 视口)：小窗口下别把内容区挤没
+      const max = Math.min(SIDEBAR_W_MAX, Math.round(window.innerWidth * 0.4));
+      const w = Math.min(max, Math.max(SIDEBAR_W_MIN, start.w + (ev.clientX - start.x)));
+      barWidthRef.current = w;
+      setBarWidth(w);
+    };
+    const onUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem(SIDEBAR_W_KEY, String(barWidthRef.current));
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  /** 双击手柄：恢复默认宽度 */
+  const resetBarWidth = () => {
+    barWidthRef.current = SIDEBAR_W_DEFAULT;
+    setBarWidth(SIDEBAR_W_DEFAULT);
+    localStorage.setItem(SIDEBAR_W_KEY, String(SIDEBAR_W_DEFAULT));
+  };
+
   const NAV = [
     // 历史
     { key: 'log' as View, label: t('shell.nav.history'), icon: <IconClock size={16} /> },
@@ -281,7 +325,9 @@ export function Sidebar(props: {
   ];
 
   return (
-    <div className="sidebar" style={{ display: props.view === 'diff' ? 'none' : undefined }}>
+    <div className="sidebar" style={{ width: barWidth, display: props.view === 'diff' ? 'none' : undefined }}>
+      {/* 右边缘拖拽手柄：左右拖调整侧栏宽度（双击恢复默认），与文件搜索框手柄同款交互 */}
+      <span className="sidebar-resize" onMouseDown={onBarResizeDown} onDoubleClick={resetBarWidth} title={t('shell.sidebarResize')} />
       {NAV.map((n) => (
         <div
           key={n.key}
