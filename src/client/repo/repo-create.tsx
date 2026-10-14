@@ -14,13 +14,32 @@ import { ResultLine } from '../ui/result-line.js';
 import { joinPath } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 import { GitPushAuthModal } from './git-auth.js';
+import { useGitHubCred, GitHubCredBox } from './gh-cred.js';
 // ==================== 创建 / 克隆仓库 ====================
 
-export function CreateRepoDialog(props: { home?: string; onClose: () => void; onCreated: (dir: string) => void }) {
-  const [type, setType] = useState<'git' | 'svn'>('git');
+/** 「GitHub 仓库」类型创建后交给宿主继续的 GitHub 步骤参数（本地仓库已建好并打开后执行：
+ *  宿主保存内联凭据 → 调 /api/gh-create-repo 建远程仓库并设 origin） */
+export interface GhSetupOpts {
+  name: string;
+  desc: string;
+  isPrivate: boolean;
+  /** 内联凭据（未存过/切换了凭据）：宿主先 gitAuthSave 再建远程；null = 用已存凭据 */
+  cred: { user: string; token: string } | null;
+}
+
+export function CreateRepoDialog(props: {
+  home?: string;
+  onClose: () => void;
+  /** 创建完成（本地仓库已建好）；gh 有值 = 选的是「GitHub 仓库」类型，由宿主继续 GitHub 步骤 */
+  onCreated: (dir: string, gh?: GhSetupOpts) => void;
+}) {
+  const [type, setType] = useState<'git' | 'svn' | 'github'>('git');
   const [dir, setDir] = useState(props.home ?? '');
   const [name, setName] = useState('');
   const [standard, setStandard] = useState(true); // svn 标准布局（trunk/branches/tags），默认勾选
+  const [desc, setDesc] = useState(''); // GitHub 类型：仓库描述（可选）
+  const [isPrivate, setIsPrivate] = useState(true); // GitHub 类型：默认私有（安全默认，防误公开）
+  const cred = useGitHubCred(); // GitHub 类型：凭据（已存/内联填写，与「GitHub 新建仓库」弹窗共用）
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -34,10 +53,17 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
       setMsgErr(true);
       return;
     }
+    // GitHub 类型：内联凭据必填（没填就不去建远程；用已存凭据时不用填）
+    if (type === 'github' && cred.mode === 'input' && (!cred.user.trim() || !cred.token)) {
+      // 请填写用户名和 Token
+      setMsg(t('repo.ghCreate.needCred'));
+      setMsgErr(true);
+      return;
+    }
     setBusy(true);
-    // 前置风险检测（目标已存在 / 位于仓库内），成功后弹二次确认
+    // 前置风险检测（目标已存在 / 位于仓库内），成功后弹二次确认。本地部分 github 与 git 同款（git init）
     void post
-      .repoCheck(type, dir.trim(), name.trim())
+      .repoCheck(type === 'svn' ? 'svn' : 'git', dir.trim(), name.trim())
       .then((r) => setPending(r))
       .catch((e) => {
         setMsg((e as Error).message);
@@ -51,13 +77,26 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
     setPending(null);
     setBusy(true);
     void runAction(
-      () => post.repoCreate(type, dir.trim(), name.trim(), '', standard),
+      // GitHub 类型的本地部分与 git 相同（git init）；远程仓库由宿主在项目打开后继续创建
+      () => post.repoCreate(type === 'svn' ? 'svn' : 'git', dir.trim(), name.trim(), '', standard),
       (m, err) => {
         setMsg(m);
         setMsgErr(Boolean(err));
       },
-      // 打开服务端返回的仓库路径（git=目标目录；svn=xxx-wc 工作副本），没返回时兜底拼路径
-      (r) => props.onCreated(r.repoDir ?? `${dir.trim().replace(/\/$/, '')}/${name.trim()}`)
+      // 打开服务端返回的仓库路径（git=目标目录；svn=xxx-wc 工作副本），没返回时兜底拼路径；
+      // GitHub 类型带上后续步骤参数（宿主建远程并设 origin）
+      (r) =>
+        props.onCreated(
+          r.repoDir ?? `${dir.trim().replace(/\/$/, '')}/${name.trim()}`,
+          type === 'github'
+            ? {
+                name: name.trim(),
+                desc: desc.trim(),
+                isPrivate,
+                cred: cred.mode === 'input' ? { user: cred.user.trim(), token: cred.token } : null,
+              }
+            : undefined
+        )
     ).finally(() => setBusy(false));
   };
 
@@ -78,9 +117,9 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
             onClick={submit}
             title={
               `${
-                type === 'git'
-                  ? (cmdOfRepo('git', 'init', { dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
-                  : (cmdOfRepo('svn', 'create', { dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
+                type === 'svn'
+                  ? (cmdOfRepo('svn', 'create', { dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
+                  : (cmdOfRepo('git', 'init', { dir: `${dir.trim()}/${name.trim() || '…'}` }) ?? '')
               }`
             }
           >
@@ -100,6 +139,8 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
           [
             // Git 仓库 (init)
             ['git', t('repo.create.typeGit')],
+            // GitHub 仓库（本地 git init + GitHub 建远程仓库）
+            ['github', t('repo.create.typeGithub')],
             // SVN 仓库（svnadmin）
             ['svn', t('repo.create.typeSvn')],
           ] as const
@@ -138,6 +179,8 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
           const base = joinPath(dir, name.trim() || '…');
           // 将创建：Git 仓库 {path}\ngit init 创建，创建后自动打开
           if (type === 'git') return t('repo.create.previewGit', { path: base });
+          // 将创建：GitHub 仓库 {name}（本地目录 {path}）\n本地 git init 后自动在 GitHub 创建同名远程仓库并设为 origin，创建后自动打开
+          if (type === 'github') return t('repo.create.previewGithub', { path: base, name: name.trim() || '…' });
           // 将创建：SVN 版本库 {path}（服务器存储，不能直接编辑）\n并检出工作副本 {wc}（创建后自动打开；日常编辑、添加、提交都在工作副本进行）
           return t('repo.create.previewSvn', { path: base, wc: `${base}-wc` });
         })()}
@@ -158,6 +201,34 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
           )}
         </>
       )}
+      {/* GitHub 类型专用：描述 / 公开私有 / 凭据（建远程仓库用；本地部分与 git 相同） */}
+      {type === 'github' && (
+        <>
+          <FormRow label={t('repo.ghCreate.desc')}>
+            <input type="text" value={desc} onChange={(e) => setDesc(e.target.value)} />
+          </FormRow>
+          <FormRow label={t('repo.ghCreate.visibility')}>
+            <div className="row" style={{ gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* display:flex 必须 inline：.form-row label 的 display:block 会压过 .row，否则 gap 不生效 */}
+              <label className="row" style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', marginBottom: 0 }}>
+                <input type="radio" checked={isPrivate} onChange={() => setIsPrivate(true)} />
+                {/* 私有 */}
+                <span>{t('repo.ghCreate.private')}</span>
+                {/* 仅自己可见 */}
+                <span className="dim small">{t('repo.ghCreate.privateHint')}</span>
+              </label>
+              <label className="row" style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', marginBottom: 0 }}>
+                <input type="radio" checked={!isPrivate} onChange={() => setIsPrivate(false)} />
+                {/* 公开 */}
+                <span>{t('repo.ghCreate.public')}</span>
+                {/* 所有人可见 */}
+                <span className="dim small">{t('repo.ghCreate.publicHint')}</span>
+              </label>
+            </div>
+          </FormRow>
+          <GitHubCredBox cred={cred} onEnter={submit} />
+        </>
+      )}
       <ResultLine msg={msg} err={msgErr} />
       {/* 二次确认：目标路径 + 命令 + 风险检测 */}
       {pending && (
@@ -169,7 +240,13 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
               {/* 目标路径：{path} */}
               <div>{t('repo.confirm.target', { path: pending.target })}</div>
               {/* 将执行：git init 初始化仓库（命令预览见按钮） / 将执行：svnadmin create 创建版本库 + 检出工作副本（命令预览见按钮） */}
-              <div>{type === 'git' ? t('repo.create.willRunGit') : t('repo.create.willRunSvn')}</div>
+              <div>{type === 'svn' ? t('repo.create.willRunSvn') : t('repo.create.willRunGit')}</div>
+              {type === 'github' && (
+                <div style={{ marginTop: 4 }}>
+                  {/* 同时将在 GitHub 上创建同名远程仓库 {name} 并设为 origin */}
+                  {t('repo.create.willRunGithub', { name: name.trim() })}
+                </div>
+              )}
               {pending.inRepo && (
                 <div style={{ color: 'var(--warn)', marginTop: 6 }}>
                   {/* ⚠ 目标位于 {type} 仓库内（{root}）——在其内部创建会成为外层仓库的未版本化内容，状态/数据可能错乱 */}
@@ -187,9 +264,9 @@ export function CreateRepoDialog(props: { home?: string; onClose: () => void; on
           // 确认创建
           confirmLabel={t('repo.create.confirm')}
           confirmCmd={
-            type === 'git'
-              ? (cmdOfRepo('git', 'init', { dir: pending.target }) ?? '')
-              : (cmdOfRepo('svn', 'create', { dir: pending.target }) ?? '')
+            type === 'svn'
+              ? (cmdOfRepo('svn', 'create', { dir: pending.target }) ?? '')
+              : (cmdOfRepo('git', 'init', { dir: pending.target }) ?? '')
           }
           onConfirm={doCreate}
           onCancel={() => setPending(null)}

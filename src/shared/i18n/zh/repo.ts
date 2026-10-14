@@ -174,11 +174,14 @@ export const repo = {
   'repo.create.creating': '创建中…',
   'repo.create.create': '创建',
   'repo.create.help':
-    '两种方式：Git 仓库 = 在本地目录初始化新仓库（git init）；SVN 仓库 = 用 svnadmin 创建本地仓库，默认创建标准布局（trunk / branches / tags）并检出 trunk 作为工作副本（目录名 + "-wc"）。',
+    '三种方式：Git 仓库 = 在本地目录初始化新仓库（git init）；GitHub 仓库 = 本地 git init 并在 GitHub 上创建同名远程仓库（自动设为 origin）；SVN 仓库 = 用 svnadmin 创建本地仓库，默认创建标准布局（trunk / branches / tags）并检出 trunk 作为工作副本（目录名 + "-wc"）。',
   'repo.create.typeGit': 'Git 仓库 (init)',
+  'repo.create.typeGithub': 'GitHub 仓库',
   'repo.create.typeSvn': 'SVN 仓库（svnadmin）',
   'repo.create.name': '仓库名称',
   'repo.create.previewGit': '将创建：Git 仓库 {path}\ngit init 创建，创建后自动打开',
+  'repo.create.previewGithub':
+    '将创建：GitHub 仓库 {name}（本地目录 {path}）\n本地 git init 后自动在 GitHub 创建同名远程仓库并设为 origin，创建后自动打开',
   'repo.create.previewSvn':
     '将创建：SVN 版本库 {path}（服务器存储，不能直接编辑）\n并检出工作副本 {wc}（创建后自动打开；日常编辑、添加、提交都在工作副本进行）',
   'repo.create.standard': '创建标准布局（trunk / branches / tags），工作副本检出 trunk',
@@ -186,6 +189,8 @@ export const repo = {
   'repo.create.confirmTitle': '确认创建仓库？',
   'repo.create.confirm': '确认创建',
   'repo.create.willRunGit': '将执行：git init 初始化仓库（命令预览见按钮）',
+  'repo.create.willRunGithub': '同时将在 GitHub 上创建同名远程仓库 {name} 并设为 origin',
+  'repo.create.ghRemoteFail': '本地仓库已创建，但 GitHub 远程仓库创建失败：{msg}——可在 ⋯ 菜单「GitHub 新建仓库」重试',
   'repo.create.willRunSvn': '将执行：svnadmin create 创建版本库 + 检出工作副本（命令预览见按钮）',
   'repo.create.inRepoTip':
     '⚠ 目标位于 {type} 仓库内（{root}）——在其内部创建会成为外层仓库的未版本化内容，状态/数据可能错乱',

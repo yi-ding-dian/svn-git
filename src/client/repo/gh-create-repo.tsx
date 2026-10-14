@@ -9,6 +9,7 @@ import { get, post, type GhCreateResult } from '../shared/api.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { t } from '../../shared/i18n/index.js';
 import { normalizeGhRepoName, sanitizeGhRepoName } from '../../shared/github.js';
+import { useGitHubCred, GitHubCredBox } from './gh-cred.js';
 
 /** 目录名 → 合法 GitHub 仓库名（默认值）：非法字符（含中文）换成 -，去首尾 - / .；结果为空回退 'repo' */
 function defaultRepoName(root: string | null): string {
@@ -26,11 +27,8 @@ export function GitHubCreateModal(props: {
   const [name, setName] = useState(() => defaultRepoName(props.root));
   const [desc, setDesc] = useState('');
   const [isPrivate, setIsPrivate] = useState(true); // 默认私有（安全默认，防误公开）
-  /** 凭据态：checking=查已存凭据中；saved=用已存；input=内联填写（没存过，或点了「使用其他凭据」） */
-  const [cred, setCred] = useState<'checking' | 'saved' | 'input'>('checking');
-  const [savedUser, setSavedUser] = useState('');
-  const [user, setUser] = useState('');
-  const [token, setToken] = useState('');
+  /** 凭据（已存/内联填写，共享模块管理；mode=checking 时创建按钮禁用） */
+  const cred = useGitHubCred();
   /** 当前 origin（非空才显示警告——创建后会被改指到新仓库） */
   const [originUrl, setOriginUrl] = useState('');
   const [err, setErr] = useState('');
@@ -38,17 +36,6 @@ export function GitHubCreateModal(props: {
 
   useEffect(() => {
     let cancelled = false;
-    // 已存凭据：有 → saved（显示用户名，可切换换）；没有 → input（内联填写）
-    get
-      .gitAuth()
-      .then((r) => {
-        if (cancelled) return;
-        setSavedUser(r.username);
-        setCred(r.hasPassword ? 'saved' : 'input');
-      })
-      .catch(() => {
-        if (!cancelled) setCred('input');
-      });
     // 已有 origin：创建后会被 setRemote 覆盖，提前如实告知
     get
       .gitInfo()
@@ -69,7 +56,7 @@ export function GitHubCreateModal(props: {
       setErr(t('repo.ghCreate.nameInvalid'));
       return;
     }
-    if (cred === 'input' && (!user.trim() || !token)) {
+    if (cred.mode === 'input' && (!cred.user.trim() || !cred.token)) {
       // 请填写用户名和 Token
       setErr(t('repo.ghCreate.needCred'));
       return;
@@ -79,8 +66,8 @@ export function GitHubCreateModal(props: {
     void (async () => {
       try {
         // 内联凭据先保存（与推送认证同一份存储；保存失败就停，不拿无效凭据去建仓库）
-        if (cred === 'input') {
-          const sr = await post.gitAuthSave(user.trim(), token);
+        if (cred.mode === 'input') {
+          const sr = await post.gitAuthSave(cred.user.trim(), cred.token);
           if (!sr.ok) {
             // 凭据保存失败：{msg}
             setErr(t('repo.ghCreate.saveFailed', { msg: sr.message }));
@@ -156,49 +143,8 @@ export function GitHubCreateModal(props: {
               </label>
             </div>
           </div>
-          {cred === 'saved' ? (
-            <div className="row small" style={{ gap: 8, alignItems: 'center', marginBottom: 10 }}>
-              {/* 使用已保存的 GitHub 凭据（{user}） */}
-              <span className="dim">{t('repo.ghCreate.credSaved', { user: savedUser })}</span>
-              <button
-                className="mini"
-                onClick={() => {
-                  setCred('input');
-                  setUser(savedUser);
-                  setToken('');
-                }}
-              >
-                {/* 使用其他凭据 */}
-                {t('repo.ghCreate.credChange')}
-              </button>
-            </div>
-          ) : cred === 'input' ? (
-            <>
-              <div className="form-row">
-                {/* GitHub 用户名 */}
-                <label>{t('repo.ghCreate.credUser')}</label>
-                <input type="text" placeholder="your-github-username" value={user} onChange={(e) => setUser(e.target.value)} />
-              </div>
-              <div className="form-row">
-                {/* Personal Access Token */}
-                <label>{t('repo.ghCreate.credToken')}</label>
-                <input
-                  type="password"
-                  // ghp_xxx（Settings → Developer settings → Tokens）
-                  placeholder={t('repo.auth.patPlaceholder')}
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') submit();
-                  }}
-                />
-              </div>
-              <div className="dim small" style={{ marginBottom: 8 }}>
-                {/* 创建仓库需 token 勾选 <b>repo / public_repo</b> 权限（classic），或勾选 Repository creation（fine-grained） */}
-                {t('repo.ghCreate.credHint1')}<b>repo / public_repo</b>{t('repo.ghCreate.credHint2')}
-              </div>
-            </>
-          ) : null}
+          {/* 凭据区（已存显示用户名+可换 / 未存内联填写；与「新建仓库」弹窗共用 gh-cred） */}
+          <GitHubCredBox cred={cred} onEnter={submit} />
           {originUrl && (
             <div className="small" style={{ color: 'var(--warn)', marginBottom: 8, wordBreak: 'break-all' }}>
               {/* ⚠ 当前 origin 指向 {url}，创建后 origin 将改为新仓库 */}
@@ -214,7 +160,7 @@ export function GitHubCreateModal(props: {
         <div className="foot">
           {/* 取消 */}
           <button onClick={props.onClose} disabled={busy}>{t('common.cancel')}</button>
-          <button className="primary" disabled={busy || !name.trim() || cred === 'checking'} onClick={submit}>
+          <button className="primary" disabled={busy || !name.trim() || cred.mode === 'checking'} onClick={submit}>
             {/* 创建中… / 创建仓库 */}
             {busy ? t('repo.ghCreate.busy') : t('repo.ghCreate.create')}
           </button>

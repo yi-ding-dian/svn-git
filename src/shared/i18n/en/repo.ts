@@ -168,11 +168,14 @@ export const repo = {
   'repo.create.creating': 'Creating…',
   'repo.create.create': 'Create',
   'repo.create.help':
-    'Two options: Git repository = initialize a new repository in a local directory (git init); SVN repository = create a local repository with svnadmin, with the standard layout (trunk / branches / tags) by default and trunk checked out as the working copy (directory name + "-wc").',
+    'Three options: Git repository = initialize a new repository in a local directory (git init); GitHub repository = git init locally plus a same-named remote repository on GitHub (set as origin automatically); SVN repository = create a local repository with svnadmin, with the standard layout (trunk / branches / tags) by default and trunk checked out as the working copy (directory name + "-wc").',
   'repo.create.typeGit': 'Git Repository (init)',
+  'repo.create.typeGithub': 'GitHub Repository',
   'repo.create.typeSvn': 'SVN Repository (svnadmin)',
   'repo.create.name': 'Repository Name',
   'repo.create.previewGit': 'Will create: Git repository {path}\nCreated with git init; opens automatically afterwards',
+  'repo.create.previewGithub':
+    'Will create: GitHub repository {name} (local directory {path})\nAfter git init, a same-named remote repository is created on GitHub and set as origin; opens automatically afterwards',
   'repo.create.previewSvn':
     'Will create: SVN repository {path} (server-side storage, not editable directly)\nand check out the working copy {wc} (opens automatically afterwards; daily edits, adds and commits happen in the working copy)',
   'repo.create.standard': 'Create the standard layout (trunk / branches / tags), checking out trunk',
@@ -181,6 +184,8 @@ export const repo = {
   'repo.create.confirmTitle': 'Create this repository?',
   'repo.create.confirm': 'Create',
   'repo.create.willRunGit': 'Will run: git init (hover the button for the command preview)',
+  'repo.create.willRunGithub': 'A same-named remote repository {name} will also be created on GitHub and set as origin',
+  'repo.create.ghRemoteFail': 'Local repository created, but creating the GitHub remote failed: {msg} — retry via the ⋯ menu "New GitHub Repo"',
   'repo.create.willRunSvn':
     'Will run: svnadmin create to make the repository + check out the working copy (hover the button for the command preview)',
   'repo.create.inRepoTip':
