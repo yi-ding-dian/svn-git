@@ -313,6 +313,9 @@ export function useCopyPaste(opts: {
   repoRoot: string;
   /** 有同名冲突时问用户选策略（可顺带逐个改名，与拖入上传共用同一个弹窗）；返回 null = 取消 */
   askConflict: (conflicts: string[]) => Promise<ConflictChoice | null>;
+  /** 跨仓库「剪切」含版本化文件时弹窗（版本化不能跨仓库移动）：versioned=被跳过的项名；
+   *  pasteCount=可粘贴的未版本化项数（0=全部被拒，仅告知）；返回 true=继续粘贴未版本化项 */
+  askCrossCut: (versioned: string[], pasteCount: number) => Promise<boolean>;
   onToast: (m: string, err?: boolean) => void;
   /** 搬运完成后刷新当前目录 */
   onDone: () => void;
@@ -343,76 +346,71 @@ export function useCopyPaste(opts: {
   const paste = useCallback(async (destDirArg?: string) => {
     const c = clipRef.current;
     if (!c || busy.current) return;
-    const { dir, repoRoot, onToast, onDone, askConflict } = optsRef.current;
-    if (c.repoRoot !== repoRoot) {
-      setClip(null);
-      // 剪贴板来自另一个项目，已清空（路径对不上）
-      onToast(t('fs.clip.otherRepo'), true);
-      return;
-    }
+    const { dir, repoRoot, onToast, onDone, askConflict, askCrossCut } = optsRef.current;
+    /** 剪贴板来自另一个项目：允许"复制"跨项目；"剪切"跨项目按复制处理（见下） */
+    const crossRepo = c.repoRoot !== repoRoot;
     const dest = destDirArg ?? dir;
-    const absOf = (rel: string): string => absPath(repoRoot, rel);
+    // 源绝对路径用**剪贴板来源项目的根**拼——跨项目粘贴时，用当前项目的根拼会指到
+    // 同名路径的另一个文件；后端只要求源路径存在，不限制在本仓库内
+    const absOf = (rel: string): string => absPath(c.repoRoot, rel);
 
     busy.current = true;
     try {
-      if (c.mode === 'cut') {
-        // 移动规则见 moveItemsTo（与应用内拖拽共用同一套）
+      if (c.mode === 'cut' && !crossRepo) {
+        // 同项目移动：规则见 moveItemsTo（与应用内拖拽共用同一套）
         const outcome = await moveItemsTo(c.items, dest, onToast);
         // 搬完/本就在原位都算这一轮结束；被冲突挡下则保留剪贴板，用户改完能直接再粘
         if (outcome !== 'blocked') setClip(null);
         if (outcome === 'ok') onDone();
         return;
       }
+      // 跨仓库「剪切」：版本化文件不能跨仓库移动（弹窗告知后拒绝）；未版本化按复制处理
+      // （源项目文件保留——后端只能操作当前仓库，不替用户在另一个项目里删源）
+      /** 本次实际要粘贴的条目：复制 / 同仓库剪切 = 全部；跨仓库剪切被弹窗过滤后 = 未版本化的 */
+      let pasteItems = c.items;
+      if (c.mode === 'cut' && crossRepo) {
+        const versionedItems = c.items.filter((i) => !isUnversioned(i.code));
+        if (versionedItems.length > 0) {
+          const unversionedCount = c.items.length - versionedItems.length;
+          const keep = await askCrossCut(versionedItems.map((i) => i.name), unversionedCount);
+          if (!keep) return; // 用户取消（保留剪贴板）
+          if (unversionedCount === 0) return; // 全版本化：仅告知；剪贴板保留，可回源仓库移动
+          pasteItems = c.items.filter((i) => isUnversioned(i.code));
+        }
+      }
 
-      // ---------- 复制 ----------
-      const { conflicts } = await post.uploadCheck(dest, c.items.map((i) => i.name));
+      // ---------- 复制（含跨项目剪切降级）----------
+      const { conflicts } = await post.uploadCheck(dest, pasteItems.map((i) => i.name));
       let choice: ConflictChoice = { mode: 'rename' };
       if (conflicts.length > 0) {
         const chosen = await askConflict(conflicts);
         if (!chosen) return; // 用户取消整批（保留剪贴板）
         choice = chosen;
       }
-      const isConflict = (name: string): boolean => conflicts.includes(name);
       const failed: string[] = [];
-      /** 复制出来的**新**路径（供自动加入版本库） */
-      const fresh: string[] = [];
-      for (const it of c.items) {
+      for (const it of pasteItems) {
         try {
           // 用户在弹窗里给这一项改了名字 → 按新名字放入
           const rel = choice.renames?.[it.name] ?? it.name;
           const r = await post.copyInto(dest, absOf(it.rel), rel, choice.mode);
-          if (!r.ok) {
-            failed.push(`${it.name}${r.error ? `：${r.error}` : ''}`);
-            continue;
-          }
-          // 覆盖模式下覆盖的是已存在的文件，不算新条目；改名/无冲突产生的才是新的
-          const isFresh = !isConflict(it.name) || choice.mode === 'rename';
-          // 源本来就在版本库里 → 副本也该进版本库（源是 ? / I 的说明用户还没打算管它）
-          if (isFresh && r.savedAs && !isUnversioned(it.code)) fresh.push(r.savedAs);
+          if (!r.ok) failed.push(`${it.name}${r.error ? `：${r.error}` : ''}`);
         } catch (e) {
           failed.push(`${it.name}：${(e as Error).message}`);
         }
       }
-      // 自动 add：不然复制进来的只是一堆 ?，用户还得再点一次「添加到版本库」
-      let addedCount = 0;
-      if (fresh.length > 0) {
-        try {
-          const r = await post.add(fresh);
-          if (r.ok) addedCount = fresh.length;
-        } catch {
-          /* 添加失败不阻断：文件已复制成功，用户可以手动加 */
-        }
-      }
-      const okCount = c.items.length - failed.length;
+      // 复制进来的副本**保持未版本化**（不动"待提交"清单）——无论同/跨仓库、源是否版本化，
+      // 何时"添加到版本库"由用户自己决定（用户定稿：复制粘贴没必要自动加入版本化）
+      const okCount = pasteItems.length - failed.length;
       // 已复制 {n} 项到 {dest} / 仓库根目录
       let msg = t('fs.clip.pasted', { n: okCount, dest: dest || t('fs.repoRootDir') });
       // ，失败 {n} 项：{list}
       if (failed.length > 0) msg += t('fs.clip.failedSuffix', { n: failed.length, list: failed.slice(0, 2).join(t('common.listSepSemi')) });
-      // ，已加入版本库
-      else if (addedCount > 0) msg += t('fs.clip.addedToVcs');
-      // （源未纳入版本控制，副本保持未版本化）
-      else if (fresh.length === 0) msg += t('fs.clip.unversioned');
+      // （跨项目「剪切」按复制处理，源文件保留）——说明降级
+      if (c.mode === 'cut' && crossRepo) msg += t('fs.clip.crossMoveAsCopy');
       onToast(msg, failed.length > 0);
+      // 跨项目的「剪切」按复制执行：粘过一次即完（与移动的一次性语义一致，顺带清掉
+      // 源项目行上残留的"待剪切"半透明标记）
+      if (c.mode === 'cut') setClip(null);
       onDone();
     } catch (e) {
       // 粘贴失败：{msg}

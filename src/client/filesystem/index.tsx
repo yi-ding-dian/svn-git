@@ -721,6 +721,7 @@ export function FsView(props: Props) {
     addFavDir,
     menuPatchItems,
     clip: clipFlow.clip,
+    repoRoot: data?.root ?? '',
     copyItems: (items) => clipFlow.take('copy', items),
     cutItems: (items) => clipFlow.take('cut', items),
     pasteInto: (dest) => void clipFlow.paste(dest),
@@ -846,6 +847,12 @@ export function FsView(props: Props) {
   // 拖入上传：落点 = 文件区（当前目录）或文件夹行/格子（该文件夹）。
   // 冲突时弹窗问策略：用 promise 把弹窗结果交回给 hook（弹窗状态只服务本视图，不进全局 modal-host）
   const [conflictAsk, setConflictAsk] = useState<{ conflicts: string[]; resolve: (c: ConflictChoice | null) => void } | null>(null);
+  const [crossCutAsk, setCrossCutAsk] = useState<{ versioned: string[]; pasteCount: number; resolve: (ok: boolean) => void } | null>(null);
+  /** 跨仓库「剪切」含版本化文件：版本化不能跨仓库移动——弹窗告知/确认（继续=只粘未版本化项） */
+  const askCrossCut = useCallback(
+    (versioned: string[], pasteCount: number) => new Promise<boolean>((resolve) => setCrossCutAsk({ versioned, pasteCount, resolve })),
+    [],
+  );
   const askConflict = useCallback(
     (conflicts: string[]) => new Promise<ConflictChoice | null>((resolve) => setConflictAsk({ conflicts, resolve })),
     [],
@@ -914,6 +921,7 @@ export function FsView(props: Props) {
     dir,
     repoRoot: data?.root ?? '',
     askConflict,
+    askCrossCut,
     onToast: props.onToast,
     onDone: useCallback(() => {
       // 搬运一次动两个目录（剪切的源目录也变了）→ 清空全部目录缓存再强刷当前目录。
@@ -1431,6 +1439,39 @@ export function FsView(props: Props) {
             onChoose={(m) => {
               conflictAsk.resolve(m);
               setConflictAsk(null);
+            }}
+          />
+        )}
+        {crossCutAsk && (
+          <ConfirmModal
+            // 跨仓库不能移动版本化文件
+            title={t('fs.clip.crossCutTitle')}
+            message={
+              crossCutAsk.pasteCount > 0 ? (
+                <>
+                  {/* 版本化文件需要在本仓库内「剪切」移动；以下 {n} 项已跳过： */}
+                  <div>{t('fs.clip.crossCutSkip', { n: crossCutAsk.versioned.length })}</div>
+                  <div className="small dim" style={{ margin: '4px 0 8px', wordBreak: 'break-all' }}>
+                    {crossCutAsk.versioned.slice(0, 5).join(t('common.listSep'))}
+                    {crossCutAsk.versioned.length > 5 ? t('fs.menu.andN', { n: crossCutAsk.versioned.length }) : ''}
+                  </div>
+                  {/* 将继续粘贴 {n} 项未版本化文件（源项目文件保留） */}
+                  <div>{t('fs.clip.crossCutWillPaste', { n: crossCutAsk.pasteCount })}</div>
+                </>
+              ) : (
+                // 剪贴板里的 {n} 项都是版本化文件——跨仓库不能移动（请回源项目内用「剪切」移动）
+                <div>{t('fs.clip.crossCutAll', { n: crossCutAsk.versioned.length })}</div>
+              )
+            }
+            hideCancel={crossCutAsk.pasteCount === 0}
+            confirmLabel={crossCutAsk.pasteCount > 0 ? t('fs.clip.crossCutContinue') : t('fs.clip.crossCutOk')}
+            onConfirm={() => {
+              crossCutAsk.resolve(crossCutAsk.pasteCount > 0);
+              setCrossCutAsk(null);
+            }}
+            onCancel={() => {
+              crossCutAsk.resolve(false);
+              setCrossCutAsk(null);
             }}
           />
         )}

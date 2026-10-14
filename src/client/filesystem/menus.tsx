@@ -44,6 +44,8 @@ export interface MenuServices {
   menuPatchItems: (owIdx: number, subs: CtxMenuItem[]) => void;
   /** 文件剪贴板（复制/剪切/粘贴）：null = 空 */
   clip: Clip | null;
+  /** 当前仓库根：判断剪贴板是否跨项目（跨项目「剪切」实际按复制处理，菜单标签跟着改为「粘贴」） */
+  repoRoot: string;
   /** 放进剪贴板（不立刻动磁盘，粘贴时才执行） */
   copyItems: (items: ClipItem[]) => void;
   cutItems: (items: ClipItem[]) => void;
@@ -81,14 +83,17 @@ function pasteItem(s: MenuServices, destDir?: string): CtxMenuItem[] {
   const c = s.clip;
   if (!c) return [];
   const names = c.items.map((i) => i.name);
+  // 跨项目的「剪切」实际按复制执行（跨仓库移动没有语义）——标签/title 也跟着叫「粘贴」，
+  // 不能挂"移动到这里"却做着复制的事（用户看到"移动"会以为源会消失）
+  const isMove = c.mode === 'cut' && c.repoRoot === s.repoRoot;
   //  等 {n} 项
   const shown = names.slice(0, 3).join(t('common.listSep')) + (names.length > 3 ? t('fs.menu.andN', { n: names.length }) : '');
   return [{
     icon: <IconPaste />,
     // 移动到这里（{n} 项） / 粘贴到这里（{n} 项）
-    label: c.mode === 'cut' ? t('fs.menu.moveHere', { n: names.length }) : t('fs.menu.pasteHere', { n: names.length }),
+    label: isMove ? t('fs.menu.moveHere', { n: names.length }) : t('fs.menu.pasteHere', { n: names.length }),
     // 移动：{list} / 复制：{list}
-    title: c.mode === 'cut' ? t('fs.menu.moveToList', { list: shown }) : t('fs.menu.copyToList', { list: shown }),
+    title: isMove ? t('fs.menu.moveToList', { list: shown }) : t('fs.menu.copyToList', { list: shown }),
     action: () => s.pasteInto(destDir),
   }, {
     // 线条叉（与错误提示同一几何；这里语义是"取消/清除"，跟随菜单文字色、不染红）
