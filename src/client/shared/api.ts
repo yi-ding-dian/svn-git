@@ -102,6 +102,10 @@ export interface VcsResult {
   warnings?: string[];
   /** git 推送认证失败类型（github / server / ssh），前端据此引导认证 */
   authType?: 'github' | 'server' | 'ssh';
+  /** 系统回收站不可用（gio / trash-put / PowerShell 均失败）：failedPaths 为未删除的路径，前端据此二次确认（force 重发直接删） */
+  trashUnavailable?: boolean;
+  failedPaths?: string[];
+  trashReason?: string;
 }
 
 export interface BrowseResult {
@@ -481,7 +485,8 @@ export const post = {
   svnExtra: (action: 'cleanup' | 'resolve' | 'propset-ignore', path = '', accept = 'working', pattern = '', signal?: AbortSignal) =>
     api<VcsResult>('/api/svn-extra', json({ action, path, accept, pattern }, signal)),
   gitClean: (paths?: string[]) => api<VcsResult>('/api/git-clean', json({ paths })),
-  fsDelete: (paths: string[]) => api<VcsResult>('/api/fs-delete', json({ paths })),
+  /** 移到回收站；force=true 跳过回收站直接删（仅用于「回收站不可用」弹窗里用户确认后的重发） */
+  fsDelete: (paths: string[], force = false) => api<VcsResult>('/api/fs-delete', json({ paths, force })),
   /** 版本化文件/目录重命名/移动（svn move / git mv，提交后生效） */
   move: (from: string, to: string) => api<VcsResult>('/api/move', json({ from, to })),
   /** 未版本化 ? / 忽略 I 文件/目录磁盘改名（不影响版本库） */

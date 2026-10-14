@@ -271,7 +271,7 @@ export function App() {
   const [opBusy, setOpBusy] = useState<string | null>(null);
   // 执行操作
   const runOp = useCallback(
-    async (op: Op, paths: string[], keep = false): Promise<VcsResult> => {
+    async (op: Op, paths: string[], keep = false, force = false): Promise<VcsResult> => {
       let r: VcsResult;
       // update/push 有独立进度窗,不重复显示短条
       setOpBusy(op === 'add' || op === 'revert' || op === 'delete' || op === 'fs-delete' || op === 'move' || op === 'fs-move' ? t(OP_BUSY_KEY[op]) : null);
@@ -280,7 +280,7 @@ export function App() {
         else if (op === 'commit') r = await post.commit(paths, '');
         else if (op === 'update') r = await post.update();
         else if (op === 'revert') r = await post.revert(paths);
-        else if (op === 'fs-delete') r = await post.fsDelete(paths);
+        else if (op === 'fs-delete') r = await post.fsDelete(paths, force);
         else if (op === 'move') r = await post.move(paths[0], paths[1]);
         else if (op === 'fs-move') r = await post.fsMove(paths[0], paths[1]);
         else if (op === 'delete') r = keep ? await post.delete(paths, true) : await post.delete(paths);
@@ -294,6 +294,12 @@ export function App() {
         return { ok: false, message: msg };
       }
       setOpBusy(null);
+      // 回收站不可用：不弹普通失败 toast，由调用方弹「直接删除？」二次确认（结果里带未成功的路径）；
+      // 部分成功时已有文件进回收站，列表照常刷新
+      if (r.trashUnavailable) {
+        refresh();
+        return r;
+      }
       showToast(r.message, !r.ok);
       if (r.ok) {
         refresh();
@@ -572,7 +578,39 @@ export function App() {
       } else if (op === 'revert') {
         void confirmRevert(paths);
       } else if (op === 'fs-delete') {
-        // 移到回收站（未版本化 ? / 忽略 I 文件/目录）：仅动本地文件、不做版本库操作
+        // 移到回收站（未版本化 ? / 忽略 I 文件/目录）：仅动本地文件、不做版本库操作。
+        // 回收站不可用时（runOp 返回 trashUnavailable，已跳过普通 toast）弹第二道确认：
+        // 直接磁盘删除不可恢复，确认后 force 重发（跳过回收站），取消则文件原样
+        const doDelete = (list: string[], force = false) => {
+          void runOp('fs-delete', list, false, force).then((res) => {
+            if (res.trashUnavailable && res.failedPaths?.length) {
+              const failed = res.failedPaths;
+              setModal({
+                type: 'confirm',
+                // 系统回收站不可用
+                title: t('shell.fsDelete.noTrash.title'),
+                danger: true,
+                message: (
+                  <div>
+                    {/* 系统回收站命令不可用，{n} 项未能移入回收站。是否直接从磁盘删除？ */}
+                    {t('shell.fsDelete.noTrash.body', { n: failed.length })}
+                    {res.trashReason ? (
+                      <div className="dim small" style={{ marginTop: 6, lineHeight: 1.8 }}>
+                        {/* 原因：{msg} */}
+                        {t('shell.fsDelete.noTrash.reason', { msg: res.trashReason })}
+                      </div>
+                    ) : null}
+                    {/* 此操作不可恢复！ */}
+                    <div style={{ marginTop: 6 }}>{t('shell.fsDelete.noTrash.warn')}</div>
+                  </div>
+                ),
+                // 直接删除
+                confirmLabel: t('shell.fsDelete.noTrash.confirm'),
+                action: () => doDelete(failed, true),
+              });
+            }
+          });
+        };
         setModal({
           type: 'confirm',
           // 移到回收站
@@ -588,7 +626,7 @@ export function App() {
           ),
           // 移到回收站
           confirmLabel: t('shell.fsDelete.confirm'),
-          action: () => void runOp('fs-delete', paths),
+          action: () => doDelete(paths),
         });
       } else if (op === 'delete') {
         // 从版本库移除 = 仅标记删除、磁盘文件不受影响（提交后生效；提交前可还原）

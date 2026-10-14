@@ -247,10 +247,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       }
 
       if (p === '/api/fs-delete' && req.method === 'POST') {
-        // 移到回收站（未版本化 ? / 忽略 I 专属入口：不做版本库调度，仅动本地文件；回收站不可用回退直接删除）
+        // 移到回收站（未版本化 ? / 忽略 I 专属入口：不做版本库调度，仅动本地文件）。
+        // 回收站不可用时**不删任何文件**——返回 failedPaths 交前端弹二次确认，用户确认后 force 重发直接删
         const { repo } = vcsOf();
         const body = await readBody(req);
         const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean) : [];
+        const force = body.force === true;
         if (paths.length === 0) {
           // 缺少路径
           sendJson(res, 400, { error: t('srv.missingPath') });
@@ -261,22 +263,37 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
           return true;
         }
-        try {
-          for (const p of paths) {
-            const abs = path.join(repo.root, p);
-            try {
-              await platform.trashPath(abs); // 优先移入系统回收站（可从回收站恢复）
-            } catch {
-              // 回收站不可用（无桌面环境 / 工具缺失）→ 回退直接删除，保证「删除」始终可用
-              fs.rmSync(abs, { recursive: true, force: true });
-            }
+        if (force) {
+          // 直接磁盘删除：仅用于用户在「回收站不可用」弹窗里确认过不可恢复之后
+          try {
+            for (const p of paths) fs.rmSync(path.join(repo.root, p), { recursive: true, force: true });
+            invalidateStatusCache(repo.root);
+            // 已从磁盘删除 {n} 项（不可恢复）
+            sendJson(res, 200, { ok: true, message: t('srv.fsPurged', { n: paths.length }) });
+          } catch (e) {
+            // 从磁盘删除失败: {msg}
+            sendJson(res, 500, { error: t('srv.purgeFailed', { msg: (e as Error).message }) });
           }
-          invalidateStatusCache(repo.root); // 磁盘文件集变化（? 项被删），防状态缓存/过滤树显示旧文件
+          return true;
+        }
+        // 逐项尝试入回收站；失败项收集起来（原因取第一条）——不静默回退删除
+        const failed: string[] = [];
+        let reason = '';
+        for (const p of paths) {
+          try {
+            await platform.trashPath(path.join(repo.root, p));
+          } catch (e) {
+            failed.push(p);
+            if (!reason) reason = (e as Error).message;
+          }
+        }
+        invalidateStatusCache(repo.root); // 磁盘文件集变化（? 项被删/被移入回收站），防状态缓存/过滤树显示旧文件
+        if (failed.length === 0) {
           // 已移到回收站 {n} 项
           sendJson(res, 200, { ok: true, message: t('srv.fsDeleted', { n: paths.length }) });
-        } catch (e) {
-          // 移到回收站失败: {msg}
-          sendJson(res, 500, { error: t('srv.deleteFailed', { msg: (e as Error).message }) });
+        } else {
+          // 系统回收站不可用，{n} 项未能移入回收站（尚未删除）
+          sendJson(res, 200, { ok: false, message: t('srv.trashUnavailable', { n: failed.length }), trashUnavailable: true, failedPaths: failed, trashReason: reason });
         }
         return true;
       }

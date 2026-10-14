@@ -253,7 +253,7 @@ export const linux: Platform = {
   },
 
   async trashPath(abs) {
-    // 优先 gio（GLib 自带，桌面发行版必有）；回退 trash-put（trash-cli）；都失败则 throw（调用方回退直接删）
+    // 优先 gio（GLib 自带，桌面发行版必有）；回退 trash-put（trash-cli）；都失败则 throw（调用方交前端二次确认是否直接删）
     const attempts: { cmd: string; args: string[] }[] = [
       { cmd: 'gio', args: ['trash', abs] },
       { cmd: 'trash-put', args: [abs] },
@@ -263,7 +263,9 @@ export const linux: Platform = {
       try {
         const r = await run(a.cmd, a.args, { timeoutMs: 30_000 });
         if (r.code === 0) return;
-        errs.push(`${a.cmd}: ${r.stderr.trim() || `exit ${r.code}`}`);
+        // stderr 常自带程序名前缀（gio 的报错就是 "gio: ..."），不再叠一层，避免 "gio: gio: ..."
+        const se = r.stderr.trim();
+        errs.push(se ? (se.startsWith(`${a.cmd}:`) ? se : `${a.cmd}: ${se}`) : `${a.cmd}: exit ${r.code}`);
       } catch (e) {
         errs.push(`${a.cmd}: ${(e as Error).message}`);
       }

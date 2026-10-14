@@ -262,6 +262,12 @@ export const shell = {
   'shell.fsDelete.bold': '移到系统回收站',
   'shell.fsDelete.tail': ' {n} 项（不在版本库中的文件）。',
   'shell.fsDelete.warn': '可从回收站恢复，确认移入？',
+  // ---- 回收站不可用 → 二次确认直接删除（fs-delete 返回 trashUnavailable 时）----
+  'shell.fsDelete.noTrash.title': '系统回收站不可用',
+  'shell.fsDelete.noTrash.body': '系统回收站命令不可用，{n} 项未能移入回收站。是否直接从磁盘删除？',
+  'shell.fsDelete.noTrash.reason': '原因：{msg}',
+  'shell.fsDelete.noTrash.warn': '此操作不可恢复！',
+  'shell.fsDelete.noTrash.confirm': '直接删除',
   'shell.remove.title': '从版本库移除',
   'shell.remove.confirm': '从版本库移除',
   'shell.remove.lead': '将',

@@ -253,6 +253,12 @@ export const shell = {
   'shell.fsDelete.bold': 'to the system Trash',
   'shell.fsDelete.tail': ' {n} item not under version control.| {n} items not under version control.',
   'shell.fsDelete.warn': 'Recoverable from the Trash. Move anyway?',
+  // ---- Trash unavailable → second confirm to delete from disk directly ----
+  'shell.fsDelete.noTrash.title': 'System Trash Unavailable',
+  'shell.fsDelete.noTrash.body': 'The system Trash command is unavailable; {n} item could not be moved to Trash. Delete from disk instead?|The system Trash command is unavailable; {n} items could not be moved to Trash. Delete from disk instead?',
+  'shell.fsDelete.noTrash.reason': 'Reason: {msg}',
+  'shell.fsDelete.noTrash.warn': 'This cannot be undone!',
+  'shell.fsDelete.noTrash.confirm': 'Delete from Disk',
   'shell.remove.title': 'Remove from Repository',
   'shell.remove.confirm': 'Remove',
   'shell.remove.lead': 'This will remove ',
