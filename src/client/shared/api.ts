@@ -250,8 +250,11 @@ export const get = {
     return api<DiffResult>(`/api/show?${q}`);
   },
   ls: (dir?: string) => api<LsResult>(`/api/ls?dir=${encodeURIComponent(dir ?? '')}`),
-  cat: (pathRel: string) =>
-    api<DiffResult & { encoding?: string; truncated?: boolean }>(`/api/cat?path=${encodeURIComponent(pathRel)}`),
+  /** worktree=true：明确读工作区版本（内容搜索跳转用；git 默认读 HEAD 版，行号会与工作区对不上） */
+  cat: (pathRel: string, worktree = false) =>
+    api<DiffResult & { encoding?: string; truncated?: boolean }>(
+      `/api/cat?path=${encodeURIComponent(pathRel)}${worktree ? '&source=worktree' : ''}`
+    ),
   browse: (dir?: string) => api<BrowseResult>(`/api/browse?path=${encodeURIComponent(dir ?? '')}`),
   pickDir: () => api<{ path: string | null; unsupported: boolean }>('/api/pick-dir'),
   fs: (dir?: string, force?: boolean) =>
@@ -265,6 +268,12 @@ export const get = {
   history: () => api<{ items: HistoryItem[] }>('/api/history'),
   search: (query: string, dir = '') =>
     api<{ paths: string[] }>(`/api/search?query=${encodeURIComponent(query)}&dir=${encodeURIComponent(dir)}`),
+  /** 文件内容搜索：hits 按发现顺序；truncated='limit'|'time' = 结果/超时被截断（内容模式专用） */
+  searchContent: (query: string, dir: string, signal?: AbortSignal) =>
+    api<{ hits: { path: string; line: number; text: string }[]; truncated?: 'limit' | 'time' }>(
+      `/api/search-content?query=${encodeURIComponent(query)}&dir=${encodeURIComponent(dir)}`,
+      { signal }
+    ),
   envCheck: () => api<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } }>('/api/env-check'),
   /** 远程连通性检测（网络灯）：ok=网络通;reason=认证失败/连接错误说明 */
   netCheck: () => api<{ ok: boolean; reason: string }>('/api/net-check'),

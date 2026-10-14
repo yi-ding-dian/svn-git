@@ -360,6 +360,7 @@ export const fs = {
   // ---- File preview (preview-pane.tsx) ----
   'fs.pv.unversioned': 'Unversioned file (raw text)',
   'fs.pv.noDiff': 'No diff — raw file text',
+  'fs.pv.worktree': 'Working tree version (includes uncommitted changes)',
   'fs.pv.editHere': '✎ Edit here',
   'fs.pv.openDefaultApp': 'Open with system default application',
   'fs.pv.tooLargeNoEdit': 'File is too large (over 5MB); the full text was not loaded, so inline editing is unavailable — open it with an external application',
@@ -440,6 +441,15 @@ export const fs = {
   'fs.search.expand': 'Click to show all matches',
   'fs.search.collapsed': 'Collapse ▲ ({n} item)|Collapse ▲ ({n} items)',
   'fs.search.expandAll': '… {n} match (click to show all)|… {n} matches (click to show all)',
+  // ---- Content search (mode chip in the search box; one scope at a time) ----
+  'fs.search.mode.file': 'Files',
+  'fs.search.mode.content': 'Content',
+  'fs.search.modeSwitch': 'Search scope: file names / file contents',
+  'fs.search.resize': 'Drag to resize the search box',
+  'fs.search.placeholderContent': '🔍 Search contents…',
+  'fs.search.noneContent': 'No matches in file contents',
+  'fs.search.truncatedLimit': 'Too many results — showing first {n}',
+  'fs.search.truncatedTime': 'Timed out — showing the {n} found so far',
 
   // ---- Markdown preview: document outline ----
   'fs.pv.tocCount': 'Contents ({n})',

@@ -24,6 +24,10 @@ export interface PreviewTarget {
   code?: string;
   /** 图片文件：直接显示原图（不经文本读取/diff） */
   img?: boolean;
+  /** 内容搜索跳入的定位行（1-based）：文本就绪后滚动居中并高亮该行（独立于预览内搜索的高亮） */
+  line?: number;
+  /** 内容搜索跳入：读**工作区**版本（搜的是工作区内容，打开的必须同一份；否则行号对不上） */
+  worktree?: boolean;
 }
 
 interface Props {
@@ -44,6 +48,8 @@ export function PreviewPane(props: Props) {
   const { target } = props;
   /** 原文内容（null = 加载中；img 目标不使用） */
   const [text, setText] = useState<string | null>(null);
+  /** 内容搜索跳入的定位行（1-based；渲染高亮 + 文本就绪后滚动居中） */
+  const [jumpLine, setJumpLine] = useState<number | undefined>(target.line);
   // md 文件渲染预览模式（预览按钮切换；false=原文高亮，true=Markdown 渲染）
   const [mdPreview, setMdPreview] = useState(false);
   const [blameMode, setBlameMode] = useState(false);
@@ -146,7 +152,13 @@ export function PreviewPane(props: Props) {
 
   /** 顶部说明文案（与旧 openFile 打开时生成的 note 一致；img 目标无说明） */
   // 未版本化文件（原文） / 无差异 — 文件原文
-  const note = target.img ? undefined : target.code === '?' ? t('fs.pv.unversioned') : t('fs.pv.noDiff');
+  const note = target.img
+    ? undefined
+    : target.worktree
+      ? t('fs.pv.worktree') // 内容搜索跳入：显示的是工作区版本（可能含未提交修改），不能说"无差异"
+      : target.code === '?'
+        ? t('fs.pv.unversioned')
+        : t('fs.pv.noDiff');
   /** 非 UTF-8 文件（GBK 等）的编码提示：不提示的话，用户会以为文件本来就是 UTF-8 */
   const [fileEnc, setFileEnc] = useState('');
   /** 超大文件（>5MB）：正文是"（文件过大，未读取全文）"**占位符**而非真内容，
@@ -192,6 +204,7 @@ export function PreviewPane(props: Props) {
     setSearchActive(false);
     setSearchQ('');
     setMatchIdx(0);
+    setJumpLine(target.line); // 内容搜索跳入的定位行（普通打开为 undefined）
     setImgViewer(null);
     if (target.img) {
       setText(null);
@@ -202,7 +215,7 @@ export function PreviewPane(props: Props) {
     setFileEnc('');
     setFileTruncated(false);
     get
-      .cat(target.rel)
+      .cat(target.rel, !!target.worktree)
       .then((r) => {
         if (cancelled) return;
         // 读取失败
@@ -332,6 +345,13 @@ export function PreviewPane(props: Props) {
 
   // ---------- 原文预览搜索 ----------
   const previewLines = useMemo(() => (text ?? '').split('\n'), [text]);
+
+  // 内容搜索跳入：文本就绪后把定位行滚到视野中间。**不用 smooth**——行离得远时平滑滚动要滚很久，
+  // 用户还会以为界面在卡；直接跳到位（block:'center'）更快也更明确
+  useEffect(() => {
+    if (jumpLine == null || text == null) return;
+    previewRefs.current.get(jumpLine - 1)?.scrollIntoView({ block: 'center' });
+  }, [jumpLine, text]);
   const matches = useMemo(() => {
     if (!searchActive || !searchQ.trim()) return [] as number[];
     const q = searchQ.toLowerCase();
@@ -577,13 +597,14 @@ export function PreviewPane(props: Props) {
           blameData.map((b, i) => {
             const isHit = searchActive && matches.includes(i);
             const isCur = isHit && i === matches[matchIdx % Math.max(1, matches.length)];
+            const isJump = jumpLine != null && i === jumpLine - 1;
             return (
               <div
                 key={i}
                 ref={(el) => {
                   if (el) previewRefs.current.set(i, el);
                 }}
-                className={`pv-line ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''}`}
+                className={`pv-line ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''} ${isJump ? 'pv-jump' : ''}`}
                 title={`${b.rev} · ${b.author}${b.date ? ' · ' + b.date : ''}`}
               >
                 <span className="blame-meta">{b.rev} {b.author}</span>
@@ -595,13 +616,14 @@ export function PreviewPane(props: Props) {
           previewLines.map((line, i) => {
             const isHit = searchActive && matches.includes(i);
             const isCur = isHit && i === matches[matchIdx % Math.max(1, matches.length)];
+            const isJump = jumpLine != null && i === jumpLine - 1;
             return (
               <div
                 key={i}
                 ref={(el) => {
                   if (el) previewRefs.current.set(i, el);
                 }}
-                className={`pv-line ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''}`}
+                className={`pv-line ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''} ${isJump ? 'pv-jump' : ''}`}
               >
                 <span className="sb-no">{i + 1}</span>
                 <span className="pv-src" dangerouslySetInnerHTML={{ __html: highlightLine(line, langOf(target.name)) }} />

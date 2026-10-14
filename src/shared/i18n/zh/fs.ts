@@ -360,6 +360,7 @@ export const fs = {
   // ---- 文件预览（preview-pane.tsx）----
   'fs.pv.unversioned': '未版本化文件（原文）',
   'fs.pv.noDiff': '无差异 — 文件原文',
+  'fs.pv.worktree': '工作区版本（含未提交的修改）',
   'fs.pv.editHere': '✎ 直接编辑',
   'fs.pv.openDefaultApp': '用系统默认程序打开',
   'fs.pv.tooLargeNoEdit': '文件过大（超过 5MB），未读取全文，不支持内联编辑；请用外部程序打开',
@@ -440,6 +441,15 @@ export const fs = {
   'fs.search.expand': '点击展开全部匹配',
   'fs.search.collapsed': '收起 ▲（共 {n} 项）',
   'fs.search.expandAll': '… 共 {n} 个匹配（点击展开全部）',
+  // ---- 内容搜索（搜索框内芯片切换；一次只搜一种，结果不混）----
+  'fs.search.mode.file': '文件',
+  'fs.search.mode.content': '内容',
+  'fs.search.modeSwitch': '切换搜索范围：文件名 / 文件内容',
+  'fs.search.resize': '拖动调整搜索框宽度',
+  'fs.search.placeholderContent': '🔍 搜索内容…',
+  'fs.search.noneContent': '无匹配内容',
+  'fs.search.truncatedLimit': '结果过多，仅显示前 {n} 条',
+  'fs.search.truncatedTime': '搜索超时，仅显示已找到的 {n} 条',
 
   // ---- md 预览：文档目录（右上角按钮 → 折叠树浮层，点条目跳到对应标题）----
   'fs.pv.tocCount': '目录 ({n})',

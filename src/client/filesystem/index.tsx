@@ -86,7 +86,7 @@ export function FsView(props: Props) {
   const [error, setError] = useState('');
   const [sel, setSel] = useState<FsEntry | null>(null);
   // 预览目标（文本/图片等实际内容与 md/blame/搜索状态都在 PreviewPane 内；此处只做开关与目标，供目录切换/刷新时关闭）
-  const [preview, setPreview] = useState<{ name: string; rel: string; img?: boolean; code?: string } | null>(null);
+  const [preview, setPreview] = useState<{ name: string; rel: string; img?: boolean; code?: string; line?: number; worktree?: boolean } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [mode, setMode] = useState<Mode>('browse');
@@ -401,7 +401,7 @@ export function FsView(props: Props) {
       filtered={filtered}
       focused={i === focusIndex}
       multi={selected.has(row.rel)}
-      searchHit={search.searchResults.includes(row.rel)}
+      searchHit={search.nameResults.includes(row.rel)}
       pulse={pulseRels.includes(row.rel)}
       clipCut={cutRels.has(row.rel)}
       dragSrc={dragRels.has(row.rel)}
@@ -543,14 +543,14 @@ export function FsView(props: Props) {
     if (!data) return new Set<string>();
     const prefix = data.dir ? data.dir + '/' : '';
     const set = new Set<string>();
-    for (const p of search.searchResults) {
+    for (const p of search.nameResults) {
       if (p.startsWith(prefix)) {
         const rest = p.slice(prefix.length);
         if (rest && !rest.includes('/')) set.add(rest);
       }
     }
     return set;
-  }, [search.searchResults, data]);
+  }, [search.nameResults, data]);
 
   // 定位与脉冲（角标定位 → 展开父链 → 滚动高亮 → 卡片闪烁）抽到 useFsLocate：
   // 里面含着两处竞态防护（连点令牌、目标不出现时的 3s 兜底），细节见该文件头注释
@@ -1378,7 +1378,17 @@ export function FsView(props: Props) {
             {/* 上级 */}
             <IconUp /> {t('fs.toolbar.up')}
           </button>
-          <FsSearchBox search={search} onPick={(rel, at) => setPendingLocate({ rel, at })} />
+          <FsSearchBox
+            search={search}
+            onPick={(rel, at, line) => {
+              // 内容搜索命中行：打开预览跳到该行。**不 setPendingLocate**——列表定位在子目录里
+              // 会切目录，而 load() 切目录时会 setPreview(null) 把刚打开的预览关掉；
+              // 且"关预览回列表"留在原目录，符合"搜索是跨目录浏览、不乱动我的浏览位置"的心智。
+              // 文件模式（line 为 undefined）行为不变：定位选中。
+              if (line != null) setPreview({ name: rel.slice(rel.lastIndexOf('/') + 1), rel, line, worktree: true });
+              else setPendingLocate({ rel, at });
+            }}
+          />
           {/* （{n} 项 · 键盘: ↑↓ 选择 · →/Enter 进入 · ← 返回 · 空白处右键菜单） */}
           <span className="dim small">{t('fs.toolbar.hint', { n: rows.length })}</span>
         </div>
@@ -1759,11 +1769,16 @@ export function FsView(props: Props) {
           <PreviewPane
             target={preview}
             active={props.active}
-            onClose={() => setPreview(null)}
+            onClose={() => {
+              setPreview(null);
+              // 返回列表后恢复搜索下拉——用户定稿「返回后保持搜索列表显示，除非清空搜索内容」
+              if (search.fileQuery.trim()) search.setShowResults(true);
+            }}
             onError={(msg) => setError(msg)}
             onOpenError={(msg) => {
               setError(msg);
               setPreview(null); // 文本读取失败：红条提示并退回列表（对应旧 openFile 读取失败后的终态）
+              if (search.fileQuery.trim()) search.setShowResults(true);
             }}
             onSaved={(msg) => {
               // 内联编辑保存后：文件状态会从干净变成 M（或未版本化项内容变了），列表必须重拉；

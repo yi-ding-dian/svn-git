@@ -790,6 +790,23 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .search-item:hover, .search-item.active { background: var(--accent); color: #ffffff; }
 .search-item:hover .dim, .search-item.active .dim { color: #ffffff; }
 .search-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 搜索模式芯片（框内左侧）：文件名 ⇄ 文件内容；内容模式整体高亮，提醒当前搜的是哪种 */
+.search-mode-chip {
+  position: absolute; left: 5px; top: 50%; transform: translateY(-50%); z-index: 1;
+  font-size: 11px; line-height: 17px; padding: 0 5px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--panel2); color: var(--dim);
+  cursor: pointer; user-select: none; white-space: nowrap;
+}
+.search-mode-chip:hover { color: var(--accent); border-color: var(--accent); }
+.search-mode-chip.content { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+/* 搜索框右边缘拖拽手柄：常态隐形（热区跨在边框上），hover 显形提示可拖 */
+.search-resize { position: absolute; right: -3px; top: 2px; bottom: 2px; width: 6px; cursor: col-resize; border-radius: 3px; z-index: 2; }
+.search-resize:hover { background: var(--accent); opacity: .45; }
+/* 内容搜索命中行：路径:行号（限宽给行内容让位）+ 行内容片段（占余宽，超出省略） */
+.search-hit-at { flex-shrink: 2; max-width: 45%; }
+.search-line-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; flex: 1; min-width: 0; }
+/* 内容搜索跳入的定位行：强调色系（区别于预览内搜索的黄色 .pv-hit/.pv-cur） */
+.pv-jump { background: rgba(9, 105, 218, .18); outline: 1px solid var(--accent); }
 
 .pv-line { display: flex; align-items: baseline; line-height: 1.55; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
 .pv-line .pv-src { white-space: pre-wrap; word-break: break-all; flex: 1; min-width: 0; }
