@@ -229,9 +229,17 @@ export function startServer(): Promise<ServerHandle> {
               result = { ok: false, message: r.stderr.trim() || t('srv.cloneFailed'), authError: authFail || undefined, authType: authFail ? authTypeOf(url) : undefined };
             }
           } else {
-            // init
+            // init：新建仓库的默认分支统一指到 main（init.defaultBranch 配置要 git 2.28+，用户机器实测
+            // git 2.20——老到没有该配置，init 只会产出 master；GitHub 生态默认 main）。
+            // symbolic-ref 改 HEAD 指向，新旧 git 都支持。只在目标原本没有 .git 时做：
+            // 对本就存在的仓库 reinit 时改 HEAD 会让分支悬空、仓库"看起来变空"，绝不能碰
+            const freshInit = !fs.existsSync(path.join(target, '.git'));
             fs.mkdirSync(target, { recursive: true });
             const r = await run('git', ['init', target], { timeoutMs: 60_000 });
+            if (r.code === 0 && freshInit) {
+              // 失败不回滚（仓库已建好，最多退回 master 的旧行为），不值得让创建整体失败
+              await run('git', ['-C', target, 'symbolic-ref', 'HEAD', 'refs/heads/main'], { timeoutMs: 15_000 });
+            }
             // 已初始化仓库 {path} / git init 失败
             result = r.code === 0 ? { ok: true, message: t('srv.initedRepo', { path: target }), repoDir: target } : { ok: false, message: r.stderr.trim() || t('srv.gitInitFailed') };
           }

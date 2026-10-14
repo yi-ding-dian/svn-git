@@ -167,6 +167,10 @@ export class GitVcs {
   async branch(): Promise<string> {
     const res = await this.exec(['rev-parse', '--abbrev-ref', 'HEAD']);
     if (res.code === 0 && res.stdout.trim() && res.stdout.trim() !== 'HEAD') return res.stdout.trim();
+    // 空仓库（尚无提交，HEAD 未出生）：rev-parse 在老 git（实测 2.20）会直接失败，读不出分支名；
+    // symbolic-ref 新旧 git 都能读出未出生分支（新建仓库顶栏据此显示 [main]）。游离 HEAD 时它会失败，走下面的兜底
+    const sym = await this.exec(['symbolic-ref', '--short', 'HEAD']);
+    if (sym.code === 0 && sym.stdout.trim()) return sym.stdout.trim();
     const res2 = await this.exec(['rev-parse', '--short', 'HEAD']);
     return res2.code === 0 ? res2.stdout.trim() : '';
   }
@@ -289,9 +293,11 @@ export class GitVcs {
 
   /**
    * 未推送范围解析（含缓存远程引用）：
-   * - 有上游（@{u}）：返回 '${u}'
+   * - 有上游（@{u}）：返回 '@{u}'
    * - 无上游但存在远引用 origin/<当前分支> 缓存：返回它（只算真未推送）
-   * - 都没有（纯本地仓库/无远程缓存）：返回 null——表示"无远程概念"，不再把全部提交当未推送
+   * - 都没有：返回 null——"没有可对标的远程引用"。此时再看有没有配置 origin 远程（hasOrigin）：
+   *   有（新仓库首推前：origin 配好了但还没 push/fetch 出任何远程引用）→ 全部提交都是待推送；
+   *   没有（纯本地仓库）→ 没有"已推送"的概念。两种由调用方区分
    */
   private async unpushedRange(): Promise<string | null> {
     const up = await this.exec(['rev-parse', '--symbolic-full-name', '@{upstream}']);
@@ -305,15 +311,22 @@ export class GitVcs {
     return null;
   }
 
+  /** 是否配置了 origin 远程：区分"纯本地仓库"与"配了远程但还没有引用缓存"（后者提交后推按钮要亮，
+   *  否则「新建 GitHub 仓库 → 提交 → 推送」链路上按钮永远置灰，用户卡死——实测） */
+  private async hasOrigin(): Promise<boolean> {
+    return (await this.exec(['remote', 'get-url', 'origin'])).code === 0;
+  }
+
   /**
    * 未推送提交（本地领先远程）的 hash 列表。
-   * 有上游：@{u}..HEAD；无上游但有 origin/<分支> 缓存：用其计算；均无（纯本地仓库）：视为无未推送。
+   * 有上游：@{u}..HEAD；无上游但有 origin/<分支> 缓存：用其计算；
+   * 均无（纯本地无远程概念，或配了 origin 但还没有任何远程引用缓存）：全部提交
+   * ——两种情况都允许在历史视图里右键改注释/撤销（纯本地不给右键会让人困惑），
+   * 有 origin 时这些提交本来也都是待推送。
    */
   async unpushed(): Promise<string[]> {
     const range = await this.unpushedRange();
     if (!range) {
-      // 纯本地仓库（既无上游也无 origin 缓存）：没有「已推送」的概念，全部提交都可改注释/撤销，
-      // 否则历史视图里所有提交都没有右键菜单（实测过）。
       const res = await this.exec(['log', '--format=%H']);
       if (res.code !== 0) return [];
       return res.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
@@ -325,11 +338,15 @@ export class GitVcs {
     return [];
   }
 
-  /** 未推送提交数量（轻量，推送按钮角标用；逻辑与 unpushed 一致；
-   * 无远程概念时返回 0——不再把全部提交误列为未推送） */
+  /** 未推送提交数量（轻量，推送按钮角标用；逻辑与 unpushed 一致。
+   *  纯本地仓库（无远程概念）返回 0；配了 origin 但还没有远程引用缓存（新仓库首推前）→ 全部提交都待推送 */
   async unpushedCount(): Promise<number> {
     const range = await this.unpushedRange();
-    if (!range) return 0;
+    if (!range) {
+      if (!(await this.hasOrigin())) return 0;
+      const all = await this.exec(['rev-list', '--count', 'HEAD']);
+      return all.code === 0 ? Number(all.stdout.trim()) || 0 : 0;
+    }
     const up = await this.exec(['rev-list', '--count', `${range}..HEAD`]);
     return up.code === 0 ? Number(up.stdout.trim()) || 0 : 0;
   }
@@ -337,15 +354,16 @@ export class GitVcs {
   /** 未推送提交完整列表（含变更文件，推送确认弹窗用；无未推送时返回空数组） */
   async unpushedLog(): Promise<LogEntry[]> {
     // 有上游：@{u}..HEAD（只显示未推送，避免 log 多 hash 时展开已推送的祖先）；
-    // 无上游但有 origin/<分支> 缓存：用其计算；均无（纯本地仓库）：视为无未推送
+    // 无上游但有 origin/<分支> 缓存：用其计算；
+    // 都没有：有 origin（新仓库首推前）→ 全部提交都待推送（log 不加范围）；纯本地仓库 → 空
     const range = await this.unpushedRange();
-    if (!range) return [];
+    if (!range && !(await this.hasOrigin())) return [];
     const res = await this.exec([
       '-c', 'core.quotepath=false',
       'log', '-n', '200',
       '--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e',
       '--name-status',
-      `${range}..HEAD`,
+      ...(range ? [`${range}..HEAD`] : []),
     ]);
     // git log 失败: {err}
     if (res.code !== 0) throw new Error(t('vcs.gitLogFailed', { err: res.stderr.trim() }));
@@ -1270,11 +1288,20 @@ export class GitVcs {
 
   // ============ 仓库创建 / 克隆 / 远程 ============
 
-  /** git init 初始化仓库（git init <dir>，路径参数，无需 cd；dir 不存在会自动创建） */
+  /** git init 初始化仓库（git init <dir>，路径参数，无需 cd；dir 不存在会自动创建）。
+   *  全新初始化后把默认分支指到 main：init.defaultBranch 配置要 git 2.28+（用户机器实测 git 2.20，
+   *  老到没有该配置，init 只会产出 master），而 GitHub 生态默认 main——symbolic-ref 改 HEAD 指向，
+   *  新旧 git 都支持。只对**全新目录**做：对已有仓库 reinit 时 HEAD 指向不存在的 main 会让仓库
+   *  "看起来变空"（分支悬空），绝不能碰。 */
   async init(dir: string): Promise<VcsResult> {
+    const fresh = !fs.existsSync(path.join(dir, '.git')); // 全新目录才动 HEAD（.git 是文件的工作区：按"已有"保守跳过）
     const res = await this.exec(['init', dir], { timeoutMs: 30_000 });
     // git init 失败
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitInitFailed') };
+    if (fresh) {
+      // 失败不回滚（仓库已建好，最多退回 master 的旧行为），不值得让创建整体失败
+      await this.exec(['-C', dir, 'symbolic-ref', 'HEAD', 'refs/heads/main'], { timeoutMs: 10_000 });
+    }
     // 仓库已初始化: {dir}
     return { ok: true, message: t('vcs.repoInitialized', { dir }) };
   }

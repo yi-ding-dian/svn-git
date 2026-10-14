@@ -44,7 +44,7 @@ export const CMDS: Record<string, string> = {
   g_reset_soft: 'git reset --soft HEAD~',
   g_amend: 'git commit --amend',
   g_clean: 'git clean -f',
-  g_init: 'git init %dir%',
+  g_init: 'git init %dir% + git symbolic-ref HEAD refs/heads/main（默认分支 main）', // i18n-ignore: 命令预览（教学用），按设计保留原样
   g_clone: 'git clone %url% %dir%',
   s_create: 'svnadmin create %dir% + svn mkdir trunk/branches/tags + svn checkout（检出 trunk 为工作副本）', // i18n-ignore: 命令预览（教学用），按设计保留原样
   s_checkout: 'svn checkout %url% %dir%',
