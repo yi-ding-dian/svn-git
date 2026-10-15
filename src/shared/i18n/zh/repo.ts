@@ -44,6 +44,12 @@ export const repo = {
   'repo.search.timeout': '搜索超时（目录较大），结果可能不全',
   // ---- GitHub 仓库信息弹窗（⋯ 菜单；仅 origin 指向 github.com 的项目）----
   'repo.github.title': 'GitHub 仓库信息',
+  // 身份/权限行（顶栏徽标只显示"不是自己名下"的仓库，自己的仓库身份在这儿看）
+  'repo.github.identityOwn': '你的仓库（{login}，有写权限）',
+  'repo.github.identityCollaborator': '你是协作者（{login}，有写权限）',
+  'repo.github.identityReadOnly': '只读（{login}，无推送权限）',
+  'repo.github.identityBlocked': '无法访问（仓库不存在，或当前凭据没有权限）',
+  'repo.github.identityNoAuth': '未配置凭据——只能看到公开信息',
   'repo.github.openInBrowser': '在浏览器打开',
   'repo.github.refreshTip': '重新获取（跳过缓存）',
   'repo.github.noDesc': '（没有描述）',

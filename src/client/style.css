@@ -477,7 +477,7 @@ body {
   display: inline-block; padding: 1px 8px; border: none; border-radius: 4px; cursor: pointer;
   font-family: inherit; font-weight: 700; font-size: 12px; color: #fff; vertical-align: 1px; white-space: nowrap;
 }
-.github-identity.own { background: var(--ok); }
+/* 自己名下的仓库不显示徽标（用户定稿）——所以没有 .own 这一档 */
 .github-identity.collaborator { background: var(--accent); }
 .github-identity.read,
 .github-identity.blocked { background: var(--dim); }

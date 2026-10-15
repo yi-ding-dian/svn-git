@@ -6,7 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { ModalShell } from '../shell/modal-shell.js';
-import { get, post, type GitHubRepoResult } from '../shared/api.js';
+import { get, post, type GitHubRepoResult, type GitHubIdentityResult } from '../shared/api.js';
 import { IconGitHub, IconStar, IconClock, IconEye, IconRefresh, IconExternal } from '../ui/icons.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -84,10 +84,32 @@ function LangBar(props: { rows: { name: string; pct: number; color: string }[] }
   );
 }
 
+/** 身份/权限那行的文案（自己的仓库 / 协作者 / 只读 / 无法访问 / 没配凭据）。
+ *  **顶栏徽标只在"不是自己名下"时出现**（用户嫌占地方），所以自己的仓库只有在这里看得到。
+ *  没配凭据、查询失败、非 GitHub 一律返回空串 = 不显示这行，不打扰。 */
+function identityText(id: GitHubIdentityResult | null): string {
+  if (!id?.isGithub) return '';
+  if (!id.hasAuth) return t('repo.github.identityNoAuth');
+  if (!id.ok) return id.blocked ? t('repo.github.identityBlocked') : '';
+  const login = id.login ?? '';
+  if (id.isOwn) return t('repo.github.identityOwn', { login });
+  return id.canPush ? t('repo.github.identityCollaborator', { login }) : t('repo.github.identityReadOnly', { login });
+}
+
 export function GitHubRepoModal(props: { onClose: () => void }) {
   const [data, setData] = useState<GitHubRepoResult | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(true);
+  /** 身份与权限（与仓库信息并行查；服务端带 30 分钟缓存，开了就秒回） */
+  const [identity, setIdentity] = useState<GitHubIdentityResult | null>(null);
+  useEffect(() => {
+    get
+      .githubIdentity()
+      .then(setIdentity)
+      .catch(() => {
+        /* 查不到就不显示那行 */
+      });
+  }, []);
 
   const load = (force = false) => {
     setBusy(true);
@@ -164,6 +186,14 @@ export function GitHubRepoModal(props: { onClose: () => void }) {
                   </span>
                 )}
               </div>
+              {/* 身份 / 权限（🔒 = 私有）：顶栏徽标只显示"不是自己名下"的仓库，
+                  自己的仓库要看身份就在这儿看 */}
+              {identityText(identity) !== '' && (
+                <div className="small" style={{ marginTop: 4 }}>
+                  {identity?.private ? '🔒 ' : ''}
+                  {identityText(identity)}
+                </div>
+              )}
               {/* 描述（没有描述时也是 dim 的占位文案） */}
               <div className="small" style={{ margin: '6px 0', color: meta.description ? 'var(--text)' : 'var(--dim)' }}>
                 {meta.description || t('repo.github.noDesc')}

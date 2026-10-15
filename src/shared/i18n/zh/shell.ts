@@ -17,12 +17,11 @@ export const shell = {
   // ---- 顶栏：仓库信息 ----
   'shell.header.noRepo': '未选择仓库',
 
-  // ---- 顶栏：GitHub 身份徽标（origin 指向 github.com 且配了凭据时才出现；点开「GitHub 仓库信息」）----
-  'shell.header.githubOwn': '自己的仓库',
+  // ---- 顶栏：GitHub 身份徽标（**只在不是自己名下的仓库出现**——自己的仓库是默认状态不占地方；
+  //      点开「GitHub 仓库信息」）。自己仓库的身份/权限在那个弹窗里看 ----
   'shell.header.githubCollaborator': '协作者',
   'shell.header.githubRead': '只读',
   'shell.header.githubBlocked': '无法访问',
-  'shell.header.githubTipOwn': '这是你账号（{login}）名下的仓库',
   'shell.header.githubTipCollaborator': '你是该仓库的协作者（{login}，有推送权限）',
   'shell.header.githubTipRead': '你对该仓库只有只读权限（{login}）',
   'shell.header.githubTipBlocked': '无法访问该仓库：不存在，或当前凭据没有权限',

@@ -40,6 +40,12 @@ export const repo = {
   'repo.search.timeout': 'Search timed out (large directory) — results may be incomplete',
   // ---- GitHub repository info modal (⋯ menu; only projects whose origin points to github.com) ----
   'repo.github.title': 'GitHub Repository Info',
+  // 身份/权限行（顶栏徽标只显示"不是自己名下"的仓库，自己的仓库身份在这儿看）
+  'repo.github.identityOwn': 'Your repository ({login}, push access)',
+  'repo.github.identityCollaborator': 'You are a collaborator ({login}, push access)',
+  'repo.github.identityReadOnly': 'Read-only ({login}, no push access)',
+  'repo.github.identityBlocked': 'No access (repository missing, or the current credential has no permission)',
+  'repo.github.identityNoAuth': 'No credential configured — public information only',
   'repo.github.openInBrowser': 'Open in Browser',
   'repo.github.refreshTip': 'Refresh (skip cache)',
   'repo.github.noDesc': '(no description)',

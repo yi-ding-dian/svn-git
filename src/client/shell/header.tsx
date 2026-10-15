@@ -135,11 +135,15 @@ export function NetLight({ hostCheckKey }: { hostCheckKey?: string }) {
 
 /** 顶栏 GitHub 身份徽标：/api/github-identity 的结果 → 显示什么（null = 不显示徽标）。
  *  **只返回 key，文案渲染时才 t()**（模块顶层求值会冻在首次语言，见 i18n/index.ts 头部）。
- *  不显示的三种情况：origin 不是 GitHub、没配凭据（服务端根本没发请求）、
+ *
+ *  **自己名下的仓库一律不显示**（用户定稿）：那是绝大多数情况，等于没说，还白占顶栏一格。
+ *  徽标只留"需要注意"的三种：协作者（不是你的仓库，但能推）、只读（推不上去）、无法访问（被删/无权限）。
+ *  自己的身份与权限在「GitHub 仓库信息」弹窗里看得到，信息一点没丢。
+ *  其余不显示的情况：origin 不是 GitHub、没配凭据（服务端根本没发请求）、
  *  断网 / 限流 / Token 无效（静默降级——装饰性信息不值得打扰用户）。 */
 function githubBadgeOf(
   id: GitHubIdentityResult | null,
-): { kind: 'own' | 'collaborator' | 'read' | 'blocked'; textKey: I18nKey; tipKey: I18nKey } | null {
+): { kind: 'collaborator' | 'read' | 'blocked'; textKey: I18nKey; tipKey: I18nKey } | null {
   if (!id?.isGithub || !id.hasAuth) return null;
   if (!id.ok) {
     // 只有 404 才显示（GitHub 有意不区分"不存在"与"凭据无权限"）；其余失败一律不显示
@@ -147,7 +151,7 @@ function githubBadgeOf(
       ? { kind: 'blocked', textKey: 'shell.header.githubBlocked', tipKey: 'shell.header.githubTipBlocked' }
       : null;
   }
-  if (id.isOwn) return { kind: 'own', textKey: 'shell.header.githubOwn', tipKey: 'shell.header.githubTipOwn' };
+  if (id.isOwn) return null; // 自己的仓库：默认状态，不占地方
   // 能写但不是本人 = 协作者；其余能读到 = 只读
   if (id.canPush) return { kind: 'collaborator', textKey: 'shell.header.githubCollaborator', tipKey: 'shell.header.githubTipCollaborator' };
   return { kind: 'read', textKey: 'shell.header.githubRead', tipKey: 'shell.header.githubTipRead' };
