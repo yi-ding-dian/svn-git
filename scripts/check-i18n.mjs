@@ -11,7 +11,8 @@
  *  - 中文标点（，。：（）「」…）单独出现不算 —— 代码里拿它们做分隔符是常事。
  *
  *  用法：node scripts/check-i18n.mjs [--list]   —— `--list` 打印每处明细（默认只给汇总）
- *  退出码：始终 0（这是进度条不是闸门；要当闸门用可改最后一行）。
+ *  退出码：**键集不一致时非 0**（漏翻/漏删是缺陷，能当闸门用）；「未搬运中文行」不影响退出码
+ *  （那是进度条，不是闸门）。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -112,6 +113,29 @@ const packCount = (lang) => {
     .reduce((n, f) => n + (fs.readFileSync(path.join(dir, f), 'utf8').match(/^\s*'[^']+':/gm) ?? []).length, 0);
 };
 
+/** 语言包键集（按域文件分）：**两种语言的键集必须逐条一致**——en 少一条 = 漏翻，多一条 = 漏删。
+ *  为什么要单列这条检查：TS 拦不住（en 是「先声明变量、再赋给 Record<I18nKey, string>」，
+ *  多余的键不触发对象字面量的多余属性检查），而**条数相同也可能键不同**——只有逐键比才靠得住。
+ *  （实测踩过：en 漏删一条 githubOwn，条数 1922 vs 1921 才发现，还是靠人去比的。） */
+const packKeys = (lang) => {
+  const dir = path.join(SRC, 'shared', 'i18n', lang);
+  const out = new Map();
+  for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && f !== 'index.ts')) {
+    const keys = new Set([...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^\s*'([^']+)':/gm)].map((m) => m[1]));
+    out.set(f, keys);
+  }
+  return out;
+};
+const zhKeys = packKeys('zh');
+const enKeys = packKeys('en');
+const keyDiffs = [];
+for (const [file, zk] of zhKeys) {
+  const ek = enKeys.get(file) ?? new Set();
+  for (const k of zk) if (!ek.has(k)) keyDiffs.push(`en 缺 ${file} → ${k}`);
+  for (const k of ek) if (!zk.has(k)) keyDiffs.push(`zh 缺 ${file} → ${k}`);
+}
+for (const file of enKeys.keys()) if (!zhKeys.has(file)) keyDiffs.push(`zh 缺整个域文件 ${file}`);
+
 const total = [...perFile.values()].reduce((a, b) => a + b, 0);
 const byDomain = new Map();
 for (const [rel, n] of perFile) {
@@ -122,6 +146,14 @@ for (const [rel, n] of perFile) {
 
 console.log('📊 i18n 完成度');
 console.log(`  语言包：zh ${packCount('zh')} 条 / en ${packCount('en')} 条`);
+if (keyDiffs.length) {
+  // 键集不一致是**缺陷**（漏翻/漏删），要当闸门：退出码非 0
+  console.log(`  ❌ 键集不一致：${keyDiffs.length} 条`);
+  for (const d of keyDiffs) console.log(`       ${d}`);
+  process.exitCode = 1;
+} else {
+  console.log('  ✅ 键集一致（两种语言的 key 逐条对得上）');
+}
 console.log(`  未搬运中文行：${total} 处，分布于 ${perFile.size} 个文件`);
 console.log(`  已豁免（i18n-ignore）：${ignored} 行`);
 console.log('');
