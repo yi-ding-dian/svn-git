@@ -1111,13 +1111,23 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   width: 520px; max-width: 92vw; max-height: 86vh; display: flex; flex-direction: column;
   box-shadow: 0 20px 60px rgba(0,0,0,.5);
 }
-/* 可调整大小弹窗:8 方向边缘拖拽手柄(悬停弹窗时显现,命中高亮) */
-.mr-edge {
-  position: absolute; z-index: 6; border-radius: 3px;
-  background: var(--accent); opacity: 0; transition: opacity .12s;
+/* 可调整大小弹窗:8 方向边缘拖拽手柄(悬停弹窗时显现,命中高亮)。
+ * 热区尺寸（EDGES 里的 8px/20px）保持不变——好点中；可见的紫色条画在 ::after 上、取热区 3/4，
+ * 视觉略细（用户定稿）。条只是视觉层：拖拽/悬停判定仍走热区本身（pointer-events: none） */
+.mr-edge { position: absolute; z-index: 6; }
+.mr-edge::after {
+  content: ''; position: absolute; border-radius: 3px;
+  background: var(--accent); opacity: 0; transition: opacity .12s; pointer-events: none;
 }
-.modal:hover .mr-edge { opacity: .16; }
-.modal:hover .mr-edge:hover, .modal:hover .mr-edge.active { opacity: .55; }
+/* 边条：上下两条取 6px 高、左右两条取 6px 宽（居中） */
+.mr-edge-n::after, .mr-edge-s::after { left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 6px; }
+.mr-edge-w::after, .mr-edge-e::after { top: 0; bottom: 0; left: 50%; transform: translateX(-50%); width: 6px; }
+/* 角块：15×15 居中 */
+.mr-edge-nw::after, .mr-edge-ne::after, .mr-edge-sw::after, .mr-edge-se::after {
+  left: 50%; top: 50%; transform: translate(-50%, -50%); width: 15px; height: 15px;
+}
+.modal:hover .mr-edge::after { opacity: .16; }
+.modal:hover .mr-edge:hover::after, .modal:hover .mr-edge.active::after { opacity: .55; }
 
 .modal h3 { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 15px; }
 .modal .body {
