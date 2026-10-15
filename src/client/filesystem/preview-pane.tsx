@@ -12,6 +12,7 @@ import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
 import { IconExternal } from '../ui/icons.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
+import { InlineEditor, type InlineEditorHandle } from './inline-editor.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { MdThemePopover, loadMdTheme, saveMdTheme, mdThemeVars, mdThemeName } from './md-theme.js';
 import { MdTocPopover, type TocItem } from './md-toc.js';
@@ -44,11 +45,6 @@ interface Props {
   onSaved?: (msg: string) => void;
 }
 
-/** 编辑高亮层的单行（memo：击键时只有被改动的行重新高亮，大文件也不卡） */
-const EditHlLine = React.memo(function EditHlLine({ line, lang }: { line: string; lang?: string }) {
-  return <div><span dangerouslySetInnerHTML={{ __html: highlightLine(line, lang) }} /></div>;
-});
-
 export function PreviewPane(props: Props) {
   const { target } = props;
   /** 原文内容（null = 加载中；img 目标不使用） */
@@ -65,28 +61,16 @@ export function PreviewPane(props: Props) {
   const [matchIdx, setMatchIdx] = useState(0);
   /** md/图片预览图片放大查看（点击图片 → 全屏显示原图） */
   const [imgViewer, setImgViewer] = useState<string | null>(null);
-  /** 内联编辑：编辑框内容 + 是否在编辑中 + 保存后重读的触发键（target 没变，只能靠它） */
+  /** 内联编辑：是否在编辑中 + 保存后重读的触发键（target 没变，只能靠它）；
+   *  编辑本体（草稿/三件套/保存）在独立组件 InlineEditor 里（preview 与 diff 右栏共用） */
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  /** 编辑器的命令式句柄（保存按钮触发）+ 脏状态（保存按钮点亮） */
+  const editorRef = useRef<InlineEditorHandle>(null);
+  const [editDirty, setEditDirty] = useState(false);
   /** 原文的行尾风格：**textarea 会把 CRLF 规范化成 LF**（浏览器行为），保存前得按这个还原，
    *  否则 CRLF 文件存一次就变成整文件 diff —— 用户会以为工具把他的文件改乱了 */
-  const eolRef = useRef('\n');
-  /** 编辑态行号列：与 textarea 同步滚动的独立一列（textarea 里塞不了行号元素）。
-   *  行数与行高都和 textarea 严格一致，所以 scrollTop 直接照搬就对得上 */
-  const editTaRef = useRef<HTMLTextAreaElement | null>(null);
-  const editNumsRef = useRef<HTMLDivElement | null>(null);
-  /** 实时高亮层（彩色代码由它显示；textarea 字形透明） */
-  const editHlRef = useRef<HTMLDivElement | null>(null);
-  const syncEditScroll = () => {
-    if (!editTaRef.current) return;
-    if (editNumsRef.current) editNumsRef.current.scrollTop = editTaRef.current.scrollTop;
-    // 高亮层：横竖都跟（wrap=off 有横向滚动；它 overflow:hidden，靠 scrollTop/scrollLeft 平移内容）
-    if (editHlRef.current) {
-      editHlRef.current.scrollTop = editTaRef.current.scrollTop;
-      editHlRef.current.scrollLeft = editTaRef.current.scrollLeft;
-    }
-  };
+  const eolRef = useRef<'\n' | '\r\n'>('\n');
   /** 「编辑」的程序选择菜单：点按钮时按扩展名拉一次可选程序 */
   const [editMenu, setEditMenu] = useState<{ x: number; y: number; items: CtxMenuItem[] } | null>(null);
   const openEditMenu = async (ev: React.MouseEvent) => {
@@ -261,29 +245,9 @@ export function PreviewPane(props: Props) {
       props.onError(t('fs.pv.tooLargeNoEdit'));
       return;
     }
-    setDraft(text ?? '');
+    setEditDirty(false); // 干净进入（保存按钮先灭，改了才亮）
     setEditing(true);
   };
-  /** 保存：行尾还原成原文风格 → 后端按原编码写回 → 重读内容 + 通知父级刷新列表 */
-  const saveEdit = () => {
-    const content = draft.replace(/\r?\n/g, eolRef.current);
-    void post
-      .writeFile(props.target.rel, content)
-      .then((r) => {
-        if (!r.ok) {
-          // 保存失败
-          props.onError(r.message || t('fs.pv.saveFailed'));
-          return;
-        }
-        setEditing(false);
-        setReloadKey((k) => k + 1);
-        // 已保存
-        props.onSaved?.(r.message || t('fs.pv.saved'));
-      })
-      // 保存失败: {msg}
-      .catch((e: Error) => props.onError(t('fs.pv.saveFailedMsg', { msg: e.message })));
-  };
-
   /** md-render 容器点击：图片则放大查看；代码块的「复制」按钮则复制该块代码（事件代理——
    *  按钮由 renderMarkdown 输出的 HTML 生成，React 事件照样能冒泡到这里） */
   const onMdRenderClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -531,8 +495,8 @@ export function PreviewPane(props: Props) {
               {eolRef.current === '\r\n' ? ` · ${t('fs.pv.keepCrlf')}` : ''}
             </span>
             <span className="grow" />
-            {/* 💾 保存 */}
-            <button className="mini primary" onClick={saveEdit}>{t('fs.pv.saveBtn')}</button>
+            {/* 💾 保存（有修改才点亮） */}
+            <button className={`mini${editDirty ? ' primary' : ''}`} onClick={() => editorRef.current?.save()}>{t('fs.pv.saveBtn')}</button>
             {/* 取消 */}
             <button className="mini" onClick={() => setEditing(false)}>{t('common.cancel')}</button>
           </>
@@ -551,33 +515,21 @@ export function PreviewPane(props: Props) {
       </div>
       {/* md 阅读主题：变量 inline 打在这个滚动容器上，只作用其子树（工具栏/界面不受影响） */}
       {editing ? (
-        <div className="preview-edit-wrap">
-          {/* 行号列：行数与行高都跟 textarea 一致（见 CSS 的 calc），滚动由 textarea 驱动 */}
-          <div className="preview-edit-nums" ref={editNumsRef}>
-            {draft.split('\n').map((_, i) => (
-              <div key={i}>{i + 1}</div>
-            ))}
-          </div>
-          <div className="preview-edit-area">
-            {/* 实时高亮层：彩色代码由它显示（textarea 字形透明、只留光标），字体/行高与 textarea
-                严格一致，滚动由 textarea 的 onScroll 驱动（与行号列同一套机制） */}
-            <div className="preview-edit-hl" ref={editHlRef} aria-hidden>
-              {draft.split('\n').map((line, i) => (
-                <EditHlLine key={i} line={line} lang={langOf(target.name)} />
-              ))}
-            </div>
-            <textarea
-              className="preview-edit"
-              ref={editTaRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onScroll={syncEditScroll}
-              wrap="off"
-              spellCheck={false}
-              autoFocus
-            />
-          </div>
-        </div>
+        <InlineEditor
+          ref={editorRef}
+          rel={target.rel}
+          initialText={text ?? ''}
+          eol={eolRef.current}
+          fileName={target.name}
+          jumpLine={jumpLine}
+          onDirtyChange={setEditDirty}
+          onSaved={(m) => {
+            setEditing(false);
+            setReloadKey((k) => k + 1); // 重读内容（保存后预览刷新）
+            props.onSaved?.(m);
+          }}
+          onError={(m) => props.onError(m)}
+        />
       ) : (
       <div className="diff" style={{ flex: 1, overflow: 'auto', ...mdVars }}>
         {/* 图片预览：直接显示图片（点击放大复用 md-render 的放大机制） */}

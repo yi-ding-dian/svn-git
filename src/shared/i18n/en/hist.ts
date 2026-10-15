@@ -91,6 +91,8 @@ export const hist = {
   'hist.showAllTip': 'Expand the left pane to the full file (unchanged lines shown flat; diff lines still marked)',
   // Collapse search (drag the edge narrow past the threshold and release; shown while dragging)
   'hist.releaseToCollapse': 'Release to collapse the search box',
+  // Edit in place (edit the working-tree file right in the right pane; jumps to the current change)
+  'hist.editInPlaceTip': 'Edit the file in place (jumps to the current change; re-compares automatically after saving)',
   'hist.arrowKeyBack': '← to go back',
 
   // ---- 文件外部更新提示（stale）----

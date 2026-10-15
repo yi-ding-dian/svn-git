@@ -8,6 +8,7 @@ import { IconCopy } from '../ui/icons.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { parseUnifiedDiff, lineMarksOf, type DiffLine } from '../../shared/diff-parse.js';
 import { t } from '../../shared/i18n/index.js';
+import { InlineEditor, type InlineEditorHandle } from '../filesystem/inline-editor.js';
 
 export interface DiffTarget {
   path?: string;
@@ -210,6 +211,43 @@ export function DiffView(props: Props) {
   const jumpLock = useRef(false);
   // 文件更新检测
   const [staleTip, setStaleTip] = useState(false);
+  /** 右栏「就地编辑」（diff 内直接改工作区文件）：编辑模式 + 编辑器句柄/脏态 +
+   *  进入前拉到的最新文本（准入检查一并做掉）+ 保存后重对比的加载 key */
+  const [editing, setEditing] = useState(false);
+  const editorRef = useRef<InlineEditorHandle>(null);
+  const [editDirty, setEditDirty] = useState(false);
+  const [editData, setEditData] = useState<{ text: string; eol: '\n' | '\r\n'; jumpLine?: number } | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  /** 进入就地编辑：先拉一次**最新工作区文本**（兼做准入——非 UTF-8/超限文件不给编辑），
+   *  光标定位到当前差异块的右栏行号（与「下一个」定位同一套；纯删除块/占位行不定位） */
+  const startEdit = () => {
+    if (!props.target?.path) return;
+    const b = blocksRef.current[curBlockRef.current];
+    const jumpLine = b && b.right > 0 && b.right < Number.MAX_SAFE_INTEGER ? b.right : undefined;
+    void get
+      .cat(props.target.path, true)
+      .then((r) => {
+        if (!r.ok) {
+          setError(r.error ?? t('fs.pv.readFailed'));
+          return;
+        }
+        if (r.encoding) {
+          // 该文件是 {enc} 编码，不支持内联编辑（怕改坏原编码）；请用外部程序打开
+          setError(t('fs.pv.encNoEditFull', { enc: r.encoding }));
+          return;
+        }
+        if (r.truncated) {
+          // 文件过大（超过 5MB），未读取全文，不支持内联编辑；请用外部程序打开
+          setError(t('fs.pv.tooLargeNoEdit'));
+          return;
+        }
+        const text = r.output;
+        setEditData({ text, eol: text.includes('\r\n') ? '\r\n' : '\n', jumpLine });
+        setEditDirty(false);
+        setEditing(true);
+      })
+      .catch((e: Error) => setError((e as Error).message));
+  };
   const mtimeRef = useRef<{ mtime: number; size: number } | null>(null);
 
   const leftRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -273,7 +311,7 @@ export function DiffView(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [props.target, props.tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [props.target, props.tick, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps -- reloadKey：就地编辑保存后重新对比
 
   // 差异块导航
   const blocksRef = useRef<{ id: number; left: number; right: number }[]>([]);
@@ -628,6 +666,16 @@ export function DiffView(props: Props) {
     const no = locateDel(block) ?? blockFirstRight.get(block);
     if (no === undefined) return;
     flashTarget(block);
+    if (editing) {
+      // 就地编辑中：右栏是编辑器——点击改为把**光标**定位到对应行。
+      // 行号用块的 b.right（add 行的**工作区行号**——与进入编辑时的定位同源，实测准）；
+      // 不走 blockFirstRight：它对"修改块"给的是 del 行的左栏行号（凑巧相同场景才没暴露，实测差 1 行）。
+      // 纯删除块（right 是哨兵）不定位（工作区没有该内容，光标留在原处）
+      const b = blocksRef.current[blocksRef.current.findIndex((x) => x.id === block)];
+      const line = b && b.right > 0 && b.right < Number.MAX_SAFE_INTEGER ? b.right : 0;
+      editorRef.current?.gotoLine(line);
+      return;
+    }
     scrollToLine(rightPane.current, rightRefs.current.get(no));
   };
 
@@ -797,6 +845,18 @@ export function DiffView(props: Props) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="dim small" style={{ marginBottom: 4 }}>▶ {versions?.rightLabel}</div>
               <div className="row" style={{ gap: 6 }}>
+                {editing ? (
+                  <>
+                    {/* 编辑中 */}
+                    <span className="dim small">{t('fs.pv.editing')}</span>
+                    <span className="grow" />
+                    {/* 💾 保存（有修改才点亮）；保存后自动重新对比 */}
+                    <button className={`mini${editDirty ? ' primary' : ''}`} onClick={() => editorRef.current?.save()}>{t('fs.pv.saveBtn')}</button>
+                    {/* 取消：丢弃修改，回到差异视图 */}
+                    <button className="mini" onClick={() => { setEditing(false); setEditData(null); }}>{t('common.cancel')}</button>
+                  </>
+                ) : (
+                <>
                 {dSearchActive ? (
                   <>
                     {/* 输入框外层 relative：右侧拖拽手柄绝对定位用（右栏独立宽度） */}
@@ -836,12 +896,16 @@ export function DiffView(props: Props) {
                   // 🔍 搜索此栏
                   <button className="mini" onClick={() => setDSearchActive(true)}>{t('hist.searchPane')}</button>
                 )}
+                {/* ✎ 编辑：右栏就地编辑（定位到当前差异处；非 UTF-8/超限文件点击时提示） */}
+                <button className="mini" onClick={startEdit} title={t('hist.editInPlaceTip')}>{t('fs.pv.edit')}</button>
                 {isMd && (
                   // 返回差异行视图 / Markdown 渲染预览（当前）
                   <button className="mini" onClick={() => setPreviewR((v) => !v)} title={previewR ? t('hist.backToDiff') : t('hist.mdPreviewRight')}>
                     {/* 返回对比 / 预览 */}
                     {previewR ? t('hist.backToCompare') : `👁 ${t('common.preview')}`}
                   </button>
+                )}
+                </>
                 )}
               </div>
             </div>
@@ -892,7 +956,27 @@ export function DiffView(props: Props) {
             {/* 拖拽手柄 */}
             {/* 拖动调整左右栏宽度 */}
             <div className="sb-resizer" onMouseDown={startDrag} title={t('hist.dragResizer')} />
-            {/* 右栏：当前 + 滚动条预览标记 */}
+            {/* 右栏：当前 + 滚动条预览标记；「就地编辑」时整栏换成编辑器（左栏保持原版对照） */}
+            {editing && editData ? (
+              <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
+                <InlineEditor
+                  ref={editorRef}
+                  rel={props.target!.path!}
+                  initialText={editData.text}
+                  eol={editData.eol}
+                  fileName={props.target!.path!.split('/').pop() ?? ''}
+                  jumpLine={editData.jumpLine}
+                  onDirtyChange={setEditDirty}
+                  onSaved={(m) => {
+                    setEditing(false);
+                    setEditData(null);
+                    setReloadKey((k) => k + 1); // 保存后重新对比（工作区文件与 diff 一起重载）
+                    props.onToast?.(m);
+                  }}
+                  onError={(e) => setError(e)}
+                />
+              </div>
+            ) : (
             <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0 }}>
             <div ref={rightPane} className="sb-pane" onScroll={onScrollSync('right')}>
               {previewR ? (
@@ -958,6 +1042,7 @@ export function DiffView(props: Props) {
               </div>
             )}
             </div>
+            )}
           </div>
         </>
       )}

@@ -89,6 +89,8 @@ export const hist = {
   'hist.showAllTip': '左栏展开为完整文件内容（未改动行平铺显示，差异行照旧标记）',
   // 收起搜索（往左拖窄过阈值松手即收起；拖动中显示此提示）
   'hist.releaseToCollapse': '松开鼠标将收起搜索框',
+  // 就地编辑（右栏直接改工作区文件；定位到当前差异处、保存后重新对比）
+  'hist.editInPlaceTip': '就地编辑当前文件（定位到当前差异处；保存后自动重新对比）',
   'hist.arrowKeyBack': '← 键返回',
 
   // ---- 文件外部更新提示（stale）----
