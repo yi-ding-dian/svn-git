@@ -1336,6 +1336,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 /* 预览面板的内联编辑框：占满内容区，等宽字体（与只读预览的观感一致）。
    行号只能另起一列 —— textarea 里塞不了行号元素 */
 .preview-edit-wrap { flex: 1; display: flex; min-height: 0; overflow: hidden; background: var(--bg); }
+/* 编辑区定位容器：高亮层绝对定位铺满 textarea 区域（不含行号列），textarea 盖在其上 */
+.preview-edit-area { position: relative; flex: 1; min-width: 0; display: flex; }
 .preview-edit-nums {
   flex: 0 0 auto; overflow: hidden;           /* 不要自己的滚动条：由 textarea 的 onScroll 驱动 */
   padding: 10px 8px 10px 12px;                /* 上 10 = textarea 的 padding-top，不齐整列偏移 */
@@ -1352,6 +1354,24 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
   padding-right: 8px;
   min-width: 36px;
 }
+/* 实时高亮层：彩色代码由它显示（textarea 字形透明、只留光标），字体/内边距/行高与 textarea
+   **逐值一致**（同一组变量），滚动由 textarea 的 onScroll 驱动（与行号列同一套机制）。
+   pointer-events:none：不挡点击/选择（选择走上层 textarea） */
+.preview-edit-hl {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  box-sizing: border-box;
+  padding: 10px 12px;                         /* 与 textarea 一致 */
+  background: var(--bg);
+  font-family: var(--code-font, "JetBrains Mono", Consolas, "Courier New", monospace);
+  font-size: var(--font-size, 14px);
+  line-height: 1.5;
+  tab-size: 4;
+  white-space: pre;                           /* 尾随空格/制表符保真（与 textarea 同为 pre 行为） */
+}
+.preview-edit-hl > div {
+  white-space: pre;
+  min-height: calc(var(--font-size, 14px) * 1.5);  /* 空行也占一行高（与 textarea 的空行一致） */
+}
 .preview-edit {
   flex: 1;
   min-width: 0;
@@ -1360,8 +1380,11 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
   border: none;
   outline: none;
   resize: none;
-  background: var(--bg);
-  color: var(--text);
+  /* 字形透明（由底层高亮层显示），保留光标；选区用半透明背景——底下的彩色字透得过来 */
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  position: relative;
   font-family: var(--code-font, "JetBrains Mono", Consolas, "Courier New", monospace);
   font-size: var(--font-size, 14px);
   line-height: 1.5;
@@ -1369,6 +1392,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
   white-space: pre;                           /* 不折行：折了行号没法 1:1（用户选定方案） */
   overflow: auto;
 }
+.preview-edit::selection { background: rgba(88, 166, 255, .30); color: transparent; }
 
 /* ---------- 后台任务：沙漏（运行中动画——上瓶沙落、下瓶沙积，循环） ---------- */
 @keyframes hg-sand-top { 0% { transform: scaleY(1); } 78%, 100% { transform: scaleY(0); } }

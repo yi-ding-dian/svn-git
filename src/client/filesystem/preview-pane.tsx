@@ -44,6 +44,11 @@ interface Props {
   onSaved?: (msg: string) => void;
 }
 
+/** 编辑高亮层的单行（memo：击键时只有被改动的行重新高亮，大文件也不卡） */
+const EditHlLine = React.memo(function EditHlLine({ line, lang }: { line: string; lang?: string }) {
+  return <div><span dangerouslySetInnerHTML={{ __html: highlightLine(line, lang) }} /></div>;
+});
+
 export function PreviewPane(props: Props) {
   const { target } = props;
   /** 原文内容（null = 加载中；img 目标不使用） */
@@ -71,8 +76,16 @@ export function PreviewPane(props: Props) {
    *  行数与行高都和 textarea 严格一致，所以 scrollTop 直接照搬就对得上 */
   const editTaRef = useRef<HTMLTextAreaElement | null>(null);
   const editNumsRef = useRef<HTMLDivElement | null>(null);
+  /** 实时高亮层（彩色代码由它显示；textarea 字形透明） */
+  const editHlRef = useRef<HTMLDivElement | null>(null);
   const syncEditScroll = () => {
-    if (editNumsRef.current && editTaRef.current) editNumsRef.current.scrollTop = editTaRef.current.scrollTop;
+    if (!editTaRef.current) return;
+    if (editNumsRef.current) editNumsRef.current.scrollTop = editTaRef.current.scrollTop;
+    // 高亮层：横竖都跟（wrap=off 有横向滚动；它 overflow:hidden，靠 scrollTop/scrollLeft 平移内容）
+    if (editHlRef.current) {
+      editHlRef.current.scrollTop = editTaRef.current.scrollTop;
+      editHlRef.current.scrollLeft = editTaRef.current.scrollLeft;
+    }
   };
   /** 「编辑」的程序选择菜单：点按钮时按扩展名拉一次可选程序 */
   const [editMenu, setEditMenu] = useState<{ x: number; y: number; items: CtxMenuItem[] } | null>(null);
@@ -545,16 +558,25 @@ export function PreviewPane(props: Props) {
               <div key={i}>{i + 1}</div>
             ))}
           </div>
-          <textarea
-            className="preview-edit"
-            ref={editTaRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onScroll={syncEditScroll}
-            wrap="off"
-            spellCheck={false}
-            autoFocus
-          />
+          <div className="preview-edit-area">
+            {/* 实时高亮层：彩色代码由它显示（textarea 字形透明、只留光标），字体/行高与 textarea
+                严格一致，滚动由 textarea 的 onScroll 驱动（与行号列同一套机制） */}
+            <div className="preview-edit-hl" ref={editHlRef} aria-hidden>
+              {draft.split('\n').map((line, i) => (
+                <EditHlLine key={i} line={line} lang={langOf(target.name)} />
+              ))}
+            </div>
+            <textarea
+              className="preview-edit"
+              ref={editTaRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onScroll={syncEditScroll}
+              wrap="off"
+              spellCheck={false}
+              autoFocus
+            />
+          </div>
         </div>
       ) : (
       <div className="diff" style={{ flex: 1, overflow: 'auto', ...mdVars }}>
