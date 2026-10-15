@@ -27,6 +27,18 @@ export const shell = {
   'shell.header.githubPrivateNote': ' (private)',
   'shell.header.githubTipClick': ' · click for repository info',
 
+  // ---- 顶栏：任务面板的获取进度（阶段文案如实反映 git 在干什么；"检出文件"那段 git 完全静默）----
+  'shell.tasks.phaseCounting': 'Counting objects on the server…',
+  'shell.tasks.phaseCompressing': 'Compressing on the server…',
+  'shell.tasks.phaseReceiving': 'Downloading…',
+  'shell.tasks.phaseResolving': 'Resolving deltas…',
+  'shell.tasks.phaseCheckout': 'Checking out files…',
+  'shell.tasks.progressOf': '{done} / {total}',
+  'shell.tasks.progressSpeed': '{speed}/s',
+  'shell.tasks.downloaded': 'Downloaded {done}',
+  'shell.tasks.etaMin': 'about {n} min left',
+  'shell.tasks.etaSec': 'less than a minute left',
+
   // ---- 顶栏：网络状态灯 ----
   'shell.net.checking': 'Checking…',
   'shell.net.ok': 'Network OK',

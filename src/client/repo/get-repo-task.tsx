@@ -7,8 +7,8 @@
  *  任务本身活在 shared/tasks 的 store 里：进度/取消归顶栏沙漏，完成自动打开项目，
  *  完成/失败进铃铛（App 统一通知），认证失败由本文件末尾的 GetRepoAuthModal 引导、保存后自动重试。 */
 import React from 'react';
-import { post } from '../shared/api.js';
-import { startTask } from '../shared/tasks.js';
+import { get, post } from '../shared/api.js';
+import { startTask, setTaskProgress } from '../shared/tasks.js';
 import { translateVcsError, joinPath } from '../shared/utils.js';
 import { GitPushAuthModal } from './git-auth.js';
 import type { GetRepoParams } from './repo-create.js';
@@ -32,21 +32,40 @@ export function startGetRepoTask(
     onToast: (m: string, err?: boolean) => void;
   },
 ): void {
-  startTask({
+  const target = joinPath(p.dir, p.name);
+  // 进度轮询：克隆期间每秒问一次后端（本地回环，代价可忽略），塞进任务面板——
+  // 「已下载 / 速度 / 还剩多久」正是"看着像卡死"的解药。任务一结束就停（run 的 finally），
+  // 所以不会出现"跑完了还在轮"。SVN 检出没有等价信息，后端一直 ok=false，面板自然不显示进度条。
+  let taskId: number | null = null;
+  const timer = setInterval(() => {
+    const id = taskId;
+    if (id === null) return;
+    void get
+      .getProgress(target)
+      .then((r) => setTaskProgress(id, r.ok ? { phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0 } : null))
+      .catch(() => {
+        /* 轮询失败不打扰：面板退化成只有标题与已用秒数 */
+      });
+  }, 1000);
+  taskId = startTask({
     kind: 'get',
     // 任务标题：获取仓库 · {name}（同检出「检出到本地 · name」的拼接先例）
     title: `${t('repo.get.title')} · ${p.name}`,
     run: async (signal) => {
-      const r = await post.repoCreate(p.type, p.dir, p.name, p.url, true, signal);
-      // 认证失败：不在这里报错了事——弹认证框（存的是 git 账号/Token），保存后自动重试
-      if (!r.ok && r.authError && r.authType) {
-        hooks.onAuthNeeded({ type: r.authType, error: r.message, retry: () => startGetRepoTask(p, hooks) });
-        return { ok: false, message: r.message };
+      try {
+        const r = await post.repoCreate(p.type, p.dir, p.name, p.url, true, signal);
+        // 认证失败：不在这里报错了事——弹认证框（存的是 git 账号/Token），保存后自动重试
+        if (!r.ok && r.authError && r.authType) {
+          hooks.onAuthNeeded({ type: r.authType, error: r.message, retry: () => startGetRepoTask(p, hooks) });
+          return { ok: false, message: r.message };
+        }
+        // 完成即打开（弹窗早就关了，与它无关）：打开服务端返回的仓库路径（git/svn 均为目标目录），
+        // 没返回时兜底拼路径
+        if (r.ok) hooks.onCreated(r.repoDir ?? target);
+        return { ok: r.ok, message: r.message };
+      } finally {
+        clearInterval(timer);
       }
-      // 完成即打开（弹窗早就关了，与它无关）：打开服务端返回的仓库路径（git/svn 均为目标目录），
-      // 没返回时兜底拼路径
-      if (r.ok) hooks.onCreated(r.repoDir ?? joinPath(p.dir, p.name));
-      return { ok: r.ok, message: r.message };
     },
   });
   // 弹窗刚关，给一句"去哪儿找它"（顶栏沙漏 = 进度与取消入口）

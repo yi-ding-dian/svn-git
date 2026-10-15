@@ -46,7 +46,7 @@ export const srv = {
   'srv.crossSiteRejected': '拒绝跨站请求',
   'srv.missingDirOrName': '缺少目录或名称',
   'srv.fillDirPath': '请填写目录路径',
-  'srv.cloneTimeout': '获取超时（超过 {sec} 秒），已停止',
+  'srv.cloneTimeout': '获取超时（超过 {min} 分钟），已停止',
   'srv.cloneCancelled': '已取消获取',
   'srv.clonedTo': '已克隆到 {path}',
   'srv.remnantCleaned': '（已清理上次中断残留的目录）',

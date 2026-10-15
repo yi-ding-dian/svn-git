@@ -173,6 +173,30 @@ async function localRepoPaths(): Promise<Map<string, string>> {
   return out;
 }
 
+/** URL 指向的 GitHub 仓库的**总大小（字节）**——获取进度条的分母（server/index.ts 的克隆用）。
+ *  失败一律返回 0（没配凭据 / 不是 GitHub / 网络不通），界面降级成"只显示已下载与速度"，
+ *  绝不因为它挡住克隆本身：这个请求与克隆并行发，慢/失败都不影响。 */
+export async function githubRepoBytes(url: string): Promise<number> {
+  const github = parseGithub(url);
+  const token = loadConfig().git?.password ?? '';
+  if (!github || !token) return 0;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${GITHUB_API}/repos/${github.owner}/${github.repo}`, {
+      signal: ctl.signal,
+      headers: { 'User-Agent': GITHUB_UA, Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return 0;
+    const j = (await res.json()) as Record<string, unknown>;
+    return Number(j.size ?? 0) * 1024; // GitHub 的 size 单位是 KB
+  } catch {
+    return 0;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** 扩展名 → 语言（降级统计的子集映射；GitHub 官方统计更全更准，这只是离线兜底） */
 const EXT_LANG: Record<string, string> = {
   ts: 'TypeScript', tsx: 'TypeScript', mts: 'TypeScript', cts: 'TypeScript',

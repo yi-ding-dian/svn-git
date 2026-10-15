@@ -8,6 +8,8 @@ import { createAskPass, authTypeOf } from '../vcs/git.js';
 import { loadConfig } from '../config.js';
 import { run } from '../vcs/exec.js';
 import { markInflight, clearInflight } from '../inflight.js';
+import { progressStart, progressSetTotal, progressDone, progressFromStderr, progressGet } from '../get-progress.js';
+import { githubRepoBytes } from './routes/github.js';
 import { platform } from '../platform/index.js';
 import { t } from '../shared/i18n/index.js';
 import { isSafeOrigin, sendJson, readBody, isAuthError, type Ctx } from './routes/util.js';
@@ -172,6 +174,12 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
+      if (p === '/api/get-progress' && req.method === 'GET') {
+        // 获取进度（顶栏任务面板每秒轮询）：只读内存里的进度表，不碰磁盘、不联网
+        sendJson(res, 200, progressGet(url.searchParams.get('target') ?? ''));
+        return;
+      }
+
       if (p === '/api/repo-create' && req.method === 'POST') {
         // 创建/克隆仓库（不依赖当前打开的仓库）
         const body = await readBody(req);
@@ -218,10 +226,12 @@ export function startServer(): Promise<ServerHandle> {
             const ac = new AbortController();
             const onClose = () => ac.abort();
             res.on('close', onClose);
-            /** 克隆上限：网络卡住时别让用户干等（前端同时有 10 分钟倒计时，两边一致）。
-             *  原来是 30s——大仓库首次克隆超 30s 很常见，会把正常克隆也掐掉；
-             *  慢网络下前端另有"没文件落盘就提示"的提示条，配合「取消」按钮，不必靠短超时兜底 */
-            const CLONE_TIMEOUT_MS = 600_000;
+            /** 克隆上限：网络卡住时别让用户干等。
+             *  原来是 30s；后改 10 分钟；**再改 30 分钟**——用户实报一个 26 MB 的仓库（里面有个
+             *  21.5 MB 的模型）在 19 KB/s 下要 23 分钟，10 分钟那个上限等于每次都白跑。
+             *  现在顶栏任务面板有实时进度（已下载 / 速度 / 预计剩余），用户能自己判断该不该等，
+             *  不必靠短超时兜底。 */
+            const CLONE_TIMEOUT_MS = 30 * 60_000;
             const isAuthFail = (r: { stderr: string; stdout: string }): boolean =>
               // 解析 git 输出判断认证失败（含中文 locale 的「没有那个设备或地址」），不是界面文案，禁止翻译
               /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403|没有那个设备或地址/i.test(r.stderr + r.stdout); // i18n-ignore: 解析 git 输出的匹配表
@@ -238,27 +248,34 @@ export function startServer(): Promise<ServerHandle> {
             };
             // 登记"正在克隆到哪儿"：app 被强杀时靠它在下一次启动收尾（见 inflight.ts）
             markInflight(target);
-            let r = await run('git', ['clone', url, target], { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal });
+            // 进度：登记 + 并行查总大小（分母；查不到就 0，界面只显示已下载与速度），
+            // `--progress` 是必需的——stderr 不是终端时 git 默认不吐进度
+            progressStart(target);
+            void githubRepoBytes(url).then((n) => progressSetTotal(target, n));
+            const onStderrLine = (line: string) => progressFromStderr(target, line);
+            let r = await run('git', ['clone', '--progress', url, target], { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal, onStderrLine });
             let authFail = isAuthFail(r);
             const gitCred = loadConfig().git;
             // 已 abort（用户关闭/超时）就不再重试；失败时先清半截目录再带凭据重试
             if (r.code !== 0 && !r.aborted && authFail && gitCred?.username && gitCred?.password) {
               cleanupTarget();
               const ask = createAskPass(gitCred);
-              r = await run('git', ['clone', url, target], { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal, env: { GIT_ASKPASS: ask.path } });
+              progressStart(target); // 重试从零开始：进度重置（总大小已查到的话接着用）
+              r = await run('git', ['clone', '--progress', url, target], { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal, env: { GIT_ASKPASS: ask.path }, onStderrLine });
               ask.cleanup();
               authFail = isAuthFail(r);
             }
             res.off('close', onClose);
             clearInflight(target); // 克隆跑完了（成功/失败/取消都算）：撤掉登记
-            // ⚠ aborted（用户取消/断开）与 timedOut（自己到 10 分钟上限）是两个字段，都要判 ——
+            progressDone(target); // 进度同上：跑完就撤
+            // ⚠ aborted（用户取消/断开）与 timedOut（自己到 30 分钟上限）是两个字段，都要判 ——
             // 只判 aborted 的话，超时会被当成"克隆失败"、把 git 的半截 stderr（"正克隆到…"）当错误抛给用户
             if (r.aborted || r.timedOut) {
               cleanupTarget(); // 收拾可能留下的半截目录
               result = {
                 ok: false,
                 // 获取超时（超过 {sec} 秒），已停止 / 已取消获取
-                message: r.timedOut ? t('srv.cloneTimeout', { sec: CLONE_TIMEOUT_MS / 1000 }) : t('srv.cloneCancelled'),
+                message: r.timedOut ? t('srv.cloneTimeout', { min: CLONE_TIMEOUT_MS / 60_000 }) : t('srv.cloneCancelled'),
               };
             } else if (r.code === 0) {
               // 已克隆到 {path}
@@ -303,7 +320,7 @@ export function startServer(): Promise<ServerHandle> {
               result = {
                 ok: false,
                 // 检出超时，已停止 / 已取消获取
-                message: r.timedOut ? t('srv.cloneTimeout', { sec: 600 }) : t('srv.cloneCancelled'),
+                message: r.timedOut ? t('srv.cloneTimeout', { min: 10 }) : t('srv.cloneCancelled'),
               };
             } else if (r.code === 0) {
               // 已检出 SVN 工作副本 {path}

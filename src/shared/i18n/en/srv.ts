@@ -31,7 +31,7 @@ export const srv = {
   'srv.crossSiteRejected': 'Cross-site request rejected',
   'srv.missingDirOrName': 'Missing directory or name',
   'srv.fillDirPath': 'Please enter a directory path',
-  'srv.cloneTimeout': 'Fetch timed out (over {sec}s), stopped',
+  'srv.cloneTimeout': 'Fetch timed out (over {min} minutes), stopped',
   'srv.cloneCancelled': 'Fetch cancelled',
   'srv.clonedTo': 'Cloned to {path}',
   'srv.remnantCleaned': ' (cleaned up the leftover directory from the interrupted fetch)',

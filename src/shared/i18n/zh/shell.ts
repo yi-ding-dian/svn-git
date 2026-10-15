@@ -29,6 +29,18 @@ export const shell = {
   'shell.header.githubPrivateNote': '（私有仓库）',
   'shell.header.githubTipClick': ' · 点击查看仓库信息',
 
+  // ---- 顶栏：任务面板的获取进度（阶段文案如实反映 git 在干什么；"检出文件"那段 git 完全静默）----
+  'shell.tasks.phaseCounting': '服务端正在统计对象…',
+  'shell.tasks.phaseCompressing': '服务端正在打包…',
+  'shell.tasks.phaseReceiving': '正在下载…',
+  'shell.tasks.phaseResolving': '正在本地解包…',
+  'shell.tasks.phaseCheckout': '正在检出文件…',
+  'shell.tasks.progressOf': '{done} / {total}',
+  'shell.tasks.progressSpeed': '{speed}/s',
+  'shell.tasks.downloaded': '已下载 {done}',
+  'shell.tasks.etaMin': '还需约 {n} 分钟',
+  'shell.tasks.etaSec': '还需不到 1 分钟',
+
   // ---- 顶栏：网络状态灯 ----
   'shell.net.checking': '检测中…',
   'shell.net.ok': '远程网络正常',

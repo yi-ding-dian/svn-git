@@ -38,6 +38,9 @@ export interface RunOptions {
   timeoutMs?: number;
   /** 输出上限，默认 64MB */
   maxBuffer?: number;
+  /** stderr **按行**回调（进度类输出用：git clone --progress 靠 `\r` 原地刷新，故 `\r` 与 `\n` 都当分隔）。
+   *  回调只做阅读，不改动 run 的返回值语义（stderr 照常完整收集） */
+  onStderrLine?: (line: string) => void;
   /** 取消信号（如前端请求断开），触发后杀掉子进程 */
   signal?: AbortSignal;
   /** 用 shell 执行：`cmd` 作为**完整命令行**（支持管道 / 重定向 / &&），`args` 忽略。
@@ -264,11 +267,24 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
         stdoutLen += d.length;
       }
     });
+    /** onStderrLine 的行缓冲。**`\r` 也要切行**：git clone --progress 就是靠 \r 原地刷同一行，
+     *  只认 \n 的话整段进度会攒成一行、直到结束才拿到（那就等于没有进度）。 */
+    let stderrPending = '';
     child.stderr.on('data', (d: Buffer) => {
       if (stderrLen < maxBuffer) {
         stderr.push(d);
         stderrLen += d.length;
       }
+      if (!opts.onStderrLine) return;
+      stderrPending += d.toString('utf8');
+      for (;;) {
+        const i = stderrPending.search(/[\r\n]/);
+        if (i < 0) break;
+        const line = stderrPending.slice(0, i).trim();
+        stderrPending = stderrPending.slice(i + 1);
+        if (line) opts.onStderrLine(line);
+      }
+      if (stderrPending.length > 8192) stderrPending = ''; // 迟迟不出分隔符（异常输出）：丢弃，别无限涨
     });
 
     child.on('error', (err) => {

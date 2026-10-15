@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo, type GitHubIdentityResult } from '../shared/api.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { useTasks, cancelTask } from '../shared/tasks.js';
+import { useTasks, cancelTask, type TaskProgress as TaskProgressInfo } from '../shared/tasks.js';
 import { useNotices, markAllRead, removeNotice } from '../shared/notices.js';
 import { startTaskDeferred } from './bg-defer.js';
 import { launchMagicFlight } from './magic-flight.js';
@@ -1321,11 +1321,52 @@ function TaskPopover(props: { x: number; y: number; onClose: () => void }) {
               <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.title}>{tk.title}</div>
               {/* 已用 {n} 秒 */}
               <div className="dim small">{t('shell.tasks.elapsed', { n: Math.max(0, Math.floor((now - tk.startedAt) / 1000)) })}</div>
+              {tk.progress && <TaskProgress p={tk.progress} />}
             </span>
             {/* 取消 */}
             <button className="mini" onClick={() => cancelTask(tk.id)}>{t('common.cancel')}</button>
           </div>
         ))}
+      </div>
+    </>
+  );
+}
+
+/** 任务进度（获取类任务专有）：进度条 + 已下载/总大小 + 速度 + 预计剩余。
+ *  为什么值得单列：用户实报"一直获取不了"——26 MB 的仓库在 19 KB/s 下要 23 分钟而被 10 分钟上限掐掉，
+ *  面板只有"已用 63 秒"，看着和卡死没区别。这里把"在动、多快、还剩多久"直接摆出来。
+ *  阶段文案要如实——尤其"正在检出文件…"那段 git 完全静默（没有任何输出），不写出来又成了"不知道什么情况"。 */
+function TaskProgress(props: { p: TaskProgressInfo }) {
+  const p = props.p;
+  // 百分比按**字节**算（git 自己的百分比是按对象个数，大小极不均匀），没结束前封顶 99%
+  const pct = p.total > 0 ? Math.min(99, Math.round((p.bytes / p.total) * 100)) : null;
+  const size = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+  const speed = p.speed >= 1024 * 1024 ? `${(p.speed / 1024 / 1024).toFixed(1)} MB` : `${Math.round(p.speed / 1024)} KB`;
+  const etaSec = pct !== null && p.speed > 0 && p.bytes < p.total ? Math.round((p.total - p.bytes) / p.speed) : -1;
+  const phaseKey = {
+    counting: 'shell.tasks.phaseCounting',
+    compressing: 'shell.tasks.phaseCompressing',
+    receiving: 'shell.tasks.phaseReceiving',
+    resolving: 'shell.tasks.phaseResolving',
+    checkout: 'shell.tasks.phaseCheckout',
+  }[p.phase] as I18nKey;
+  return (
+    <>
+      {pct !== null && (
+        <div style={{ height: 4, background: 'var(--panel2)', borderRadius: 2, margin: '4px 0 3px', overflow: 'hidden' }}>
+          <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', transition: 'width .3s' }} />
+        </div>
+      )}
+      <div className="dim small">
+        {pct !== null ? `${pct}% · ` : ''}
+        {p.total > 0
+          ? t('shell.tasks.progressOf', { done: size(p.bytes), total: size(p.total) })
+          : t('shell.tasks.downloaded', { done: size(p.bytes) })}
+        {p.speed > 0 ? ` · ${t('shell.tasks.progressSpeed', { speed })}` : ''}
+      </div>
+      <div className="dim small">
+        {t(phaseKey)}
+        {etaSec >= 60 ? ` · ${t('shell.tasks.etaMin', { n: Math.ceil(etaSec / 60) })}` : etaSec >= 0 ? ` · ${t('shell.tasks.etaSec')}` : ''}
       </div>
     </>
   );

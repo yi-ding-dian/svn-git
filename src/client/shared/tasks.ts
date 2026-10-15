@@ -23,6 +23,20 @@ export interface BgTask {
   message?: string;
   /** run 的返回值（业务侧读——如检出响应里的 authError/repoDir） */
   data?: unknown;
+  /** 实时进度（只有"获取"这类会报进度的任务有：发起方每秒轮询 /api/get-progress 塞进来，
+   *  见 repo/get-repo-task.tsx；SVN 检出没有等价信息，一直是空的） */
+  progress?: TaskProgress;
+}
+
+/** 获取进度快照（字段含义见 src/get-progress.ts 的表头注释） */
+export interface TaskProgress {
+  phase: 'counting' | 'compressing' | 'receiving' | 'resolving' | 'checkout';
+  /** 已接收字节 */
+  bytes: number;
+  /** 字节/秒 */
+  speed: number;
+  /** 总字节（0 = 未知 → 界面不显示百分比，只显示已下载与速度） */
+  total: number;
 }
 
 export interface TaskRunResult {
@@ -84,6 +98,14 @@ export function cancelTask(id: number): void {
  *  重渲染可能滞后几百毫秒，快速连点会漏判、叠起两个任务。 */
 export function hasRunningTask(kind: string): boolean {
   return tasks.some((t) => t.kind === kind && t.status === 'running');
+}
+
+/** 更新任务进度（轮询拿到就往这儿塞）。任务已结束的一律忽略——进度属于"进行中"的东西，
+ *  结束后还挂着只会让面板显示一条对不上的进度条 */
+export function setTaskProgress(id: number, p: TaskProgress | null): void {
+  const t = tasks.find((x) => x.id === id);
+  if (!t || t.status !== 'running') return;
+  patch(id, { progress: p ?? undefined });
 }
 
 /** 从面板移除一条记录（进行中的不允许移除——需先取消） */

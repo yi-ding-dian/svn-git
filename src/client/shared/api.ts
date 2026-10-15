@@ -442,6 +442,11 @@ export const get = {
   githubIdentity: () => api<GitHubIdentityResult>('/api/github-identity'),
   /** 我的 GitHub 仓库列表（顶栏 GitHub 图标；服务端**不缓存**，每次打开现拉）。page 从 1 起。 */
   githubMyRepos: (page = 1) => api<GitHubMyReposResult>(`/api/github-my-repos?page=${page}`),
+  /** 获取进度（任务面板每秒轮询；ok=false = 没在跑，或这种获取没有进度信息——如 SVN 检出） */
+  getProgress: (target: string) =>
+    api<{ ok: boolean; phase?: 'counting' | 'compressing' | 'receiving' | 'resolving' | 'checkout'; bytes?: number; speed?: number; total?: number }>(
+      `/api/get-progress?target=${encodeURIComponent(target)}`,
+    ),
   /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */
   svnIdentity: (url: string) =>
     api<{ ok: boolean; config: { username: string } | null; cache: { username: string; realms: string[] } | null }>(
