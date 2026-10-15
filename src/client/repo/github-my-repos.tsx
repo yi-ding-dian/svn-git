@@ -132,33 +132,48 @@ export function GitHubMyReposModal(props: {
                       setMenu({ x: e.clientX, y: e.clientY, repo: r });
                     }}
                   >
-                    <span className="dim" title={r.private ? t('repo.githubMyRepos.privateTip') : ''}>
-                      {r.private ? <IconLock size={13} /> : <IconUnlock size={13} />}
-                    </span>
-                    <span className="github-my-repos-name mono">{r.name}</span>
-                    {/* 描述：**弹性列，空间不够先牺牲它**（名字与右边那些列都设成不压缩）。
-                        没描述就留空——不写"（没有描述）"，否则一半的行都在说废话，右边也对不齐 */}
-                    <span className="github-my-repos-desc">{r.description ?? ''}</span>
-                    {/* 状态标记：本地 / 当前项目 / Fork / 归档（"这个仓库在你这里的处境"）。
-                        本地放最前——放最后会把时间列挤得不齐（各行的本地标记有无不一） */}
-                    {r.localPath && (
-                      <span className="github-my-repos-local" title={t('repo.githubMyRepos.localTip', { path: r.localPath })}>
-                        ⬤ {t('repo.githubMyRepos.local')}
+                    {/* 第一行：**不换行**（名字在里面收缩省略，不许把时间列挤下去——实测踩过：
+                        shared_bike_server_173_9 名字 211px，第一行装不下时 flex-wrap 会先换行、
+                        不收缩，结果时间列被挤到第二行、那行变成 3 行高）。
+                        ⚠ 锁图标必须在这层里面：行本身是 column 布局，漏在外面它自己占一行 */}
+                    <span className="github-my-repos-line">
+                      <span className="dim" title={r.private ? t('repo.githubMyRepos.privateTip') : ''}>
+                        {r.private ? <IconLock size={13} /> : <IconUnlock size={13} />}
                       </span>
-                    )}
-                    {isCurrent && <span className="github-my-repos-tag current">{t('repo.githubMyRepos.currentProject')}</span>}
-                    {r.archived && <span className="github-my-repos-tag" title={t('repo.githubMyRepos.archivedTip')}>{t('repo.github.archived')}</span>}
-                    {r.fork && <span className="github-my-repos-tag" title={t('repo.githubMyRepos.forkTip')}>Fork</span>}
-                    {/* 属性列：语言 / ★ / 最近推送（靠右，各行右边缘对齐） */}
-                    {r.language && <span className="github-my-repos-meta">{r.language}</span>}
-                    <span className="github-my-repos-meta row" style={{ gap: 3, alignItems: 'center' }}>
-                      <IconStar size={12} /> {r.stars}
-                    </span>
-                    {r.pushedAt && (
-                      <span className="github-my-repos-meta row" style={{ gap: 3, alignItems: 'center' }}>
-                        <IconClock size={12} /> {relTime(r.pushedAt)}
+                      {/* 名字自己带 title：整行的 title 是描述，长名字被省略号截了就看不到全名了 */}
+                      <span className="github-my-repos-name mono" title={r.name}>{r.name}</span>
+                      {/* 状态标记：本地 / 当前项目 / Fork / 归档（"这个仓库在你这里的处境"）。
+                          单独包一层并给最小宽度——否则有无标记会把右边那几列推得参差 */}
+                      <span className="github-my-repos-states">
+                        {r.localPath && (
+                          <span className="github-my-repos-local" title={t('repo.githubMyRepos.localTip', { path: r.localPath })}>
+                            ⬤ {t('repo.githubMyRepos.local')}
+                          </span>
+                        )}
+                        {isCurrent && <span className="github-my-repos-tag current">{t('repo.githubMyRepos.currentProject')}</span>}
+                        {r.archived && <span className="github-my-repos-tag" title={t('repo.githubMyRepos.archivedTip')}>{t('repo.github.archived')}</span>}
+                        {r.fork && <span className="github-my-repos-tag" title={t('repo.githubMyRepos.forkTip')}>Fork</span>}
                       </span>
-                    )}
+                      {/* 属性列：语言 / ★ / 最近推送（右对齐、各给最小宽度 → 各行竖着能对齐） */}
+                      {r.language && (
+                        <span className="github-my-repos-meta" style={{ minWidth: 76, textAlign: 'right' }}>
+                          {r.language}
+                        </span>
+                      )}
+                      <span className="github-my-repos-meta row" style={{ minWidth: 40, gap: 3, alignItems: 'center', justifyContent: 'flex-end' }}>
+                        <IconStar size={12} /> {r.stars}
+                      </span>
+                      {r.pushedAt && (
+                        <span className="github-my-repos-meta row" style={{ minWidth: 88, gap: 3, alignItems: 'center', justifyContent: 'flex-end' }}>
+                          <IconClock size={12} /> {relTime(r.pushedAt)}
+                        </span>
+                      )}
+                    </span>
+                    {/* 第二行：描述（缩进到与名字左对齐）。放第二行才有整行宽度供它用——
+                        一行里塞它和名字、状态、属性四样，谁都得挤着（实测：名字最长 229px、
+                        描述最长 451px，而行宽只有 580px）。
+                        没描述就不占这行——不写"（没有描述）"，那只是给一半的行添废话 */}
+                    {r.description && <span className="github-my-repos-desc">{r.description}</span>}
                   </div>
                 );
               })

@@ -483,21 +483,27 @@ body {
 .github-identity.blocked { background: var(--dim); }
 
 /* ---------- 「我的 GitHub 仓库」列表（弹窗内） ---------- */
-.github-my-repos-list { max-height: 380px; overflow: auto; border: 1px solid var(--border); border-radius: 4px; }
+.github-my-repos-list { max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: 4px; }
+/* 两行式：第一行 名字 + 状态/属性，第二行描述（flex-basis 100% 强制换行）。
+   为什么不让描述挤在第一行：实测行宽 580px，名字最长 229px、描述最长 451px，
+   四样东西一条线上摆不开——描述要么被截成十来个字，要么各行的起点参差不齐。 */
 .github-my-repos-row {
-  display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: default;
+  display: flex; flex-direction: column; gap: 1px; padding: 5px 8px; cursor: default;
   border-bottom: 1px solid var(--border2);
 }
+/* 第一行：**nowrap**——名字在这里收缩省略；若让它 wrap，装不下时浏览器先换行不收缩，
+   长名字那行会把时间列挤到第二行（实测过） */
+.github-my-repos-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .github-my-repos-row:last-child { border-bottom: none; }
 .github-my-repos-row:hover { background: var(--panel2); }
 /* 当前项目那一行：左侧色条 + 底色（十几个仓库里一眼认出自己在哪个） */
 .github-my-repos-row.current { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
-/* 列宽分工：**名字与右边那些列不压缩，描述是唯一的弹性列**——空间不够先牺牲它。
-   名字留 45% 上限只是兜底（防超长名把元信息挤出可视区），正常名字碰不到。 */
-.github-my-repos-name { flex: 0 1 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-/* 描述在"名字之后、元信息之前"这一格里**居中**（用户定稿）：左对齐会让短描述紧贴名字、
-   右边空一大截，看着像"描述属于名字"而不是中间那一栏 */
-.github-my-repos-desc { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 12px; color: var(--dim); }
+/* 名字吃掉第一行的剩余宽度、把右边的推到行尾；太长自己收缩省略（描述搬到第二行后不用再设上限） */
+.github-my-repos-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+/* 状态标记给最小宽度并整体右对齐：有无标记不再把后面的列推得参差 */
+.github-my-repos-states { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 118px; }
+/* 描述：第二行，缩进到与名字左对齐（13px 锁图标 + 8px 间距），整行宽度供它用 */
+.github-my-repos-desc { min-width: 0; padding-left: 21px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--dim); }
 .github-my-repos-meta { flex: 0 0 auto; color: var(--dim); font-size: 12px; white-space: nowrap; }
 .github-my-repos-tag {
   flex: 0 0 auto; font-size: 11px; color: var(--dim); border: 1px solid var(--border); border-radius: 4px;
