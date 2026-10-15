@@ -52,6 +52,8 @@ try {
 // ---------- 2. 启动服务 ----------
 process.env.SVNGIT_REPO_DIR = REPO;
 const { startServer } = await import('../dist/server/index.js');
+// 测试只要"随便一个能用的端口"：别去接管 23456（那会把用户正在用的实例关掉）
+process.env.SVNGIT_NO_PORT_TAKEOVER = '1';
 const handle = await startServer();
 const base = handle.url;
 console.log('服务已启动:', base);

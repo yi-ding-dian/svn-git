@@ -40,6 +40,8 @@ const waitFile = async (f, ms = 10000) => {
   return fs.existsSync(f);
 };
 
+// 测试只要"随便一个能用的端口"：别去接管 23456（那会把用户正在用的实例关掉）
+process.env.SVNGIT_NO_PORT_TAKEOVER = '1';
 const handle = await startServer();
 const post = async (p, body) => {
   const r = await fetch(`http://127.0.0.1:${handle.port}` + p, {

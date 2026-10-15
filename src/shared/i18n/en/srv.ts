@@ -206,5 +206,6 @@ export const srv = {
   'srv.githubMyReposBadToken': 'GitHub token invalid or expired — please enter a new one',
   'srv.githubMyReposFailed': 'Failed to list repositories: {msg}',
   'srv.orphanRecovered': 'Cleaned up a leftover fetch process and half-downloaded directory from the previous run: {path}',
+  'srv.portTakenOver': 'Port {port} was held by a previous instance of this tool — closed it and took over the port',
   'srv.badUrl': 'Only http/https links are allowed',
 };

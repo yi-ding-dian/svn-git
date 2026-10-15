@@ -83,7 +83,8 @@ function startServer() {
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [path.join(ROOT, 'dist', 'main', 'index.js')], {
       cwd: ROOT,
-      env: { ...process.env, SVNGIT_DIR: FIXTURE, PATH: `${noop}:${process.env.PATH}` },
+      // 冒烟测试只要"随便一个能用的端口"：别去接管 23456（那会把用户正在用的实例关掉）
+      env: { ...process.env, SVNGIT_DIR: FIXTURE, PATH: `${noop}:${process.env.PATH}`, SVNGIT_NO_PORT_TAKEOVER: '1' },
     });
     let buf = '';
     const timer = setTimeout(() => reject(new Error(`服务启动超时，输出:\n${buf}`)), 25_000);

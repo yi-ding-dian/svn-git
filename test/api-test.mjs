@@ -43,6 +43,8 @@ const b4 = await run('git', ['cat-file', '-t', GIT_BASE_COMMIT], { cwd: GIT_DIR 
 await run('git', ['reset', '-q', '--hard', b4.code === 0 ? GIT_BASE_COMMIT : 'HEAD'], { cwd: GIT_DIR });
 process.env.SVNGIT_REPO_DIR = GIT_DIR;
 
+// 测试只要"随便一个能用的端口"：别去接管 23456（那会把用户正在用的实例关掉）
+process.env.SVNGIT_NO_PORT_TAKEOVER = '1';
 const handle = await startServer();
 const B = `http://127.0.0.1:${handle.port}`;
 const get = async (p) => {

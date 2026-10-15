@@ -57,4 +57,9 @@ export interface Platform {
   uninstallAppMenu(): LaunchResult;
   /** 环境安装引导/自动安装（流式 SSE；调用方已设好 SSE 头，send 写事件、done 结束响应） */
   envInstall(tool: InstallTool, send: (data: Record<string, unknown>) => void, done: () => void): Promise<void>;
+  /** 占住本机某端口的进程号（只认 LISTENING；查不到返回空数组）。**只读**，不动任何东西 */
+  portOwnerPids(port: number): Promise<number[]>;
+  /** 关掉这些进程（Windows 连子进程）。
+   *  ⚠ 调用方**必须先确认**它们确实是本工具的旧实例（端口探测），绝不能拿着端口就杀 */
+  killProcesses(pids: number[]): Promise<void>;
 }

@@ -29,6 +29,8 @@ await run('git', ['add', '-A'], { cwd: REPO });
 await run('git', ['commit', '-qm', 'init'], { cwd: REPO });
 
 process.env.SVNGIT_REPO_DIR = REPO;
+// 测试只要"随便一个能用的端口"：别去接管 23456（那会把用户正在用的实例关掉）
+process.env.SVNGIT_NO_PORT_TAKEOVER = '1';
 const handle = await startServer();
 const B = `http://127.0.0.1:${handle.port}`;
 const read = (rel) => {

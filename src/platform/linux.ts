@@ -398,4 +398,39 @@ export const linux: Platform = {
       done();
     });
   },
+
+  async portOwnerPids(port: number): Promise<number[]> {
+    // ss（iproute2，现代发行版标配）：列 Local-Address:Port 那列必须**以 :port 结尾**才算命中——
+    // 整行里搜 ':port' 会连对端地址一起命中，杀错人。
+    const ss = await run('ss', ['-ltnp'], { timeoutMs: 8000 });
+    if (ss.code === 0 && ss.stdout.trim()) {
+      const pids = new Set<number>();
+      for (const line of ss.stdout.split('\n')) {
+        const cols = line.trim().split(/\s+/);
+        // State Recv-Q Send-Q Local-Address:Port Peer-Address:Port Process
+        if (cols[0] !== 'LISTEN' || cols.length < 5) continue;
+        if (!(cols[3] ?? '').endsWith(`:${port}`)) continue;
+        for (const m of line.matchAll(/pid=(\d+)/g)) pids.add(Number(m[1]));
+      }
+      return [...pids];
+    }
+    // 兜底 fuser（psmisc，老系统上更常见）：输出就是 PID 列表
+    const f = await run('fuser', [`${port}/tcp`], { timeoutMs: 8000 });
+    return f.stdout
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0);
+  },
+
+  async killProcesses(pids: number[]): Promise<void> {
+    for (const pid of pids) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        /* 已退出 / 无权限：忽略 */
+      }
+    }
+  },
 };

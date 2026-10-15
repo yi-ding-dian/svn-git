@@ -411,4 +411,24 @@ export const win32: Platform = {
     };
     step();
   },
+
+  async portOwnerPids(port: number): Promise<number[]> {
+    // netstat -ano 末尾一列是 PID；**只认 LISTENING 行**——同一端口还可能挂着一堆 TIME_WAIT
+    // 的残留连接（那些是别人的客户端，杀不得）
+    const r = await run('netstat', ['-ano', '-p', 'TCP'], { timeoutMs: 8000 });
+    if (r.code !== 0) return [];
+    const pids = new Set<number>();
+    for (const line of r.stdout.split('\n')) {
+      const m = /:(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/.exec(line.trim());
+      if (m && Number(m[1]) === port) pids.add(Number(m[2]));
+    }
+    return [...pids];
+  },
+
+  async killProcesses(pids: number[]): Promise<void> {
+    for (const pid of pids) {
+      // /T 连子进程一起（服务本身是主进程，但包装器 / 常驻方式下它有子进程）
+      await run('taskkill', ['/PID', String(pid), '/T', '/F'], { timeoutMs: 10_000 });
+    }
+  },
 };

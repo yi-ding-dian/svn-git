@@ -221,5 +221,6 @@ export const srv = {
   'srv.githubMyReposBadToken': 'GitHub Token 无效或已过期，请重新填写',
   'srv.githubMyReposFailed': '获取仓库列表失败：{msg}',
   'srv.orphanRecovered': '已清理上次退出遗留的获取进程与半截目录：{path}',
+  'srv.portTakenOver': '端口 {port} 被本工具的旧实例占用——已关掉旧实例并接管该端口',
   'srv.badUrl': '仅支持 http/https 链接',
 } as const;
