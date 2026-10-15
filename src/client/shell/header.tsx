@@ -1,6 +1,6 @@
 /** 顶部工具栏：仓库信息 + 版本管理操作（可定制：拖拽重排 / 拖入拖出 ⋯ 菜单，localStorage 持久化）+ 主题/字号 + 打开项目/登录/退出 */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { get, post, type RepoInfo } from '../shared/api.js';
+import { get, post, type RepoInfo, type GitHubIdentityResult } from '../shared/api.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { useTasks, cancelTask } from '../shared/tasks.js';
 import { useNotices, markAllRead, removeNotice } from '../shared/notices.js';
@@ -131,6 +131,26 @@ export function NetLight({ hostCheckKey }: { hostCheckKey?: string }) {
       />
     </span>
   );
+}
+
+/** 顶栏 GitHub 身份徽标：/api/github-identity 的结果 → 显示什么（null = 不显示徽标）。
+ *  **只返回 key，文案渲染时才 t()**（模块顶层求值会冻在首次语言，见 i18n/index.ts 头部）。
+ *  不显示的三种情况：origin 不是 GitHub、没配凭据（服务端根本没发请求）、
+ *  断网 / 限流 / Token 无效（静默降级——装饰性信息不值得打扰用户）。 */
+function githubBadgeOf(
+  id: GitHubIdentityResult | null,
+): { kind: 'own' | 'collaborator' | 'read' | 'blocked'; textKey: I18nKey; tipKey: I18nKey } | null {
+  if (!id?.isGithub || !id.hasAuth) return null;
+  if (!id.ok) {
+    // 只有 404 才显示（GitHub 有意不区分"不存在"与"凭据无权限"）；其余失败一律不显示
+    return id.blocked
+      ? { kind: 'blocked', textKey: 'shell.header.githubBlocked', tipKey: 'shell.header.githubTipBlocked' }
+      : null;
+  }
+  if (id.isOwn) return { kind: 'own', textKey: 'shell.header.githubOwn', tipKey: 'shell.header.githubTipOwn' };
+  // 能写但不是本人 = 协作者；其余能读到 = 只读
+  if (id.canPush) return { kind: 'collaborator', textKey: 'shell.header.githubCollaborator', tipKey: 'shell.header.githubTipCollaborator' };
+  return { kind: 'read', textKey: 'shell.header.githubRead', tipKey: 'shell.header.githubTipRead' };
 }
 
 /** 顶部工具按钮（图标 + 文字，统一样式；mousedown 可启动拖拽定制） */
@@ -585,6 +605,30 @@ export function AppHeader(props: {
   const repo = props.repo;
   /** 界面语言：切换即整树重渲染（订阅见 shared/use-lang.ts） */
   const { lang, changeLang } = useLang();
+  // GitHub 身份徽标：origin 指向 github.com 时自动查一次（服务端带 30 分钟缓存，重进项目不再请求）。
+  // ⚠ 依赖用**字符串**——parseGithub 每次渲染都返回新对象，直接进 useEffect 依赖会无限重查
+  const githubRepo = parseGithub(repo?.url ?? '');
+  const githubRepoKey = githubRepo ? `${githubRepo.owner}/${githubRepo.repo}`.toLowerCase() : '';
+  const [githubIdentity, setGithubIdentity] = useState<GitHubIdentityResult | null>(null);
+  useEffect(() => {
+    if (repo?.type !== 'git' || !githubRepoKey) {
+      setGithubIdentity(null); // 非 git / 非 GitHub：清掉，不留上一个项目的徽标
+      return;
+    }
+    let cancelled = false;
+    setGithubIdentity(null); // 切项目先清旧值，避免短暂显示上一个仓库的身份
+    get
+      .githubIdentity()
+      .then((r) => {
+        if (!cancelled) setGithubIdentity(r);
+      })
+      .catch(() => {
+        /* 查询失败：不显示徽标（装饰性信息，静默降级不弹错） */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo?.type, githubRepoKey]);
   // 「⋯」更多菜单（低频操作 + 工具栏定制）定位
   const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -906,6 +950,9 @@ export function AppHeader(props: {
     window.addEventListener('mouseup', onUp);
   };
 
+  /** 顶栏 GitHub 身份徽标（null = 不显示；判定见 githubBadgeOf） */
+  const githubBadge = githubBadgeOf(githubIdentity);
+
   return (
     <div className="header" style={{ display: props.view === 'diff' ? 'none' : undefined }}>
       {/* svn-git 文件版本管理 */}
@@ -918,11 +965,31 @@ export function AppHeader(props: {
       {repo?.url ? <span className="dim small nowrap">{repo.url}</span> : null}
       {repo?.revOrBranch ? <span className="dim small nowrap">[{repo.revOrBranch}]</span> : null}
       {repo?.url ? <NetLight hostCheckKey={repo.url + repo.revOrBranch} /> : null}
+      {/* GitHub 身份徽标（origin 指向 github.com 且配了凭据、查到身份时才出现）：
+          自己的仓库 / 协作者 / 只读 / 无法访问；点击打开「GitHub 仓库信息」弹窗 */}
+      {githubBadge && (
+        <button
+          className={`github-identity ${githubBadge.kind}`}
+          title={`${t(githubBadge.tipKey, { login: githubIdentity?.login ?? '' })}${githubIdentity?.private ? t('shell.header.githubPrivateNote') : ''}${t('shell.header.githubTipClick')}`}
+          onClick={() => props.setModal({ type: 'github-repo' })}
+        >
+          {githubIdentity?.private ? '🔒' : ''}
+          {t(githubBadge.textKey)}
+        </button>
+      )}
       {/* 浏览仓库（仅 SVN）：点一下直接打开仓库浏览器（与最近项目右键「浏览仓库」同功能）；
           无边框纯图标按钮（用户定稿），悬浮出淡背景 */}
       {repo?.type === 'svn' && props.onBrowseRepo && (
         <button className="header-icon-btn" title={t('repo.browse.entryTip')} onClick={props.onBrowseRepo}>
           <IconServer size={14} />
+        </button>
+      )}
+      {/* 我的 GitHub 仓库（仅 origin 指向 github.com 的 git 项目）：点一下打开仓库列表，选中即克隆。
+          与 SVN 的「浏览仓库」图标同位同款式（入口对齐）；git 本身没有"直连浏览远程"的语义，
+          这里给的是**我名下的仓库清单**——列表里再选定具体那个 */}
+      {repo?.type === 'git' && githubRepo && (
+        <button className="header-icon-btn" title={t('repo.githubMyRepos.entryTip')} onClick={() => props.setModal({ type: 'github-my-repos' })}>
+          <IconGitHub size={14} />
         </button>
       )}
       {/* 后台任务指示器：**仅运行中显示**（后台没有任务时不存在——用户定稿）：流沙动画沙漏 + 数量。

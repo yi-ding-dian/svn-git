@@ -18,6 +18,7 @@ import { GitHubCreateModal } from '../repo/github-create-repo.js';
 import { GitHubDeleteModal } from '../repo/github-delete-repo.js';
 import { GitHubForkModal } from '../repo/github-fork.js';
 import { GitHubRepoModal } from '../repo/github-repo.js';
+import { GitHubMyReposModal } from '../repo/github-my-repos.js';
 import { GitIdentityModal } from '../ops/git-identity.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
 import { LoginModal } from '../repo/login.js';
@@ -159,6 +160,26 @@ export function ModalHost(props: ModalHostProps) {
     showToast(t('repo.githubCreate.doneNoCommit', { name: gr.fullName ?? github.name }));
     // origin 已指向新仓库：顶栏补上远程地址（本地 open 时拉的 info 还没有 origin）
     refreshInfo();
+  };
+
+  /** 克隆/检出完成 → 打开刚落地的仓库（「获取仓库」弹窗与「我的 GitHub 仓库」列表的克隆共用这一条链路） */
+  const openClonedRepo = (dir: string) => {
+    setModal(null);
+    void post
+      .open(dir)
+      .then(async () => {
+        const r = await get.info();
+        if (r.type) {
+          setInfo(r);
+          refresh();
+          loadHistory();
+          setView('browse'); // 获取仓库后直接进入文件浏览视图
+          // 已打开仓库: {root}
+          showToast(t('shell.repo.opened', { root: r.root ?? '' }));
+        }
+      })
+      // 获取完成，但打开失败: {msg}
+      .catch((e: Error) => showToast(t('shell.repo.fetchOpenFailed', { msg: (e as Error).message }), true));
   };
 
   return (
@@ -374,6 +395,15 @@ export function ModalHost(props: ModalHostProps) {
         />
       )}
       {modal?.type === 'github-repo' && <GitHubRepoModal onClose={() => setModal(null)} />}
+      {modal?.type === 'github-my-repos' && (
+        <GitHubMyReposModal
+          currentUrl={info?.url ?? ''}
+          home={info?.home}
+          onClose={() => setModal(null)}
+          onToast={showToast}
+          onCloned={openClonedRepo}
+        />
+      )}
       {pushAuth && (
         <GitPushAuthModal
           type={pushAuth.type}
@@ -434,26 +464,10 @@ export function ModalHost(props: ModalHostProps) {
       {modal?.type === 'get-repo' && (
         <GetRepoDialog
           home={info?.home}
+          initialUrl={modal.url}
+          initialName={modal.name}
           onClose={() => setModal(null)}
-          onCreated={(dir) => {
-            setModal(null);
-            // 打开克隆/检出的仓库
-            void post
-              .open(dir)
-              .then(async () => {
-                const r = await get.info();
-                if (r.type) {
-                  setInfo(r);
-                  refresh();
-                  loadHistory();
-                  setView('browse'); // 获取仓库后直接进入文件浏览视图
-                  // 已打开仓库: {root}
-                  showToast(t('shell.repo.opened', { root: r.root ?? '' }));
-                }
-              })
-              // 获取完成，但打开失败: {msg}
-              .catch((e: Error) => showToast(t('shell.repo.fetchOpenFailed', { msg: (e as Error).message }), true));
-          }}
+          onCreated={openClonedRepo}
         />
       )}
 

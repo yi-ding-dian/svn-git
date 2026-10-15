@@ -11,7 +11,8 @@ export type Modal =
   | { type: 'tags' }
   | { type: 'stash' }
   | { type: 'create-repo' }
-  | { type: 'get-repo' }
+  /** url/name 有值 = 预填（「我的 GitHub 仓库」列表选中一个仓库后走克隆） */
+  | { type: 'get-repo'; url?: string; name?: string }
   | { type: 'git-info' }
   /** Git 身份（user.name / user.email）未配置：提交被 git 拒绝时弹出，而不是糊原始报错。
    *  retry 有值 = 保存成功后自动重试这次提交（原样重放路径/消息/部分暂存）；returnTo 有值 = 关闭后回退到该弹窗 */
@@ -20,6 +21,7 @@ export type Modal =
   | { type: 'github-delete-repo' }
   | { type: 'github-fork' }
   | { type: 'github-repo' }
+  | { type: 'github-my-repos' }
   | { type: 'git-push-auth'; authType: 'github' | 'server' | 'ssh' }
   | { type: 'push-confirm' }
   | { type: 'clean' }

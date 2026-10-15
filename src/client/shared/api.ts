@@ -80,6 +80,60 @@ export interface GitHubCreateResult {
   message?: string;
 }
 
+/** GitHub 身份（/api/github-identity；顶栏徽标用，只读）。
+ *  isGithub=false → origin 不是 GitHub（前端不显示任何标识）；hasAuth=false → 没配凭据，
+ *  服务端**没有发请求**（前端不显示徽标）；ok=false 且 hasAuth=true 时只有 blocked=true（404）才显示
+ *  「无法访问」——断网/限流/Token 无效一律静默。 */
+export interface GitHubIdentityResult {
+  ok: boolean;
+  isGithub: boolean;
+  hasAuth: boolean;
+  owner?: string;
+  repo?: string;
+  fullName?: string;
+  /** 凭据对应的 GitHub 登录名（ok 时有值） */
+  login?: string;
+  /** 本人账号下的仓库（login === owner） */
+  isOwn?: boolean;
+  /** 有无推送（写）权限；null = GitHub 未返回 permissions */
+  canPush?: boolean | null;
+  private?: boolean;
+  defaultBranch?: string;
+  /** 仓库 404（不存在或凭据无权限——GitHub 有意不区分） */
+  blocked?: boolean;
+}
+
+/** 「我的 GitHub 仓库」列表项（/api/github-my-repos） */
+export interface GitHubMyRepo {
+  fullName: string;
+  name: string;
+  private: boolean;
+  description: string | null;
+  /** 主语言（GitHub Linguist 判定；空仓库/纯文档库可能为 null） */
+  language: string | null;
+  stars: number;
+  /** 最近推送时间 ISO（空仓库退回 updated_at，界面上统一显示成"最近变动"） */
+  pushedAt: string | null;
+  fork: boolean;
+  archived: boolean;
+  cloneUrl: string;
+  htmlUrl: string;
+  defaultBranch: string;
+  /** 最近项目里已有本地副本时的本地路径；空 = 本地没有 */
+  localPath: string;
+}
+
+/** 「我的 GitHub 仓库」列表（/api/github-my-repos）。
+ *  hasAuth=false = 没配凭据（服务端**没有发请求**）；ok=false 且 hasAuth=true 时 message 带原因。 */
+export interface GitHubMyReposResult {
+  ok: boolean;
+  hasAuth: boolean;
+  repos?: GitHubMyRepo[];
+  /** 还有下一页（服务端按 GitHub 的 Link 头判定） */
+  hasMore?: boolean;
+  message?: string;
+}
+
 export interface FileStatus {
   path: string;
   /** 仅重命名（code='R'）有值：从哪个路径移过来的（后端 git status 解析带出，用于提示 + 提交时补全） */
@@ -383,6 +437,11 @@ export const get = {
       defaultBranch?: string;
       message?: string;
     }>('/api/github-permissions'),
+  /** GitHub 身份（顶栏徽标；只读）：进 GitHub 项目自动查一次，服务端带 30 分钟缓存。
+   *  没配凭据时服务端直接返回 hasAuth=false 且**不发请求**。 */
+  githubIdentity: () => api<GitHubIdentityResult>('/api/github-identity'),
+  /** 我的 GitHub 仓库列表（顶栏 GitHub 图标；服务端**不缓存**，每次打开现拉）。page 从 1 起。 */
+  githubMyRepos: (page = 1) => api<GitHubMyReposResult>(`/api/github-my-repos?page=${page}`),
   /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */
   svnIdentity: (url: string) =>
     api<{ ok: boolean; config: { username: string } | null; cache: { username: string; realms: string[] } | null }>(

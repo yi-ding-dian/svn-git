@@ -217,5 +217,8 @@ export const srv = {
   'srv.githubCreateExists': 'GitHub 上已存在同名仓库 {name}——换个名字，或用「获取仓库」克隆它',
   'srv.githubCreateBadName': '仓库名不合法：{msg}',
   'srv.githubCreateFailed': '创建仓库失败：{msg}',
+  'srv.githubMyReposNoAuth': '未配置 GitHub 凭据——请先在「Git 信息与配置」里填写用户名和 Token',
+  'srv.githubMyReposBadToken': 'GitHub Token 无效或已过期，请重新填写',
+  'srv.githubMyReposFailed': '获取仓库列表失败：{msg}',
   'srv.badUrl': '仅支持 http/https 链接',
 } as const;

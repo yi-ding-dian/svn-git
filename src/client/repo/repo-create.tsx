@@ -290,11 +290,18 @@ export function CreateRepoDialog(props: {
 }
 
 /** 获取仓库：Git 克隆 / SVN 检出（成员从服务器/远程获取工作副本，不是新建） */
-export function GetRepoDialog(props: { home?: string; onClose: () => void; onCreated: (dir: string) => void }) {
+export function GetRepoDialog(props: {
+  home?: string;
+  /** 预填地址 / 本地名称（「我的 GitHub 仓库」列表选中一个仓库时传入，省得手输） */
+  initialUrl?: string;
+  initialName?: string;
+  onClose: () => void;
+  onCreated: (dir: string) => void;
+}) {
   const [type, setType] = useState<'git' | 'svn'>('git');
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(props.initialUrl ?? '');
   const [dir, setDir] = useState(props.home ?? '');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(props.initialName ?? '');
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
   /** 前置检测中（repoCheck——几百毫秒）：与 running 一起构成 busy */

@@ -14,6 +14,12 @@
  *    classic Token 需要 delete_repo 权限、fine-grained 需要 Administration 写权限。
  *  - GET /api/github-permissions：查 origin 仓库的访问权限（permissions.push、owner===login）——
  *    推送失败后判定「无写权限」用（不猜 git 报错文本，正则不可靠）；纯读，前端据此决定是否引导 Fork。
+ *  - GET /api/github-identity：顶栏「GitHub 身份」徽标用（自己的仓库 / 协作者 / 只读 / 无法访问）。
+ *    与 github-permissions 数据同源但**刻意分成两条路由**：那条是推送失败后的 Fork 引导、必须实时；
+ *    本条是进项目就查一次的常驻显示，**带 30 分钟缓存**（不缓存会把配额烧光）。没配凭据直接返回、不发请求。
+ *  - GET /api/github-my-repos「我的 GitHub 仓库」：只取本人名下（含私有），供顶栏 GitHub 图标打开的列表
+ *    选用（选中即克隆）。**不缓存**——刚在本工具里新建/删除的仓库必须立刻反映；顺带标出"本地已有"
+ *    （读最近项目的 origin，见 localRepoPaths）。
  *  - POST /api/github-fork「Fork 到自己账号」：把 origin 仓库 fork 到本人账号，origin 改指 fork、
  *    原仓库记入 upstream（贡献开源的主流程，推送/拉取链路全部复用；前端随后按需自动推送）。 */
 
@@ -21,6 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { run } from '../../vcs/exec.js';
 import { sendJson, readBody, vcsOf, type Ctx } from './util.js';
+import { loadHistory } from './recent.js';
 import { t } from '../../shared/i18n/index.js';
 import { loadConfig } from '../../config.js';
 import { normalizeGhRepoName, parseGithub } from '../../shared/github.js';
@@ -64,8 +71,41 @@ interface GitHubResult {
   repo?: GitHubMeta;
 }
 
+/** 顶栏 GitHub 身份（/api/github-identity；只挑徽标用到的字段） */
+interface GitHubIdentityResult {
+  /** 查到了仓库数据（false 时看 blocked：404 = 不存在或凭据对它没有权限） */
+  ok: boolean;
+  /** origin 是否指向 github.com（false 时其余字段无意义，前端不显示任何标识） */
+  isGithub: boolean;
+  /** 是否配置了 GitHub 凭据；false = 服务端**没有发请求**（匿名读不到 permissions，发了白烧配额） */
+  hasAuth: boolean;
+  owner?: string;
+  repo?: string;
+  fullName?: string;
+  /** 凭据对应的 GitHub 登录名（ok 时有值） */
+  login?: string;
+  /** 本人账号下的仓库（login === owner） */
+  isOwn?: boolean;
+  /** 有无推送（写）权限；null = GitHub 未返回 permissions */
+  canPush?: boolean | null;
+  private?: boolean;
+  defaultBranch?: string;
+  /** ok=false 且 hasAuth=true 时：仓库 404（不存在或凭据无权限——GitHub 有意不区分这两者） */
+  blocked?: boolean;
+}
+
 /** 成功结果缓存（失败/降级不缓存——网络恢复后重开即可拿到官方数据） */
 const githubCache = new Map<string, { data: GitHubResult; at: number }>();
+
+/** 顶栏身份查询缓存：key = `owner/repo::凭据用户名`（同一仓库换账号即失效），TTL 同上。
+ *  与 githubCache 分开存：两者响应形状不同，混一个 Map 里类型对不上。 */
+const githubIdentityCache = new Map<string, { data: GitHubIdentityResult; at: number }>();
+
+/** 清空身份缓存——凭据保存（/api/git-auth）后调用：**用户名不变只换 Token** 时缓存键不变，
+ *  不清会拿旧身份顶最多 30 分钟（典型：换了个权限不同的 Token）。 */
+export function clearGithubIdentityCache(): void {
+  githubIdentityCache.clear();
+}
 
 /** 调 GitHub 接口（读；Accept 用当前推荐的 vnd.github+json）。
  *  ⚠ UA 有讲究：GitHub 的 WAF 对**产品名 token 含 "svn" 的 UA 一律 403**（实测 "svn-git/1.0"、
@@ -88,6 +128,49 @@ async function githubFetch(pathname: string, signal: AbortSignal, token = ''): P
     throw new Error(`HTTP ${res.status}`);
   }
   return res.json();
+}
+
+/** 调 GitHub 读接口，**保留失败原因**（顶栏徽标要区分"404 无法访问"与"断网/限流/Token 无效"：
+ *  前者显示徽标，后者静默降级）。与 githubFetch 分开是因为那边把错误转成了给弹窗看的文案，
+ *  这边要的是可判定的结构；token 必传（调用点已确认配了凭据）。 */
+async function githubFetchOutcome(
+  pathname: string,
+  signal: AbortSignal,
+  token: string,
+): Promise<{ ok: true; data: unknown } | { ok: false; notFound: boolean }> {
+  try {
+    const res = await fetch(`${GITHUB_API}${pathname}`, {
+      signal,
+      headers: { 'User-Agent': GITHUB_UA, Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) return { ok: true, data: await res.json() };
+    return { ok: false, notFound: res.status === 404 };
+  } catch {
+    // 断网 / 超时 / 前端断开导致的中止
+    return { ok: false, notFound: false };
+  }
+}
+
+/** 本地已有的仓库：最近项目（≤20 条）各问一次 origin → `owner/repo`（小写）→ 本地路径。
+ *  并行问（每条一个独立 git 进程，串行会明显拖慢弹窗）；目录已删 / 不是 git 都算"没有"，静默跳过。
+ *  同一仓库有多个本地副本时取**最近打开的那个**（按 lastOpened 排序后取首个命中——不依赖 history 文件本身的顺序）。
+ *  为什么用 `git remote get-url` 而不是直接读 .git/config：config 有 worktree / includeIf / 引号值等花样，
+ *  交给 git 自己解析最稳（实测 200 个仓库也就毫秒级，这里最多 20 个）。 */
+async function localRepoPaths(): Promise<Map<string, string>> {
+  const items = [...loadHistory()].sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
+  const urls = await Promise.all(
+    items.map((h) =>
+      run('git', ['-C', h.path, 'remote', 'get-url', 'origin'], { timeoutMs: 5_000 }).then((r) => (r.code === 0 ? r.stdout.trim() : '')),
+    ),
+  );
+  const out = new Map<string, string>();
+  items.forEach((h, i) => {
+    const github = parseGithub(urls[i] ?? '');
+    if (!github) return;
+    const key = `${github.owner}/${github.repo}`.toLowerCase();
+    if (!out.has(key)) out.set(key, h.path);
+  });
+  return out;
 }
 
 /** 扩展名 → 语言（降级统计的子集映射；GitHub 官方统计更全更准，这只是离线兜底） */
@@ -457,6 +540,155 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: FETCH_TIMEOUT_MS / 1000 }) : (e as Error).message;
       // 查询失败：canPush 未知（前端按"不引导"处理），原因随响应回传
       if (!res.destroyed && !res.writableEnded) sendJson(res, 200, { ok: false, ...base, message: err });
+    } finally {
+      clearTimeout(timer);
+      res.off('close', onClose);
+    }
+    return true;
+  }
+
+  if (p === '/api/github-identity' && req.method === 'GET') {
+    // 顶栏「GitHub 身份」徽标（只读）：并发 /user + /repos/{o}/{r} 判出身份（自己的仓库 / 协作者 / 只读）。
+    // 与 github-permissions 分开是**故意的**（见文件头）：那条必须实时，本条带缓存。
+    // 没配凭据**直接返回、不发请求**：匿名拿不到 permissions，只会白烧 60 次/小时的匿名配额。
+    const { vcs, repo } = vcsOf();
+    if (repo.type !== 'git') {
+      sendJson(res, 400, { ok: false, isGithub: false, hasAuth: false, message: t('srv.githubGitOnly') });
+      return true;
+    }
+    let remoteUrl = '';
+    try {
+      remoteUrl = (await vcs.remote?.()) ?? '';
+    } catch {
+      /* 未配置 origin：按"不是 GitHub"处理 */
+    }
+    const github = parseGithub(remoteUrl);
+    if (!github) {
+      sendJson(res, 200, { ok: false, isGithub: false, hasAuth: false });
+      return true;
+    }
+    const fullName = `${github.owner}/${github.repo}`;
+    const base = { isGithub: true, owner: github.owner, repo: github.repo, fullName };
+    const cfg = loadConfig();
+    const token = cfg.git?.password ?? '';
+    if (!token) {
+      sendJson(res, 200, { ok: false, ...base, hasAuth: false });
+      return true;
+    }
+    const cacheKey = `${fullName.toLowerCase()}::${cfg.git?.username ?? ''}`;
+    const hit = githubIdentityCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+      sendJson(res, 200, hit.data);
+      return true;
+    }
+    const ctl = new AbortController();
+    const onClose = () => ctl.abort();
+    res.on('close', onClose);
+    const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const [me, repoRes] = await Promise.all([
+        githubFetchOutcome('/user', ctl.signal, token),
+        githubFetchOutcome(`/repos/${github.owner}/${github.repo}`, ctl.signal, token),
+      ]);
+      if (res.destroyed || res.writableEnded) return true; // 前端已断开：响应没处发
+      if (!repoRes.ok) {
+        // 只有「仓库 404」当"无法访问"回给前端；断网/限流/Token 无效一律 blocked=false（顶栏静默不显示）
+        sendJson(res, 200, { ok: false, ...base, hasAuth: true, blocked: repoRes.notFound });
+        return true;
+      }
+      if (!me.ok) {
+        sendJson(res, 200, { ok: false, ...base, hasAuth: true, blocked: false });
+        return true;
+      }
+      const rj = repoRes.data as Record<string, unknown>;
+      const perms = rj.permissions as Record<string, unknown> | undefined;
+      const login = String((me.data as Record<string, unknown>).login ?? '');
+      const data: GitHubIdentityResult = {
+        ok: true,
+        ...base,
+        hasAuth: true,
+        login,
+        isOwn: login !== '' && login.toLowerCase() === github.owner.toLowerCase(),
+        canPush: typeof perms?.push === 'boolean' ? perms.push : null,
+        private: rj.private === true,
+        defaultBranch: String(rj.default_branch ?? ''),
+      };
+      githubIdentityCache.set(cacheKey, { data, at: Date.now() });
+      sendJson(res, 200, data);
+    } finally {
+      clearTimeout(timer);
+      res.off('close', onClose);
+    }
+    return true;
+  }
+
+  if (p === '/api/github-my-repos' && req.method === 'GET') {
+    // 「我的 GitHub 仓库」列表（顶栏 GitHub 图标入口）：GET /user/repos 只取**我名下的**（含私有库）。
+    // **刻意不缓存**：这是"选中即克隆"的入口，刚在本工具里新建/删除的仓库必须立刻反映（1 次请求，配额无压力）。
+    // 顺带标出"本地已有"（localRepoPaths）——只读最近项目，不扫全盘。
+    const token = loadConfig().git?.password ?? '';
+    if (!token) {
+      sendJson(res, 200, { ok: false, hasAuth: false, message: t('srv.githubMyReposNoAuth') });
+      return true;
+    }
+    const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
+    const ctl = new AbortController();
+    const onClose = () => ctl.abort();
+    res.on('close', onClose);
+    const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const [ghRes, localPaths] = await Promise.all([
+        fetch(`${GITHUB_API}/user/repos?affiliation=owner&sort=pushed&direction=desc&per_page=100&page=${page}`, {
+          signal: ctl.signal,
+          headers: { 'User-Agent': GITHUB_UA, Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}` },
+        }),
+        localRepoPaths(),
+      ]);
+      if (!ghRes.ok) {
+        // 401 凭据无效；403/429 限流（文案与其它 GitHub 功能一致）；其余带 GitHub 原文兜底
+        let detail = '';
+        try {
+          detail = String(((await ghRes.json()) as Record<string, unknown>).message ?? '');
+        } catch {
+          /* 非 JSON 响应体：走兜底文案 */
+        }
+        const message =
+          ghRes.status === 401
+            ? t('srv.githubMyReposBadToken')
+            : ghRes.status === 403 || ghRes.status === 429
+              ? /rate limit/i.test(detail) ? t('srv.githubRateLimitedAuth') : t('srv.githubMyReposFailed', { msg: detail || `HTTP ${ghRes.status}` })
+              : t('srv.githubMyReposFailed', { msg: `HTTP ${ghRes.status}${detail ? ` — ${detail}` : ''}` });
+        if (!res.destroyed && !res.writableEnded) sendJson(res, 200, { ok: false, hasAuth: true, message });
+        return true;
+      }
+      const raw = (await ghRes.json()) as Record<string, unknown>[];
+      // 分页信号用 Link 头里的 rel="next"（GitHub 标准做法），比"本页满 100 条"准
+      const hasMore = /rel="next"/.test(ghRes.headers.get('link') ?? '');
+      const repos = raw.map((r) => {
+        const fullName = String(r.full_name ?? '');
+        return {
+          fullName,
+          name: String(r.name ?? ''),
+          private: r.private === true,
+          description: (r.description as string | null) ?? null,
+          language: (r.language as string | null) ?? null,
+          stars: Number(r.stargazers_count ?? 0),
+          // 空仓库没有 pushed_at：退回 updated_at，界面按同一个"最近变动"显示
+          pushedAt: (r.pushed_at as string | null) ?? (r.updated_at as string | null) ?? null,
+          fork: r.fork === true,
+          archived: r.archived === true,
+          cloneUrl: String(r.clone_url ?? '') || `https://github.com/${fullName}.git`,
+          htmlUrl: String(r.html_url ?? '') || `https://github.com/${fullName}`,
+          defaultBranch: String(r.default_branch ?? ''),
+          /** 最近项目里已有本地副本时的本地路径；空 = 本地没有 */
+          localPath: localPaths.get(fullName.toLowerCase()) ?? '',
+        };
+      });
+      if (res.destroyed || res.writableEnded) return true; // 前端已断开：响应没处发
+      sendJson(res, 200, { ok: true, hasAuth: true, repos, hasMore, page });
+    } catch (e) {
+      const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: FETCH_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      if (!res.destroyed && !res.writableEnded) sendJson(res, 200, { ok: false, hasAuth: true, message: t('srv.githubMyReposFailed', { msg: err }) });
     } finally {
       clearTimeout(timer);
       res.off('close', onClose);

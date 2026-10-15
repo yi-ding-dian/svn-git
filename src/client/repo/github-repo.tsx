@@ -42,8 +42,9 @@ function langRows(langs: Record<string, number>): { name: string; pct: number; c
   return rows;
 }
 
-/** 相对时间（最近推送；复用"最近项目"的时间文案，补 小时/月/年 三档） */
-function relTime(iso: string): string {
+/** 相对时间（最近推送；复用"最近项目"的时间文案，补 小时/月/年 三档）。
+ *  export 给「我的 GitHub 仓库」列表复用（同一套时间文案，别再实现第三份）。 */
+export function relTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return '';
   const mins = Math.floor(ms / 60_000);

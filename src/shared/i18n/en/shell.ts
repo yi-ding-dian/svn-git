@@ -15,6 +15,18 @@ export const shell = {
   // ---- 顶栏：仓库信息 ----
   'shell.header.noRepo': 'No repository',
 
+  // ---- 顶栏：GitHub 身份徽标（origin 指向 github.com 且配了凭据时才出现；点开「GitHub 仓库信息」）----
+  'shell.header.githubOwn': 'Your repo',
+  'shell.header.githubCollaborator': 'Collaborator',
+  'shell.header.githubRead': 'Read-only',
+  'shell.header.githubBlocked': 'No access',
+  'shell.header.githubTipOwn': 'Repository owned by your account ({login})',
+  'shell.header.githubTipCollaborator': 'You are a collaborator on this repository ({login}, push access)',
+  'shell.header.githubTipRead': 'You have read-only access to this repository ({login})',
+  'shell.header.githubTipBlocked': 'Cannot access this repository: it does not exist, or the current credential has no permission',
+  'shell.header.githubPrivateNote': ' (private)',
+  'shell.header.githubTipClick': ' · click for repository info',
+
   // ---- 顶栏：网络状态灯 ----
   'shell.net.checking': 'Checking…',
   'shell.net.ok': 'Network OK',

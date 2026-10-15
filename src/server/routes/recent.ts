@@ -26,7 +26,8 @@ export interface HistoryItem {
   remark?: string;
 }
 
-function loadHistory(): HistoryItem[] {
+/** 读最近项目清单（github.ts 的「我的仓库」列表要拿它标出"本地已有"） */
+export function loadHistory(): HistoryItem[] {
   try {
     if (fs.existsSync(HISTORY_PATH)) {
       const list = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8')) as HistoryItem[];

@@ -17,6 +17,18 @@ export const shell = {
   // ---- 顶栏：仓库信息 ----
   'shell.header.noRepo': '未选择仓库',
 
+  // ---- 顶栏：GitHub 身份徽标（origin 指向 github.com 且配了凭据时才出现；点开「GitHub 仓库信息」）----
+  'shell.header.githubOwn': '自己的仓库',
+  'shell.header.githubCollaborator': '协作者',
+  'shell.header.githubRead': '只读',
+  'shell.header.githubBlocked': '无法访问',
+  'shell.header.githubTipOwn': '这是你账号（{login}）名下的仓库',
+  'shell.header.githubTipCollaborator': '你是该仓库的协作者（{login}，有推送权限）',
+  'shell.header.githubTipRead': '你对该仓库只有只读权限（{login}）',
+  'shell.header.githubTipBlocked': '无法访问该仓库：不存在，或当前凭据没有权限',
+  'shell.header.githubPrivateNote': '（私有仓库）',
+  'shell.header.githubTipClick': ' · 点击查看仓库信息',
+
   // ---- 顶栏：网络状态灯 ----
   'shell.net.checking': '检测中…',
   'shell.net.ok': '远程网络正常',

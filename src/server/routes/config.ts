@@ -3,6 +3,7 @@
  * lang 放在本域：它就是 config.json 的一个字段，且改完要立刻生效（setLang 直接改主进程变量，server/vcs/main 同时切）。 */
 import { sendJson, readBody, vcsOf, MSG_UNSUPPORTED_OP } from './util.js';
 import { loadConfig, saveConfig } from '../../config.js';
+import { clearGithubIdentityCache } from './github.js';
 import { t, setLang, getLang, isLang } from '../../shared/i18n/index.js';
 import type { Ctx } from './util.js';
 
@@ -50,6 +51,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const cfg = loadConfig();
     cfg.git = { username, password };
     saveConfig(cfg);
+    // 凭据变了，顶栏身份缓存作废（用户名不变只换 Token 时缓存键不变，不清会拿旧身份顶 30 分钟）
+    clearGithubIdentityCache();
     // 推送认证已保存
     sendJson(res, 200, { ok: true, message: t('srv.gitAuthSaved') });
     return true;
