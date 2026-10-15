@@ -84,6 +84,9 @@ export const hist = {
   'hist.nextBlock': '下一个 ↓',
   'hist.syncScroll': '↔ 同步滚动',
   'hist.syncTip': '开启后滚动任一栏，另一栏自动跟随（预览模式下为按比例跟随，无行对齐）',
+  // 显示全部（左栏从"仅差异片段"展开为完整文件；同步滚动按钮只在展开后出现）
+  'hist.showAll': '显示全部',
+  'hist.showAllTip': '左栏展开为完整文件内容（未改动行平铺显示，差异行照旧标记）',
   'hist.arrowKeyBack': '← 键返回',
 
   // ---- 文件外部更新提示（stale）----

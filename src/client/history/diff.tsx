@@ -54,6 +54,27 @@ export function DiffView(props: Props) {
     for (const p of pending) if (lastCtx) m.set(p.block, { rightNo: lastCtx, count: p.count, after: true });
     return m;
   }, [diffLines, lineMarks]);
+  /** 未配对新增行在左栏的落点（左栏「显示全部」模式的占位行用）——delAnchorRight 的镜像：
+   *  这些新增在左栏**没有**对应内容，占位行插在「新增点之后第一行」之前；末尾新增（after）挂最后上下文行 */
+  const addAnchorLeft = useMemo(() => {
+    const m = new Map<number, { leftNo: number; count: number; after?: boolean }>();
+    let pending: { block: number; count: number }[] = [];
+    let lastCtx = 0;
+    for (const l of diffLines) {
+      if (l.type === 'add') {
+        if (lineMarks.get(l) === 'mod') continue; // 配成"修改"的新增行在左栏有对应（del）行，不需要占位
+        const p = pending.find((x) => x.block === l.block);
+        if (p) p.count++;
+        else pending.push({ block: l.block, count: 1 });
+        continue;
+      }
+      for (const p of pending) m.set(p.block, { leftNo: l.leftNo, count: p.count });
+      pending = [];
+      if (l.type === 'ctx') lastCtx = l.leftNo;
+    }
+    for (const p of pending) if (lastCtx) m.set(p.block, { leftNo: lastCtx, count: p.count, after: true });
+    return m;
+  }, [diffLines, lineMarks]);
   // 经 ref 读取：locateDel 要放进 goBlock（依赖稳定的 useCallback），直接闭包会捕获过期表
   const delAnchorRef = useRef(delAnchorRight);
   delAnchorRef.current = delAnchorRight;
@@ -103,8 +124,11 @@ export function DiffView(props: Props) {
   // md 文件双栏预览：左右独立开关（预览=该栏原文 Markdown 渲染，非 diff 行视图）
   const [previewL, setPreviewL] = useState(false);
   const [previewR, setPreviewR] = useState(false);
-  // 双栏同步滚动（按钮开关）：滚任一栏 → 另一栏按修改块对齐跟随
+  // 双栏同步滚动（按钮开关）：滚任一栏 → 另一栏按修改块对齐跟随。
+  // 只在「显示全部」开启时出现（片段模式两栏长短不齐，同步没有意义——按钮届时隐藏）
   const [syncMode, setSyncMode] = useState(false);
+  // 「显示全部」：左栏（原版）从"仅差异片段"切换为完整文件内容（未改动行平铺，差异行照旧标记）
+  const [showAll, setShowAll] = useState(false);
   const syncLock = useRef(false);
   // 文件更新检测
   const [staleTip, setStaleTip] = useState(false);
@@ -294,17 +318,45 @@ export function DiffView(props: Props) {
   }, [sideMode, props.target, staleTip]);
 
   // 并排行拆分：左栏 = 原版每行 + 删除行标记；右栏 = 当前每行 + 新增行标记。
-  // 左栏在"新增"处插入空占位行（带背景标记），左右视觉对齐、定位直观
+  // 左栏在"新增"处插入空占位行（带背景标记），左右视觉对齐、定位直观。
+  // 默认只渲染差异片段（diff 行）；「显示全部」开启后遍历原版**全文**（未改动行平铺显示、
+  // 差异行照旧标记、未配对新增处插占位行——与 rightRows 的全文模式同构）
   const leftRows = useMemo(() => {
     if (!versions) return [];
     const rows: { no: number; text: string; change: boolean; block: number; line?: DiffLine; ph?: boolean }[] = [];
-    for (const l of diffLines) {
-      if (l.type === 'ctx') rows.push({ no: l.leftNo, text: l.text, change: false, block: -1 });
-      else if (l.type === 'del') rows.push({ no: l.leftNo, text: l.text, change: true, block: l.block, line: l });
-      else if (l.type === 'add') rows.push({ no: -l.block, text: '', change: true, block: l.block, line: l, ph: true }); // 占位行
+    if (!showAll) {
+      for (const l of diffLines) {
+        if (l.type === 'ctx') rows.push({ no: l.leftNo, text: l.text, change: false, block: -1 });
+        else if (l.type === 'del') rows.push({ no: l.leftNo, text: l.text, change: true, block: l.block, line: l });
+        else if (l.type === 'add') rows.push({ no: -l.block, text: '', change: true, block: l.block, line: l, ph: true }); // 占位行
+      }
+      return rows;
     }
+    // 全文模式：空文件保持空行集（让"（原版为空 — 新增文件）"空态照旧显示）
+    if (versions.left === '') return rows;
+    // 新增占位行：按落点行号分桶（after=true 表示插在该行之后——新增段在文件末尾）
+    const before = new Map<number, { block: number; count: number }[]>();
+    const after = new Map<number, { block: number; count: number }[]>();
+    for (const [block, a] of addAnchorLeft) {
+      const bucket = a.after ? after : before;
+      const list = bucket.get(a.leftNo);
+      if (list) list.push({ block, count: a.count });
+      else bucket.set(a.leftNo, [{ block, count: a.count }]);
+    }
+    const leftMap = new Map<number, { text: string; block: number; line: DiffLine }>();
+    for (const l of diffLines) {
+      if (l.type === 'del') leftMap.set(l.leftNo, { text: l.text, block: l.block, line: l });
+    }
+    versions.left.split('\n').forEach((ln, i) => {
+      const no = i + 1;
+      for (const a of before.get(no) ?? []) rows.push({ no: -a.block, text: '', change: true, block: a.block, ph: true });
+      const m = leftMap.get(no);
+      if (m) rows.push({ no, text: m.text, change: true, block: m.block, line: m.line });
+      else rows.push({ no, text: ln, change: false, block: -1 });
+      for (const a of after.get(no) ?? []) rows.push({ no: -a.block, text: '', change: true, block: a.block, ph: true });
+    });
     return rows;
-  }, [versions, diffLines]);
+  }, [versions, diffLines, showAll, addAnchorLeft]);
 
   const rightRows = useMemo(() => {
     if (!versions) return [];
@@ -520,14 +572,30 @@ export function DiffView(props: Props) {
             {/* 下一个 ↓ */}
             <button className="mini" onClick={() => goBlock((curBlock + 1) % blocks.length)}>{t('hist.nextBlock')}</button>
             <button
-              className={`mini${syncMode ? ' primary' : ''}`}
-              onClick={() => setSyncMode((v) => !v)}
-              // 开启后滚动任一栏，另一栏自动跟随（预览模式下为按比例跟随，无行对齐）
-              title={t('hist.syncTip')}
+              className={`mini${showAll ? ' primary' : ''}`}
+              onClick={() => {
+                const next = !showAll;
+                setShowAll(next);
+                // 关掉全文时一并关掉同步滚动（按钮随之隐藏，不留隐形激活态）
+                if (!next) setSyncMode(false);
+              }}
+              // 左栏展开为完整文件内容（未改动行平铺显示，差异行照旧标记）
+              title={t('hist.showAllTip')}
             >
-              {/* ↔ 同步滚动 */}
-              {t('hist.syncScroll')}
+              {/* 显示全部 */}
+              {t('hist.showAll')}
             </button>
+            {showAll && (
+              <button
+                className={`mini${syncMode ? ' primary' : ''}`}
+                onClick={() => setSyncMode((v) => !v)}
+                // 开启后滚动任一栏，另一栏自动跟随（预览模式下为按比例跟随，无行对齐）
+                title={t('hist.syncTip')}
+              >
+                {/* ↔ 同步滚动 */}
+                {t('hist.syncScroll')}
+              </button>
+            )}
           </>
         )}
         {/* ← 键返回 */}

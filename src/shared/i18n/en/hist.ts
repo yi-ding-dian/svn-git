@@ -86,6 +86,9 @@ export const hist = {
   'hist.nextBlock': 'Next ↓',
   'hist.syncScroll': '↔ Sync Scroll',
   'hist.syncTip': 'When on, scrolling one pane makes the other follow (in preview mode it follows proportionally, without line alignment)',
+  // Show all (left pane expands from diff fragments to the full file; Sync Scroll only appears then)
+  'hist.showAll': 'Show All',
+  'hist.showAllTip': 'Expand the left pane to the full file (unchanged lines shown flat; diff lines still marked)',
   'hist.arrowKeyBack': '← to go back',
 
   // ---- 文件外部更新提示（stale）----
