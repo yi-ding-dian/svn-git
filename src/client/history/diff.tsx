@@ -15,6 +15,15 @@ export interface DiffTarget {
   b?: string;
 }
 
+/** 搜索框宽度：右边缘拖拽调整、**左右两栏各自独立**、localStorage 持久化；越界值回默认。
+ *  往左拖窄到阈值内（SEARCH_W_COLLAPSE）松手 = 收起搜索（拖动中显示提示），收起不落盘 */
+const SEARCH_W_KEY_L = 'diffSearch.widthL';
+const SEARCH_W_KEY_R = 'diffSearch.widthR';
+const SEARCH_W_DEFAULT = 360;
+const SEARCH_W_MIN = 60; // 拖拽硬下限（再窄即进入"将收起"区）
+const SEARCH_W_COLLAPSE = 100; // 松手时宽度 < 此值 → 收起搜索
+const SEARCH_W_MAX = 520;
+
 interface Props {
   target: DiffTarget | null;
   tick: number;
@@ -121,6 +130,71 @@ export function DiffView(props: Props) {
   const [dSearchL, setDSearchL] = useState('');
   const [dSearchLActive, setDSearchLActive] = useState(false);
   const [dMatchLIdx, setDMatchLIdx] = useState(0);
+  /** 搜索框宽度（左右各自独立；右边缘拖拽调整，鼠标松开落盘）。
+   *  往左拖窄过阈值 = 松手收起搜索（拖动中显示提示）；收起不落盘，下次展开恢复收起前的宽度 */
+  const readSearchW = (key: string) => {
+    const saved = Number(localStorage.getItem(key));
+    return Number.isFinite(saved) && saved >= SEARCH_W_MIN && saved <= SEARCH_W_MAX ? saved : SEARCH_W_DEFAULT;
+  };
+  const [dSearchWL, setDSearchWL] = useState(() => readSearchW(SEARCH_W_KEY_L));
+  const [dSearchWR, setDSearchWR] = useState(() => readSearchW(SEARCH_W_KEY_R));
+  /** 拖拽中的"将收起"提示归属哪一栏（''=无） */
+  const [collapseHint, setCollapseHint] = useState<'' | 'L' | 'R'>('');
+  const wRefL = useRef(dSearchWL);
+  wRefL.current = dSearchWL;
+  const wRefR = useRef(dSearchWR);
+  wRefR.current = dSearchWR;
+  const dResizeRef = useRef<{ side: 'L' | 'R'; startX: number; startW: number } | null>(null);
+  /** 右边缘拖拽：左右移动调宽；拖窄过阈值时显示"将收起"提示、松手收起（宽度还原为拖动前的值）。
+   *  拖拽期间定住全页光标/禁选中（鼠标滑出手柄不闪回默认光标） */
+  const onDSearchResizeDown = (side: 'L' | 'R') => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startW = side === 'L' ? wRefL.current : wRefR.current;
+    dResizeRef.current = { side, startX: e.clientX, startW };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev: MouseEvent) => {
+      const d = dResizeRef.current;
+      if (!d) return;
+      const w = Math.min(SEARCH_W_MAX, Math.max(SEARCH_W_MIN, d.startW + (ev.clientX - d.startX)));
+      if (d.side === 'L') {
+        wRefL.current = w;
+        setDSearchWL(w);
+      } else {
+        wRefR.current = w;
+        setDSearchWR(w);
+      }
+      setCollapseHint(w < SEARCH_W_COLLAPSE ? d.side : '');
+    };
+    const onUp = () => {
+      const d = dResizeRef.current;
+      dResizeRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setCollapseHint('');
+      if (!d) return;
+      const w = d.side === 'L' ? wRefL.current : wRefR.current;
+      if (w < SEARCH_W_COLLAPSE) {
+        // 拖窄过阈值：收起（宽度还原为拖动前的值、不落盘——下次展开还是收起前的宽度）
+        if (d.side === 'L') {
+          wRefL.current = d.startW;
+          setDSearchWL(d.startW);
+          setDSearchLActive(false);
+        } else {
+          wRefR.current = d.startW;
+          setDSearchWR(d.startW);
+          setDSearchActive(false);
+        }
+      } else {
+        localStorage.setItem(d.side === 'L' ? SEARCH_W_KEY_L : SEARCH_W_KEY_R, String(w));
+      }
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
   // md 文件双栏预览：左右独立开关（预览=该栏原文 Markdown 渲染，非 diff 行视图）
   const [previewL, setPreviewL] = useState(false);
   const [previewR, setPreviewR] = useState(false);
@@ -130,6 +204,10 @@ export function DiffView(props: Props) {
   // 「显示全部」：左栏（原版）从"仅差异片段"切换为完整文件内容（未改动行平铺，差异行照旧标记）
   const [showAll, setShowAll] = useState(false);
   const syncLock = useRef(false);
+  /** 差异块跳转（上/下一个、点刻度点）期间的锁：跳转的平滑滚动会触发 onScroll，
+   *  若让同步滚动逻辑介入会与跳转互相拉扯——两栏各停"差一点"（实测）。独立于 syncLock，
+   *  避免与同步流程自身的释放时机产生竞态 */
+  const jumpLock = useRef(false);
   // 文件更新检测
   const [staleTip, setStaleTip] = useState(false);
   const mtimeRef = useRef<{ mtime: number; size: number } | null>(null);
@@ -216,12 +294,19 @@ export function DiffView(props: Props) {
     return delAnchorRef.current.has(block) ? -block : undefined;
   }, []);
 
-  // 跳转到差异块：左右两栏都滚动到块首行
+  // 跳转到差异块：左右两栏都滚动到块首行。
+  // **跳转期间锁住同步滚动**（jumpLock）：smooth 滚动触发的 onScroll 若让同步逻辑介入，
+  // 会与跳转互相拉扯、两栏各停"差一点"（实测：开着同步滚动时上/下一个与点刻度点都跳不准）。
+  // 锁 700ms（smooth 动画时长量级）后自释；期间用户手动滚动的同步会暂歇——跳转后本就该稳定
   const goBlock = useCallback((i: number) => {
     const b = blocksRef.current[i];
     if (!b) return;
     setCurBlock(i);
     flashTarget(b.id);
+    jumpLock.current = true;
+    window.setTimeout(() => {
+      jumpLock.current = false;
+    }, 700);
     leftRefs.current.get(b.left)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     // 纯删除块的 b.right 是 MAX_SAFE_INTEGER 哨兵（块内无 add 行），get 不到元素 → 右栏原本纹丝不动
     rightRefs.current.get(locateDel(b.id) ?? b.right)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -469,7 +554,7 @@ export function DiffView(props: Props) {
   const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onScrollSync = useCallback(
     (side: 'left' | 'right') => (e: React.UIEvent<HTMLDivElement>) => {
-      if (!syncMode || syncLock.current) return;
+      if (!syncMode || syncLock.current || jumpLock.current) return;
       syncLock.current = true;
       const pane = e.currentTarget;
       const rows = side === 'left' ? leftRows : rightRows;
@@ -571,20 +656,6 @@ export function DiffView(props: Props) {
             <button className="mini" onClick={() => goBlock((curBlock - 1 + blocks.length) % blocks.length)}>{t('hist.prevBlock')}</button>
             {/* 下一个 ↓ */}
             <button className="mini" onClick={() => goBlock((curBlock + 1) % blocks.length)}>{t('hist.nextBlock')}</button>
-            <button
-              className={`mini${showAll ? ' primary' : ''}`}
-              onClick={() => {
-                const next = !showAll;
-                setShowAll(next);
-                // 关掉全文时一并关掉同步滚动（按钮随之隐藏，不留隐形激活态）
-                if (!next) setSyncMode(false);
-              }}
-              // 左栏展开为完整文件内容（未改动行平铺显示，差异行照旧标记）
-              title={t('hist.showAllTip')}
-            >
-              {/* 显示全部 */}
-              {t('hist.showAll')}
-            </button>
             {showAll && (
               <button
                 className={`mini${syncMode ? ' primary' : ''}`}
@@ -653,22 +724,32 @@ export function DiffView(props: Props) {
               <div className="row" style={{ gap: 6 }}>
                 {dSearchLActive ? (
                   <>
-                    <input
-                      autoFocus
-                      type="text"
-                      // 搜索左栏代码…
-                      placeholder={t('hist.searchLeftPlaceholder')}
-                      value={dSearchL}
-                      onChange={(e) => {
-                        setDSearchL(e.target.value);
-                        setDMatchLIdx(0);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') goNextLMatch();
-                        if (e.key === 'Escape') setDSearchLActive(false);
-                      }}
-                      style={{ flex: 1, minWidth: 0 }}
-                    />
+                    {/* 输入框外层 relative：右侧拖拽手柄绝对定位用（左栏独立宽度） */}
+                    <span style={{ position: 'relative', width: dSearchWL, flexShrink: 0, display: 'inline-flex' }}>
+                      <input
+                        autoFocus
+                        type="text"
+                        // 搜索左栏代码…
+                        placeholder={t('hist.searchLeftPlaceholder')}
+                        value={dSearchL}
+                        onChange={(e) => {
+                          setDSearchL(e.target.value);
+                          setDMatchLIdx(0);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') goNextLMatch();
+                          if (e.key === 'Escape') setDSearchLActive(false);
+                        }}
+                        style={{ width: '100%', boxSizing: 'border-box' }}
+                      />
+                      {/* 右边缘拖拽手柄：左右拖调宽；往左拖窄过阈值松手 = 收起搜索 */}
+                      <span className="search-resize" onMouseDown={onDSearchResizeDown('L')} title={t('fs.search.resize')} />
+                    </span>
+                    <span className="grow" />
+                    {/* 拖窄至阈值内：松手将收起搜索 */}
+                    {collapseHint === 'L' && (
+                      <span className="small" style={{ color: 'var(--warn)', whiteSpace: 'nowrap' }}>{t('hist.releaseToCollapse')}</span>
+                    )}
                     <span className="dim small nowrap">
                       {/* 无匹配 */}
                       {dSearchL.trim() && dMatchesL.length > 0 ? `${dMatchLIdx + 1}/${dMatchesL.length}` : dSearchL.trim() ? t('hist.noMatchText') : ''}
@@ -680,6 +761,22 @@ export function DiffView(props: Props) {
                   // 🔍 搜索此栏
                   <button className="mini" onClick={() => setDSearchLActive(true)}>{t('hist.searchPane')}</button>
                 )}
+                {/* 显示全部：左栏从差异片段展开为完整原版（开启后顶栏出现「同步滚动」；关掉时联动关同步。
+                    放左栏头部：它管的就是左栏，与「预览」等左栏查看方式并列） */}
+                <button
+                  className={`mini${showAll ? ' primary' : ''}`}
+                  onClick={() => {
+                    const next = !showAll;
+                    setShowAll(next);
+                    // 关掉全文时一并关掉同步滚动（按钮随之隐藏，不留隐形激活态）
+                    if (!next) setSyncMode(false);
+                  }}
+                  // 左栏展开为完整文件内容（未改动行平铺显示，差异行照旧标记）
+                  title={t('hist.showAllTip')}
+                >
+                  {/* 显示全部 */}
+                  {t('hist.showAll')}
+                </button>
                 {isMd && previewL && (
                   // 返回差异行视图
                   <button className="mini" onClick={() => setPreviewL((v) => !v)} title={t('hist.backToDiff')}>
@@ -702,22 +799,32 @@ export function DiffView(props: Props) {
               <div className="row" style={{ gap: 6 }}>
                 {dSearchActive ? (
                   <>
-                    <input
-                      autoFocus
-                      type="text"
-                      // 搜索右栏代码…
-                      placeholder={t('hist.searchRightPlaceholder')}
-                      value={dSearch}
-                      onChange={(e) => {
-                        setDSearch(e.target.value);
-                        setDMatchIdx(0);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') goNextDMatch();
-                        if (e.key === 'Escape') setDSearchActive(false);
-                      }}
-                      style={{ flex: 1, minWidth: 0 }}
-                    />
+                    {/* 输入框外层 relative：右侧拖拽手柄绝对定位用（右栏独立宽度） */}
+                    <span style={{ position: 'relative', width: dSearchWR, flexShrink: 0, display: 'inline-flex' }}>
+                      <input
+                        autoFocus
+                        type="text"
+                        // 搜索右栏代码…
+                        placeholder={t('hist.searchRightPlaceholder')}
+                        value={dSearch}
+                        onChange={(e) => {
+                          setDSearch(e.target.value);
+                          setDMatchIdx(0);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') goNextDMatch();
+                          if (e.key === 'Escape') setDSearchActive(false);
+                        }}
+                        style={{ width: '100%', boxSizing: 'border-box' }}
+                      />
+                      {/* 右边缘拖拽手柄：左右拖调宽；往左拖窄过阈值松手 = 收起搜索 */}
+                      <span className="search-resize" onMouseDown={onDSearchResizeDown('R')} title={t('fs.search.resize')} />
+                    </span>
+                    <span className="grow" />
+                    {/* 拖窄至阈值内：松手将收起搜索 */}
+                    {collapseHint === 'R' && (
+                      <span className="small" style={{ color: 'var(--warn)', whiteSpace: 'nowrap' }}>{t('hist.releaseToCollapse')}</span>
+                    )}
                     <span className="dim small nowrap">
                       {/* 无匹配 */}
                       {dSearch.trim() && dMatches.length > 0 ? `${dMatchIdx + 1}/${dMatches.length}` : dSearch.trim() ? t('hist.noMatchText') : ''}

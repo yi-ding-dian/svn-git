@@ -87,6 +87,8 @@ export const hist = {
   // 显示全部（左栏从"仅差异片段"展开为完整文件；同步滚动按钮只在展开后出现）
   'hist.showAll': '显示全部',
   'hist.showAllTip': '左栏展开为完整文件内容（未改动行平铺显示，差异行照旧标记）',
+  // 收起搜索（往左拖窄过阈值松手即收起；拖动中显示此提示）
+  'hist.releaseToCollapse': '松开鼠标将收起搜索框',
   'hist.arrowKeyBack': '← 键返回',
 
   // ---- 文件外部更新提示（stale）----

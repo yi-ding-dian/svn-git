@@ -89,6 +89,8 @@ export const hist = {
   // Show all (left pane expands from diff fragments to the full file; Sync Scroll only appears then)
   'hist.showAll': 'Show All',
   'hist.showAllTip': 'Expand the left pane to the full file (unchanged lines shown flat; diff lines still marked)',
+  // Collapse search (drag the edge narrow past the threshold and release; shown while dragging)
+  'hist.releaseToCollapse': 'Release to collapse the search box',
   'hist.arrowKeyBack': '← to go back',
 
   // ---- 文件外部更新提示（stale）----
