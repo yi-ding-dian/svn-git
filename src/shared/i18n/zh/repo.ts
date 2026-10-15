@@ -135,10 +135,6 @@ export const repo = {
   'repo.co.remote': '远程路径',
   'repo.co.localName': '本地名称',
   'repo.co.start': '检出',
-  'repo.co.busy': '正在检出…已用 {n} 秒',
-  'repo.co.cancelTip': '取消检出：断开请求，后台 svn 进程会一并终止，半截目录会被清理',
-  'repo.co.done': '已检出到 {path}',
-  'repo.co.open': '打开项目',
   'repo.co.noPerm': '当前账号 [{user}] 没有获取该仓库权限',
   'repo.co.anonymous': '匿名',
   'repo.co.enterCred': '输入有权限的账号密码',
@@ -152,9 +148,7 @@ export const repo = {
   'repo.co.sparseLoadFail': '目录列表获取失败——不影响完整检出',
   'repo.co.retryWithCred': '用新账号重试',
   'repo.co.needCred': '请填写用户名和密码',
-  'repo.co.minTip': '最小化到后台（检出继续进行）',
   // 标题右侧「当前检出账号」的悬浮说明（账号本身直接显示用户名）
-  'repo.co.whoTipTyped': '使用本次输入的账号（仅本次检出，不会保存）',
   'repo.co.whoTipSaved': '使用已保存的 SVN 账号',
   'repo.co.whoTipCache': '使用系统凭据缓存里的账号（在别的 svn 客户端登录过）',
   'repo.co.whoTipAnon': '未配置账号，将匿名访问',
@@ -242,10 +236,8 @@ export const repo = {
   'repo.get.needTargetName': '请填写目标和名称',
   'repo.get.getting': '获取中…',
   'repo.get.get': '获取',
-  'repo.get.cancelTip': '停止本次获取：断开请求，后台的 git / svn 进程会一并终止',
-  // 获取弹窗「−」：最小化到后台（任务继续，完成也自动打开）
-  'repo.get.minTip': '最小化到后台（获取继续进行）',
-  'repo.get.slowNet': '远程网络较慢或不稳定，获取仍在继续，请耐心等待；确认网络不通可点「取消」后换网络或地址重试',
+  // 点「获取」后弹窗立刻关闭，任务在后台跑——这句告诉用户去哪儿找它
+  'repo.get.started': '获取仓库 · {name} 已在后台运行（顶栏沙漏可看进度并取消）',
   'repo.get.help':
     '两种方式：Git 克隆 = git clone（从地址复制一份到本地）；SVN 检出 = svn checkout（从服务器获取工作副本，目标目录即本地名称）。',
   'repo.get.typeGit': 'Git 克隆',
@@ -254,7 +246,6 @@ export const repo = {
   'repo.get.localName': '本地名称（工作副本名）',
   'repo.get.previewGit': '将克隆：{url} → {path}\ngit clone 后自动打开',
   'repo.get.previewSvn': '将检出：{url} → {path}\nsvn checkout 后自动打开（SVN 建议检出 trunk 或目标分支/标签）',
-  'repo.get.elapsed': '⏳ 正在获取…已用 {n} 秒（最多 {max} 秒，超时会自动停止）',
   'repo.get.confirmTitle': '确认获取仓库？',
   'repo.get.confirm': '确认获取',
   'repo.get.willRunGit': '将执行：git clone {url}（命令预览见按钮）',

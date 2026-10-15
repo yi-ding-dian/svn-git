@@ -10,7 +10,7 @@ import { ModalShell } from '../shell/modal-shell.js';
 import { get, post, type GitHubMyRepo } from '../shared/api.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { IconGitHub, IconLock, IconUnlock, IconStar, IconClock, IconExternal, IconCopy, IconDownload } from '../ui/icons.js';
-import { GetRepoDialog } from './repo-create.js';
+import { GetRepoDialog, type GetRepoParams } from './repo-create.js';
 import { relTime } from './github-repo.js';
 import { parseGithub } from '../../shared/github.js';
 import { t } from '../../shared/i18n/index.js';
@@ -22,8 +22,8 @@ export function GitHubMyReposModal(props: {
   home?: string;
   onClose: () => void;
   onToast: (m: string, err?: boolean) => void;
-  /** 克隆完成（目录已就绪）→ 由调用方打开该项目（与「获取仓库」弹窗同一条链路） */
-  onCloned: (dir: string) => void;
+  /** 克隆参数 → 由调用方发起后台获取任务（弹窗随即关闭；进度/取消/通知都归顶栏） */
+  onStartGet: (p: GetRepoParams) => void;
 }) {
   const [repos, setRepos] = useState<GitHubMyRepo[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -184,14 +184,15 @@ export function GitHubMyReposModal(props: {
         />
       )}
 
-      {/* 克隆到本地：复用「获取仓库」弹窗（地址/本地名预填）；取消 = 回到本列表 */}
+      {/* 克隆到本地：复用「获取仓库」弹窗（地址/本地名预填）；取消 = 回到本列表。
+          点确认后任务交给调用方在后台发起——本列表也随即收起（跟⋯菜单那条入口行为一致） */}
       {clone && (
         <GetRepoDialog
           home={props.home}
           initialUrl={clone.cloneUrl}
           initialName={clone.name}
           onClose={() => setClone(null)}
-          onCreated={(dir) => props.onCloned(dir)}
+          onStart={props.onStartGet}
         />
       )}
     </ModalShell>

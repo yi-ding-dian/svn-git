@@ -130,10 +130,6 @@ export const repo = {
   'repo.co.remote': 'Repository URL',
   'repo.co.localName': 'Local Name',
   'repo.co.start': 'Checkout',
-  'repo.co.busy': 'Checking out… {n}s elapsed',
-  'repo.co.cancelTip': 'Cancel this checkout: the request is aborted and the background svn process is terminated too; the partial directory is cleaned up',
-  'repo.co.done': 'Checked out to {path}',
-  'repo.co.open': 'Open Project',
   'repo.co.noPerm': 'The current account [{user}] has no permission to fetch this repository',
   'repo.co.anonymous': 'anonymous',
   'repo.co.enterCred': 'Enter an account with permission',
@@ -147,9 +143,7 @@ export const repo = {
   'repo.co.sparseLoadFail': 'Failed to load the directory list — full checkout still works',
   'repo.co.retryWithCred': 'Retry with new account',
   'repo.co.needCred': 'Please enter the username and password',
-  'repo.co.minTip': 'Minimize to background (checkout keeps running)',
   // Hover note for "current checkout account" next to the title (the label shows the username itself)
-  'repo.co.whoTipTyped': 'Using the account entered for this checkout (not saved)',
   'repo.co.whoTipSaved': 'Using the saved SVN account',
   'repo.co.whoTipCache': 'Using the account from the system credential cache (signed in via another svn client)',
   'repo.co.whoTipAnon': 'No account configured — accessing anonymously',
@@ -239,10 +233,8 @@ export const repo = {
   'repo.get.needTargetName': 'Please fill in the target and name',
   'repo.get.getting': 'Fetching…',
   'repo.get.get': 'Get',
-  'repo.get.cancelTip': 'Stop this fetch: the request is aborted and the background git / svn process is terminated too',
-  // "−" on the fetch dialog: minimize to background (task keeps running and opens the project when done)
-  'repo.get.minTip': 'Minimize to background (fetch keeps running)',
-  'repo.get.slowNet': 'Remote network is slow or unstable — the fetch is still running, please wait; if the network is really unreachable, press Cancel and retry with another network or URL',
+  // The dialog closes right after "Get"; this tells the user where the task went
+  'repo.get.started': 'Getting {name} in the background (see progress and cancel from the hourglass in the top bar)',
   'repo.get.help':
     'Two options: Git clone = git clone (copy from a URL to your machine); SVN checkout = svn checkout (fetch a working copy from the server; the target directory is the local name).',
   'repo.get.typeGit': 'Git Clone',
@@ -252,7 +244,6 @@ export const repo = {
   'repo.get.previewGit': 'Will clone: {url} → {path}\nOpens automatically after git clone',
   'repo.get.previewSvn':
     'Will check out: {url} → {path}\nOpens automatically after svn checkout (prefer checking out trunk or the target branch/tag)',
-  'repo.get.elapsed': '⏳ Fetching… {n}s elapsed (limit {max}s; stops automatically on timeout)',
   'repo.get.confirmTitle': 'Fetch this repository?',
   'repo.get.confirm': 'Get',
   'repo.get.willRunGit': 'Will run: git clone {url} (hover the button for the command preview)',

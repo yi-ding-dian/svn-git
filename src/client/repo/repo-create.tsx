@@ -1,7 +1,6 @@
 /** 新建 / 获取仓库弹窗：新建仓库（CreateRepoDialog，git init / svnadmin create）+ 获取仓库（GetRepoDialog，git clone / svn checkout） */
-import React, { useEffect, useState } from 'react';
-import { get, post, type RepoCheck } from '../shared/api.js';
-import { startTask, cancelTask, useTasks } from '../shared/tasks.js';
+import React, { useState } from 'react';
+import { post, type RepoCheck } from '../shared/api.js';
 import { launchMagicFlight } from '../shell/magic-flight.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { IconDownload, IconPlus } from '../ui/icons.js';
@@ -13,7 +12,6 @@ import { runAction } from '../shared/vcs-action.js';
 import { ResultLine } from '../ui/result-line.js';
 import { joinPath } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
-import { GitPushAuthModal } from './git-auth.js';
 import { useGitHubCred, GitHubCredBox } from './github-cred.js';
 // ==================== 创建 / 克隆仓库 ====================
 
@@ -290,13 +288,24 @@ export function CreateRepoDialog(props: {
 }
 
 /** 获取仓库：Git 克隆 / SVN 检出（成员从服务器/远程获取工作副本，不是新建） */
+/** 获取参数（过了二次确认后交给调用方发起后台任务） */
+export interface GetRepoParams {
+  type: 'git' | 'svn';
+  dir: string;
+  name: string;
+  url: string;
+}
+
 export function GetRepoDialog(props: {
   home?: string;
   /** 预填地址 / 本地名称（「我的 GitHub 仓库」列表选中一个仓库时传入，省得手输） */
   initialUrl?: string;
   initialName?: string;
   onClose: () => void;
-  onCreated: (dir: string) => void;
+  /** 点「获取」并通过二次确认：把参数交给调用方发起**后台任务**，本弹窗随即关闭。
+   *  任务活在 shared/tasks 的 store 里（顶栏沙漏看进度/取消、完成自动打开、失败进铃铛），
+   *  认证失败也由调用方弹认证框并重试——所以这里不再持有任何任务状态。 */
+  onStart: (p: GetRepoParams) => void;
 }) {
   const [type, setType] = useState<'git' | 'svn'>('git');
   const [url, setUrl] = useState(props.initialUrl ?? '');
@@ -304,7 +313,7 @@ export function GetRepoDialog(props: {
   const [name, setName] = useState(props.initialName ?? '');
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
-  /** 前置检测中（repoCheck——几百毫秒）：与 running 一起构成 busy */
+  /** 前置检测中（repoCheck——几百毫秒）：按钮禁用 +「获取中…」文案 */
   const [checkBusy, setCheckBusy] = useState(false);
   const [picker, setPicker] = useState(false);
   const [pending, setPending] = useState<RepoCheck | null>(null); // 二次确认数据
@@ -334,144 +343,36 @@ export function GetRepoDialog(props: {
       .finally(() => setCheckBusy(false));
   };
 
-  /** 认证失败（私有仓库/凭据不对）：弹认证框引导填写，保存后自动重试 */
-  const [authAsk, setAuthAsk] = useState<{ type: 'github' | 'server' | 'ssh'; error: string } | null>(null);
-  /** 当前获取任务的 id（任务在 store 里活过本弹窗——− 最小化后继续；完成也自动打开） */
-  const [taskId, setTaskId] = useState<number | null>(null);
-  /** 每秒重渲（"已用 n 秒"/慢网络探测——都在 running 时才有意义） */
-  const [, setTick] = useState(0);
-  /** 长时间没有文件落盘 → 提示"网络慢/不稳定"（慢网络下别让用户以为卡死，也别急着取消） */
-  const [slowNet, setSlowNet] = useState(false);
-  /** 获取上限（秒）：仅用于文案提示——到点由后端超时中止（同检出） */
-  const GET_TIMEOUT_S = 600;
-  /** 多久还没有文件落盘就给"网络慢"提示（秒） */
-  const SLOW_HINT_S = 10;
-
-  const bgTasks = useTasks();
-  const task = taskId === null ? null : (bgTasks.find((tk) => tk.id === taskId) ?? null);
-  const running = task?.status === 'running';
-  /** 忙碌（检测中或获取中）：表单禁用/按钮文案统一用它 */
-  const busy = checkBusy || running;
-  const elapsed = task ? Math.max(0, Math.floor((Date.now() - task.startedAt) / 1000)) : 0;
-
-  // 运行中每秒 tick（已用秒数）+ "网络慢"探测（目标目录文件落盘——同检出）。
-  // 运行中输入框禁用，闭包捕获的 dir/name 即发起时的目标
-  useEffect(() => {
-    if (!running) return;
-    const h = window.setInterval(() => setTick((n) => n + 1), 1000);
-    const probeTarget = joinPath(dir.trim(), name.trim());
-    let baseline: number | null = null;
-    let filesSeen = false;
-    const probe = window.setInterval(() => {
-      if (filesSeen) return;
-      void (async () => {
-        let n = 0;
-        try {
-          n = (await get.browse(probeTarget)).entries.filter((e) => e.name !== '..').length;
-        } catch {
-          n = 0; // 目录还没建出来：当 0 处理（首个文件一落盘就会 > 0）
-        }
-        if (baseline === null) {
-          baseline = n;
-          return;
-        }
-        if (n > baseline) {
-          filesSeen = true;
-          setSlowNet(false);
-        }
-      })();
-    }, 2000);
-    const slowTimer = window.setTimeout(() => {
-      if (!filesSeen) setSlowNet(true);
-    }, SLOW_HINT_S * 1000);
-    return () => {
-      clearInterval(h);
-      clearInterval(probe);
-      clearTimeout(slowTimer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running]);
-
-  // 二次确认后执行获取（后台任务——与检出同模板：− 最小化后台继续、完成也自动打开）
-  const doGet = () => {
+  /** 二次确认通过 → 把参数交给调用方发起后台任务，本弹窗立刻关闭。
+   *  **不再在弹窗里等**：进度/取消归顶栏沙漏，结果归顶部横幅 + 铃铛，认证失败由调用方引导重试
+   *  （弹窗一关，任务状态就没地方显示了——留在弹窗里等，用户关窗时又会以为"关了就该停"）。 */
+  const startGet = () => {
     setPending(null);
     setMsg('');
     setMsgErr(false);
-    setSlowNet(false);
-    if (taskId) cancelTask(taskId); // 上一次还挂着的（重试场景）：先取消，免得两个任务打架
-    const id = startTask({
-      kind: 'get',
-      // 任务标题：获取仓库 · {name}（同检出「检出到本地 · name」的拼接先例）
-      title: `${t('repo.get.title')} · ${name.trim()}`,
-      run: async (signal) => {
-        const r = await post.repoCreate(type, dir.trim(), name.trim(), url.trim(), true, signal);
-        // 认证失败：不在这里报错了事，弹认证框（存的是 git 账号/Token），保存后自动重试
-        if (!r.ok && r.authError && r.authType) {
-          setAuthAsk({ type: r.authType, error: r.message });
-          return { ok: false, message: r.message };
-        }
-        if (r.ok) {
-          // 完成即打开（弹窗开着 / − 最小化都一样——用户定稿"也自动打开"）；
-          // 打开服务端返回的仓库路径（git/svn 均为目标目录），没返回时兜底拼路径
-          props.onCreated(r.repoDir ?? joinPath(dir, name.trim()));
-        }
-        return { ok: r.ok, message: r.message };
-      },
-    });
-    setTaskId(id);
-  };
-
-  /** ✕/关闭 = 取消进行中的任务（要后台继续请用「−」最小化） */
-  const closeDialog = () => {
-    if (taskId && running) cancelTask(taskId);
+    props.onStart({ type, dir: dir.trim(), name: name.trim(), url: url.trim() });
     props.onClose();
   };
 
-  /** − 最小化：弹窗收起、任务继续（完成也自动打开——用户定稿） */
-  const minimize = () => props.onClose();
-
-  // 结果行：任务被取消/失败如实显示（认证失败除外——认证框已引导）；表单校验消息优先
-  const cancelled = task?.status === 'cancelled';
-  const taskErrMsg = task?.status === 'error' && !authAsk ? (task.message ?? '') : '';
-  const showMsg = msg || (cancelled ? t('common.cancelled') : taskErrMsg);
-  const showErr = msg ? msgErr : Boolean(taskErrMsg);
+  // 结果行只承载表单校验消息（任务的结果不在这儿显示——弹窗已经关了）
+  const showMsg = msg;
+  const showErr = msgErr;
 
   return (
     <ModalShell
       icon={<IconDownload size={16} />}
       // 获取仓库
       title={t('repo.get.title')}
-      onClose={closeDialog}
+      onClose={props.onClose}
       width={540}
       closeIcon
-      titleExtra={
-        // - 号：运行中可点 = 最小化到后台（任务继续，完成也自动打开）；空闲时禁用。
-        // right = 14(X 的 right) + 28(X 宽) + 6(间距)，与放大的 ✕ 对齐；class 用 modal-min（同检出）
-        <button
-          className="modal-min"
-          style={{ right: 48, opacity: running ? 1 : 0.45, cursor: running ? 'pointer' : 'not-allowed' }}
-          disabled={!running}
-          onClick={minimize}
-          title={running ? t('repo.get.minTip') : undefined}
-        >
-          −
-        </button>
-      }
       foot={
         <>
-          {running ? (
-            // 获取中 → 「取消」出口：取消任务（断开请求，后端连带杀掉 git/svn 进程并清掉半截目录）
-            <button onClick={() => taskId && cancelTask(taskId)} title={t('repo.get.cancelTip')}>
-              {/* 取消 */}
-              {t('common.cancel')}
-            </button>
-          ) : (
-            // 关闭
-            <button onClick={closeDialog}>{t('common.close')}</button>
-          )}
+          {/* 关闭：表单还没提交，关掉就是放弃填写（没有任务需要处理——任务归顶栏） */}
+          <button onClick={props.onClose}>{t('common.close')}</button>
           <button
             className="primary"
-            disabled={busy}
+            disabled={checkBusy}
             onClick={submit}
             title={
               `${
@@ -482,7 +383,7 @@ export function GetRepoDialog(props: {
             }
           >
             {/* 获取中… / 获取 */}
-            {busy ? t('repo.get.getting') : t('repo.get.get')}
+            {checkBusy ? t('repo.get.getting') : t('repo.get.get')}
           </button>
         </>
       }
@@ -551,18 +452,6 @@ export function GetRepoDialog(props: {
         })()}
       </div>
       <ResultLine msg={showMsg} err={showErr} />
-      {busy && (
-        <div className="dim small" style={{ marginTop: 6 }}>
-          {/* ⏳ 正在获取…已用 {n} 秒（最多 {max} 秒，超时会自动停止） */}
-          {t('repo.get.elapsed', { n: elapsed, max: GET_TIMEOUT_S })}
-        </div>
-      )}
-      {busy && slowNet && (
-        <div className="small" style={{ marginTop: 6, color: 'var(--warn)' }}>
-          {/* 远程网络较慢或不稳定，获取仍在继续，请耐心等待；确认网络不通可点「取消」后换网络/地址重试 */}
-          {t('repo.get.slowNet')}
-        </div>
-      )}
       {/* 二次确认：目标路径 + 命令 + 风险检测 */}
       {pending && (
         <ConfirmModal
@@ -595,10 +484,10 @@ export function GetRepoDialog(props: {
               ? (cmdOfRepo('git', 'clone', { url: url.trim(), dir: pending.target }) ?? '')
               : (cmdOfRepo('svn', 'checkout', { url: url.trim(), dir: pending.target }) ?? '')
           }
-          // 确认获取：先放飞行线（从本按钮飞向顶栏沙漏），再发起后台获取任务
+          // 确认获取：先放飞行线（从本按钮飞向顶栏沙漏），再发起后台获取任务（弹窗随即关闭）
           onConfirm={(e) => {
             launchMagicFlight(e.currentTarget.getBoundingClientRect());
-            doGet();
+            startGet();
           }}
           onCancel={() => setPending(null)}
         />
@@ -614,20 +503,6 @@ export function GetRepoDialog(props: {
             setPicker(false);
           }}
           onClose={() => setPicker(false)}
-        />
-      )}
-      {/* 认证失败（私有仓库 / 凭据不对）：复用推送那套认证弹窗，保存后自动重试克隆 */}
-      {authAsk && (
-        <GitPushAuthModal
-          type={authAsk.type}
-          error={authAsk.error}
-          purpose="get"
-          onClose={() => setAuthAsk(null)}
-          onToast={(m) => setMsg(m)} // 这个弹窗组件没有全局 toast 通道，反馈落在自身结果行
-          onSaved={() => {
-            setAuthAsk(null);
-            doGet(); // 存好凭据直接重试（后端会带 GIT_ASKPASS）
-          }}
         />
       )}
     </ModalShell>

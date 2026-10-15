@@ -16,6 +16,7 @@ import { MiniIcon, IconServer, IconPin } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { PickDirModal } from './pick-dir.js';
 import { CheckoutDialog } from './checkout.js';
+import { useCheckoutTask, CheckoutAuthModal } from './checkout-task.js';
 import { ResultLine } from '../ui/result-line.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -42,6 +43,8 @@ export function RepoBrowseModal(props: {
   onClose: () => void;
   /** 右键检出的工作副本「打开项目」（modal-host 接 openHistoryItem，先关本弹窗） */
   onOpenProject?: (dir: string) => void;
+  /** 统一提示入口（检出转后台任务后，"已在后台运行"这类提示不再有弹窗可承载） */
+  onToast?: (m: string, err?: boolean) => void;
 }) {
   const root = props.url.replace(/\/+$/, '');
   // ——树状态：已加载的子项（root 也在里面；'loading' = 正在拉）+ 展开集合 + 各自的错误
@@ -63,6 +66,12 @@ export function RepoBrowseModal(props: {
   // 树右键菜单（目录行 + 空白 = 仓库根；文件行不给）与「检出到本地」弹窗
   const [menu, setMenu] = useState<{ x: number; y: number; url: string } | null>(null);
   const [checkout, setCheckout] = useState<{ url: string } | null>(null);
+  /** 检出：后台任务发起器 + 认证失败凭据框（实现在 checkout-task，弹窗一关就靠它接管） */
+  const onToast = (m: string, err?: boolean) => props.onToast?.(m, err);
+  const { start: startCheckout, auth: checkoutAuth, closeAuth: closeCheckoutAuth } = useCheckoutTask({
+    onCreated: (dir) => props.onOpenProject?.(dir),
+    onToast,
+  });
   // 「定位到该项目」（用户定稿 A）：located=📍 钉子所在目录 url（**常驻**——点别处也不消失，
   // 再定位才换，当"工作副本在哪"的书签用）；locatedHL=蓝框高亮是否还亮（点任何地方即灭——
   // 与"点击选中"区分开）。locating=防连点
@@ -835,10 +844,10 @@ export function RepoBrowseModal(props: {
           ]}
         />
       )}
-      {/* 检出到本地（URL 直连检出；认证失败弹凭据框重试） */}
-      {checkout && (
-        <CheckoutDialog url={checkout.url} onClose={() => setCheckout(null)} onOpenProject={props.onOpenProject} />
-      )}
+      {/* 检出到本地（URL 直连检出）：点确认后弹窗即关，任务在后台跑（顶栏沙漏可取消），
+          完成自动打开工作副本；认证失败弹下面的凭据框重试 */}
+      {checkout && <CheckoutDialog url={checkout.url} onClose={() => setCheckout(null)} onStart={startCheckout} />}
+      {checkoutAuth && <CheckoutAuthModal auth={checkoutAuth} onClose={closeCheckoutAuth} onToast={onToast} />}
     </div>
   );
 }

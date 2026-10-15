@@ -39,6 +39,7 @@ import { TerminalModal } from '../terminal/terminal.js';
 import { OpenModal } from '../repo/open.js';
 import { IconOk } from '../ui/icons.js';
 import { pathAutoWidth, translateVcsError } from '../shared/utils.js';
+import { useGetRepoTask, GetRepoAuthModal } from '../repo/get-repo-task.js';
 import type { View } from './sidebar.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -182,6 +183,12 @@ export function ModalHost(props: ModalHostProps) {
       .catch((e: Error) => showToast(t('shell.repo.fetchOpenFailed', { msg: (e as Error).message }), true));
   };
 
+  /** 获取仓库：后台任务发起器 + 认证失败引导框（实现在 repo/get-repo-task，三个入口共用一套） */
+  const { start: startGetRepoTask, auth: getAuth, closeAuth: closeGetAuth } = useGetRepoTask({
+    onCreated: openClonedRepo,
+    onToast: showToast,
+  });
+
   return (
     <>
       {modal?.type === 'commit' && (
@@ -285,6 +292,7 @@ export function ModalHost(props: ModalHostProps) {
           url={modal.url}
           wcRel={modal.wcRel}
           onClose={() => setModal(null)}
+          onToast={showToast}
           // 右键检出的工作副本「打开项目」：先关本弹窗，再走最近项目同款打开逻辑
           onOpenProject={(dir) => {
             setModal(null);
@@ -401,7 +409,7 @@ export function ModalHost(props: ModalHostProps) {
           home={info?.home}
           onClose={() => setModal(null)}
           onToast={showToast}
-          onCloned={openClonedRepo}
+          onStartGet={startGetRepoTask}
         />
       )}
       {pushAuth && (
@@ -467,9 +475,11 @@ export function ModalHost(props: ModalHostProps) {
           initialUrl={modal.url}
           initialName={modal.name}
           onClose={() => setModal(null)}
-          onCreated={openClonedRepo}
+          onStart={startGetRepoTask}
         />
       )}
+      {/* 获取仓库的认证失败引导（克隆/检出弹窗已关，认证框在这里弹） */}
+      {getAuth && <GetRepoAuthModal auth={getAuth} onClose={closeGetAuth} onToast={showToast} />}
 
       {modal?.type === 'commit-select' && (
         <CommitSelectModal

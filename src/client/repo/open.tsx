@@ -10,6 +10,7 @@ import { ContextMenu } from '../ui/context-menu.js';
 import { IconOk, IconErr } from '../ui/icons.js';
 import { t } from '../../shared/i18n/index.js';
 import { CreateRepoDialog, GetRepoDialog } from './repo-create.js';
+import { useGetRepoTask, GetRepoAuthModal } from './get-repo-task.js';
 import { DirBrowser } from './dir-browser.js';
 
 /** svnadmin 版本库存储目录特征（format 文件 + db/conf/hooks 等）：不是工作副本，需要打开同名 -wc */
@@ -507,11 +508,11 @@ export function OpenView(props: {
     setShowCreate(false);
     void openRepo(dir, true);
   };
-  // 获取仓库成功后：自动打开（克隆/检出目标目录）
-  const onGot = (dir: string) => {
-    setShowGet(false);
-    void openRepo(dir, false);
-  };
+  // 获取仓库：发起器 + 认证失败引导框（与 ⋯ 菜单那条入口共用一套——发起后弹窗即关，任务在后台）
+  const { start: startGet, auth: getAuth, closeAuth: closeGetAuth } = useGetRepoTask({
+    onCreated: (dir) => void openRepo(dir, false),
+    onToast: (m, err) => props.onToast?.(m, err),
+  });
 
   return (
     <div className="open-wrap">
@@ -540,9 +541,11 @@ export function OpenView(props: {
         <GetRepoDialog
           home={props.startDir}
           onClose={() => setShowGet(false)}
-          onCreated={onGot}
+          onStart={startGet}
         />
       )}
+      {/* 获取仓库的认证失败引导（获取弹窗已关，认证框在这里弹） */}
+      {getAuth && <GetRepoAuthModal auth={getAuth} onClose={closeGetAuth} onToast={(m, err) => props.onToast?.(m, err)} />}
     </div>
   );
 }
