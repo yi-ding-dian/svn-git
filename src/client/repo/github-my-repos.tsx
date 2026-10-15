@@ -81,7 +81,10 @@ export function GitHubMyReposModal(props: {
   });
 
   const kw = q.trim().toLowerCase();
-  const shown = kw ? repos.filter((r) => r.fullName.toLowerCase().includes(kw)) : repos;
+  // 名字与描述都算（搜"桌宠"要能找到 Ai-desktop-pet——描述显示出来了却搜不到才别扭）
+  const shown = kw
+    ? repos.filter((r) => r.fullName.toLowerCase().includes(kw) || (r.description ?? '').toLowerCase().includes(kw))
+    : repos;
 
   /** 走克隆链路：叠加「获取仓库」弹窗（地址/本地名预填） */
   const doClone = (repo: GitHubMyRepo) => setClone(repo);
@@ -133,9 +136,20 @@ export function GitHubMyReposModal(props: {
                       {r.private ? <IconLock size={13} /> : <IconUnlock size={13} />}
                     </span>
                     <span className="github-my-repos-name mono">{r.name}</span>
+                    {/* 描述：**弹性列，空间不够先牺牲它**（名字与右边那些列都设成不压缩）。
+                        没描述就留空——不写"（没有描述）"，否则一半的行都在说废话，右边也对不齐 */}
+                    <span className="github-my-repos-desc">{r.description ?? ''}</span>
+                    {/* 状态标记：本地 / 当前项目 / Fork / 归档（"这个仓库在你这里的处境"）。
+                        本地放最前——放最后会把时间列挤得不齐（各行的本地标记有无不一） */}
+                    {r.localPath && (
+                      <span className="github-my-repos-local" title={t('repo.githubMyRepos.localTip', { path: r.localPath })}>
+                        ⬤ {t('repo.githubMyRepos.local')}
+                      </span>
+                    )}
                     {isCurrent && <span className="github-my-repos-tag current">{t('repo.githubMyRepos.currentProject')}</span>}
                     {r.archived && <span className="github-my-repos-tag" title={t('repo.githubMyRepos.archivedTip')}>{t('repo.github.archived')}</span>}
                     {r.fork && <span className="github-my-repos-tag" title={t('repo.githubMyRepos.forkTip')}>Fork</span>}
+                    {/* 属性列：语言 / ★ / 最近推送（靠右，各行右边缘对齐） */}
                     {r.language && <span className="github-my-repos-meta">{r.language}</span>}
                     <span className="github-my-repos-meta row" style={{ gap: 3, alignItems: 'center' }}>
                       <IconStar size={12} /> {r.stars}
@@ -143,11 +157,6 @@ export function GitHubMyReposModal(props: {
                     {r.pushedAt && (
                       <span className="github-my-repos-meta row" style={{ gap: 3, alignItems: 'center' }}>
                         <IconClock size={12} /> {relTime(r.pushedAt)}
-                      </span>
-                    )}
-                    {r.localPath && (
-                      <span className="github-my-repos-local" title={t('repo.githubMyRepos.localTip', { path: r.localPath })}>
-                        ⬤ {t('repo.githubMyRepos.local')}
                       </span>
                     )}
                   </div>

@@ -111,7 +111,7 @@ export const repo = {
   // ---- 我的 GitHub 仓库列表弹窗（顶栏 GitHub 图标；仅 origin 指向 github.com 的项目可见）----
   'repo.githubMyRepos.title': 'My GitHub Repositories',
   'repo.githubMyRepos.entryTip': 'My GitHub repositories (incl. private; double-click to clone)',
-  'repo.githubMyRepos.search': 'Search repositories…',
+  'repo.githubMyRepos.search': 'Search name or description…',
   'repo.githubMyRepos.count': '{n}',
   'repo.githubMyRepos.sortNote': 'sorted by recent push',
   'repo.githubMyRepos.loading': 'Loading repositories…',

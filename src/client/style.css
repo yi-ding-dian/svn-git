@@ -492,14 +492,19 @@ body {
 .github-my-repos-row:hover { background: var(--panel2); }
 /* 当前项目那一行：左侧色条 + 底色（十几个仓库里一眼认出自己在哪个） */
 .github-my-repos-row.current { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
-.github-my-repos-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.github-my-repos-meta { color: var(--dim); font-size: 12px; white-space: nowrap; }
+/* 列宽分工：**名字与右边那些列不压缩，描述是唯一的弹性列**——空间不够先牺牲它。
+   名字留 45% 上限只是兜底（防超长名把元信息挤出可视区），正常名字碰不到。 */
+.github-my-repos-name { flex: 0 1 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+/* 描述在"名字之后、元信息之前"这一格里**居中**（用户定稿）：左对齐会让短描述紧贴名字、
+   右边空一大截，看着像"描述属于名字"而不是中间那一栏 */
+.github-my-repos-desc { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 12px; color: var(--dim); }
+.github-my-repos-meta { flex: 0 0 auto; color: var(--dim); font-size: 12px; white-space: nowrap; }
 .github-my-repos-tag {
-  font-size: 11px; color: var(--dim); border: 1px solid var(--border); border-radius: 4px;
+  flex: 0 0 auto; font-size: 11px; color: var(--dim); border: 1px solid var(--border); border-radius: 4px;
   padding: 0 5px; white-space: nowrap;
 }
 .github-my-repos-tag.current { color: var(--accent); border-color: var(--accent); }
-.github-my-repos-local { color: var(--ok); font-size: 11px; white-space: nowrap; }
+.github-my-repos-local { flex: 0 0 auto; color: var(--ok); font-size: 11px; white-space: nowrap; }
 
 /* ---------- 状态码徽标 ---------- */
 .code {
