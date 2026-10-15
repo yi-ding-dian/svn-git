@@ -7,6 +7,8 @@
  *  完成/失败由 App 统一通知（顶部横幅 3 秒 + 铃铛留档，见 shared/notices）；取消不通知（用户自己点的）。
  *  订阅用 useSyncExternalStore：快照是不可变数组，任何变更都换新数组引用。 */
 import { useSyncExternalStore } from 'react';
+import { get } from './api.js';
+import type { TransferProgress } from '../../transfer-progress.js';
 
 export interface BgTask {
   id: number;
@@ -28,16 +30,9 @@ export interface BgTask {
   progress?: TaskProgress;
 }
 
-/** 获取进度快照（字段含义见 src/get-progress.ts 的表头注释） */
-export interface TaskProgress {
-  phase: 'counting' | 'compressing' | 'receiving' | 'resolving' | 'checkout';
-  /** 已接收字节 */
-  bytes: number;
-  /** 字节/秒 */
-  speed: number;
-  /** 总字节（0 = 未知 → 界面不显示百分比，只显示已下载与速度） */
-  total: number;
-}
+/** 传输进度快照（字段含义见 src/transfer-progress.ts 的表头注释）。
+ *  直接用服务端那份类型——两处各写一份早晚对不上 */
+export type TaskProgress = TransferProgress;
 
 export interface TaskRunResult {
   ok: boolean;
@@ -106,6 +101,21 @@ export function setTaskProgress(id: number, p: TaskProgress | null): void {
   const t = tasks.find((x) => x.id === id);
   if (!t || t.status !== 'running') return;
   patch(id, { progress: p ?? undefined });
+}
+
+/** 给任务挂上"传输进度"轮询（每秒问一次 /api/transfer-progress；本地回环，代价可忽略）。
+ *  返回停止函数——发起方在任务收尾时（run 的 finally）调它，否则任务完了还在轮。
+ *  获取 / 推送 / 拉取三处共用；SVN 那侧没有字节信息，后端一直 ok=false，面板自然不显示进度条。 */
+export function pollTransferProgress(id: number, chan: string): () => void {
+  const timer = setInterval(() => {
+    void get
+      .transferProgress(chan)
+      .then((r) => setTaskProgress(id, r.ok ? { phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0 } : null))
+      .catch(() => {
+        /* 轮询失败不打扰：面板退化成只有标题与已用秒数 */
+      });
+  }, 1000);
+  return () => clearInterval(timer);
 }
 
 /** 从面板移除一条记录（进行中的不允许移除——需先取消） */

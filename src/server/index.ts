@@ -8,7 +8,7 @@ import { createAskPass, authTypeOf } from '../vcs/git.js';
 import { loadConfig } from '../config.js';
 import { run } from '../vcs/exec.js';
 import { markInflight, clearInflight } from '../inflight.js';
-import { progressStart, progressSetTotal, progressDone, progressFromStderr, progressGet } from '../get-progress.js';
+import { progressStart, progressSetTotal, progressDone, progressFromStderr, progressGet } from '../transfer-progress.js';
 import { githubRepoBytes } from './routes/github.js';
 import { platform } from '../platform/index.js';
 import { t } from '../shared/i18n/index.js';
@@ -174,9 +174,10 @@ export function startServer(): Promise<ServerHandle> {
         return;
       }
 
-      if (p === '/api/get-progress' && req.method === 'GET') {
-        // 获取进度（顶栏任务面板每秒轮询）：只读内存里的进度表，不碰磁盘、不联网
-        sendJson(res, 200, progressGet(url.searchParams.get('target') ?? ''));
+      if (p === '/api/transfer-progress' && req.method === 'GET') {
+        // 传输进度（顶栏任务面板每秒轮询）：只读内存里的进度表，不碰磁盘、不联网。
+        // chan = 目标目录（获取）或 'push' / 'pull'（推送/拉取）
+        sendJson(res, 200, progressGet(url.searchParams.get('chan') ?? ''));
         return;
       }
 

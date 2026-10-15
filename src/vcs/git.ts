@@ -8,6 +8,7 @@ import { decodeText, detectTextEncoding } from '../shared/text.js';
 import { parseDiff, buildPatch, blobOf, type ParsedDiff } from './hunks.js';
 import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.js';
 import { loadConfig } from '../config.js';
+import { progressStart, progressDone, progressFromStderr } from '../transfer-progress.js';
 import { t, getLang } from '../shared/i18n/index.js';
 import type { FileStatus, LogEntry, RepoInfo, VcsResult } from './types.js';
 
@@ -151,7 +152,15 @@ export class GitVcs {
   constructor(private repo: RepoInfo) {}
 
   private exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; env?: Record<string, string>; decode?: 'utf8' | 'auto' } = {}) {
-    return run('git', args, {
+    // 传输类子命令（push / pull / fetch）自动上报进度，供顶栏任务面板显示"已传多少、多快"：
+    //  - `--progress` 必须显式加（stderr 不是终端时 git 默认不吐）；
+    //  - 通道名就是子命令名——同一时刻只对一个仓库做传输（推送侧另有防重入），不必再拼路径；
+    //  - **不逐处穿回调**：一次推送要跑 2~3 个 exec（无上游重试、认证重试），拉取同理，
+    //    挂在这里一处到位，也免得将来新加的 push 变体漏掉。
+    const i = args.findIndex((a) => a === 'push' || a === 'pull' || a === 'fetch');
+    const chan = i >= 0 ? args[i]! : '';
+    if (chan) progressStart(chan);
+    return run('git', chan ? [...args.slice(0, i + 1), '--progress', ...args.slice(i + 1)] : args, {
       cwd: this.repo.root,
       timeoutMs: extra.timeoutMs ?? 120_000,
       decode: extra.decode,
@@ -160,6 +169,11 @@ export class GitVcs {
       // GIT_TERMINAL_PROMPT=0：禁用终端交互提示（否则 git 检测到启动终端会卡在 "Username for..." 等输入，
       //  不走工具的认证弹窗）；GIT_SSH_COMMAND BatchMode：SSH 不交互（不卡主机指纹/密码输入），失败快速返回
       env: { GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new', ...extra.env },
+      // 进度表的生命周期跟着这次 git 命令走：命令一结束就撤。推送可能连跑几条（无上游重试、
+      // 认证重试），每条各自 Start/Done——中间的空档正好就是"两次传输之间"
+      ...(chan ? { onStderrLine: (line: string) => progressFromStderr(chan, line) } : {}),
+    }).finally(() => {
+      if (chan) progressDone(chan);
     });
   }
 

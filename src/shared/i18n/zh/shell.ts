@@ -29,15 +29,19 @@ export const shell = {
   'shell.header.githubPrivateNote': '（私有仓库）',
   'shell.header.githubTipClick': ' · 点击查看仓库信息',
 
-  // ---- 顶栏：任务面板的获取进度（阶段文案如实反映 git 在干什么；"检出文件"那段 git 完全静默）----
-  'shell.tasks.phaseCounting': '服务端正在统计对象…',
-  'shell.tasks.phaseCompressing': '服务端正在打包…',
+  // ---- 顶栏：任务面板的传输进度（阶段文案如实反映 git 在干什么；"检出文件""等待服务器"两段 git 完全静默）----
+  // 措辞中性：同一行"统计对象"在推送时是本地、在克隆时是远端，写死"服务端"就是错的
+  'shell.tasks.phaseCounting': '正在统计对象…',
+  'shell.tasks.phaseCompressing': '正在压缩对象…',
   'shell.tasks.phaseReceiving': '正在下载…',
-  'shell.tasks.phaseResolving': '正在本地解包…',
+  'shell.tasks.phaseUploading': '正在上传…',
+  'shell.tasks.phaseWaiting': '正在等待服务器…',
+  'shell.tasks.phaseResolving': '正在解包…',
   'shell.tasks.phaseCheckout': '正在检出文件…',
   'shell.tasks.progressOf': '{done} / {total}',
   'shell.tasks.progressSpeed': '{speed}/s',
   'shell.tasks.downloaded': '已下载 {done}',
+  'shell.tasks.uploaded': '已上传 {done}',
   'shell.tasks.etaMin': '还需约 {n} 分钟',
   'shell.tasks.etaSec': '还需不到 1 分钟',
 

@@ -7,8 +7,8 @@
  *  任务本身活在 shared/tasks 的 store 里：进度/取消归顶栏沙漏，完成自动打开项目，
  *  完成/失败进铃铛（App 统一通知），认证失败由本文件末尾的 GetRepoAuthModal 引导、保存后自动重试。 */
 import React from 'react';
-import { get, post } from '../shared/api.js';
-import { startTask, setTaskProgress } from '../shared/tasks.js';
+import { post } from '../shared/api.js';
+import { startTask, pollTransferProgress } from '../shared/tasks.js';
 import { translateVcsError, joinPath } from '../shared/utils.js';
 import { GitPushAuthModal } from './git-auth.js';
 import type { GetRepoParams } from './repo-create.js';
@@ -33,21 +33,9 @@ export function startGetRepoTask(
   },
 ): void {
   const target = joinPath(p.dir, p.name);
-  // 进度轮询：克隆期间每秒问一次后端（本地回环，代价可忽略），塞进任务面板——
-  // 「已下载 / 速度 / 还剩多久」正是"看着像卡死"的解药。任务一结束就停（run 的 finally），
-  // 所以不会出现"跑完了还在轮"。SVN 检出没有等价信息，后端一直 ok=false，面板自然不显示进度条。
-  let taskId: number | null = null;
-  const timer = setInterval(() => {
-    const id = taskId;
-    if (id === null) return;
-    void get
-      .getProgress(target)
-      .then((r) => setTaskProgress(id, r.ok ? { phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0 } : null))
-      .catch(() => {
-        /* 轮询失败不打扰：面板退化成只有标题与已用秒数 */
-      });
-  }, 1000);
-  taskId = startTask({
+  /** 进度轮询的停止函数（startTask 返回 id 之后才挂得上，见下） */
+  let stopPoll: (() => void) | null = null;
+  const taskId = startTask({
     kind: 'get',
     // 任务标题：获取仓库 · {name}（同检出「检出到本地 · name」的拼接先例）
     title: `${t('repo.get.title')} · ${p.name}`,
@@ -64,10 +52,13 @@ export function startGetRepoTask(
         if (r.ok) hooks.onCreated(r.repoDir ?? target);
         return { ok: r.ok, message: r.message };
       } finally {
-        clearInterval(timer);
+        stopPoll?.(); // 任务收尾就停轮询（真在跑时才挂上，见下）
       }
     },
   });
+  // 进度轮询挂在 startTask **之后**：run 是被同步调起的，在里面拿不到自己的 id。
+  // 通道 = 目标目录（同时可能有多个获取在跑，各论各的）
+  stopPoll = pollTransferProgress(taskId, target);
   // 弹窗刚关，给一句"去哪儿找它"（顶栏沙漏 = 进度与取消入口）
   hooks.onToast(t('repo.get.started', { name: p.name }));
 }

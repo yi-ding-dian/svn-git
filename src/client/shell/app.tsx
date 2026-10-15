@@ -15,7 +15,7 @@ import { Sidebar, type View } from './sidebar.js';
 import { IconOk, IconErr } from '../ui/icons.js';
 import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError, baseName } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { useTasks, startTask, hasRunningTask } from '../shared/tasks.js';
+import { useTasks, startTask, hasRunningTask, pollTransferProgress } from '../shared/tasks.js';
 import { addNotice } from '../shared/notices.js';
 import { launchMagicFlight } from './magic-flight.js';
 import { useLang } from '../shared/use-lang.js';
@@ -320,29 +320,38 @@ export function App() {
   // 完成/失败走「顶部横幅 + 铃铛」（App 的任务完成观察者统一通知）；认证失败仍弹认证引导重试
   const [pushAuth, setPushAuth] = useState<{ type: 'github' | 'server' | 'ssh'; error?: string } | null>(null);
   const pushNow = useCallback(() => {
-    startTask({
+    /** 传输进度轮询的停止函数（startTask 返回 id 之后才挂得上） */
+    let stopPoll: (() => void) | null = null;
+    const taskId = startTask({
       kind: 'push',
       // 任务标题：推送 · {项目名} · {分支}（带项目名——切换项目后也能分清是哪个仓库在推）
       title: t('shell.tasks.pushTitle', { repo: baseName(repo?.root ?? ''), branch: repo?.revOrBranch ?? '' }),
       run: async (signal) => {
-        const r = await post.push(signal);
-        if (r.ok) refresh();
-        // 认证失败 → 弹认证引导（带失败原因）；其余失败只回给任务（横幅/铃铛提示，详情点铃铛看）
-        else if (r.authType) setPushAuth({ type: r.authType, error: r.message });
-        else if (r.code !== 'ABORTED') {
-          // 非认证类失败：可能是"推别人的仓库、没有写权限"→ 查一次权限（带凭据的只读接口）确认后引导 Fork。
-          // 不用正则猜 git 报错文本（措辞不可靠）；仅 canPush===false 才引导，其余原因保持原样只回报错。
-          // ABORTED（用户主动取消）不引导——取消是用户意志，不是"推不上去"
-          try {
-            const perm = await get.githubPermissions();
-            if (perm.ok && perm.isGithub && perm.canPush === false) setModal({ type: 'github-fork' });
-          } catch {
-            /* 权限查询失败不改变原报错路径 */
+        try {
+          const r = await post.push(signal);
+          if (r.ok) refresh();
+          // 认证失败 → 弹认证引导（带失败原因）；其余失败只回给任务（横幅/铃铛提示，详情点铃铛看）
+          else if (r.authType) setPushAuth({ type: r.authType, error: r.message });
+          else if (r.code !== 'ABORTED') {
+            // 非认证类失败：可能是"推别人的仓库、没有写权限"→ 查一次权限（带凭据的只读接口）确认后引导 Fork。
+            // 不用正则猜 git 报错文本（措辞不可靠）；仅 canPush===false 才引导，其余原因保持原样只回报错。
+            // ABORTED（用户主动取消）不引导——取消是用户意志，不是"推不上去"
+            try {
+              const perm = await get.githubPermissions();
+              if (perm.ok && perm.isGithub && perm.canPush === false) setModal({ type: 'github-fork' });
+            } catch {
+              /* 权限查询失败不改变原报错路径 */
+            }
           }
+          return { ok: r.ok, message: r.message, data: r };
+        } finally {
+          stopPoll?.(); // 任务收尾就停轮询
         }
-        return { ok: r.ok, message: r.message, data: r };
       },
     });
+    // 进度轮询挂在 startTask **之后**：run 是被同步调起的，在里面拿不到自己的 id。
+    // 通道固定为 'push'——同一时刻只对一个仓库推送（上面 hasRunningTask 已防重入）
+    stopPoll = pollTransferProgress(taskId, 'push');
   }, [refresh, repo?.root, repo?.revOrBranch, setModal]);
   // 推送入口：弹出「确认推送」窗口（未推送提交列表 + 推送条件），确认后执行
   const doPush = useCallback(() => {
@@ -691,27 +700,35 @@ export function App() {
       // 飞行线：起点用当前鼠标位置——更新没有确认窗，入口各异（顶栏按钮 / 右键菜单 /
       // 各弹窗的「先更新」按钮），点哪飞哪；推送/检出仍用各自确认按钮的 rect
       launchMagicFlight({ x: mouseRef.current.x, y: mouseRef.current.y });
-      startTask({
+      /** 传输进度轮询的停止函数（startTask 返回 id 之后才挂得上） */
+      let stopPoll: (() => void) | null = null;
+      const taskId = startTask({
         kind: 'update',
         // 任务标题：{repo} · {branch} · 更新（右键子目录更新时追加目录——同检出标题的拼接先例）
         title: `${t('shell.tasks.updateTitle', { repo: baseName(repo?.root ?? ''), branch: repo?.revOrBranch ?? '' })}${dir ? ` · ${dir}` : ''}`,
         run: async (signal) => {
-          const r = await post.update(dir || undefined, signal);
-          if (r.ok) {
-            refresh();
-            checkRemote(); // 更新完成立即刷新远程提示条（否则要等下一轮 2 分钟轮询）
-            get.info().then((ri) => setInfo(ri)).catch(() => {}); // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]）
+          try {
+            const r = await post.update(dir || undefined, signal);
+            if (r.ok) {
+              refresh();
+              checkRemote(); // 更新完成立即刷新远程提示条（否则要等下一轮 2 分钟轮询）
+              get.info().then((ri) => setInfo(ri)).catch(() => {}); // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]）
+            }
+            if (r.authError) setModal({ type: 'login' });
+            // 结果一律走铃铛通知（成功/失败都不自动弹窗——用户定稿）；svn 警告（外部定义失败等）
+            // 拼进通知消息，通知里别丢掉
+            const msg = r.warnings?.length ? `${r.message}\n⚠ ${r.warnings.join('\n⚠ ')}` : r.message;
+            // data = 完整更新详情（kind 判别）→ 完成通知携带它，铃铛面板里点开「更新结果」窗
+            // （文件清单/警告；dir 空由组件兜底显示「（仓库根）」）
+            const detail = { kind: 'update' as const, dir, ok: r.ok, message: r.message, files: r.files, warnings: r.warnings };
+            return { ok: r.ok, message: msg, data: detail };
+          } finally {
+            stopPoll?.(); // 任务收尾就停轮询
           }
-          if (r.authError) setModal({ type: 'login' });
-          // 结果一律走铃铛通知（成功/失败都不自动弹窗——用户定稿）；svn 警告（外部定义失败等）
-          // 拼进通知消息，通知里别丢掉
-          const msg = r.warnings?.length ? `${r.message}\n⚠ ${r.warnings.join('\n⚠ ')}` : r.message;
-          // data = 完整更新详情（kind 判别）→ 完成通知携带它，铃铛面板里点开「更新结果」窗
-          // （文件清单/警告；dir 空由组件兜底显示「（仓库根）」）
-          const detail = { kind: 'update' as const, dir, ok: r.ok, message: r.message, files: r.files, warnings: r.warnings };
-          return { ok: r.ok, message: msg, data: detail };
         },
       });
+      // 进度轮询（git 拉取才有数据；svn update 那侧后端一直 ok=false，面板自然不显示进度条）
+      stopPoll = pollTransferProgress(taskId, 'pull');
     },
     [refresh, checkRemote, showToast, repo?.root, repo?.revOrBranch]
   );

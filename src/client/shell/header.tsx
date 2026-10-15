@@ -1347,9 +1347,13 @@ function TaskProgress(props: { p: TaskProgressInfo }) {
     counting: 'shell.tasks.phaseCounting',
     compressing: 'shell.tasks.phaseCompressing',
     receiving: 'shell.tasks.phaseReceiving',
+    uploading: 'shell.tasks.phaseUploading',
+    waiting: 'shell.tasks.phaseWaiting',
     resolving: 'shell.tasks.phaseResolving',
     checkout: 'shell.tasks.phaseCheckout',
   }[p.phase] as I18nKey;
+  /** 上传类阶段说"已上传"，其余说"已下载"（同一串字节，方向不同） */
+  const verb = p.phase === 'uploading' || p.phase === 'waiting' ? 'shell.tasks.uploaded' : 'shell.tasks.downloaded';
   return (
     <>
       {pct !== null && (
@@ -1357,13 +1361,15 @@ function TaskProgress(props: { p: TaskProgressInfo }) {
           <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', transition: 'width .3s' }} />
         </div>
       )}
-      <div className="dim small">
-        {pct !== null ? `${pct}% · ` : ''}
-        {p.total > 0
-          ? t('shell.tasks.progressOf', { done: size(p.bytes), total: size(p.total) })
-          : t('shell.tasks.downloaded', { done: size(p.bytes) })}
-        {p.speed > 0 ? ` · ${t('shell.tasks.progressSpeed', { speed })}` : ''}
-      </div>
+      {/* 字节/速度行：**还没拿到数值就不显示**——git 在"统计/压缩"阶段不报字节，推送快时
+          中间几行也不带，硬显示就是"已上传 0.0 MB"这种看着像卡住的东西 */}
+      {(p.bytes > 0 || p.speed > 0) && (
+        <div className="dim small">
+          {pct !== null ? `${pct}% · ` : ''}
+          {p.total > 0 ? t('shell.tasks.progressOf', { done: size(p.bytes), total: size(p.total) }) : t(verb, { done: size(p.bytes) })}
+          {p.speed > 0 ? ` · ${t('shell.tasks.progressSpeed', { speed })}` : ''}
+        </div>
+      )}
       <div className="dim small">
         {t(phaseKey)}
         {etaSec >= 60 ? ` · ${t('shell.tasks.etaMin', { n: Math.ceil(etaSec / 60) })}` : etaSec >= 0 ? ` · ${t('shell.tasks.etaSec')}` : ''}

@@ -27,15 +27,19 @@ export const shell = {
   'shell.header.githubPrivateNote': ' (private)',
   'shell.header.githubTipClick': ' · click for repository info',
 
-  // ---- 顶栏：任务面板的获取进度（阶段文案如实反映 git 在干什么；"检出文件"那段 git 完全静默）----
-  'shell.tasks.phaseCounting': 'Counting objects on the server…',
-  'shell.tasks.phaseCompressing': 'Compressing on the server…',
+  // ---- 顶栏：任务面板的传输进度（阶段文案如实反映 git 在干什么；"检出文件""等待服务器"两段 git 完全静默）----
+  // 措辞中性：同一行"统计对象"在推送时是本地、在克隆时是远端，写死"服务端"就是错的
+  'shell.tasks.phaseCounting': 'Counting objects…',
+  'shell.tasks.phaseCompressing': 'Compressing objects…',
   'shell.tasks.phaseReceiving': 'Downloading…',
+  'shell.tasks.phaseUploading': 'Uploading…',
+  'shell.tasks.phaseWaiting': 'Waiting for the server…',
   'shell.tasks.phaseResolving': 'Resolving deltas…',
   'shell.tasks.phaseCheckout': 'Checking out files…',
   'shell.tasks.progressOf': '{done} / {total}',
   'shell.tasks.progressSpeed': '{speed}/s',
   'shell.tasks.downloaded': 'Downloaded {done}',
+  'shell.tasks.uploaded': 'Uploaded {done}',
   'shell.tasks.etaMin': 'about {n} min left',
   'shell.tasks.etaSec': 'less than a minute left',
 
