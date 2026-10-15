@@ -57,6 +57,10 @@ export function CheckoutDialog(props: {
   /** 每秒重渲（“已用 n 秒”/探测状态） */
   const [, setTick] = useState(0);
   const [slowNet, setSlowNet] = useState(false);
+  /** 选择性检出：该 URL 下的一级子目录（null=加载中；[]=没有子目录，区块不显示）；dirsFail=列表拉取失败 */
+  const [subDirs, setSubDirs] = useState<string[] | null>(null);
+  const [dirsFail, setDirsFail] = useState(false);
+  const [checkedDirs, setCheckedDirs] = useState<Set<string>>(() => new Set());
 
   // 默认所在目录 = home（与「打开项目」默认一致）；顺带查 SVN 身份（标题显示用：
   // 工具配置 + 系统凭据缓存——裸跑时 svn 实际用的就是缓存身份）
@@ -76,6 +80,14 @@ export function CheckoutDialog(props: {
       .catch(() => {
         /* 拿不到身份按匿名显示 */
       });
+    // 选择性检出：拉该 URL 的一级子目录清单（失败只提示、不影响完整检出）
+    get
+      .repoList(props.url)
+      .then((r) => {
+        if (r.ok && r.entries) setSubDirs(r.entries.filter((e) => e.isDir && e.name !== '..').map((e) => e.name));
+        else setDirsFail(true);
+      })
+      .catch(() => setDirsFail(true));
   }, [props.url]);
 
   const bgTasks = useTasks();
@@ -144,7 +156,7 @@ export function CheckoutDialog(props: {
       // 任务标题：检出到本地 · {name}
       title: `${t('repo.co.title')} · ${name.trim()}`,
       run: async (signal) => {
-        const r = await post.repoCheckout(props.url, dir.trim(), name.trim(), cred, signal);
+        const r = await post.repoCheckout(props.url, dir.trim(), name.trim(), cred, signal, [...checkedDirs]);
         // authError 也算"完成但失败"（ok=false）——细节（user）随 data 回给弹窗渲染凭据块
         return { ok: r.ok, message: r.message, data: r };
       },
@@ -288,6 +300,42 @@ export function CheckoutDialog(props: {
               }}
             />
           </FormRow>
+          {/* 选择性检出（SVN 深度检出）：勾选后只检出勾选的子目录，后续更新也只更新它们 */}
+          {subDirs === null && !dirsFail && (
+            // 正在获取目录列表…
+            <div className="dim small" style={{ marginBottom: 10 }}>{t('repo.co.sparseLoading')}</div>
+          )}
+          {dirsFail && (
+            // 目录列表获取失败——不影响完整检出
+            <div className="dim small" style={{ marginBottom: 10 }}>{t('repo.co.sparseLoadFail')}</div>
+          )}
+          {subDirs && subDirs.length > 0 && (
+            <FormRow label={t('repo.co.sparseTitle')}>
+              {/* 不勾选 = 完整检出；勾选后只检出这些目录（另含根目录文件），后续更新也只更新它们 */}
+              <div className="dim small" style={{ marginBottom: 6 }}>{t('repo.co.sparseHint')}</div>
+              <div style={{ maxHeight: 140, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px' }}>
+                {subDirs.map((d) => (
+                  // display:flex 必须 inline：.form-row label 的 display:block 会压过 .row
+                  <label key={d} className="row" style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', marginBottom: 0, padding: '2px 0' }}>
+                    <input
+                      type="checkbox"
+                      disabled={running}
+                      checked={checkedDirs.has(d)}
+                      onChange={(e) =>
+                        setCheckedDirs((s) => {
+                          const n = new Set(s);
+                          if (e.target.checked) n.add(d);
+                          else n.delete(d);
+                          return n;
+                        })
+                      }
+                    />
+                    <span className="small mono">📁 {d}</span>
+                  </label>
+                ))}
+              </div>
+            </FormRow>
+          )}
         </>
       )}
       {running && (

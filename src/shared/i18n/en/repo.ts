@@ -118,6 +118,11 @@ export const repo = {
   'repo.co.credUser': 'Username',
   'repo.co.credPass': 'Password',
   'repo.co.credHint': 'Used only for this checkout; not saved',
+  // ---- Selective checkout (SVN depth checkout; checked dirs only, later updates touch only them too) ----
+  'repo.co.sparseTitle': 'Selective Checkout (optional)',
+  'repo.co.sparseHint': 'Nothing checked = full checkout; checked = only these directories are checked out (plus root files), and future updates only touch them',
+  'repo.co.sparseLoading': 'Loading directory list…',
+  'repo.co.sparseLoadFail': 'Failed to load the directory list — full checkout still works',
   'repo.co.retryWithCred': 'Retry with new account',
   'repo.co.needCred': 'Please enter the username and password',
   'repo.co.minTip': 'Minimize to background (checkout keeps running)',

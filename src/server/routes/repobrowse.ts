@@ -424,19 +424,61 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const cleanup = () => {
       if (!existedBefore) cleanCoTarget(target);
     };
-    const args = ['checkout', '-q', '--non-interactive'];
-    if (cred) args.push('--username', cred.username, '--password-from-stdin');
-    if (tempCred) args.push('--no-auth-cache');
-    if (cfg.svn.trustServerCert) args.push('--trust-server-cert');
-    args.push(targetUrl, target);
+    // 选择性检出（SVN 深度检出）：前端可勾选该目录的一级子目录——勾了则只检出勾选项，
+    // 未勾选的连空壳都不留（--set-depth exclude），且后续 update 也只更新勾选的（SVN 深度机制
+    // 的固有行为——"其他目录不检测更新"由此天然成立）。空/缺省 = 完整检出（原行为）。
+    // 目录名来自前端：只放行"简单目录名"（防路径穿越）
+    const include = Array.isArray(body.include)
+      ? (body.include as unknown[]).map(String).filter((s) => s && s !== '.' && s !== '..' && !/[/\\]/.test(s))
+      : [];
+    /** 每条 svn 命令的公共网络参数（凭据/证书选项与既有检出完全一致）。
+     *  -q 由各命令自加：svn list 不接受 -q（实测），不能混进公共组 */
+    const svnNet = () => {
+      const a = ['--non-interactive'];
+      if (cred) a.push('--username', cred.username, '--password-from-stdin');
+      if (tempCred) a.push('--no-auth-cache');
+      if (cfg.svn.trustServerCert) a.push('--trust-server-cert');
+      return a;
+    };
+    const runOpts = {
+      cwd: os.tmpdir(),
+      stdinData: cred ? cred.password + '\n' : undefined,
+      timeoutMs: 600_000, // 与「获取仓库」一致：大仓库首次检出常常要几分钟
+      signal: ac.signal,
+    };
     let r: RunResult;
     try {
-      r = await run(await resolveSvnBin(), args, {
-        cwd: os.tmpdir(),
-        stdinData: cred ? cred.password + '\n' : undefined,
-        timeoutMs: 600_000, // 与「获取仓库」一致：大仓库首次检出常常要几分钟
-        signal: ac.signal,
-      });
+      const bin = await resolveSvnBin();
+      if (include.length === 0) {
+        // 完整检出（原行为，单条命令）
+        r = await run(bin, ['checkout', '-q', ...svnNet(), targetUrl, target], runOpts);
+      } else {
+        // 稀疏检出四步：空深度检出 → 根文件 → 一级子目录出空壳（immediates）→
+        // 勾选目录全量加深（infinity）、未勾选目录 exclude（空壳也去掉，后续 update 不拉）。
+        // 任一步失败即整体失败（走既有 cleanup 清半截目录）
+        r = await run(bin, ['checkout', '-q', '--depth', 'empty', ...svnNet(), targetUrl, target], runOpts);
+        if (r.code === 0) r = await run(bin, ['update', '-q', '--depth', 'files', ...svnNet(), target], runOpts);
+        if (r.code === 0) r = await run(bin, ['update', '-q', '--set-depth', 'immediates', ...svnNet(), target], runOpts);
+        for (let i = 0; r.code === 0 && i < include.length; i++) {
+          r = await run(bin, ['update', '-q', '--set-depth', 'infinity', ...svnNet(), path.join(target, include[i]!)], runOpts);
+        }
+        if (r.code === 0) {
+          // 未勾选的一级目录：从远程列全集（svn list 输出里目录带尾斜杠）→ 逐个 exclude
+          const ls = await run(bin, [...svnNet(), 'list', targetUrl], { ...runOpts, timeoutMs: 60_000 });
+          if (ls.code === 0) {
+            const allDirs = ls.stdout
+              .split('\n')
+              .map((s) => s.trim())
+              .filter((s) => s.endsWith('/'))
+              .map((s) => s.slice(0, -1));
+            for (const d of allDirs) {
+              if (include.includes(d)) continue;
+              r = await run(bin, ['update', '-q', '--set-depth', 'exclude', ...svnNet(), path.join(target, d)], runOpts);
+              if (r.code !== 0) break;
+            }
+          }
+        }
+      }
     } catch (e) {
       res.off('close', onClose);
       cleanup();

@@ -529,17 +529,20 @@ export const post = {
   /** 清除系统凭据缓存中匹配该 URL 的条目（退出登录/切换账号用；**前端必须二次确认**——影响其他 svn 客户端） */
   svnForgetCache: (url: string) => api<{ ok: boolean; cleared: string[] }>('/api/svn-forget-cache', json({ url })),
   /** 仓库浏览右键「检出到本地」：URL 直连检出工作副本。
-   *  cred = 本次临时账号密码（认证失败后重试用；**只用于本次检出、后端不落盘**，缺省用已存配置）。 */
+   *  cred = 本次临时账号密码（认证失败后重试用；**只用于本次检出、后端不落盘**，缺省用已存配置）。
+   *  include = 选择性检出（SVN 深度检出）：只检出这些一级子目录（另含根目录文件），后续更新也只更新它们；
+   *  空/缺省 = 完整检出（原行为）。 */
   repoCheckout: (
     url: string,
     dir: string,
     name: string,
     cred?: { username: string; password: string },
     signal?: AbortSignal,
+    include?: string[],
   ) =>
     api<{ ok: boolean; message: string; repoDir?: string; authError?: boolean; user?: string }>(
       '/api/repo-checkout',
-      json({ url, dir, name, username: cred?.username, password: cred?.password }, signal),
+      json({ url, dir, name, username: cred?.username, password: cred?.password, include }, signal),
     ),
   repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true, signal?: AbortSignal) =>
     api<VcsResult & { repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' }>(

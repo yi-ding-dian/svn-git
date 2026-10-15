@@ -123,6 +123,11 @@ export const repo = {
   'repo.co.credUser': '用户名',
   'repo.co.credPass': '密码',
   'repo.co.credHint': '仅用于本次检出，不会保存',
+  // ---- 选择性检出（SVN 深度检出；勾选后只检出勾选的子目录，后续更新也只更新它们）----
+  'repo.co.sparseTitle': '选择性检出（可选）',
+  'repo.co.sparseHint': '不勾选 = 完整检出；勾选后只检出这些目录（另含根目录文件），后续更新也只更新它们',
+  'repo.co.sparseLoading': '正在获取目录列表…',
+  'repo.co.sparseLoadFail': '目录列表获取失败——不影响完整检出',
   'repo.co.retryWithCred': '用新账号重试',
   'repo.co.needCred': '请填写用户名和密码',
   'repo.co.minTip': '最小化到后台（检出继续进行）',
