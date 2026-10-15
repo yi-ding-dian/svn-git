@@ -303,7 +303,7 @@ export function ResizableModal(props: {
       {EDGES.map((ed) => (
         <div
           key={ed.dir}
-          className={`mr-edge${dragDir === ed.dir ? ' active' : ''}`}
+          className={`mr-edge mr-edge-${ed.dir}${dragDir === ed.dir ? ' active' : ''}`}
           style={{ ...ed.style, cursor: ed.cursor }}
           onMouseDown={startDrag(ed.dir)}
         />
