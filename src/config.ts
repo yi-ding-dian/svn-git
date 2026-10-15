@@ -21,7 +21,8 @@ export interface AppConfig {
   lang: Lang;
 }
 
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'svngit');
+/** 配置目录（inflight.ts 的获取登记文件也放这里，同样属于「本机工具状态」） */
+export const CONFIG_DIR = path.join(os.homedir(), '.config', 'svngit');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
 const DEFAULTS: AppConfig = {

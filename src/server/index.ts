@@ -7,6 +7,7 @@ import { detectRepo } from '../vcs/detect.js';
 import { createAskPass, authTypeOf } from '../vcs/git.js';
 import { loadConfig } from '../config.js';
 import { run } from '../vcs/exec.js';
+import { markInflight, clearInflight } from '../inflight.js';
 import { t } from '../shared/i18n/index.js';
 import { isSafeOrigin, sendJson, readBody, isAuthError, type Ctx } from './routes/util.js';
 import { handle as handleConflicts } from './routes/conflicts.js';
@@ -199,6 +200,8 @@ export function startServer(): Promise<ServerHandle> {
               if (targetExistedBefore) return; // 原本就在的东西，一个字节都不许动
               removeLeftoverTarget(target);
             };
+            // 登记"正在克隆到哪儿"：app 被强杀时靠它在下一次启动收尾（见 inflight.ts）
+            markInflight(target);
             let r = await run('git', ['clone', url, target], { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal });
             let authFail = isAuthFail(r);
             const gitCred = loadConfig().git;
@@ -211,6 +214,7 @@ export function startServer(): Promise<ServerHandle> {
               authFail = isAuthFail(r);
             }
             res.off('close', onClose);
+            clearInflight(target); // 克隆跑完了（成功/失败/取消都算）：撤掉登记
             // ⚠ aborted（用户取消/断开）与 timedOut（自己到 10 分钟上限）是两个字段，都要判 ——
             // 只判 aborted 的话，超时会被当成"克隆失败"、把 git 的半截 stderr（"正克隆到…"）当错误抛给用户
             if (r.aborted || r.timedOut) {
@@ -252,8 +256,11 @@ export function startServer(): Promise<ServerHandle> {
             const onClose = () => ac.abort();
             res.on('close', onClose);
             const targetExistedBefore = fs.existsSync(target);
+            // 登记"正在检出到哪儿"（与 git 克隆同一套：强杀后下次启动收尾）
+            markInflight(target);
             const r = await run('svn', ['checkout', '-q', url, target], { timeoutMs: 600_000, signal: ac.signal });
             res.off('close', onClose);
+            clearInflight(target); // 检出跑完了（成功/失败/取消都算）：撤掉登记
             if (r.aborted || r.timedOut) {
               // 只清"这次刚建出来的"：原本就存在的目录一个字节都不许动（同 git 克隆的守卫）
               if (!targetExistedBefore) removeLeftoverTarget(target);

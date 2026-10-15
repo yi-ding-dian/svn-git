@@ -1,6 +1,35 @@
 /** 子进程执行封装：支持 stdin 传参（svn --password-from-stdin）、超时、输出上限 */
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { decodeMixedText } from '../shared/text.js';
+
+/** 还活着的子进程（run / runStream 共用）。
+ *  **为什么留着这个集合**：app 退出时要把它们收掉——否则会留下孤儿：git/svn 还在往目标目录写，
+ *  那个目录就被占住删不掉（用户实报：关掉 app 后 D:\gitProjects\Ai-desktop-pet 删不动）。
+ *  进程自然退出时从集合里摘掉，正常状态下它是空的。 */
+const liveChildren = new Set<ChildProcess>();
+
+/** 登记子进程，退出即摘除（run / runStream 的 spawn 之后各调一次） */
+function trackChild(child: ChildProcess): void {
+  liveChildren.add(child);
+  const drop = () => liveChildren.delete(child);
+  child.once('exit', drop);
+  child.once('error', drop);
+}
+
+/** 收掉所有还活着的子进程（app 退出前调用，见 main/index.ts 的 exit/SIGINT 钩子）。
+ *  与 killTree 同一套杀法：POSIX 杀进程组（连孙进程），Windows 只能单杀（无进程组语义）。
+ *  异常退出（强杀/崩溃）走不到这里 —— 那条路由 inflight.ts 的 recoverInflight 在下次启动时兜底。 */
+export function killAllChildren(): void {
+  for (const child of liveChildren) {
+    try {
+      if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+      else child.kill('SIGKILL');
+    } catch {
+      /* ESRCH（已退出）等：忽略 */
+    }
+  }
+  liveChildren.clear();
+}
 
 export interface RunOptions {
   cwd?: string;
@@ -60,6 +89,7 @@ export function runStream(cmd: string, args: string[], opts: StreamRunOptions): 
       detached: process.platform !== 'win32',
     };
     const child = spawn(cmd, args, spawnOpts);
+    trackChild(child);
 
     const killTree = () => {
       try {
@@ -173,6 +203,7 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     };
     // shell 模式见 RunOptions.shell：cmd 是完整命令行，args 忽略
     const child = opts.shell ? spawn(cmd, { ...spawnOpts, shell: true }) : spawn(cmd, args, spawnOpts);
+    trackChild(child);
 
     /** 杀整个进程组（detached 起的子进程是组长，负 pid = 组）；已退出/无 pid 时静默 */
     const killTree = () => {

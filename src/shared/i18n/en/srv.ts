@@ -205,5 +205,6 @@ export const srv = {
   'srv.githubMyReposNoAuth': 'No GitHub credential — enter the username and token in Git Info & Config first',
   'srv.githubMyReposBadToken': 'GitHub token invalid or expired — please enter a new one',
   'srv.githubMyReposFailed': 'Failed to list repositories: {msg}',
+  'srv.orphanRecovered': 'Cleaned up a leftover fetch process and half-downloaded directory from the previous run: {path}',
   'srv.badUrl': 'Only http/https links are allowed',
 };

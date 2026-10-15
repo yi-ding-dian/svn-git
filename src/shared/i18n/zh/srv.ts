@@ -220,5 +220,6 @@ export const srv = {
   'srv.githubMyReposNoAuth': '未配置 GitHub 凭据——请先在「Git 信息与配置」里填写用户名和 Token',
   'srv.githubMyReposBadToken': 'GitHub Token 无效或已过期，请重新填写',
   'srv.githubMyReposFailed': '获取仓库列表失败：{msg}',
+  'srv.orphanRecovered': '已清理上次退出遗留的获取进程与半截目录：{path}',
   'srv.badUrl': '仅支持 http/https 链接',
 } as const;

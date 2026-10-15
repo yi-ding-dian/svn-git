@@ -6,6 +6,8 @@ import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { createRequire } from 'node:module';
 import { startServer, setPickDirHandler } from '../server/index.js';
+import { killAllChildren } from '../vcs/exec.js';
+import { recoverInflight } from '../inflight.js';
 import { detectRepo } from '../vcs/detect.js';
 import { platform } from '../platform/index.js';
 import { dedupeHistory } from '../server/routes/recent.js';
@@ -13,6 +15,14 @@ import { loadConfig } from '../config.js';
 import { t, setLang } from '../shared/i18n/index.js';
 
 const require = createRequire(import.meta.url);
+
+// 退出前收掉还在跑的 git / svn 子进程：Node 退出**不会**连带杀子进程，孤儿会一直往目标目录写，
+// 那个目录就被占住删不掉（用户实报）。强杀 / 崩溃走不到这里——那条路由 inflight.ts 的
+// recoverInflight 在下次启动兜底（先杀残留进程、再删半截目录）。
+process.on('exit', killAllChildren);
+// 收到信号先收子进程再退（默认行为直接终止，'exit' 钩子不会跑）
+process.on('SIGINT', () => process.exit(130));
+process.on('SIGTERM', () => process.exit(0));
 
 /** 启动目录（命令行参数或环境变量） */
 const START_DIR = process.env.SVNGIT_DIR ?? process.cwd();
@@ -163,6 +173,9 @@ async function boot() {
       console.error(t('main.pickDirFail'), e);
     }
   }
+
+  // 收拾上次异常退出留下的孤儿获取（残留进程 + 半截目录）；没有登记时是一次空读，不拖慢启动
+  await recoverInflight();
 
   const handle = await startServer();
   console.log('');
