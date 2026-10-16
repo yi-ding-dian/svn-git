@@ -18,8 +18,9 @@ const EditHlLine = React.memo(function EditHlLine({ line, lang }: { line: string
 export interface InlineEditorHandle {
   /** 保存（调用方按钮触发）：行尾还原 → 写回 → onSaved / onError */
   save: () => void;
-  /** 光标定位到指定行（1-based）+ 滚动居中（diff 编辑中点左栏差异行的联动用） */
-  gotoLine: (line: number) => void;
+  /** 光标定位到指定行（1-based）+ 滚动居中；
+   *  flashRange 给了就**整段行脉冲高亮**（diff 里点左栏/刻度指认改动块用——块级、像非编辑态） */
+  gotoLine: (line: number, flashRange?: { from: number; to: number }) => void;
 }
 
 export const InlineEditor = forwardRef<
@@ -61,8 +62,9 @@ export const InlineEditor = forwardRef<
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在脏状态翻转时通知
   }, [dirty]);
   /** 光标定位到指定行（1-based）+ 滚动居中。挂载时的 jumpLine 与编辑中「点左栏差异行」
-   *  的联动共用；读 ta.value（实时草稿，编辑中内容可能已变） */
-  const gotoLine = (line: number) => {
+   *  的联动共用；读 ta.value（实时草稿，编辑中内容可能已变）。
+   *  flashRange 给了就**整段行脉冲**（高亮层对应行加动画类——textarea 背景透明，底色可见） */
+  const gotoLine = (line: number, flashRange?: { from: number; to: number }) => {
     const ta = taRef.current;
     if (!ta || line <= 0) return;
     const lines = ta.value.replace(/\r\n/g, '\n').split('\n');
@@ -71,6 +73,20 @@ export const InlineEditor = forwardRef<
     ta.setSelectionRange(lineStart, lineStart);
     const lh = parseFloat(getComputedStyle(ta).lineHeight) || 21;
     ta.scrollTop = Math.max(0, (line - 1) * lh - ta.clientHeight / 2 + lh);
+    if (flashRange) {
+      // 整段行脉冲（块级）：先摘再挂 + 强制 reflow——连点同一块也重播（同 diff 脉冲的跨帧方案）
+      const hl = hlRef.current;
+      if (hl) {
+        for (let n = flashRange.from; n <= flashRange.to; n++) {
+          const el = hl.children[n - 1] as HTMLElement | undefined;
+          if (!el) continue;
+          el.classList.remove('edit-line-flash');
+          void el.offsetWidth;
+          el.classList.add('edit-line-flash');
+          el.addEventListener('animationend', () => el.classList.remove('edit-line-flash'), { once: true });
+        }
+      }
+    }
     syncScroll();
     ta.focus();
   };

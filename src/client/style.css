@@ -867,6 +867,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   0%, 100% { background: rgba(88, 166, 255, .16); box-shadow: inset 3px 0 0 var(--accent); }
   50% { background: rgba(88, 166, 255, .32); box-shadow: inset 3px 0 0 var(--accent); }
 }
+/* 编辑器中"点左栏/刻度指认改动行"的脉冲（加在高亮层的对应行上；textarea 背景透明所以底色可见）——
+   节奏与 .sb-target 一致（0.75s × 3 次） */
+.edit-line-flash { animation: sb-target-pulse 0.75s ease-in-out 3; }
 
 /* ---------- 并排对比 ---------- */
 .sb-resizer {

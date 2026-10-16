@@ -356,10 +356,14 @@ export function DiffView(props: Props) {
     // 落到块内第一个占位行（leftPhRefs 按块号存）——否则「下一个/左栏刻度」点了左栏纹丝不动
     const leftEl = b.left !== Number.MAX_SAFE_INTEGER ? leftRefs.current.get(b.left) : leftPhRefs.current.get(b.id);
     leftEl?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    // 编辑态：右栏是编辑器（没有行元素，rightRefs 定位不到）——把光标定位到块的工作区行
-    // （与 jumpRight 的编辑态分支同源：用 b.right；纯删除块无对应行，gotoLine(0) 自行忽略）
+    // 编辑态：右栏是编辑器（没有行元素，rightRefs 定位不到）——把光标定位到块的工作区行，
+    // 并让**整块的行**脉冲高亮（flashRange=块的工作区行范围——像非编辑态的块级 sb-target；
+    // 纯删除块无对应行，range/行号缺省时 gotoLine 自行忽略）
     if (editingRef.current) {
-      editorRef.current?.gotoLine(b.right > 0 && b.right < Number.MAX_SAFE_INTEGER ? b.right : 0);
+      editorRef.current?.gotoLine(
+        b.right > 0 && b.right < Number.MAX_SAFE_INTEGER ? b.right : 0,
+        blockRightRangeRef.current.get(b.id),
+      );
       return;
     }
     // 纯删除块的 b.right 是 MAX_SAFE_INTEGER 哨兵（块内无 add 行），get 不到元素 → 右栏原本纹丝不动
@@ -625,6 +629,19 @@ export function DiffView(props: Props) {
     }
     return m;
   }, [diffLines]);
+  /** 每个差异块在**工作区**的行范围（min..max add 行；块内 add 行连续）——编辑态"整块脉冲高亮"用 */
+  const blockRightRange = useMemo(() => {
+    const m = new Map<number, { from: number; to: number }>();
+    for (const l of diffLines) {
+      if (l.type !== 'add' || l.block < 0) continue;
+      const cur = m.get(l.block);
+      m.set(l.block, cur ? { from: Math.min(cur.from, l.rightNo), to: Math.max(cur.to, l.rightNo) } : { from: l.rightNo, to: l.rightNo });
+    }
+    return m;
+  }, [diffLines]);
+  /** goBlock 是缓存闭包，读它要走镜像 ref（同 blocksRef 模式） */
+  const blockRightRangeRef = useRef(blockRightRange);
+  blockRightRangeRef.current = blockRightRange;
 
   /** 双栏同步滚动：绑在两侧 pane 的 onScroll。两栏行高一致（占位行设计），
    *  高度相近时直接等量同步；差异大时按变更块对齐（否则比例同步）；syncLock 防循环。
@@ -713,7 +730,8 @@ export function DiffView(props: Props) {
       // 纯删除块（right 是哨兵）不定位（工作区没有该内容，光标留在原处）
       const b = blocksRef.current[blocksRef.current.findIndex((x) => x.id === block)];
       const line = b && b.right > 0 && b.right < Number.MAX_SAFE_INTEGER ? b.right : 0;
-      editorRef.current?.gotoLine(line);
+      // 整块脉冲（块的工作区行范围）——编辑态点左栏"指认改动处"，与右栏行高亮同效果
+      editorRef.current?.gotoLine(line, blockRightRange.get(block));
       return;
     }
     scrollToLine(rightPane.current, rightRefs.current.get(no));
