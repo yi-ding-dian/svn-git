@@ -299,7 +299,8 @@ export const win32: Platform = {
   },
 
   openUrl(url) {
-    const p = spawn('cmd', ['/c', 'start', '', url], { stdio: 'ignore', detached: true });
+    // windowsHide：后台常驻模式没有控制台，不隐藏就会先闪一个黑窗再开浏览器
+    const p = spawn('cmd', ['/c', 'start', '', url], { stdio: 'ignore', detached: true, windowsHide: true });
     // [svngit] 打开浏览器失败({cmd}): {msg}
     p.on('error', (e) => console.error(t('plat.openUrlFail', { cmd: 'cmd', msg: e.message })));
     p.unref();
@@ -387,7 +388,8 @@ export const win32: Platform = {
       }
       // 开始安装: {pkgs}…
       send({ line: t('plat.installStart', { pkgs: cur.name }) });
-      const child = spawn('winget', cur.args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      // windowsHide：同上（输出已由管道接进来打给用户，窗口只会挡路）
+      const child = spawn('winget', cur.args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       child.stdout.on('data', (d: Buffer) => send({ line: d.toString() }));
       child.stderr.on('data', (d: Buffer) => send({ line: d.toString() }));
       child.on('error', (e) => {

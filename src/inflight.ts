@@ -91,7 +91,8 @@ function pidsFor(target: string): Promise<number[]> {
       // 用 .Contains（字面匹配）而不是 -like：路径里的 [ ] * ? 在 -like 里是通配符
       const esc = target.replace(/'/g, "''");
       const script = `Get-CimInstance Win32_Process -Filter "name='git.exe' or name='svn.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('${esc}') } | ForEach-Object { $_.ProcessId }`;
-      execFile('powershell', ['-NoProfile', '-Command', script], { timeout: 15_000 }, (err, stdout) => resolve(err ? [] : toPids(String(stdout))));
+      // windowsHide：后台常驻模式没有控制台，不隐藏就会弹黑窗（同 vcs/exec.ts 的说明）
+      execFile('powershell', ['-NoProfile', '-Command', script], { timeout: 15_000, windowsHide: true }, (err, stdout) => resolve(err ? [] : toPids(String(stdout))));
       return;
     }
     // POSIX：pgrep -f 按整条命令行匹配；目标是绝对路径，够具体
@@ -104,7 +105,7 @@ async function killFor(target: string): Promise<number> {
   for (const pid of pids) {
     try {
       // Windows：taskkill /T 连孙进程一起收（git 克隆会派生 remote-https / index-pack）
-      if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+      if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
       else process.kill(pid, 'SIGKILL');
     } catch {
       /* 已退出等：忽略 */

@@ -90,6 +90,11 @@ export function runStream(cmd: string, args: string[], opts: StreamRunOptions): 
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
       // 独立进程组：超时/取消/早停都要能连孙进程一起杀（与 run 一致）
       detached: process.platform !== 'win32',
+      // **别让子进程弹黑窗**：后台常驻模式（-d / 打包版）的宿主进程没有控制台，
+      // 它起的每个控制台程序（git.exe，尤其 cmd 目录下那个 git.cmd——批处理必须新建控制台）
+      // 都会各开一个黑窗口，一屏接一屏（用户实报"一直弹这个窗，很多个"）。
+      // 有控制台的宿主（终端里跑）本来就不弹，所以以前没暴露。
+      windowsHide: true,
     };
     const child = spawn(cmd, args, spawnOpts);
     trackChild(child);
@@ -203,6 +208,8 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       // git-remote-https helper，只杀直接子进程会留下孤儿 helper 挂到 TCP 超时。
       // Windows 无进程组语义，保持原行为（child.kill 单杀）
       detached: process.platform !== 'win32',
+      // 别让子进程弹黑窗（同 runStream 的说明：后台常驻模式没有控制台，子进程会各开一个）
+      windowsHide: true,
     };
     // shell 模式见 RunOptions.shell：cmd 是完整命令行，args 忽略
     const child = opts.shell ? spawn(cmd, { ...spawnOpts, shell: true }) : spawn(cmd, args, spawnOpts);
