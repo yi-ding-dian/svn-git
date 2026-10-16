@@ -152,7 +152,7 @@ export function App() {
       notifiedTaskIdsRef.current.add(tk.id);
       if (tk.status === 'cancelled') continue;
       // 铃铛留档（携带任务详情——更新结果可在面板里点开）+ 气泡由 header 按最新通知弹出
-      addNotice({ title: tk.title, message: tk.message ?? '', err: tk.status === 'error', detail: tk.data });
+      addNotice({ title: tk.title, message: tk.message ?? '', err: tk.status === 'error', detail: tk.data, taskId: tk.id });
     }
   }, [bgTasks]);
 

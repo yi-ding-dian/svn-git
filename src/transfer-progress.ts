@@ -34,6 +34,8 @@ export interface TransferProgress {
   speed: number;
   /** 总字节；0 = 未知（推送恒为 0；获取时 GitHub API 查不到也是 0）→ 界面不显示百分比 */
   total: number;
+  /** 已检出文件数（SVN 检出：靠周期扫盘上报，见 progressReport；git 流的进度里没有） */
+  files?: number;
 }
 
 /** 通道名 → 进度。通道是"哪一次传输"：获取用目标目录（可并发多个），
@@ -49,6 +51,17 @@ export function progressStart(chan: string, total = 0): void {
 export function progressSetTotal(chan: string, total: number): void {
   const p = map.get(chan);
   if (p && total > 0) p.total = total;
+}
+
+/** SVN 检出等"没有原生进度输出"的场景：外部**周期扫盘**后上报累计（已落盘文件数 + 字节）。
+ *  置 phase='checkout'（界面显示"正在检出文件"）；没登记过（任务已收尾）则忽略 */
+export function progressReport(chan: string, files: number, bytes: number): void {
+  const p = map.get(chan);
+  if (p) {
+    p.phase = 'checkout';
+    p.files = files;
+    p.bytes = bytes;
+  }
 }
 
 /** 传输结束（成功 / 失败 / 取消都调）：撤掉登记 */

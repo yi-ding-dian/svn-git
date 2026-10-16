@@ -293,6 +293,8 @@ export function ModalHost(props: ModalHostProps) {
           wcRel={modal.wcRel}
           onClose={() => setModal(null)}
           onToast={showToast}
+          // 检出完成收录最近项目后刷新侧栏列表（不切换当前项目）
+          onHistoryAdded={loadHistory}
           // 右键检出的工作副本「打开项目」：先关本弹窗，再走最近项目同款打开逻辑
           onOpenProject={(dir) => {
             setModal(null);

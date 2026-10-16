@@ -2,9 +2,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo, type GitHubIdentityResult } from '../shared/api.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { useTasks, cancelTask, type TaskProgress as TaskProgressInfo } from '../shared/tasks.js';
+import { useTasks, cancelTask } from '../shared/tasks.js';
 import { useNotices, markAllRead, removeNotice } from '../shared/notices.js';
 import { startTaskDeferred } from './bg-defer.js';
+import { TaskProgress } from './task-progress.js';
+import { TaskDetailModal } from './task-detail.js';
+import { CancelCheckoutConfirm } from '../repo/checkout-task.js';
 import { launchMagicFlight } from './magic-flight.js';
 import { baseName } from '../shared/utils.js';
 import { UpdateResultModal, type UpdateResultDetail } from '../ops/update-result.js';
@@ -674,6 +677,10 @@ export function AppHeader(props: {
   const bgTasks = useTasks();
   const runningCount = bgTasks.filter((tk) => tk.status === 'running').length;
   const [taskPop, setTaskPop] = useState<{ x: number; y: number } | null>(null);
+  /** 打开中的任务详情弹窗（点任务面板条目；面板先关再去开它） */
+  const [taskDetailId, setTaskDetailId] = useState<number | null>(null);
+  /** 待确认取消的检出任务（半截目录会被清理——面板先关，确认窗由本层渲染） */
+  const [cancelConfirmId, setCancelConfirmId] = useState<number | null>(null);
   const taskBtnRef = useRef<HTMLButtonElement | null>(null);
   const openTaskPop = () => {
     const r = taskBtnRef.current?.getBoundingClientRect();
@@ -1236,7 +1243,33 @@ export function AppHeader(props: {
         </span>
       )}
       {/* 后台任务面板（贴指示器展开；fixed 定位，在 header 内渲染不影响布局） */}
-      {taskPop && <TaskPopover x={taskPop.x} y={taskPop.y} onClose={() => setTaskPop(null)} />}
+      {taskPop && (
+        <TaskPopover
+          x={taskPop.x}
+          y={taskPop.y}
+          onClose={() => setTaskPop(null)}
+          onOpenDetail={(id) => {
+            setTaskPop(null);
+            setTaskDetailId(id);
+          }}
+          onRequestCancel={(id) => {
+            setTaskPop(null);
+            setCancelConfirmId(id);
+          }}
+        />
+      )}
+      {/* 任务详情弹窗（点任务面板条目打开；面板先关——其层级 299/300 会压住 modal 的 100） */}
+      {taskDetailId !== null && <TaskDetailModal taskId={taskDetailId} onClose={() => setTaskDetailId(null)} />}
+      {/* 取消检出二次确认（从任务面板发起；面板已关——它层级更高会压住弹窗） */}
+      {cancelConfirmId !== null && (
+        <CancelCheckoutConfirm
+          onKeep={() => setCancelConfirmId(null)}
+          onCancel={() => {
+            cancelTask(cancelConfirmId);
+            setCancelConfirmId(null);
+          }}
+        />
+      )}
       {/* 通知气泡（铃铛正下方弹出；无人点击 3.5s 播放"收回"动画——见上方 effect）：
           点击 = 打开通知面板（气泡本身不留档，内容在铃铛里） */}
       {bubble && (
@@ -1277,14 +1310,14 @@ export function AppHeader(props: {
           </span>
         </div>
       )}
-      {noticePop && <NoticePopover x={noticePop.x} y={noticePop.y} onClose={() => setNoticePop(null)} />}
+      {noticePop && <NoticePopover x={noticePop.x} y={noticePop.y} onClose={() => setNoticePop(null)} onOpenTaskDetail={(id) => { setNoticePop(null); setTaskDetailId(id); }} />}
     </div>
   );
 }
 
 /** 后台任务面板：进行中（沙漏/已用秒/[取消]）——完成结果归铃铛（NoticePopover）留档，不在这里重复。
  *  运行中的"已用 n 秒"每秒刷新（面板开着才 tick）；点空白/Esc…… 面板同 ContextMenu 的 mask 手法 */
-function TaskPopover(props: { x: number; y: number; onClose: () => void }) {
+function TaskPopover(props: { x: number; y: number; onClose: () => void; onOpenDetail: (id: number) => void; onRequestCancel: (id: number) => void }) {
   const tasks = useTasks();
   const [, force] = useState(0);
   useEffect(() => {
@@ -1319,7 +1352,15 @@ function TaskPopover(props: { x: number; y: number; onClose: () => void }) {
         {/* 进行中（面板只在有任务时能打开——指示器仅运行中显示；全完成后 prevRef 会把它自动收起） */}
         <div className="dim small" style={{ padding: '2px 6px 4px' }}>{t('shell.tasks.running')}</div>
         {running.map((tk) => (
-          <div key={tk.id} className="row" style={{ gap: 8, padding: 6, alignItems: 'center' }}>
+          // 点击任务行 = 打开详情弹窗（由上层渲染并先关面板：面板层级 299/300 会压住 modal 的 100）
+          <div
+            key={tk.id}
+            className="row"
+            style={{ gap: 8, padding: 6, alignItems: 'center', cursor: 'pointer' }}
+            // 点击查看任务详情
+            title={t('shell.tasks.clickDetail')}
+            onClick={() => props.onOpenDetail(tk.id)}
+          >
             <IconHourglassRun size={14} />
             <span style={{ flex: 1, minWidth: 0 }}>
               <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.title}>{tk.title}</div>
@@ -1327,8 +1368,17 @@ function TaskPopover(props: { x: number; y: number; onClose: () => void }) {
               <div className="dim small">{t('shell.tasks.elapsed', { n: Math.max(0, Math.floor((now - tk.startedAt) / 1000)) })}</div>
               {tk.progress && <TaskProgress p={tk.progress} />}
             </span>
-            {/* 取消 */}
-            <button className="mini" onClick={() => cancelTask(tk.id)}>{t('common.cancel')}</button>
+            {/* 取消（不让点击冒泡到"打开详情"）；检出要二次确认（半截目录会被清理）——交上层弹确认 */}
+            <button
+              className="mini"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (tk.kind === 'checkout') props.onRequestCancel(tk.id);
+                else cancelTask(tk.id);
+              }}
+            >
+              {t('common.cancel')}
+            </button>
           </div>
         ))}
       </div>
@@ -1336,51 +1386,7 @@ function TaskPopover(props: { x: number; y: number; onClose: () => void }) {
   );
 }
 
-/** 任务进度（获取类任务专有）：进度条 + 已下载/总大小 + 速度 + 预计剩余。
- *  为什么值得单列：用户实报"一直获取不了"——26 MB 的仓库在 19 KB/s 下要 23 分钟而被 10 分钟上限掐掉，
- *  面板只有"已用 63 秒"，看着和卡死没区别。这里把"在动、多快、还剩多久"直接摆出来。
- *  阶段文案要如实——尤其"正在检出文件…"那段 git 完全静默（没有任何输出），不写出来又成了"不知道什么情况"。 */
-function TaskProgress(props: { p: TaskProgressInfo }) {
-  const p = props.p;
-  // 百分比按**字节**算（git 自己的百分比是按对象个数，大小极不均匀），没结束前封顶 99%
-  const pct = p.total > 0 ? Math.min(99, Math.round((p.bytes / p.total) * 100)) : null;
-  const size = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
-  const speed = p.speed >= 1024 * 1024 ? `${(p.speed / 1024 / 1024).toFixed(1)} MB` : `${Math.round(p.speed / 1024)} KB`;
-  const etaSec = pct !== null && p.speed > 0 && p.bytes < p.total ? Math.round((p.total - p.bytes) / p.speed) : -1;
-  const phaseKey = {
-    counting: 'shell.tasks.phaseCounting',
-    compressing: 'shell.tasks.phaseCompressing',
-    receiving: 'shell.tasks.phaseReceiving',
-    uploading: 'shell.tasks.phaseUploading',
-    waiting: 'shell.tasks.phaseWaiting',
-    resolving: 'shell.tasks.phaseResolving',
-    checkout: 'shell.tasks.phaseCheckout',
-  }[p.phase] as I18nKey;
-  /** 上传类阶段说"已上传"，其余说"已下载"（同一串字节，方向不同） */
-  const verb = p.phase === 'uploading' || p.phase === 'waiting' ? 'shell.tasks.uploaded' : 'shell.tasks.downloaded';
-  return (
-    <>
-      {pct !== null && (
-        <div style={{ height: 4, background: 'var(--panel2)', borderRadius: 2, margin: '4px 0 3px', overflow: 'hidden' }}>
-          <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', transition: 'width .3s' }} />
-        </div>
-      )}
-      {/* 字节/速度行：**还没拿到数值就不显示**——git 在"统计/压缩"阶段不报字节，推送快时
-          中间几行也不带，硬显示就是"已上传 0.0 MB"这种看着像卡住的东西 */}
-      {(p.bytes > 0 || p.speed > 0) && (
-        <div className="dim small">
-          {pct !== null ? `${pct}% · ` : ''}
-          {p.total > 0 ? t('shell.tasks.progressOf', { done: size(p.bytes), total: size(p.total) }) : t(verb, { done: size(p.bytes) })}
-          {p.speed > 0 ? ` · ${t('shell.tasks.progressSpeed', { speed })}` : ''}
-        </div>
-      )}
-      <div className="dim small">
-        {t(phaseKey)}
-        {etaSec >= 60 ? ` · ${t('shell.tasks.etaMin', { n: Math.ceil(etaSec / 60) })}` : etaSec >= 0 ? ` · ${t('shell.tasks.etaSec')}` : ''}
-      </div>
-    </>
-  );
-}
+// （TaskProgress 已抽到 ./task-progress.tsx——任务详情弹窗也复用它）
 
 /** 通知里的「更新结果」详情判别：detail 由任务 data 透传（app 的完成观察者），
  *  带 kind='update' 的通知行才可点开「更新结果」窗；其余通知行不可点 */
@@ -1392,7 +1398,7 @@ function asUpdateDetail(d: unknown): UpdateResultDetail | null {
 /** 任务通知面板（铃铛）：完成/失败通知列表——✓/✗ + 标题 + 消息 + 时间 + [×]逐条关闭；
  *  带更新详情的行可点开「更新结果」窗（文件清单/警告——更新不再自动弹，详情从这里看）；
  *  打开即全部已读（红点消失）；全部关掉 → 铃铛随之消失（父层条件渲染），面板自动收起 */
-function NoticePopover(props: { x: number; y: number; onClose: () => void }) {
+function NoticePopover(props: { x: number; y: number; onClose: () => void; onOpenTaskDetail: (id: number) => void }) {
   const notices = useNotices();
   /** 打开的「更新结果」详情窗（点面板里带「详情 ▸」的通知行） */
   const [detail, setDetail] = useState<UpdateResultDetail | null>(null);
@@ -1430,15 +1436,17 @@ function NoticePopover(props: { x: number; y: number; onClose: () => void }) {
       >
         {notices.map((n) => {
           const ud = asUpdateDetail(n.detail);
-          // 有更新详情 → 点开「更新结果」窗；否则有消息就点开「全文」小窗；都没有 = 不可点
-          const clickable = Boolean(ud || n.message);
+          // 检出完成的通知（detail.kind='checkout' 且带来源任务）→ 点开「任务详情」窗（列检出文件清单/警告）
+          const coTaskId = n.taskId != null && (n.detail as { kind?: string } | null)?.kind === 'checkout' ? n.taskId : null;
+          // 更新详情 → 「更新结果」窗；检出详情 → 「任务详情」窗；否则有消息就点开「全文」小窗；都没有 = 不可点
+          const clickable = Boolean(ud || coTaskId !== null || n.message);
           return (
             <div
               key={n.id}
               className="row"
               style={{ gap: 8, padding: 6, alignItems: 'flex-start', cursor: clickable ? 'pointer' : undefined }}
               title={clickable ? t('shell.notify.detailTip') : undefined}
-              onClick={clickable ? () => (ud ? setDetail(ud) : setFullMsg({ title: n.title, message: n.message })) : undefined}
+              onClick={clickable ? () => (ud ? setDetail(ud) : coTaskId !== null ? props.onOpenTaskDetail(coTaskId) : setFullMsg({ title: n.title, message: n.message })) : undefined}
             >
               <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2, color: n.err ? 'var(--err)' : 'var(--ok)' }}>
                 {n.err ? <IconErr /> : <IconOk />}
@@ -1468,8 +1476,8 @@ function NoticePopover(props: { x: number; y: number; onClose: () => void }) {
                 )}
               </span>
               <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                {/* 详情（点击查看更新文件清单/警告） */}
-                {ud && <span className="dim small nowrap">{t('shell.notify.detail')} ▸</span>}
+                {/* 详情（点击查看更新文件清单/警告 或 检出文件清单） */}
+                {(ud || coTaskId !== null) && <span className="dim small nowrap">{t('shell.notify.detail')} ▸</span>}
                 {/* 关闭这条通知（stopPropagation：行可点时点 × 不应打开详情） */}
                 <button className="mini" title={t('shell.notify.removeTip')} onClick={(e) => { e.stopPropagation(); removeNotice(n.id); }}>×</button>
               </span>

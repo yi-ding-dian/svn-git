@@ -105,6 +105,24 @@ export const shell = {
   'shell.tasks.indicatorTip': 'Background tasks: {n} running (click to view)',
   'shell.tasks.running': 'Running',
   'shell.tasks.elapsed': '{n}s elapsed',
+  // —— Task detail modal & checkout progress ——
+  'shell.tasks.clickDetail': 'Click to view task details',
+  'shell.tasks.detailTitle': 'Task Details',
+  'shell.tasks.detailTask': 'Task',
+  'shell.tasks.detailStatus': 'Status',
+  'shell.tasks.detailRunning': 'Running · {n}s elapsed',
+  'shell.tasks.detailDone': 'Completed',
+  'shell.tasks.detailCancelled': 'Cancelled',
+  'shell.tasks.detailError': 'Failed',
+  'shell.tasks.detailTarget': 'Target',
+  // {n} files checked out · {size}
+  'shell.tasks.checkoutFiles': '{n} files checked out · {size}',
+  // Checked-out files ({n} total)
+  'shell.tasks.detailFiles': 'Checked-out files ({n} total)',
+  // (showing first {m})
+  'shell.tasks.detailFilesMore': '(showing first {m})',
+  // ⚠ svn warnings / errors ({n})
+  'shell.tasks.detailWarnings': '⚠ svn warnings / errors ({n})',
   // Push background-task title (order: repo · branch · action; {repo} = project name, {branch} = current branch name)
   'shell.tasks.pushTitle': '{repo} · {branch} · Push',
   'shell.tasks.pushBusy': 'A push is already running — view or cancel it from the hourglass in the header',

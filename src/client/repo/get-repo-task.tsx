@@ -39,6 +39,8 @@ export function startGetRepoTask(
     kind: 'get',
     // 任务标题：获取仓库 · {name}（同检出「检出到本地 · name」的拼接先例）
     title: `${t('repo.get.title')} · ${p.name}`,
+    // 进度通道 = 落地目录（任务详情弹窗据此展示实时进度）
+    chan: target,
     run: async (signal) => {
       try {
         const r = await post.repoCreate(p.type, p.dir, p.name, p.url, true, signal);

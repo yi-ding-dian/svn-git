@@ -10,8 +10,8 @@ import { ResizableModal } from '../shell/modal-shell.js';
 import { get, post } from '../shared/api.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { renderMarkdown } from '../shared/markdown.js';
-import { loadMdTheme, mdThemeVars } from '../filesystem/md-theme.js';
-import { highlightMatch } from '../filesystem/search.js';
+import { loadMdTheme, mdThemeVars } from '../shared/md-theme.js';
+import { highlightMatch } from '../shared/highlight-match.js';
 import { MiniIcon, IconServer, IconPin } from '../ui/icons.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { PickDirModal } from './pick-dir.js';
@@ -43,6 +43,8 @@ export function RepoBrowseModal(props: {
   onClose: () => void;
   /** 右键检出的工作副本「打开项目」（modal-host 接 openHistoryItem，先关本弹窗） */
   onOpenProject?: (dir: string) => void;
+  /** 检出完成收录进「最近项目」后通知刷新侧栏列表（不切换当前项目） */
+  onHistoryAdded?: () => void;
   /** 统一提示入口（检出转后台任务后，"已在后台运行"这类提示不再有弹窗可承载） */
   onToast?: (m: string, err?: boolean) => void;
 }) {
@@ -69,7 +71,16 @@ export function RepoBrowseModal(props: {
   /** 检出：后台任务发起器 + 认证失败凭据框（实现在 checkout-task，弹窗一关就靠它接管） */
   const onToast = (m: string, err?: boolean) => props.onToast?.(m, err);
   const { start: startCheckout, auth: checkoutAuth, closeAuth: closeCheckoutAuth } = useCheckoutTask({
-    onCreated: (dir) => props.onOpenProject?.(dir),
+    // 检出完成**不切换当前项目**（用户定稿：不打扰正在做的事）——只收录进「最近项目」列表
+    // （显示上排在当前项目之后）；想打开时从列表里点开
+    onCreated: (dir) => {
+      void post
+        .history(dir, 'svn')
+        .then(() => props.onHistoryAdded?.())
+        .catch(() => {
+          /* 收录失败不打扰（工作副本本身已检出成功） */
+        });
+    },
     onToast,
   });
   // 「定位到该项目」（用户定稿 A）：located=📍 钉子所在目录 url（**常驻**——点别处也不消失，

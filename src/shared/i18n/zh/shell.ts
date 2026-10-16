@@ -107,6 +107,24 @@ export const shell = {
   'shell.tasks.indicatorTip': '后台任务：{n} 个进行中（点击查看）',
   'shell.tasks.running': '进行中',
   'shell.tasks.elapsed': '已用 {n} 秒',
+  // —— 任务详情弹窗与检出进度 ——
+  'shell.tasks.clickDetail': '点击查看任务详情',
+  'shell.tasks.detailTitle': '任务详情',
+  'shell.tasks.detailTask': '任务',
+  'shell.tasks.detailStatus': '状态',
+  'shell.tasks.detailRunning': '进行中 · 已用 {n} 秒',
+  'shell.tasks.detailDone': '已完成',
+  'shell.tasks.detailCancelled': '已取消',
+  'shell.tasks.detailError': '失败',
+  'shell.tasks.detailTarget': '目标',
+  // 已检出 {n} 个文件 · {size}
+  'shell.tasks.checkoutFiles': '已检出 {n} 个文件 · {size}',
+  // 检出文件（共 {n} 个）
+  'shell.tasks.detailFiles': '检出文件（共 {n} 个）',
+  // （仅显示前 {m} 条）
+  'shell.tasks.detailFilesMore': '（仅显示前 {m} 条）',
+  // ⚠ svn 警告/错误（{n} 条）
+  'shell.tasks.detailWarnings': '⚠ svn 警告/错误（{n} 条）',
   // 推送后台任务标题（顺序=项目名 · 分支名 · 操作——用户定稿；{repo} = 项目名、{branch} = 当前分支名）
   'shell.tasks.pushTitle': '{repo} · {branch} · 推送',
   'shell.tasks.pushBusy': '已有推送正在进行中，可在顶栏沙漏里查看或取消',

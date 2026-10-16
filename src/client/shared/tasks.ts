@@ -25,9 +25,11 @@ export interface BgTask {
   message?: string;
   /** run 的返回值（业务侧读——如检出响应里的 authError/repoDir） */
   data?: unknown;
-  /** 实时进度（只有"获取"这类会报进度的任务有：发起方每秒轮询 /api/get-progress 塞进来，
-   *  见 repo/get-repo-task.tsx；SVN 检出没有等价信息，一直是空的） */
+  /** 实时进度（获取/检出/推拉这类会报进度的任务有：发起方每秒轮询 /api/transfer-progress
+   *  塞进来，见 pollTransferProgress） */
   progress?: TaskProgress;
+  /** 进度轮询的通道（= 目标目录 / 'push' / 'pull'；详情弹窗据此展示实时进度） */
+  chan?: string;
 }
 
 /** 传输进度快照（字段含义见 src/transfer-progress.ts 的表头注释）。
@@ -54,12 +56,14 @@ function emit() {
 export function startTask(opts: {
   kind?: string;
   title: string;
+  /** 进度通道（传了就进任务快照，详情弹窗显示实时进度；无进度的任务不传） */
+  chan?: string;
   run: (signal: AbortSignal) => Promise<TaskRunResult>;
 }): number {
   const id = nextId++;
   const ac = new AbortController();
   aborts.set(id, ac);
-  tasks = [{ id, kind: opts.kind, title: opts.title, status: 'running', startedAt: Date.now() }, ...tasks];
+  tasks = [{ id, kind: opts.kind, title: opts.title, chan: opts.chan, status: 'running', startedAt: Date.now() }, ...tasks];
   emit();
   void opts
     .run(ac.signal)
@@ -105,12 +109,12 @@ export function setTaskProgress(id: number, p: TaskProgress | null): void {
 
 /** 给任务挂上"传输进度"轮询（每秒问一次 /api/transfer-progress；本地回环，代价可忽略）。
  *  返回停止函数——发起方在任务收尾时（run 的 finally）调它，否则任务完了还在轮。
- *  获取 / 推送 / 拉取三处共用；SVN 那侧没有字节信息，后端一直 ok=false，面板自然不显示进度条。 */
+ *  获取 / 检出 / 推送 / 拉取共用（SVN 检出的进度由后端周期扫盘上报，见 progressReport）。 */
 export function pollTransferProgress(id: number, chan: string): () => void {
   const timer = setInterval(() => {
     void get
       .transferProgress(chan)
-      .then((r) => setTaskProgress(id, r.ok ? { phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0 } : null))
+      .then((r) => setTaskProgress(id, r.ok ? { phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0, files: r.files } : null))
       .catch(() => {
         /* 轮询失败不打扰：面板退化成只有标题与已用秒数 */
       });

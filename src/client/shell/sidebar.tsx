@@ -191,6 +191,11 @@ export function Sidebar(props: {
     });
   };
   const historyKey = props.history.map((h) => h.path).join('|');
+  // 渲染顺序：**当前打开的项目固定置顶**，其余保持原顺序（时间序）——稳定排序只把当前项提前，
+  // 所以「刚检出/刚打开的其它项目」自然落在第二（用户定稿）
+  const ordered = props.currentRoot
+    ? [...props.history].sort((a, b) => Number(b.path === props.currentRoot) - Number(a.path === props.currentRoot))
+    : props.history;
   // 远程检查（⬇ 待拉取）：打开/刷新时**自动**对全部项目跑一轮（后台异步、先回来先显示）——
   // SVN 等"必须联网才知道"的远程新提交由此覆盖（不切换过去也能看到）；
   // 后端自带超时（15s/20s）与缓存，卡住的项目不影响其他项目、也不阻塞界面。
@@ -384,7 +389,7 @@ export function Sidebar(props: {
           {/* 列表在可用高度内自己滚动（用户定稿：项目多时滚列表，不裁进「…」、
               也不把整个侧边栏/页面撑出滚动条）；NAV / 主题 / 标题 / 打开按钮都固定不动 */}
           <div className="history-list">
-            {props.history.map((h) => {
+            {ordered.map((h) => {
               const invalidMsg = props.invalidPaths[h.path];
               const invalid = Boolean(invalidMsg);
               // 展示用状态：当前项目的 behind 与"远程实时检查"（remoteHint）取大——
