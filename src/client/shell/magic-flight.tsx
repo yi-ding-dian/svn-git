@@ -1,11 +1,13 @@
-/** 魔法飞行线：后台任务「起飞」特效——从触发按钮的位置腾起一颗发光光点，
- *  沿一条**向上拱起**的弧线飞向顶栏的任务锚点（沙漏指示器 [data-task-anchor]），
- *  一路洒落星屑尾迹；抵达时爆散一圈小星星、并给锚点一个脉冲（.task-anchor-pulse）。
- *  用户定稿："点击后飞到后台的沙漏那里，一条很酷的魔法飞行线"。
+/** 魔法飞行线：后台任务特效——从起点腾起一颗发光光点，沿一条**向上拱起**的弧线飞向目标，
+ *  一路洒落星屑尾迹；抵达时爆散一圈小星星、并给目标一个脉冲（.task-anchor-pulse）。
+ *  两个方向共用：
+ *   - 「起飞」（发起任务）：从触发按钮 → 顶栏任务锚点（沙漏指示器 [data-task-anchor]）；
+ *   - 「降落」（任务完成归位）：从任务锚点/通知铃铛 → 指定元素（如刚落入「最近项目」的项）。
  *
  *  实现：纯 canvas 全屏浮层（pointer-events:none——不挡任何操作、不碰布局），播完自卸；
- *  顶栏没渲染锚点（如未打开仓库）就静默跳过；prefers-reduced-motion 只做锚点脉冲。
- *  入口：推送确认按钮 / 检出按钮的 onClick（传 getBoundingClientRect()）。 */
+ *  锚点缺失（如未打开仓库/完成后沙漏已卸载）由调用方给兜底目标，都没有就静默跳过；
+ *  prefers-reduced-motion 只做落点脉冲。
+ *  入口：推送确认按钮 / 检出按钮（起飞）；检出完成落到最近项目（降落）。 */
 
 /** 星屑/爆散的颜色池（青 → 紫 → 粉 → 白，与顶栏图标同色系） */
 const COLORS = ['#7dd3fc', '#a78bfa', '#f0abfc', '#fda4af', '#ffffff'];
@@ -15,12 +17,20 @@ interface Particle {
   life: number; max: number; r: number; c: string;
 }
 
-/** 起飞（from = 按钮的屏幕坐标）。锚点 = 顶栏沙漏指示器 [data-task-anchor]——
- *  它**只在任务运行期间存在**：点确认的瞬间任务刚 startTask、React 还没把指示器挂上 DOM，
- *  这里轮询等它出现（最多约 400ms；任务瞬间失败/取消导致指示器从未出现则放弃动画）。
- *  锚点缺失不是错误场景——静默跳过。 */
-export function launchMagicFlight(from: { x: number; y: number }): void {
-  void flyToAnchor(from);
+/** 调用方指定的飞行目标（降落方向用）：终点坐标 + 抵达脉冲的元素（如最近项目列表项） */
+export interface FlightTarget {
+  x: number;
+  y: number;
+  pulseEl?: HTMLElement;
+}
+
+/** 起飞（from = 起点屏幕坐标）。to 缺省 = 顶栏沙漏锚点（起飞方向：锚点 = 顶栏任务指示器
+ *  [data-task-anchor]，只在任务运行期间存在——点确认的瞬间任务刚 startTask、React 还没把
+ *  指示器挂上 DOM，这里轮询等它出现（最多约 400ms；任务瞬间失败/取消过早则放弃动画）。
+ *  to 给了 = 直接飞向指定目标（降落方向：完成时沙漏已卸载，起点由调用方取沙漏/铃铛位置）。
+ *  目标缺失不是错误场景——静默跳过。 */
+export function launchMagicFlight(from: { x: number; y: number }, to?: FlightTarget): void {
+  void fly(from, to);
 }
 
 /** 等锚点出现：逐帧轮询直到出现或超时 */
@@ -37,16 +47,27 @@ function findAnchor(maxMs = 400): Promise<HTMLElement | null> {
   });
 }
 
-async function flyToAnchor(from: { x: number; y: number }): Promise<void> {
-  const anchor = await findAnchor();
-  if (!anchor) return;
-  const rect = anchor.getBoundingClientRect();
-  const to = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+async function fly(from: { x: number; y: number }, target?: FlightTarget): Promise<void> {
+  let to: { x: number; y: number };
+  let pulseEl: HTMLElement | null;
+  if (target) {
+    // 降落方向：调用方给了终点（如"检出完成 → 落到最近项目项"）——直接用，不做锚点轮询
+    to = { x: target.x, y: target.y };
+    pulseEl = target.pulseEl ?? null;
+  } else {
+    const anchor = await findAnchor();
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    to = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    pulseEl = anchor;
+  }
 
-  /** 抵达反馈：锚点脉冲（reduced-motion 也保留——纯缩放，无位移） */
+  /** 抵达反馈：目标脉冲（reduced-motion 也保留——纯缩放，无位移） */
   const pulse = () => {
-    anchor.classList.add('task-anchor-pulse');
-    anchor.addEventListener('animationend', () => anchor.classList.remove('task-anchor-pulse'), { once: true });
+    if (!pulseEl) return;
+    const el = pulseEl;
+    el.classList.add('task-anchor-pulse');
+    el.addEventListener('animationend', () => el.classList.remove('task-anchor-pulse'), { once: true });
   };
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
     pulse();

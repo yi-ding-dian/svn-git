@@ -1024,6 +1024,7 @@ export function AppHeader(props: {
       {notices.length > 0 && (
         <button
           ref={bellBtnRef}
+          data-notice-anchor="true"
           className={`header-icon-btn${bellBounce ? ' bell-bounce' : ''}`}
           // 任务通知（点击查看）
           title={t('shell.notify.tip')}

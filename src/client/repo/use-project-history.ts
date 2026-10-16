@@ -11,8 +11,9 @@ export function useProjectHistory(onError: (msg: string) => void) {
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
+  /** 刷新列表；**返回 Promise**——检出完成的降落动画要等列表渲染完再定位目标项（调用方可 .then） */
   const loadHistory = useCallback(() => {
-    get
+    return get
       .history()
       .then((r) => setHistory(r.items))
       .catch(() => {});

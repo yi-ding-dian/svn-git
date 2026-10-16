@@ -9,6 +9,7 @@
  */
 import React from 'react';
 import { get, post, type RepoInfo } from '../shared/api.js';
+import { launchMagicFlight } from './magic-flight.js';
 import { CommitModal } from '../ops/commit.js';
 import { CommitSelectModal } from '../ops/commit-select.js';
 import { BranchDialog } from '../ops/branch.js';
@@ -115,7 +116,8 @@ export interface ModalHostProps {
     doCommitSelected: (paths: string[], msg: string, stagedOnly?: string[]) => Promise<unknown>;
     runOp: (op: Op, paths: string[]) => void;
     refresh: () => void;
-    loadHistory: () => void;
+    /** 刷新最近项目列表；返回 Promise（检出完成的降落动画要等列表渲染完再定位目标项） */
+    loadHistory: () => Promise<void>;
     gotoDiff: (path: string, a?: string, b?: string) => void;
     /** 发起推送（后台任务；认证失败重试也走它——每次重试是新任务） */
     pushNow: () => void;
@@ -294,7 +296,25 @@ export function ModalHost(props: ModalHostProps) {
           onClose={() => setModal(null)}
           onToast={showToast}
           // 检出完成收录最近项目后刷新侧栏列表（不切换当前项目）
-          onHistoryAdded={loadHistory}
+          onHistoryAdded={(dir) => {
+            // 检出完成收录最近项目后刷新侧栏；列表渲染完（下一帧）播"降落"动画：
+            // 从任务锚点（还有任务在跑）或通知铃铛（任务完成刚出现，必然在）飞向刚加入的项目项，
+            // 抵达时该项脉冲一下——"检出的项目落进了列表"
+            void loadHistory().then(() => {
+              requestAnimationFrame(() => {
+                const el = document.querySelector<HTMLElement>(`.history-item[data-path="${CSS.escape(dir)}"]`);
+                const anchor =
+                  document.querySelector<HTMLElement>('[data-task-anchor]') ?? document.querySelector<HTMLElement>('[data-notice-anchor]');
+                if (!el || !anchor) return; // 侧栏不可见/顶栏锚点缺失：静默跳过（不硬飞）
+                const rt = el.getBoundingClientRect();
+                const ra = anchor.getBoundingClientRect();
+                launchMagicFlight(
+                  { x: ra.left + ra.width / 2, y: ra.top + ra.height / 2 },
+                  { x: rt.left + rt.width / 2, y: rt.top + rt.height / 2, pulseEl: el },
+                );
+              });
+            });
+          }}
           // 右键检出的工作副本「打开项目」：先关本弹窗，再走最近项目同款打开逻辑
           onOpenProject={(dir) => {
             setModal(null);

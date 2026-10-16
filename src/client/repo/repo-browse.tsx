@@ -43,8 +43,8 @@ export function RepoBrowseModal(props: {
   onClose: () => void;
   /** 右键检出的工作副本「打开项目」（modal-host 接 openHistoryItem，先关本弹窗） */
   onOpenProject?: (dir: string) => void;
-  /** 检出完成收录进「最近项目」后通知刷新侧栏列表（不切换当前项目） */
-  onHistoryAdded?: () => void;
+  /** 检出完成收录进「最近项目」后通知刷新侧栏列表（传刚检出的路径——完成动画据此定位目标项） */
+  onHistoryAdded?: (dir: string) => void;
   /** 统一提示入口（检出转后台任务后，"已在后台运行"这类提示不再有弹窗可承载） */
   onToast?: (m: string, err?: boolean) => void;
 }) {
@@ -76,7 +76,7 @@ export function RepoBrowseModal(props: {
     onCreated: (dir) => {
       void post
         .history(dir, 'svn')
-        .then(() => props.onHistoryAdded?.())
+        .then(() => props.onHistoryAdded?.(dir))
         .catch(() => {
           /* 收录失败不打扰（工作副本本身已检出成功） */
         });

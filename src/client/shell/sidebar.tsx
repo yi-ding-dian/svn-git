@@ -409,6 +409,7 @@ export function Sidebar(props: {
               return (
                 <div
                   key={h.path}
+                  data-path={h.path}
                   className={`history-item ${h.path === props.currentRoot ? 'active' : ''}${invalid ? ' invalid' : ''}`}
                   title={
                     invalidMsg
