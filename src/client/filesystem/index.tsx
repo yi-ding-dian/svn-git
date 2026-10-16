@@ -230,7 +230,9 @@ export function FsView(props: Props) {
     localStorage.setItem(favKey(props.repoRoot), JSON.stringify(next));
     setFavs(next);
   };
-  const load = useCallback(async (targetDir: string, force: boolean) => {
+  /** 加载目录（列表/浏览模式）。quiet=true 为静默强刷（操作后 / tick 刷新）：不出顶部加载条、
+   *  不弹大目录提示——列表原地换数据，界面不闪；切目录、首次进入照常给加载反馈。 */
+  const load = useCallback(async (targetDir: string, force: boolean, quiet = false) => {
     const cache = nodeDataRef.current.get(targetDir);
     if (!force && cache) {
       setData(cache);
@@ -239,7 +241,7 @@ export function FsView(props: Props) {
       setError('');
       return;
     }
-    setFsLoading(true);
+    if (!quiet) setFsLoading(true);
     setError('');
     try {
       const r = await get.fs(targetDir, force);
@@ -247,15 +249,17 @@ export function FsView(props: Props) {
       setData(r);
       setSel(null);
       setPreview(null);
-      // 大目录提示：条目多时告知原因（加载完成后展示 5 秒）
-      const n = r.entries?.length ?? 0;
-      if (n > 200) {
-        // 该目录文件较多（共 {n} 项），首次加载可能需要一点时间
-        setBigTip(t('fs.tip.bigDir', { n }));
-        if (bigTipTimer.current) clearTimeout(bigTipTimer.current);
-        bigTipTimer.current = setTimeout(() => setBigTip(''), 5000);
-      } else {
-        setBigTip('');
+      if (!quiet) {
+        // 大目录提示：条目多时告知原因（加载完成后展示 5 秒）——静默刷新不重复提示
+        const n = r.entries?.length ?? 0;
+        if (n > 200) {
+          // 该目录文件较多（共 {n} 项），首次加载可能需要一点时间
+          setBigTip(t('fs.tip.bigDir', { n }));
+          if (bigTipTimer.current) clearTimeout(bigTipTimer.current);
+          bigTipTimer.current = setTimeout(() => setBigTip(''), 5000);
+        } else {
+          setBigTip('');
+        }
       }
     } catch (e) {
       // 目录不存在（ENOENT：上次浏览位置被删除/仓库已切换）→ 自动回到仓库根，避免卡死在错误页
@@ -267,7 +271,7 @@ export function FsView(props: Props) {
       }
       setError((e as Error).message);
     } finally {
-      setFsLoading(false);
+      if (!quiet) setFsLoading(false);
     }
     // setPendingLocate 的 useState 在下方才声明，放进依赖数组会 TDZ（Block-scoped variable used before its declaration）
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -295,23 +299,46 @@ export function FsView(props: Props) {
       }
     }
   }, [props.repoRoot]); // eslint-disable-line react-hooks/exhaustive-deps
-  // 刷新（tick 变化）：强制重新拉取
+  // 树/浏览模式的重载要按"已展开集合"刷新，下面的工具用 ref 镜像（避免闭包捕获旧集合）
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+
+  /** 操作后 / tick 刷新的缓存失效：**保留渲染中的目录**（''、当前目录、已展开）——
+   *  整体清空会让树闪成整页加载态、列表闪空白再重建（「操作后界面刷新抖动」的根源）；
+   *  其余目录缓存照旧清掉（操作可能改动任意目录，陈旧缓存下次进入会显示旧状态）。 */
+  const invalidateCache = useCallback(() => {
+    const keep = new Set<string>(['', dir, ...expandedRef.current]);
+    setNodeData((m) => {
+      let changed = false;
+      const n = new Map(m);
+      for (const k of n.keys()) {
+        if (!keep.has(k)) {
+          n.delete(k);
+          changed = true;
+        }
+      }
+      return changed ? n : m;
+    });
+  }, [dir]);
+
+  /** 树/浏览模式重载：''+已展开节点全刷（保留缓存后必须重载它们，否则展开子树显示旧数据）。
+   *  loadNode 无加载态、数据到达原地替换——界面不闪。 */
+  const reloadOpenNodes = useCallback(() => {
+    ['', ...expandedRef.current].forEach((d) => void loadNode(d, true));
+  }, [loadNode]);
+
+  // 刷新（tick 变化）：静默强刷——保留渲染中的缓存、数据原地替换（不闪加载条/不闪整页转圈）
   useEffect(() => {
     if (props.tick === 0) return;
-    // 清空全部目录缓存再强刷当前目录：操作可能改动任意目录（如添加 A 目录），
-    // 仅强刷当前目录时其他目录缓存残留旧 ? 状态，再次进入会缓存命中显示旧数据
-    setNodeData(new Map());
-    void load(dir, true);
+    invalidateCache();
+    void load(dir, true, true);
   }, [props.tick, load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 树/浏览模式：初始化 + 刷新时重载根和已展开节点
-  const expandedRef = useRef(expanded);
-  expandedRef.current = expanded;
   useEffect(() => {
     if (mode !== 'tree' && mode !== 'browse') return;
-    const dirs = ['', ...expandedRef.current];
-    dirs.forEach((d) => void loadNode(d, true));
-  }, [mode, props.tick, loadNode]);
+    reloadOpenNodes();
+  }, [mode, props.tick, loadNode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 树模式：扁平化可见行
   const visibleRows = useMemo<VisibleRow[]>(() => {
@@ -838,7 +865,7 @@ export function FsView(props: Props) {
     doUnignore,
   } = useIgnoreFlow({
     onToast: props.onToast,
-    reloadDir: () => (mode === 'tree' ? loadNode('', true) : void load(dir, true)),
+    reloadDir: () => (mode === 'tree' ? reloadOpenNodes() : void load(dir, true, true)),
     reloadFilter: () => ft.setFilterTreeTick((t) => t + 1),
     repoType: props.repoType,
   });
@@ -870,19 +897,19 @@ export function FsView(props: Props) {
       void (async () => {
         const outcome = await moveItemsTo(items, destDir, props.onToast);
         if (outcome !== 'ok') return;
-        // 移动同时改了两个目录（源与目标）→ 清空全部目录缓存再刷当前目录，与剪切粘贴同一处理
-        setNodeData(new Map());
-        if (mode === 'tree') loadNode('', true);
-        else void load(dir, true);
+        // 移动同时改了两个目录（源与目标）→ 失效目录缓存再静默强刷（保留渲染中的不闪）
+        invalidateCache();
+        if (mode === 'tree') reloadOpenNodes();
+        else void load(dir, true, true);
       })();
     },
     onDone: useCallback(
       async (okCount: number, failed: string[], saved: string[]) => {
         if (okCount > 0) {
-          // 落地改变了目录内容：重载当前目录（树模式重载根节点）。
+          // 落地改变了目录内容：静默重载（树模式连已展开节点一起）。
           // 列表/网格必须等刷新完成再定位：否则 pendingLocate 会拿旧列表找行号，找不到就超时放弃
-          if (mode === 'tree') loadNode('', true);
-          else await load(dir, true);
+          if (mode === 'tree') reloadOpenNodes();
+          else await load(dir, true, true);
         }
         // 只能选中当前目录下的：拖进子文件夹的那些不在本视图里，改用文案告诉用户它们去哪了
         const parentOf = (r: string) => (r.includes('/') ? r.slice(0, r.lastIndexOf('/')) : '');
@@ -924,13 +951,13 @@ export function FsView(props: Props) {
     askCrossCut,
     onToast: props.onToast,
     onDone: useCallback(() => {
-      // 搬运一次动两个目录（剪切的源目录也变了）→ 清空全部目录缓存再强刷当前目录。
+      // 搬运一次动两个目录（剪切的源目录也变了）→ 失效目录缓存再静默强刷。
       // 只刷当前目录的话，回上级会缓存命中、看到已经搬走的旧条目（与 tick 刷新同一套处理）
-      setNodeData(new Map());
-      // 树模式重载根节点，其余重载当前目录
-      if (mode === 'tree') loadNode('', true);
-      else void load(dir, true);
-    }, [mode, dir, load, loadNode]),
+      invalidateCache();
+      // 树模式重载根+已展开节点，其余重载当前目录
+      if (mode === 'tree') reloadOpenNodes();
+      else void load(dir, true, true);
+    }, [mode, dir, load, invalidateCache, reloadOpenNodes]),
   });
 
   // 剪贴板快捷键（Ctrl+C / Ctrl+X / Ctrl+V）：**单独一个监听**。
@@ -1062,8 +1089,8 @@ export function FsView(props: Props) {
       if (isRename) r = await post.fsMove(oldRel, rel);
       else if (cur.type === 'dir') r = await post.newDir(rel);
       else r = await post.newFile(rel);
-      setNodeData(new Map()); // 改动了当前目录 → 清缓存再刷（与其他写操作一致）
-      await load(dir, true);
+      invalidateCache(); // 改动了当前目录 → 失效缓存再静默强刷（与其他写操作一致）
+      await load(dir, true, true);
       setPendingLocate({ rel, at: Date.now() }); // 选中并定位到刚落地的条目
       if (isRename) {
         // 已重命名为 {name}
@@ -1784,9 +1811,9 @@ export function FsView(props: Props) {
               // 内联编辑保存后：文件状态会从干净变成 M（或未版本化项内容变了），列表必须重拉；
               // 树模式同样要重载（带展开状态的节点）
               props.onToast(msg);
-              setNodeData(new Map());
-              if (mode === 'tree') loadNode('', true);
-              else void load(dir, true);
+              invalidateCache();
+              if (mode === 'tree') reloadOpenNodes();
+              else void load(dir, true, true);
             }}
           />
         )}
@@ -1847,8 +1874,8 @@ export function FsView(props: Props) {
           onClose={() => setIgnoreModal(null)}
           onChanged={() => {
             ft.setFilterTreeTick((t) => t + 1); // 忽略规则增删 → ?/I 互换，过滤视图重拉
-            if (mode === 'tree') loadNode('', true);
-            else void load(dir, true);
+            if (mode === 'tree') reloadOpenNodes();
+            else void load(dir, true, true);
           }}
           onToast={props.onToast}
         />
