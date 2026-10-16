@@ -97,6 +97,8 @@ export const repo = {
   'repo.githubDelete.title': 'GitHub 删除仓库',
   'repo.githubDelete.warn': '此操作不可撤销：将永久删除 GitHub 上的 {name} 及其全部提交、Issue 等数据（本地项目不受影响，origin 保留不动）',
   'repo.githubDelete.inputLabel': '输入 {name} 以确认删除',
+  'repo.githubDelete.tokenLabel': 'GitHub Token（必填）',
+  'repo.githubDelete.tokenHint': '为防误删，需当场提供有 delete_repo 权限的 Token：不复用已保存凭据、不会保存，仅用于本次删除',
   'repo.githubDelete.delete': '永久删除',
   'repo.githubDelete.deleting': '删除中…',
   'repo.githubDelete.done': '✅ 已删除 GitHub 仓库 {name}（本地 origin 未改动，可按需在「Git 信息与配置」调整）',

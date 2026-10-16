@@ -92,6 +92,9 @@ export const repo = {
   'repo.githubDelete.title': 'Delete GitHub Repository',
   'repo.githubDelete.warn': 'This cannot be undone: {name} and all its commits, issues etc. will be permanently deleted (your local project is unaffected; origin stays as-is)',
   'repo.githubDelete.inputLabel': 'Type {name} to confirm deletion',
+  'repo.githubDelete.tokenLabel': 'GitHub Token (required)',
+  'repo.githubDelete.tokenHint':
+    'To prevent accidental deletion, provide a delete_repo-scoped token: saved credentials are not reused, nothing is stored — used only for this deletion',
   'repo.githubDelete.delete': 'Delete Permanently',
   'repo.githubDelete.deleting': 'Deleting…',
   'repo.githubDelete.done': '✅ Deleted GitHub repository {name} (local origin unchanged; adjust in Git Info & Config if needed)',

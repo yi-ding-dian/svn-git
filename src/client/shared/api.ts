@@ -617,8 +617,8 @@ export const post = {
     }>('/api/github-fork', json({})),
   /** GitHub 删除仓库（⋯ 菜单；删除 origin 指向的远程仓库，不可恢复——前端要求输入完整仓库名二次确认）。
    *  凭据用已存 Git 凭据（classic Token 需 delete_repo）；本地 origin 不自动改动。 */
-  githubDeleteRepo: (confirm: string) =>
-    api<{ ok: boolean; fullName?: string; message?: string }>('/api/github-delete-repo', json({ confirm })),
+  githubDeleteRepo: (confirm: string, token: string) =>
+    api<{ ok: boolean; fullName?: string; message?: string }>('/api/github-delete-repo', json({ confirm, token })),
   branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete', name: string, force = false, signal?: AbortSignal, base?: string) =>
     api<VcsResult>('/api/branch', json({ action, name, force, base }, signal)),
   /** 终端：执行 git / svn 命令（护栏见 routes/terminal.ts）。

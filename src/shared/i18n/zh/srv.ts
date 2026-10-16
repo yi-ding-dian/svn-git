@@ -198,7 +198,7 @@ export const srv = {
   'srv.githubTimeout': '请求 GitHub 超时（{sec} 秒）',
   // ---- GitHub 删除仓库 ----
   'srv.githubDeleteConfirmMismatch': '确认的仓库名不匹配（需输入 {name}）',
-  'srv.githubDeleteNoAuth': '未配置 GitHub 凭据——无法删除仓库',
+  'srv.githubDeleteNeedToken': '删除仓库需当场提供 Token（请在弹窗中填写）——不复用已保存凭据',
   'srv.githubDeleteForbidden': 'Token 权限不足：删除仓库需要 delete_repo 权限（classic）或 Administration 写权限（fine-grained），本次未执行删除',
   'srv.githubDeleteNotFound': '仓库不存在或无权访问（可能已被删除）',
   'srv.githubDeleteFailed': '删除仓库失败：{msg}',

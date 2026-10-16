@@ -465,9 +465,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       send({ ok: false, message: t('srv.githubDeleteConfirmMismatch', { name: fullName }) });
       return true;
     }
-    const token = loadConfig().git?.password ?? '';
+    const token = String(body.token ?? '').trim();
     if (!token) {
-      send({ ok: false, message: t('srv.githubDeleteNoAuth') });
+      // 删除必须**当场提供 Token**（不复用已保存凭据——防"随便就删"，用户定稿）：
+      // 有 delete_repo 权限的任意 Token 均可，权限校验由 GitHub 的响应自然完成
+      send({ ok: false, message: t('srv.githubDeleteNeedToken') });
       return true;
     }
     const ctl = new AbortController();

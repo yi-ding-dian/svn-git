@@ -184,7 +184,7 @@ export const srv = {
   'srv.githubTimeout': 'GitHub request timed out ({sec}s)',
   // ---- GitHub delete repository ----
   'srv.githubDeleteConfirmMismatch': 'Confirmation name mismatch (type {name})',
-  'srv.githubDeleteNoAuth': 'No GitHub credential configured — cannot delete the repository',
+  'srv.githubDeleteNeedToken': 'Deleting a repository requires a token provided in the dialog — saved credentials are not reused',
   'srv.githubDeleteForbidden': 'Token lacks permission: deleting a repository requires delete_repo (classic) or Administration write (fine-grained); nothing was deleted',
   'srv.githubDeleteNotFound': 'Repository not found or no access (it may already be deleted)',
   'srv.githubDeleteFailed': 'Failed to delete repository: {msg}',

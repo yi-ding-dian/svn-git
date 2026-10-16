@@ -1,8 +1,9 @@
 /** GitHub 删除仓库弹窗（顶栏 ⋯ 菜单入口；与「GitHub 仓库信息」同条件：origin 指向 github.com 才可见）：
- *  危险操作——必须**输入完整仓库名**（owner/repo，与 GitHub 网页同款流程）才解锁「永久删除」按钮；
- *  服务端会再校验一次确认名（防绕过）。删除只作用于 origin 指向的仓库；**本地 origin 不做改动**
- *  （删完顶栏如实显示仓库已不存在，用户按需自行调整远程）。
- *  凭据用已存的 Git 凭据（classic Token 需 delete_repo 权限，服务端的错误文案会明确提示）。 */
+ *  危险操作——必须**输入完整仓库名**（owner/repo，与 GitHub 网页同款流程）**且当场提供 Token**
+ *  （不复用已保存凭据、不会保存——防"随便就删"，用户定稿）才解锁「永久删除」按钮；
+ *  服务端会再校验（确认名 + Token 必填，防绕过）。删除只作用于 origin 指向的仓库；
+ *  **本地 origin 不做改动**（删完顶栏如实显示仓库已不存在，用户按需自行调整远程）。
+ *  Token 需 delete_repo 权限（classic）；无权限时服务端的错误文案会明确提示。 */
 
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
@@ -17,6 +18,8 @@ export function GitHubDeleteModal(props: {
 }) {
   const [fullName, setFullName] = useState('');
   const [confirm, setConfirm] = useState('');
+  /** 当场提供的 Token（必填；仅本次使用、不保存） */
+  const [token, setToken] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -36,15 +39,15 @@ export function GitHubDeleteModal(props: {
     };
   }, []);
 
-  /** 输入与完整名一致才解锁删除（GitHub 网页同款防手滑） */
-  const matched = fullName !== '' && confirm.trim() === fullName;
+  /** 输入与完整名一致 + Token 已填，才解锁删除（GitHub 网页同款防手滑 + 当场凭证双门槛） */
+  const matched = fullName !== '' && confirm.trim() === fullName && token.trim() !== '';
 
   const submit = () => {
     if (busy || !matched) return;
     setBusy(true);
     setErr('');
     void post
-      .githubDeleteRepo(confirm.trim())
+      .githubDeleteRepo(confirm.trim(), token.trim())
       .then((r) => {
         if (!r.ok) {
           // 失败原因来自服务端（权限不足 / 仓库不存在 / 网络不通等）
@@ -81,6 +84,22 @@ export function GitHubDeleteModal(props: {
               }}
               autoFocus
             />
+          </div>
+          <div className="form-row" style={{ marginBottom: 0, marginTop: 12 }}>
+            {/* GitHub Token（必填） */}
+            <label>{t('repo.githubDelete.tokenLabel')}</label>
+            <input
+              type="password"
+              className="mono"
+              placeholder="ghp_… / github_pat_…"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submit();
+              }}
+            />
+            {/* 为防误删，需当场提供有 delete_repo 权限的 Token：不复用已保存凭据、不会保存，仅用于本次删除 */}
+            <div className="dim small" style={{ marginTop: 4 }}>{t('repo.githubDelete.tokenHint')}</div>
           </div>
           {err && (
             <div className="error small" style={{ marginTop: 8, wordBreak: 'break-all' }}>
