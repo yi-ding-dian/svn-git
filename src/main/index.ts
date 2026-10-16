@@ -9,7 +9,7 @@ import { startServer, setPickDirHandler } from '../server/index.js';
 import { killAllChildren } from '../vcs/exec.js';
 import { recoverInflight } from '../inflight.js';
 import { detectRepo } from '../vcs/detect.js';
-import { platform } from '../platform/index.js';
+import { platform, setHostOwnsWindow } from '../platform/index.js';
 import { dedupeHistory } from '../server/routes/recent.js';
 import { loadConfig } from '../config.js';
 import { t, setLang } from '../shared/i18n/index.js';
@@ -54,6 +54,8 @@ async function openUI(url: string) {
       app: typeof import('electron').app;
     };
     electron.Menu.setApplicationMenu(null);
+    // 本进程从此有自己的窗口：平台层据此走"直接 spawn explorer"的快路（见 win32 的 revealPath）
+    setHostOwnsWindow(true);
     const win = new electron.BrowserWindow({
       width: 1280,
       height: 820,
