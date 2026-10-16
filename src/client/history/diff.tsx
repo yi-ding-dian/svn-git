@@ -215,6 +215,10 @@ export function DiffView(props: Props) {
    *  进入前拉到的最新文本（准入检查一并做掉）+ 保存后重对比的加载 key */
   const [editing, setEditing] = useState(false);
   const editorRef = useRef<InlineEditorHandle>(null);
+  // editing 的镜像：goBlock 是 useCallback（闭包缓存），直读 editing 会拿旧值（进出编辑态
+  // 不触发它重建）——"编辑态跳转走编辑器"的分支必须读 ref 才可靠
+  const editingRef = useRef(false);
+  editingRef.current = editing;
   const [editDirty, setEditDirty] = useState(false);
   const [editData, setEditData] = useState<{ text: string; eol: '\n' | '\r\n'; jumpLine?: number } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -317,13 +321,16 @@ export function DiffView(props: Props) {
   const blocksRef = useRef<{ id: number; left: number; right: number }[]>([]);
   const curBlockRef = useRef(0);
   curBlockRef.current = curBlock;
-  // 跳转目标块高亮：点击一侧/块导航后，另一侧对应块脉冲呼吸 1.5s（多块散布时一眼锁定对应修改）
+  // 跳转目标块高亮：点击一侧/块导航后，两侧对应块脉冲呼吸约 2.2s（多块散布时一眼锁定对应修改）
   const [targetBlock, setTargetBlock] = useState<number | null>(null);
   const targetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashTarget = useCallback((block: number) => {
-    setTargetBlock(block);
+    // 先清、隔一帧再设：连点同一个点（targetBlock 值不变）时类没被移除过，CSS 动画不会重播
+    // ——用户想"再看一眼"时闪不出来。跨帧先摘类再挂，动画每次都从头播
+    setTargetBlock(null);
     if (targetTimer.current) clearTimeout(targetTimer.current);
-    targetTimer.current = setTimeout(() => setTargetBlock(null), 1500);
+    targetTimer.current = setTimeout(() => setTargetBlock(null), 2500); // 与 CSS 的 0.75s×3 匹配、留余量
+    requestAnimationFrame(() => setTargetBlock(block));
   }, []);
 
   /** 定位纯删除块：返回右栏**占位行**的行号（-block，由 rightRows 插入并注册进 rightRefs）；
@@ -345,7 +352,16 @@ export function DiffView(props: Props) {
     window.setTimeout(() => {
       jumpLock.current = false;
     }, 700);
-    leftRefs.current.get(b.left)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // 左栏：有 del 行用其行号；纯新增块的 b.left 是 MAX_SAFE_INTEGER 哨兵（块内无 del 行），
+    // 落到块内第一个占位行（leftPhRefs 按块号存）——否则「下一个/左栏刻度」点了左栏纹丝不动
+    const leftEl = b.left !== Number.MAX_SAFE_INTEGER ? leftRefs.current.get(b.left) : leftPhRefs.current.get(b.id);
+    leftEl?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // 编辑态：右栏是编辑器（没有行元素，rightRefs 定位不到）——把光标定位到块的工作区行
+    // （与 jumpRight 的编辑态分支同源：用 b.right；纯删除块无对应行，gotoLine(0) 自行忽略）
+    if (editingRef.current) {
+      editorRef.current?.gotoLine(b.right > 0 && b.right < Number.MAX_SAFE_INTEGER ? b.right : 0);
+      return;
+    }
     // 纯删除块的 b.right 是 MAX_SAFE_INTEGER 哨兵（块内无 add 行），get 不到元素 → 右栏原本纹丝不动
     rightRefs.current.get(locateDel(b.id) ?? b.right)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [flashTarget, locateDel]);
@@ -554,16 +570,40 @@ export function DiffView(props: Props) {
     leftRefs.current.get(dMatchesL[next]!)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [dMatchesL, dMatchLIdx, previewL]);
 
-  // 滚动条预览标记：修改块位置（绿=有新增/修改行，红=纯删除）
+  // 滚动条预览标记：修改块位置（绿=有新增/修改行，红=纯删除）。
+  // index 是块在 blocks 数组里的序号（curBlock / goBlock 的语义）；block 是 diff 块号（从 1 起，见
+  // diff-parse 的块号约定）——高亮与跳转一律用 index：早期误用 block 与 curBlock 比较，错位 1
   const scrollMarkers = useMemo(() => {
-    if (blocks.length === 0) return [] as { block: number; percent: number; color: 'add' | 'del' }[];
+    if (blocks.length === 0) return [] as { block: number; index: number; percent: number; color: 'add' | 'del' }[];
     const total = Math.max(leftRows.length, rightRows.length, 1);
-    return blocks.map((b) => {
+    return blocks.map((b, index) => {
       const hasAdd = b.right > 0 && b.right !== Number.MAX_SAFE_INTEGER;
       const anchor = hasAdd ? b.right : b.left;
-      return { block: b.id, percent: Math.min(99, Math.max(0, (anchor / total) * 100)), color: hasAdd ? ('add' as const) : ('del' as const) };
+      return { block: b.id, index, percent: Math.min(99, Math.max(0, (anchor / total) * 100)), color: hasAdd ? ('add' as const) : ('del' as const) };
     });
   }, [blocks, leftRows.length, rightRows.length]);
+
+  // 左栏滚动条标记：与右栏同款（同块同色、点击走同一 goBlock 两侧联动）。
+  // 位置按**左栏行索引**算：左栏未「显示全部」时是差异片段、行号不连续——用行号比例会错位；
+  // index 同右栏（高亮/跳转用）；rowIdx = 锚行在 leftRows 里的序号（纵向定位用，见渲染处 min(…)）
+  const leftScrollMarkers = useMemo(() => {
+    if (blocks.length === 0 || leftRows.length === 0) return [] as { block: number; index: number; rowIdx: number; percent: number; color: 'add' | 'del' }[];
+    return blocks.flatMap((b, index) => {
+      const idx = leftRows.findIndex((r) => r.block === b.id);
+      if (idx < 0) return [];
+      const hasAdd = b.right > 0 && b.right !== Number.MAX_SAFE_INTEGER;
+      return [{ block: b.id, index, rowIdx: idx, percent: Math.min(99, Math.max(0, (idx / leftRows.length) * 100)), color: hasAdd ? ('add' as const) : ('del' as const) }];
+    });
+  }, [blocks, leftRows]);
+  // 左栏代码行的行高（px）：纵向定位的像素项用。取 pane 继承的 line-height 实测值
+  // （CSS 调了自动跟上）；首帧（ref 未挂）先用默认值，误差一帧内自愈
+  const [leftLineH, setLeftLineH] = useState(20.15);
+  useEffect(() => {
+    const pane = leftPane.current;
+    if (!pane) return;
+    const lh = parseFloat(getComputedStyle(pane).lineHeight);
+    if (lh > 0) setLeftLineH(lh);
+  }, []);
 
   // 变更块定位：本侧有对应行（del→左栏 / add→右栏）用其行号；
   // 本侧无对应行（点击新增行跳左栏 / 删除行跳右栏）定位到该块最近位置（负数 = 左栏占位行）
@@ -912,7 +952,9 @@ export function DiffView(props: Props) {
           </div>
           <div style={{ display: 'flex', flex: 1, minHeight: 0, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
             {/* 左栏：原版（flex 不伸缩，宽度由 leftRatio 控制；sb-pane 默认 flex:1 会覆盖 width） */}
-            <div ref={leftPane} className="sb-pane" style={{ width: `${leftRatio}%`, flex: '0 0 auto' }} onScroll={onScrollSync('left')}>
+            {/* 左栏 + 滚动条预览标记（结构同右栏：pane 让出 12px 给标记条） */}
+            <div style={{ position: 'relative', flex: '0 0 auto', width: `${leftRatio}%`, display: 'flex', minWidth: 0 }}>
+            <div ref={leftPane} className="sb-pane" onScroll={onScrollSync('left')}>
               {previewL ? (
                 <div
                   className="md-render"
@@ -952,6 +994,26 @@ export function DiffView(props: Props) {
               })}
               </>
               )}
+            </div>
+            {/* 滚动条预览标记：绿=新增/修改，红=删除；点击两侧联动定位（与右栏刻度同行为） */}
+            {leftScrollMarkers.length > 0 && (
+              <div className="sb-scrollbar" title={t('hist.markerTip')}>
+                {leftScrollMarkers.map((m) => (
+                  <div
+                    key={m.block}
+                    className={`sb-marker-dot ${m.color} ${m.index === curBlock ? 'current' : ''}`}
+                    // 纵向位置 = min(比例位置, 锚行像素位置)：内容可滚动时取比例（滚动地图，与右栏同）；
+                    // 内容不满一屏（片段模式常见）时取像素——纯比例会散布到条底空白区、与行明显错位
+                    style={{ top: `min(${m.percent}%, ${Math.round(m.rowIdx * leftLineH)}px)` }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      goBlock(m.index);
+                    }}
+                    title={m.color === 'add' ? t('hist.markerAdd') : t('common.delete')}
+                  />
+                ))}
+              </div>
+            )}
             </div>
             {/* 拖拽手柄 */}
             {/* 拖动调整左右栏宽度 */}
@@ -1029,11 +1091,11 @@ export function DiffView(props: Props) {
                 {scrollMarkers.map((m) => (
                   <div
                     key={m.block}
-                    className={`sb-marker-dot ${m.color} ${m.block === curBlock ? 'current' : ''}`}
+                    className={`sb-marker-dot ${m.color} ${m.index === curBlock ? 'current' : ''}`}
                     style={{ top: `${m.percent}%` }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      goBlock(blocks.findIndex((b) => b.id === m.block));
+                      goBlock(m.index);
                     }}
                     // 新增/修改 / 删除
                     title={m.color === 'add' ? t('hist.markerAdd') : t('common.delete')}
