@@ -8,6 +8,7 @@
  *  锚点缺失（如未打开仓库/完成后沙漏已卸载）由调用方给兜底目标，都没有就静默跳过；
  *  prefers-reduced-motion 只做落点脉冲。
  *  入口：推送确认按钮 / 检出按钮（起飞）；检出完成落到最近项目（降落）。 */
+import { prefersReducedMotion } from './shared.js';
 
 /** 星屑/爆散的颜色池（青 → 紫 → 粉 → 白，与顶栏图标同色系） */
 const COLORS = ['#7dd3fc', '#a78bfa', '#f0abfc', '#fda4af', '#ffffff'];
@@ -69,7 +70,7 @@ async function fly(from: { x: number; y: number }, target?: FlightTarget): Promi
     el.classList.add('task-anchor-pulse');
     el.addEventListener('animationend', () => el.classList.remove('task-anchor-pulse'), { once: true });
   };
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+  if (prefersReducedMotion()) {
     pulse();
     return;
   }

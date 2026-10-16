@@ -46,6 +46,7 @@ export function GridItem(props: {
       : e.codes;
   return (
     <div
+      data-fs-rel={props.rel} /* 动画域（animations）按它定位行（丢出/盖章/扫过等） */
       data-dir-rel={e.isDir ? props.rel : undefined} /* 拖入落点：容器按事件委托读它 */
       draggable={!props.renaming} /* 就地改名时不可拖：否则输入框里没法用鼠标选中文字 */
       onDragStart={props.onDragStart}

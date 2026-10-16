@@ -18,7 +18,9 @@ const BUILD_TAG = (() => {
 /** 复制静态文件 */
 function copyStatic() {
   fs.copyFileSync('src/client/index.html', 'dist/client/index.html');
-  fs.copyFileSync('src/client/style.css', 'dist/client/style.css');
+  // 样式 = 主样式 + 动画域（animations/animations.css，源文件域内独立、不堆进 style.css；拼接后仍单文件下发）
+  const css = fs.readFileSync('src/client/style.css', 'utf8') + '\n' + fs.readFileSync('src/client/animations/animations.css', 'utf8');
+  fs.writeFileSync('dist/client/style.css', css);
   fs.copyFileSync('build/icon.png', 'dist/client/icon.png');
   fs.copyFileSync('src/preload/index.cjs', 'dist/preload.cjs'); // Electron preload
   // index.html 的 %BUILD_TAG% 占位符替换为最新构建戳（每次复制后立即处理）

@@ -8,7 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { get } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
-import { launchMagicFlight } from '../shell/magic-flight.js';
+import { launchMagicFlight } from '../animations/index.js';
 import { PickDirModal } from './pick-dir.js';
 import { CheckoutTree } from './checkout-tree.js';
 import { CheckoutSizeDialog } from './checkout-size.js';

@@ -8,7 +8,7 @@ import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { useTasks } from '../shared/tasks.js';
 import { startTaskDeferred } from '../shell/bg-defer.js';
-import { launchMagicFlight } from '../shell/magic-flight.js';
+import { launchMagicFlight } from '../animations/index.js';
 import { ResultLine } from '../ui/result-line.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 import { LayoutNote } from './layout-note.js';

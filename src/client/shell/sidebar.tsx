@@ -8,7 +8,7 @@ import { THEMES, THEME_PINNED } from './header.js';
 import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js';
 import { baseName } from '../shared/utils.js';
 import { startTask, useTasks } from '../shared/tasks.js';
-import { launchMagicFlight } from './magic-flight.js';
+import { launchMagicFlight } from '../animations/index.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 主视图类型（侧边栏导航目标） */

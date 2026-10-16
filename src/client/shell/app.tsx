@@ -17,7 +17,7 @@ import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError, baseN
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { useTasks, startTask, hasRunningTask, pollTransferProgress } from '../shared/tasks.js';
 import { addNotice } from '../shared/notices.js';
-import { launchMagicFlight } from './magic-flight.js';
+import { clearCommittedRows, flyRowsToTrash, launchMagicFlight, settleUpdatedRows, shakeEl, stampAddedRows, sweepRevertedRows } from '../animations/index.js';
 import { useLang } from '../shared/use-lang.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 
@@ -49,6 +49,7 @@ export function App() {
   const [toastErr, setToastErr] = useState(false);
   /** 轻提示（1.5s 消失；重复操作提醒等"扫一眼就够"的）——见 showToast 的 quick 参数 */
   const [toastQuick, setToastQuick] = useState(false);
+  const toastRef = useRef<HTMLDivElement>(null);
   const [modal, setModal] = useState<Modal>(null);
   // modal 最新引用：后台校验（提交前检查）完成后判断用户是否已关窗/切换，避免结果打扰
   const modalRef = useRef<Modal>(null);
@@ -94,6 +95,10 @@ export function App() {
     const timer = setTimeout(() => setToast(''), toastQuick || !toastErr ? 1500 : 3000);
     return () => clearTimeout(timer);
   }, [toast, toastErr, toastQuick]);
+  // 错误提示出场时轻抖一下（"出了状况"的肢体语言；成功提示不抖）
+  useEffect(() => {
+    if (toastErr) shakeEl(toastRef.current);
+  }, [toast, toastErr]);
   const [env, setEnv] = useState<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } } | null>(null);
   // 外观（主题 / 我的主题 / 字号 / 界面与代码字体）：状态、localStorage 持久化与应用 effect 都在 hook 内
   const {
@@ -307,6 +312,11 @@ export function App() {
       showToast(r.message, !r.ok);
       if (r.ok) {
         refresh();
+        // 动作落到行上的回馈（animations 动画域）：刷新换数据后行上给「刚刚发生了什么」的反馈；
+        // 行不在当前视图/视口外由 playOnRow 静默跳过，不会出错。
+        // （update 的"落座"不在这里——更新走 doUpdateDir 的后台任务，动画接在那里）
+        if (op === 'add') stampAddedRows(paths);
+        else if (op === 'revert') sweepRevertedRows(paths);
         // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]），与分支/标签弹窗 onChanged 一致
         if (op === 'update') get.info().then((ri) => setInfo(ri)).catch(() => {});
       }
@@ -606,6 +616,9 @@ export function App() {
         // 回收站不可用时（runOp 返回 trashUnavailable，已跳过普通 toast）弹第二道确认：
         // 直接磁盘删除不可恢复，确认后 force 重发（跳过回收站），取消则文件原样
         const doDelete = (list: string[], force = false) => {
+          // 丢出屏幕：点确认的瞬间即播（不等删除结果——本地删除很快；回收站不可用/失败时
+          // 行会随列表刷新回来，二次确认后重发会再飞一次）
+          flyRowsToTrash(list);
           void runOp('fs-delete', list, false, force).then((res) => {
             if (res.trashUnavailable && res.failedPaths?.length) {
               const failed = res.failedPaths;
@@ -711,6 +724,8 @@ export function App() {
             const r = await post.update(dir || undefined, signal);
             if (r.ok) {
               refresh();
+              // 更新带来的文件行「落座」（animations 动画域）：从上方滑入 + 左侧绿竖条标记新入列
+              settleUpdatedRows(r.files?.map((f) => f.path) ?? []);
               checkRemote(); // 更新完成立即刷新远程提示条（否则要等下一轮 2 分钟轮询）
               get.info().then((ri) => setInfo(ri)).catch(() => {}); // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]）
             }
@@ -811,6 +826,7 @@ export function App() {
       if (r.ok) {
         showToast(r.message);
         refresh();
+        clearCommittedRows(paths); // 提交成功的行反馈：绿对勾"收走"
       } else if (r.code === 'NO_IDENTITY') {
         // git 身份未配置（git 拒绝提交，报 NO_IDENTITY）：不糊原始报错，改弹「设置身份」窗，
         // 保存后自动重试本次提交（重试逻辑在 modal-host，凭这里带上的 retry 数据原样重放）
@@ -886,6 +902,7 @@ export function App() {
         if (r.ok) {
           showToast(r.message);
           refresh();
+          clearCommittedRows(paths); // 提交成功的行反馈：绿对勾"收走"
         } else if (r.code === 'NO_IDENTITY') {
           // 同 doCommit：身份未配置 → 弹「设置身份」窗（勾选清单/消息原样带上，保存后自动重试）
           setModal({ type: 'git-identity', retry: { paths, message, stagedOnly } });
@@ -1163,6 +1180,7 @@ export function App() {
       {/* 操作结果提示：鼠标位置悬浮，淡出；错误态停留更久（见 .toast-tip.err） */}
       {toast && (
         <div
+          ref={toastRef}
           className={`toast-tip${toastErr ? ' err' : ''}${toastQuick ? ' quick' : ''}`}
           style={{
             left: Math.min(mouseRef.current.x, window.innerWidth - 360),

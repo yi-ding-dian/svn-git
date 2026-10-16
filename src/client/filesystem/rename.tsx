@@ -1,6 +1,7 @@
 /** 重命名/移动弹窗：只输入文件名（自动保留原目录），确认按钮悬浮显示将执行命令 */
 import React, { useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
+import { shakeEl } from '../animations/index.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 
@@ -50,7 +51,10 @@ export function RenameModal(props: {
             onChange={(e) => setTo(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !err) props.onConfirm(fullTo);
+              if (e.key !== 'Enter') return;
+              // 名字不合法：抖一下输入框提示（下方红字说明可能没被注意到）
+              if (err) shakeEl(e.currentTarget);
+              else props.onConfirm(fullTo);
             }}
             style={{ width: '100%', fontFamily: 'var(--mono)' }}
           />

@@ -1,7 +1,7 @@
 /** 新建 / 获取仓库弹窗：新建仓库（CreateRepoDialog，git init / svnadmin create）+ 获取仓库（GetRepoDialog，git clone / svn checkout） */
 import React, { useState } from 'react';
 import { post, type RepoCheck } from '../shared/api.js';
-import { launchMagicFlight } from '../shell/magic-flight.js';
+import { launchMagicFlight } from '../animations/index.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { IconDownload, IconPlus } from '../ui/icons.js';
 import { PickDirModal } from './pick-dir.js';

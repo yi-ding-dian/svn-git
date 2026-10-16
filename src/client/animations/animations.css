@@ -1,0 +1,60 @@
+/* ============================================================
+   animations —— 动画域样式（对应 src/client/animations/ 下的动画模块）
+   构建时由 build-web.mjs 拼接在 style.css 之后（源文件独立成域，
+   不再往 style.css 里堆）。各动画的 keyframes / class 按模块分节：
+     · trash-fly    删除到回收站：丢出屏幕
+     · add-stamp    添加到版本库：盖章
+     · revert-sweep 还原：擦掉（光带扫过）
+     · commit-clear 提交成功：收走（对勾）
+     · fresh-arrive 更新完成：文件落座
+     · shake        错误抖动（通用）
+   ============================================================ */
+
+/* ---------- trash-fly：删除到回收站「丢出屏幕」 ---------- */
+/* 原行：飞行期间隐藏。用 visibility 而非 display——保留占位不塌缩，等列表刷新后一次重排
+   （两次跳动变一次）；动画结束由 JS 移除（删除失败行还在时恢复显示）。 */
+.anim-fly-hidden { visibility: hidden; }
+/* 飞行替身：克隆行 + 轻投影（离屏飞行的立体感）；位移/旋转由 JS 用 WAAPI 驱动 */
+.anim-fly-ghost { box-shadow: 0 6px 22px rgba(0, 0, 0, .18); will-change: transform; }
+
+/* ---------- add-stamp：添加到版本库「盖章」 ---------- */
+/* 圆形印章：行左端（位置由内联层定位，动画走 WAAPI 的 transform——这里不用 transform 定位） */
+.anim-seal {
+  position: absolute; left: 10px; top: 50%; margin-top: -11px;
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; line-height: 1;
+  color: #ffffff; background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(63, 185, 80, .16), 0 2px 8px rgba(0, 0, 0, .2);
+}
+/* 描边环：整行一圈绿光扩散（"盖下去、墨晕开"） */
+.anim-seal-ring {
+  position: absolute; inset: -1px;
+  border: 1.5px solid var(--ok); border-radius: 8px;
+}
+
+/* ---------- revert-sweep：还原「擦掉」（光带扫过） ---------- */
+.anim-sweep-beam {
+  position: absolute; top: -2px; bottom: -2px; left: 0; width: 40%;
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(63, 185, 80, 0), rgba(63, 185, 80, .42), rgba(63, 185, 80, 0));
+}
+
+/* ---------- commit-clear：提交成功「收走」（对勾） ---------- */
+.anim-clear-check {
+  position: absolute; left: 11px; top: 50%; margin-top: -11px;
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; line-height: 1;
+  color: var(--ok);
+  text-shadow: 0 0 10px rgba(63, 185, 80, .5);
+}
+
+/* ---------- fresh-arrive：更新完成「落座」（新文件行） ---------- */
+.anim-arrive-bar {
+  position: absolute; left: 0; top: 22%; bottom: 22%; width: 3px;
+  border-radius: 2px; background: var(--ok);
+  box-shadow: 0 0 6px rgba(63, 185, 80, .5);
+}
+
+

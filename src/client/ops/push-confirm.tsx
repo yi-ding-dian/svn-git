@@ -8,7 +8,7 @@ import { ConfirmModal, InfoModal } from '../ui/prompt.js';
 import { ClickTip } from '../ui/ui.js';
 import { autoSizeForText } from '../shared/utils.js';
 import { renderMarkdown } from '../shared/markdown.js';
-import { launchMagicFlight } from '../shell/magic-flight.js';
+import { launchMagicFlight } from '../animations/index.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 二进制/图片等不支持差异查看的文件扩展名（双击查看差异前过滤） */

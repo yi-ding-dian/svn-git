@@ -9,7 +9,7 @@
  */
 import React from 'react';
 import { get, post, type RepoInfo } from '../shared/api.js';
-import { launchMagicFlight } from './magic-flight.js';
+import { launchMagicFlight } from '../animations/index.js';
 import { CommitModal } from '../ops/commit.js';
 import { CommitSelectModal } from '../ops/commit-select.js';
 import { BranchDialog } from '../ops/branch.js';

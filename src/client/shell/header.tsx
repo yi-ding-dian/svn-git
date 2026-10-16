@@ -8,7 +8,7 @@ import { startTaskDeferred } from './bg-defer.js';
 import { TaskProgress } from './task-progress.js';
 import { TaskDetailModal } from './task-detail.js';
 import { CancelCheckoutConfirm } from '../repo/checkout-task.js';
-import { launchMagicFlight } from './magic-flight.js';
+import { launchMagicFlight } from '../animations/index.js';
 import { baseName } from '../shared/utils.js';
 import { UpdateResultModal, type UpdateResultDetail } from '../ops/update-result.js';
 import { InfoModal } from '../ui/prompt.js';

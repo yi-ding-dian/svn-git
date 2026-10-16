@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, type FsData, type FsEntry } from '../shared/api.js';
-import { flashBreadcrumbs } from '../ui/motion.js';
+import { flashBreadcrumbs } from '../animations/index.js';
 import { conflictPaths } from './use-wc-conflicts.js';
 import type { Mode, VisibleRow } from './utils.js';
 
