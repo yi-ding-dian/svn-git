@@ -148,6 +148,22 @@ function parseMergeTreeConflicts(out: string): string[] {
   return [...new Set(files)];
 }
 
+/** git 子命令在参数串里的下标（跳过 `-c k=v` / `-C <dir>` 这类**全局选项**）。
+ *  **不能在整串里 findIndex 找 'push'**：`git stash push` 的第二个词也叫 push，会被误当成传输命令——
+ *  于是给它插上 `--progress`（stash 不认这个选项，整条命令直接 unknown option 失败）并把顶栏
+ *  进度通道也抢走。只看"子命令位"这一个词，别的位置出现同名词都不算。 */
+function gitSubcommandIndex(args: string[]): number {
+  let i = 0;
+  while (i < args.length) {
+    const a = args[i]!;
+    // 带值的全局选项：连同它的值一起跳过
+    if (a === '-c' || a === '-C' || a === '--git-dir' || a === '--work-tree' || a === '--namespace' || a === '--exec-path' || a === '--config-env') i += 2;
+    else if (a.startsWith('-')) i += 1; // 无值全局开关（--no-pager 等）
+    else break;
+  }
+  return i;
+}
+
 export class GitVcs {
   constructor(private repo: RepoInfo) {}
 
@@ -157,8 +173,9 @@ export class GitVcs {
     //  - 通道名就是子命令名——同一时刻只对一个仓库做传输（推送侧另有防重入），不必再拼路径；
     //  - **不逐处穿回调**：一次推送要跑 2~3 个 exec（无上游重试、认证重试），拉取同理，
     //    挂在这里一处到位，也免得将来新加的 push 变体漏掉。
-    const i = args.findIndex((a) => a === 'push' || a === 'pull' || a === 'fetch');
-    const chan = i >= 0 ? args[i]! : '';
+    const i = gitSubcommandIndex(args);
+    const sub = args[i] ?? '';
+    const chan = sub === 'push' || sub === 'pull' || sub === 'fetch' ? sub : '';
     if (chan) progressStart(chan);
     return run('git', chan ? [...args.slice(0, i + 1), '--progress', ...args.slice(i + 1)] : args, {
       cwd: this.repo.root,
