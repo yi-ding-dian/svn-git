@@ -1,7 +1,7 @@
 /** VCS 层冒烟测试：每次运行前重置仓库并构造确定状态，保证可重复执行 */
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { run } from '../dist/vcs/exec.js';
 import { detectRepo } from '../dist/vcs/detect.js';
 import { GitVcs } from '../dist/vcs/git.js';
@@ -48,7 +48,9 @@ fs.writeFileSync(`${GIT_DIR}/tmp-test.txt`, 'x'); // -> ??
 fs.rmSync(path.join(TEST_BASE, 'svn-repo'), { recursive: true, force: true });
 fs.rmSync(SVN_DIR, { recursive: true, force: true });
 await run('svnadmin', ['create', path.join(TEST_BASE, 'svn-repo')]);
-await run('svn', ['checkout', '-q', `file://${path.join(TEST_BASE, 'svn-repo')}`, SVN_DIR]);
+// 仓库 URL 必须用 pathToFileURL 转：`file://` 后面拼 Windows 路径（path.join 给的是反斜杠）
+// 会被 svn 判成非法 URL（E170000 file://d:%5c...），checkout 静默失败、工作副本建不出来
+await run('svn', ['checkout', '-q', pathToFileURL(path.join(TEST_BASE, 'svn-repo')).href, SVN_DIR]);
 fs.writeFileSync(`${SVN_DIR}/readme.md`, 'project doc');
 fs.mkdirSync(`${SVN_DIR}/src`, { recursive: true });
 fs.writeFileSync(`${SVN_DIR}/src/main.c`, 'main() {}');
@@ -216,7 +218,10 @@ console.log('== 修改提交注释（amend 不丢正文）==');
   // 造基线提交：标题 + 正文（含 # 开头的 Markdown 标题行，用于验证 cleanup 不误删）
   // 注意 --cleanup=whitespace：默认 strip 在造基线时就会把 # 行吃掉，测不出问题
   const BODY = '正文第一行\n正文第二行\n# 井号开头的 Markdown 标题';
-  fs.writeFileSync(path.join(GIT_DIR, 'amend-test.txt'), 'amend test\n');
+  // 内容带时间戳：仓库基线 b4f4eef 在自建 fixture 里不存在时（脚本会退化成"重置到当前 HEAD"，
+  // 见上面的 fallback），上一轮留下的 amend-test.txt 内容一模一样 → commit 成了 no-op 直接失败，
+  // 后面 commitMessage 读到的就是上一个提交，两条断言莫名报红
+  fs.writeFileSync(path.join(GIT_DIR, 'amend-test.txt'), `amend test ${Date.now()}\n`);
   await run('git', ['add', 'amend-test.txt'], { cwd: GIT_DIR });
   await run('git', ['commit', '-q', '--cleanup=whitespace', '-m', 'amend 原标题', '-m', BODY], { cwd: GIT_DIR });
 

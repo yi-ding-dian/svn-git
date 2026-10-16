@@ -126,11 +126,15 @@ try {
     cp.code === 200 && read('tree/inner/b.txt')?.toString() === 'BBB\n' && read('tree/a.sh') !== null,
     `code=${cp.code}`,
   );
-  check(
-    'copy-into 保留可执行位（走 HTTP 上传会丢）',
-    (fs.statSync(path.join(REPO, 'tree/a.sh')).mode & 0o777) === 0o755,
-    `mode=${(fs.statSync(path.join(REPO, 'tree/a.sh')).mode & 0o777).toString(8)}`,
-  );
+  // 可执行位是 POSIX 概念：Windows 上 statSync().mode 恒为 0o666（与文件内容无关），
+  // 这条断言在那儿没有任何含义，跳过而不是判失败
+  if (process.platform !== 'win32') {
+    check(
+      'copy-into 保留可执行位（走 HTTP 上传会丢）',
+      (fs.statSync(path.join(REPO, 'tree/a.sh')).mode & 0o777) === 0o755,
+      `mode=${(fs.statSync(path.join(REPO, 'tree/a.sh')).mode & 0o777).toString(8)}`,
+    );
+  }
   cp = await copyInto('', path.join(SRC, 'one.txt'), 'copied.txt', 'skip');
   check('copy-into skip 不覆盖', cp.body.skipped === true && read('copied.txt')?.toString() === 'ONE\n');
   fs.writeFileSync(path.join(SRC, 'one.txt'), 'ONE-V2\n');

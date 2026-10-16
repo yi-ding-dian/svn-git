@@ -1,7 +1,7 @@
 /** 版本管理扩展功能测试：分支/标签/Stash/合并/清理/Blame/忽略/锁定/创建仓库 */
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { run } from '../dist/vcs/exec.js';
 import { detectRepo } from '../dist/vcs/detect.js';
 import { GitVcs } from '../dist/vcs/git.js';
@@ -12,6 +12,22 @@ const TEST_BASE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 
 const GIT_DIR = path.join(TEST_BASE, 'git-repo');
 const SVN_DIR = path.join(TEST_BASE, 'svn-wc'); // 非标准布局（无 trunk，测试拒绝创建分支）
 const SVN_STD_DIR = path.join(TEST_BASE, 'svn-std-wc'); // 标准布局（trunk/branches/tags，测试分支创建/切换）
+
+// 标准布局 fixture 自建并**每次重建**（与 vcs-test 的 svn-wc 同口径）。
+// 以前这份 fixture 靠手工准备、不入库，换台机器或清理过就没有了——SVN 段会在 `spawn svn` 上
+// 以 ENOENT 崩掉（cwd 不存在，报错还长得像"svn 没装"），整条 npm test 链断在这儿。
+// 注意 URL 必须走 pathToFileURL：`file://` 拼 Windows 路径（反斜杠）会被 svn 判成非法 URL
+const SVN_STD_REPO = path.join(TEST_BASE, 'svn-std-repo');
+fs.rmSync(SVN_STD_REPO, { recursive: true, force: true });
+fs.rmSync(SVN_STD_DIR, { recursive: true, force: true });
+const svnStdUrl = pathToFileURL(SVN_STD_REPO).href;
+await run('svnadmin', ['create', SVN_STD_REPO]);
+await run('svn', ['mkdir', '-q', `${svnStdUrl}/trunk`, `${svnStdUrl}/branches`, `${svnStdUrl}/tags`, '-m', 'init standard layout']);
+await run('svn', ['checkout', '-q', `${svnStdUrl}/trunk`, SVN_STD_DIR]);
+// trunk 里得有东西：后面要断言"新建的分支是从 trunk 复制来的，含 readme.md"
+fs.writeFileSync(path.join(SVN_STD_DIR, 'readme.md'), 'project doc\n');
+await run('svn', ['add', '-q', 'readme.md'], { cwd: SVN_STD_DIR });
+await run('svn', ['commit', '-qm', 'initial commit'], { cwd: SVN_STD_DIR });
 
 let pass = 0;
 let fail = 0;

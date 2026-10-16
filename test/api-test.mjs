@@ -435,7 +435,10 @@ src/
     const baseContent = (await run('git', ['show', `${revBase}:readme.md`], { cwd: GIT_DIR })).stdout;
     const rv = await post('/api/restore-version', { path: 'readme.md', rev: revBase });
     check('git 还原到指定版本成功', rv.code === 200 && rv.body.ok === true, `msg=${rv.body.message}`);
-    check('git 还原后文件内容为该版本内容', fs.readFileSync(f, 'utf8') === baseContent, `got=${JSON.stringify(fs.readFileSync(f, 'utf8'))}`);
+    // 按行尾无关比较：Windows + core.autocrlf=true 时检出会把 LF 写成 CRLF（git 的正常行为，
+    // 不是还原出错），直接比对内容这条断言就只在 Linux 上成立
+    const eolInsensitive = (s) => s.replace(/\r\n/g, '\n');
+    check('git 还原后文件内容为该版本内容', eolInsensitive(fs.readFileSync(f, 'utf8')) === eolInsensitive(baseContent), `got=${JSON.stringify(fs.readFileSync(f, 'utf8'))}`);
     const st12 = await get('/api/status');
     const item12 = st12.body.items?.find((i) => i.path === 'readme.md');
     check('git restore 后显示 M（工作区修改，可提交）', st12.code === 200 && item12?.code === 'M', `code=${item12?.code}`);
