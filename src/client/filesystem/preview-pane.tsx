@@ -12,9 +12,9 @@ import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
 import { IconExternal } from '../ui/icons.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
-import { InlineEditor, type InlineEditorHandle } from './inline-editor.js';
+import { InlineEditor, type InlineEditorHandle } from '../shared/inline-editor.js';
 import { renderMarkdown } from '../shared/markdown.js';
-import { MdThemePopover, loadMdTheme, saveMdTheme, mdThemeVars, mdThemeName } from './md-theme.js';
+import { MdThemePopover, loadMdTheme, saveMdTheme, mdThemeVars, mdThemeName } from '../shared/md-theme.js';
 import { MdTocPopover, type TocItem } from './md-toc.js';
 
 /** 预览目标：{文件名, 相对路径, 状态码?, 是否图片?}；文本内容由面板自行加载 */

@@ -8,7 +8,7 @@ import { IconCopy } from '../ui/icons.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { parseUnifiedDiff, lineMarksOf, type DiffLine } from '../../shared/diff-parse.js';
 import { t } from '../../shared/i18n/index.js';
-import { InlineEditor, type InlineEditorHandle } from '../filesystem/inline-editor.js';
+import { InlineEditor, type InlineEditorHandle } from '../shared/inline-editor.js';
 
 export interface DiffTarget {
   path?: string;

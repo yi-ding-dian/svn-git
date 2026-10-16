@@ -7,6 +7,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get } from '../shared/api.js';
+// 命中高亮已提升 shared（仓库浏览搜索共用，边界规范）
+import { highlightMatch } from '../shared/highlight-match.js';
 
 /** 内容搜索命中（与服务端 /api/search-content 的 hits 对应）；line 为 1-based */
 export interface ContentHit {
@@ -130,29 +132,7 @@ export function useFileSearch(dir: string) {
 }
 
 /** 把命中的片段包成 <mark>（大小写不敏感，与后端 includes 判定一致）。
- *  导出供仓库浏览的远程搜索复用（同一套命中高亮） */
-export function highlightMatch(text: string, q: string): React.ReactNode {
-  if (!q) return text;
-  const low = text.toLowerCase();
-  const lq = q.toLowerCase();
-  const out: React.ReactNode[] = [];
-  let i = 0;
-  let k = 0;
-  for (;;) {
-    const at = low.indexOf(lq, i);
-    if (at < 0) break;
-    if (at > i) out.push(text.slice(i, at));
-    out.push(
-      <mark key={k++} className="search-mark">
-        {text.slice(at, at + q.length)}
-      </mark>
-    );
-    i = at + q.length;
-  }
-  if (out.length === 0) return text;
-  out.push(text.slice(i));
-  return out;
-}
+ *  已提升到 shared/highlight-match.tsx（文件浏览器与仓库浏览共用）——此处 import 使用 */
 export type FileSearch = ReturnType<typeof useFileSearch>;
 
 /** 搜索输入框 + 结果下拉（受控：状态来自 useFileSearch；选中项回调 onPick）；
