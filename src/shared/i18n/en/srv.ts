@@ -39,6 +39,8 @@ export const srv = {
   'srv.initedRepo': 'Initialized repository {path}',
   'srv.gitInitFailed': 'git init failed',
   'srv.svnCheckedOut': 'Checked out SVN working copy {path} (added to Recent Projects)',
+  'srv.svnCheckedOutExternals':
+    'Checked out SVN working copy {path} (added to Recent Projects; external references failed — see warnings)',
   'srv.svnCheckoutFailed': 'svn checkout failed',
   'srv.svnadminFailed': 'svnadmin create failed',
   'srv.layoutCreateFailed': 'Failed to create the standard layout: {msg}',

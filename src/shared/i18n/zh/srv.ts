@@ -54,6 +54,7 @@ export const srv = {
   'srv.initedRepo': '已初始化仓库 {path}',
   'srv.gitInitFailed': 'git init 失败',
   'srv.svnCheckedOut': '已检出 SVN 工作副本 {path}（已加入最近项目）',
+  'srv.svnCheckedOutExternals': '已检出 SVN 工作副本 {path}（已加入最近项目；外部引用处理失败，见详情警告）',
   'srv.svnCheckoutFailed': 'svn checkout 失败',
   'srv.svnadminFailed': 'svnadmin create 失败',
   'srv.layoutCreateFailed': '标准布局创建失败: {msg}',

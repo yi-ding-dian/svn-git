@@ -648,11 +648,26 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       });
       return true;
     }
+    // externals 处理失败（E205011）**不算整体失败**：主内容已完整检出、只是外部引用没拉下来——
+    // 工作副本已建立（.svn 在）就按成功返回（✓ + 详情黄框警告）。否则用户看到"工作副本明明可用
+    // 却打红✗"，还连带丢掉"收录最近项目 / 降落动画"（都只在成功路径走）——用户实报
+    if (/E205011/.test(r.stderr) && fs.existsSync(path.join(target, '.svn'))) {
+      sendJson(res, 200, {
+        ok: true,
+        message: t('srv.svnCheckedOutExternals', { path: target }),
+        repoDir: target,
+        files: coFiles,
+        fileTotal: coTotal,
+        warnings: coWarnings,
+      });
+      return true;
+    }
     cleanup();
     const auth = SVN_AUTH_FAIL.test(r.stdout + r.stderr);
-    // 失败 message 只取**第一行**（截 300）：完整多行 stderr 由 warnings 带回（详情窗统一展示，
-    // 否则"状态行塞全文 + 下面警告区再来一遍"就是重复——用户实报）
-    const failLine = r.stderr.split('\n').map((s) => s.trim()).find(Boolean) ?? r.stdout.trim();
+    // 失败 message 取**最后一条 E 行**（svn 的总结行；先 W 警告后 E 错误的场景第一行不是根因），
+    // 没有 E 行退回第一行；截 300。完整多行 stderr 由 warnings 带回（详情窗统一展示，避免重复）
+    const failLines = r.stderr.split('\n').map((s) => s.trim()).filter(Boolean);
+    const failLine = [...failLines].reverse().find((l) => /svn: E/.test(l)) ?? failLines[0] ?? r.stdout.trim();
     sendJson(res, 200, {
       ok: false,
       message: failLine.slice(0, 300) || 'svn checkout failed',
