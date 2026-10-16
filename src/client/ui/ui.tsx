@@ -13,9 +13,9 @@ export function HelpNote(props: { children: React.ReactNode }) {
 }
 
 /** 表单行：label + 内容（input/按钮组等） */
-export function FormRow(props: { label: React.ReactNode; children?: React.ReactNode }) {
+export function FormRow(props: { label: React.ReactNode; children?: React.ReactNode; /** 透传样式（如弹性填充：{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }） */ style?: React.CSSProperties }) {
   return (
-    <div className="form-row">
+    <div className="form-row" style={props.style}>
       <label>{props.label}</label>
       {props.children}
     </div>

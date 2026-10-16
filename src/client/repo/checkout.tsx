@@ -177,8 +177,9 @@ export function CheckoutDialog(props: {
           }}
         />
       </FormRow>
-      {/* 选择性检出（SVN 深度检出）：树勾选后只检出勾选项（可到任意层级），后续更新也只更新它们 */}
-      <FormRow label={t('repo.co.sparseTitle')}>
+      {/* 选择性检出（SVN 深度检出）：树勾选后只检出勾选项（可到任意层级），后续更新也只更新它们；
+          FormRow 常弹性：窗口/弹窗拉大时树跟着长高（不再是固定高度、下面留一片空） */}
+      <FormRow label={t('repo.co.sparseTitle')} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           {/* 不勾选 = 完整检出；勾选后只检出这些目录（另含根目录文件），后续更新也只更新它们 */}
           <div className="dim small" style={{ flex: 1 }}>{t('repo.co.sparseHint')}</div>

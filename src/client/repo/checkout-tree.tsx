@@ -135,7 +135,8 @@ export function CheckoutTree(props: {
     return <div className="dim small">{t('repo.co.treeEmpty')}</div>;
   }
   return (
-    <div style={{ maxHeight: 190, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px' }}>
+    // flex: 1——在弹出窗里随可用高度伸缩（弹窗拉大时长高）；内容少时=内容高，不撑空
+    <div style={{ flex: 1, minHeight: 90, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px' }}>
       {rows.map((r) => {
         const open = expanded.has(r.rel);
         const sub = kids[r.rel];
