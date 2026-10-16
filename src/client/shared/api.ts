@@ -285,6 +285,19 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+/** 检出大小检测的流式进度（见 get.repoSize） */
+export interface RepoSizeTick {
+  files: number;
+  dirs: number;
+  bytes: number;
+  done?: boolean;
+  /** 命中服务端缓存（秒出） */
+  cached?: boolean;
+  /** 部分目录读取失败，结果可能不完整 */
+  partial?: boolean;
+  error?: string;
+}
+
 export const get = {
   info: () => api<RepoInfo>('/api/info'),
   status: () => api<{ items: FileStatus[] }>('/api/status'),
@@ -407,6 +420,49 @@ export const get = {
     api<{ ok: boolean; entries?: { name: string; isDir: boolean; size?: number; rev?: string; author?: string; date?: string }[]; error?: string }>(
       `/api/repo-list?url=${encodeURIComponent(url)}`,
     ),
+  /** 检出大小检测（流式 NDJSON，按需触发）：onTick 每 ~400ms 收一行累计——
+   *  {files,dirs,bytes} 进度 / {done:true,...} 完成（cached=缓存命中秒出，partial=部分目录失败）/
+   *  {error} 失败。signal 取消（断开即停——后端据此杀 svn 子进程）；Promise 在流结束时 resolve。 */
+  repoSize: async (url: string, include: string[], onTick: (s: RepoSizeTick) => void, signal?: AbortSignal): Promise<void> => {
+    const inc = include.map((p) => encodeURIComponent(p)).join(',');
+    const res = await fetch(`/api/repo-size?url=${encodeURIComponent(url)}${inc ? `&include=${inc}` : ''}`, { signal });
+    if (!res.ok || !res.body) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const j = (await res.json()) as { error?: string };
+        if (j.error) msg = j.error;
+      } catch {
+        /* 非 JSON 响应：保留状态码文案 */
+      }
+      onTick({ files: 0, dirs: 0, bytes: 0, error: msg });
+      return;
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const l of lines) {
+        if (!l.trim()) continue;
+        try {
+          onTick(JSON.parse(l) as RepoSizeTick);
+        } catch {
+          /* 半行/坏行：忽略 */
+        }
+      }
+    }
+    if (buf.trim()) {
+      try {
+        onTick(JSON.parse(buf) as RepoSizeTick);
+      } catch {
+        /* 尾部残行：忽略 */
+      }
+    }
+  },
   repoCat: (url: string) =>
     api<{ ok: boolean; text?: string; error?: string; /** 二进制文件：不支持文本预览（前端显示"请下载"并隐藏复制） */ binary?: boolean }>(
       `/api/repo-cat?url=${encodeURIComponent(url)}`,
@@ -446,7 +502,7 @@ export const get = {
   /** 传输进度（任务面板每秒轮询；ok=false = 没在跑，或这种操作没有进度信息——如 SVN 检出/更新）。
    *  chan = 获取的目标目录，或 'push' / 'pull'。 */
   transferProgress: (chan: string) =>
-    api<{ ok: boolean; phase?: TransferPhase; bytes?: number; speed?: number; total?: number }>(`/api/transfer-progress?chan=${encodeURIComponent(chan)}`),
+    api<{ ok: boolean; phase?: TransferPhase; bytes?: number; speed?: number; total?: number; files?: number }>(`/api/transfer-progress?chan=${encodeURIComponent(chan)}`),
   /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */
   svnIdentity: (url: string) =>
     api<{ ok: boolean; config: { username: string } | null; cache: { username: string; realms: string[] } | null }>(
@@ -604,10 +660,17 @@ export const post = {
     signal?: AbortSignal,
     include?: string[],
   ) =>
-    api<{ ok: boolean; message: string; repoDir?: string; authError?: boolean; user?: string }>(
-      '/api/repo-checkout',
-      json({ url, dir, name, username: cred?.username, password: cred?.password, include }, signal),
-    ),
+    api<{
+      ok: boolean;
+      message: string;
+      repoDir?: string;
+      authError?: boolean;
+      user?: string;
+      /** 检出结果详情（详情窗列清单用）：files 最多 2000 条、fileTotal 是全量数 */
+      files?: { code: string; path: string }[];
+      fileTotal?: number;
+      warnings?: string[];
+    }>('/api/repo-checkout', json({ url, dir, name, username: cred?.username, password: cred?.password, include }, signal)),
   repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true, signal?: AbortSignal) =>
     api<VcsResult & { repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' }>(
       '/api/repo-create',

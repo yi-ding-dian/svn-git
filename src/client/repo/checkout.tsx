@@ -5,11 +5,14 @@
  *  认证失败由 checkout-task 的 CheckoutAuthModal 引导（账号密码**只本次用**、后端不落盘）。
  *
  *  入口：repo-browse.tsx 树里右键（目录行 + 空白 = 仓库根）。 */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { get } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { launchMagicFlight } from '../shell/magic-flight.js';
 import { PickDirModal } from './pick-dir.js';
+import { CheckoutTree } from './checkout-tree.js';
+import { CheckoutSizeDialog } from './checkout-size.js';
+import { CheckoutConfirmDialog } from './checkout-confirm.js';
 import { FormRow } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
@@ -42,10 +45,26 @@ export function CheckoutDialog(props: {
   /** 标题右侧「当前检出账号」：工具配置 + 系统凭据缓存（挂载时一次查全） */
   const [cfgUser, setCfgUser] = useState('');
   const [cacheUser, setCacheUser] = useState('');
-  /** 选择性检出：该 URL 下的一级子目录（null=加载中；[]=没有子目录，区块不显示）；dirsFail=列表拉取失败 */
-  const [subDirs, setSubDirs] = useState<string[] | null>(null);
-  const [dirsFail, setDirsFail] = useState(false);
+  /** 选择性检出：树勾选的相对路径（可多级，如 branches/AnHui） */
   const [checkedDirs, setCheckedDirs] = useState<Set<string>>(() => new Set());
+  /** 根级一级目录（树汇报；「全选」按钮与默认全选用） */
+  const [rootDirs, setRootDirs] = useState<string[]>([]);
+  /** 默认全选已初始化的 URL（同一弹出实例只自动勾一次；用户取消过就不再打扰） */
+  const initedUrlRef = useRef('');
+  /** 树汇报一级目录：首次（每个 URL）自动全选——打开弹窗默认即为完整检出 */
+  const onRootDirs = (dirs: string[]) => {
+    setRootDirs(dirs);
+    if (initedUrlRef.current !== props.url) {
+      initedUrlRef.current = props.url;
+      setCheckedDirs(new Set(dirs));
+    }
+  };
+  /** 全选态判断：全部一级目录都显式在勾选集合里（深层拆开会把一级从集合里拆出 → 自然回到"全选"态） */
+  const allRootChecked = rootDirs.length > 0 && rootDirs.every((d) => checkedDirs.has(d));
+  /** 检出大小检测弹窗（按需触发） */
+  const [sizeOpen, setSizeOpen] = useState(false);
+  /** 检出二次确认弹窗（列范围树与落地信息，确认后才真正发起） */
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // 默认所在目录 = home（与「打开项目」默认一致）；顺带查 SVN 身份（标题显示用：
   // 工具配置 + 系统凭据缓存——裸跑时 svn 实际用的就是缓存身份）
@@ -65,26 +84,28 @@ export function CheckoutDialog(props: {
       .catch(() => {
         /* 拿不到身份按匿名显示 */
       });
-    // 选择性检出：拉该 URL 的一级子目录清单（失败只提示、不影响完整检出）
-    get
-      .repoList(props.url)
-      .then((r) => {
-        if (r.ok && r.entries) setSubDirs(r.entries.filter((e) => e.isDir && e.name !== '..').map((e) => e.name));
-        else setDirsFail(true);
-      })
-      .catch(() => setDirsFail(true));
   }, [props.url]);
 
-  /** 点「检出」：校验 → 交参数给调用方发起后台任务 + 关窗 */
-  const startCheckout = () => {
+  /** 表单校验（「检出」按钮与回车都先过这里）：通过则进入二次确认 */
+  const validate = (): boolean => {
+    if (checkedDirs.size === 0) {
+      // 请先勾选要检出的目录（可点「全选」）
+      setMsg(t('repo.co.needPick'));
+      setMsgErr(true);
+      return false;
+    }
     if (!dir.trim() || !name.trim()) {
       // 请填写目标和名称
       setMsg(t('repo.get.needTargetName'));
       setMsgErr(true);
-      return;
+      return false;
     }
     setMsg('');
     setMsgErr(false);
+    return true;
+  };
+  /** 二次确认里点「确认检出」：交参数给调用方发起后台任务 + 关窗 */
+  const startCheckout = () => {
     props.onStart({ url: props.url, dir: dir.trim(), name: name.trim(), dirs: [...checkedDirs] });
     props.onClose();
   };
@@ -115,13 +136,13 @@ export function CheckoutDialog(props: {
           <button onClick={props.onClose}>{t('common.close')}</button>
           <button
             className="primary"
-            disabled={!dir.trim() || !name.trim()}
-            onClick={(e) => {
-              // 先放飞行线（从本按钮飞向顶栏沙漏），再发起后台检出
-              launchMagicFlight(e.currentTarget.getBoundingClientRect());
-              startCheckout();
+            disabled={!dir.trim() || !name.trim() || checkedDirs.size === 0}
+            onClick={() => {
+              // 先过校验，再进二次确认（核对范围树与落地信息后才真正发起——防误操作）
+              if (validate()) setConfirmOpen(true);
             }}
-            title={cmdOfRepo('svn', 'checkout', { url: props.url, dir: joinPath(dir, name.trim() || '…') }) ?? ''}
+            // 一个都没勾：提示先勾选（默认全选后"全取消"= 明确什么都不检出——别走旧"空=完整检出"兜底）
+            title={checkedDirs.size === 0 ? t('repo.co.needPick') : (cmdOfRepo('svn', 'checkout', { url: props.url, dir: joinPath(dir, name.trim() || '…') }) ?? '')}
           >
             {/* 检出 */}
             {t('repo.co.start')}
@@ -152,46 +173,53 @@ export function CheckoutDialog(props: {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') startCheckout();
+            if (e.key === 'Enter' && validate()) setConfirmOpen(true);
           }}
         />
       </FormRow>
-      {/* 选择性检出（SVN 深度检出）：勾选后只检出勾选的子目录，后续更新也只更新它们 */}
-      {subDirs === null && !dirsFail && (
-        // 正在获取目录列表…
-        <div className="dim small" style={{ marginBottom: 10 }}>{t('repo.co.sparseLoading')}</div>
-      )}
-      {dirsFail && (
-        // 目录列表获取失败——不影响完整检出
-        <div className="dim small" style={{ marginBottom: 10 }}>{t('repo.co.sparseLoadFail')}</div>
-      )}
-      {subDirs && subDirs.length > 0 && (
-        <FormRow label={t('repo.co.sparseTitle')}>
+      {/* 选择性检出（SVN 深度检出）：树勾选后只检出勾选项（可到任意层级），后续更新也只更新它们 */}
+      <FormRow label={t('repo.co.sparseTitle')}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           {/* 不勾选 = 完整检出；勾选后只检出这些目录（另含根目录文件），后续更新也只更新它们 */}
-          <div className="dim small" style={{ marginBottom: 6 }}>{t('repo.co.sparseHint')}</div>
-          <div style={{ maxHeight: 140, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px' }}>
-            {subDirs.map((d) => (
-              // display:flex 必须 inline：.form-row label 的 display:block 会压过 .row
-              <label key={d} className="row" style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', marginBottom: 0, padding: '2px 0' }}>
-                <input
-                  type="checkbox"
-                  checked={checkedDirs.has(d)}
-                  onChange={(e) =>
-                    setCheckedDirs((s) => {
-                      const n = new Set(s);
-                      if (e.target.checked) n.add(d);
-                      else n.delete(d);
-                      return n;
-                    })
-                  }
-                />
-                <span className="small mono">📁 {d}</span>
-              </label>
-            ))}
-          </div>
-        </FormRow>
-      )}
+          <div className="dim small" style={{ flex: 1 }}>{t('repo.co.sparseHint')}</div>
+          {/* 全选/全不选（开关式）：全选态（全部一级都在）再点 = 清空；否则 = 全选（并重置深层取消） */}
+          <button
+            className="mini tool-btn"
+            disabled={rootDirs.length === 0}
+            onClick={() => setCheckedDirs(allRootChecked ? new Set() : new Set(rootDirs))}
+            title={allRootChecked ? t('repo.co.unselectAllTip') : t('repo.co.selectAllTip')}
+          >
+            {allRootChecked ? t('repo.co.unselectAll') : t('repo.co.selectAll')}
+          </button>
+          {/* 检出大小检测（按需点；只读，不下载文件）；一个都没勾时不可点（与检出按钮同一门槛） */}
+          <button
+            className="mini tool-btn"
+            disabled={checkedDirs.size === 0}
+            onClick={() => setSizeOpen(true)}
+            title={checkedDirs.size === 0 ? t('repo.co.needPick') : t('repo.co.sizeTip')}
+          >
+            {t('repo.co.sizeBtn')}
+          </button>
+        </div>
+        <CheckoutTree rootUrl={props.url} value={checkedDirs} onChange={setCheckedDirs} onRootDirs={onRootDirs} />
+      </FormRow>
       <ResultLine msg={msg} err={msgErr} />
+      {/* 检出二次确认（范围树 + 远程/落地路径；确认后才真正发起） */}
+      {confirmOpen && (
+        <CheckoutConfirmDialog
+          url={props.url}
+          target={joinPath(dir.trim(), name.trim())}
+          dirs={[...checkedDirs]}
+          onConfirm={(e) => {
+            // 先放飞行线（从本按钮飞向顶栏沙漏），再发起后台检出
+            launchMagicFlight(e.currentTarget.getBoundingClientRect());
+            startCheckout();
+          }}
+          onBack={() => setConfirmOpen(false)}
+        />
+      )}
+      {/* 检出大小检测（按需；范围 = 打开时的勾选） */}
+      {sizeOpen && <CheckoutSizeDialog url={props.url} include={[...checkedDirs]} onClose={() => setSizeOpen(false)} />}
       {/* 目录选择（与「打开项目」共用的目录浏览器）：选择所在目录 */}
       {picker && (
         <PickDirModal
