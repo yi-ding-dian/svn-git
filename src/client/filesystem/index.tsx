@@ -20,6 +20,7 @@ import { useDirPreload } from './use-dir-preload.js';
 import { WcNotice } from './wc-notice.js';
 import { useWcConflicts, useConflictLookup, tcState } from './use-wc-conflicts.js';
 import { useDropUpload, useCopyPaste, moveItemsTo, MOVE_MIME, type ConflictChoice, type ClipItem } from './use-file-transfer.js';
+import { useDragToTrash } from './use-drag-to-trash.js';
 import { UploadConflictModal } from './upload-conflict.js';
 import { ModuleIndexDialog } from './module-index.js';
 
@@ -960,6 +961,12 @@ export function FsView(props: Props) {
     }, [mode, dir, load, invalidateCache, reloadOpenNodes]),
   });
 
+  // 拖到窗口边缘「丢回收站」手势：热区内松手 → 弹「移到回收站」确认（复用 fs-delete 全流程）；
+  // 拖出窗口外/落在目录行上 → 不触发（详见 use-drag-to-trash.ts 头注释）
+  const trashGesture = useDragToTrash({
+    onTrash: (rels) => props.onAction('fs-delete', rels),
+  });
+
   // 剪贴板快捷键（Ctrl+C / Ctrl+X / Ctrl+V）：**单独一个监听**。
   // clipFlow 到这里才定义，塞进上面那个键盘 effect 会踩 TDZ，也会把它的依赖搅成一团；
   // 这里用 ref 取最新值，依赖只留 active，不必每次渲染重挂监听。
@@ -1026,6 +1033,8 @@ export function FsView(props: Props) {
     // 必须 setData，否则部分浏览器不触发 drop；值只在 drop 时读得到，
     // 这里主要靠这个 MIME 让投放区分出「项目内拖拽」和「外部文件拖入」
     ev.dataTransfer.setData(MOVE_MIME, picked.map((i) => i.rel).join('\n'));
+    // 丢回收站手势：本批全可磁盘删除（? / git 的 I）才武装——拖到窗口边缘松手 = 弹确认删除
+    trashGesture.begin(picked, props.repoType);
     // 多个条目才换图像：只拖一条时，浏览器默认给的那一行就是最好的提示
     if (picked.length > 1) {
       const ghost = document.createElement('div');
@@ -1042,6 +1051,7 @@ export function FsView(props: Props) {
     setDragRels(new Set());
     dragGhostRef.current?.remove();
     dragGhostRef.current = null;
+    trashGesture.end(); // 垃圾桶手势收尾（桶隐藏；删除的触发在 drop 里）
   };
 
   // 上报当前目录：切「历史」视图时按它过滤

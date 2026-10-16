@@ -686,6 +686,30 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   white-space: nowrap;
   pointer-events: none;
 }
+/* ---------- 拖到窗口边缘「丢回收站」的删除态（use-drag-to-trash.ts） ----------
+   不做图标浮标：进热区时对应边缘亮红色光带 + 被拖的行整体泛红——红色即"即将删除"的提示。
+   是否变红就是"能不能丢"的唯一信号：没变红的位置松手不会删。 */
+.drag-edge-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 320;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+.drag-edge-glow.show { opacity: 1; }
+.drag-edge-glow .edge { position: absolute; opacity: 0; }
+.drag-edge-glow .edge.on { opacity: 1; }
+.drag-edge-glow .top { left: 0; right: 0; top: 0; height: 52px; background: linear-gradient(180deg, rgba(207, 34, 46, .22), rgba(207, 34, 46, 0)); }
+.drag-edge-glow .right { top: 0; bottom: 0; right: 0; width: 52px; background: linear-gradient(270deg, rgba(207, 34, 46, .22), rgba(207, 34, 46, 0)); }
+.drag-edge-glow .bottom { left: 0; right: 0; bottom: 0; height: 52px; background: linear-gradient(0deg, rgba(207, 34, 46, .22), rgba(207, 34, 46, 0)); }
+.drag-edge-glow .left { top: 0; bottom: 0; left: 0; width: 52px; background: linear-gradient(90deg, rgba(207, 34, 46, .22), rgba(207, 34, 46, 0)); }
+/* 被拖的行：进热区从"淡化"变"泛红"（body 状态 class 命中 .drag-src；!important 压过行的内联底色） */
+body.drag-trash-hot .drag-src {
+  opacity: 1;
+  background: rgba(207, 34, 46, .14) !important;
+  outline: 1px solid var(--err) !important;
+}
 /* 搜索匹配项：当前目录内框选高亮 */
 .search-hit { outline: 2px solid var(--accent) !important; outline-offset: -2px; }
 
