@@ -66,6 +66,15 @@ const MAX_STATUS_BYTES = 1024 * 1024;
  *  加了实例级标记后仍稳定 1.7s = 全量 status 0.83s + --no-ignore 0.79s）。 */
 const HUGE_WCS = new Set<string>();
 
+/** 按行切开 svn 的**文本**输出，剥掉行尾 \r。
+ *  **为什么必须有**：Windows 上 svn 的输出行尾是 CRLF，而 JS 正则里的 `.` 不吃 \r——
+ *  `(.+)$` / `(.*)$` 这类"整行吃到尾"的模式会一条都匹配不上（update 的文件列表、blame
+ *  都栽在这上面：用户看到的是"更新了却说已是最新版本""逐行追溯一片空白"）。
+ *  走 --xml 的解析不受影响（XML 由解析器吃行尾）。 */
+function svnTextLines(stdout: string): string[] {
+  return stdout.split('\n').map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
+}
+
 export class SvnVcs {
   private xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
   /** 本次探测到的过大工作副本（跨请求的持久标记见 HUGE_WCS） */
@@ -194,7 +203,11 @@ export class SvnVcs {
       if (!entries) continue;
       const arr = Array.isArray(entries) ? entries : [entries];
       for (const e of arr) {
-        const relPath = e['@_path'] ?? '';
+        // 路径统一成 '/'：全应用（浏览目录按 relDir 匹配、前端取父目录）都用 '/'，
+        // 而 **Windows 上 svn status --xml 的 path 是反斜杠**（`src\main.c`）——不转就会全线对不上：
+        // 文件列表的状态角标全丢、目录角标统计为 0、下面那段"缺失目录带 self/ 前缀"的判定也失效。
+        // POSIX 上 path.sep 就是 '/'，这一步是恒等变换（同 browse.ts 的 path.relative 处理）
+        const relPath = String(e['@_path'] ?? '').split(path.sep).join('/');
         const wc = e['wc-status'] ?? {};
         const item = String(wc['@_item'] ?? 'none');
         if (item === 'none' || item === 'normal') continue; // 无变化条目
@@ -372,7 +385,7 @@ export class SvnVcs {
       已替换: ['replaced', 'R'], // i18n-ignore: 同上
     };
     const files: { path: string; status: string; code: string }[] = [];
-    for (const line of stdout.split('\n')) {
+    for (const line of svnTextLines(stdout)) {
       const mEn = line.match(/^([UADCGER])\s+(.+)$/);
       if (mEn && mEn[1] && mEn[2]) {
         const c = mEn[1];
@@ -1077,7 +1090,7 @@ export class SvnVcs {
     // svn blame 失败: {err}
     if (res.code !== 0) throw new Error(t('vcs.svnBlameFailed', { err: res.stderr.trim() }));
     const out: { rev: string; author: string; date: string; line: number; text: string }[] = [];
-    for (const line of res.stdout.split('\n')) {
+    for (const line of svnTextLines(res.stdout)) {
       const m = line.match(/^\s*(\d+)\s+(\S+)\s+(.*)$/);
       if (m && m[1] && m[2]) {
         out.push({ rev: `r${m[1]}`, author: m[2], date: '', line: out.length + 1, text: m[3] ?? '' });
