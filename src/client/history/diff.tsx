@@ -266,6 +266,18 @@ export function DiffView(props: Props) {
   const isMd = Boolean(props.target?.path?.toLowerCase().endsWith('.md'));
   const mdBaseDir = props.target?.path?.includes('/') ? props.target.path.slice(0, props.target.path.lastIndexOf('/')) : '';
 
+  // 换文件时清掉「按文件开启」的视图状态。预览开关只在 md 文件上渲染切换按钮：从 md 预览切到
+  // .py 时若继续保留 previewR，右栏会按 Markdown 渲染整个文件（无行号/无语法高亮，行元素也不存在，
+  // 点差异点自然无法定位），而「返回对比」按钮已随 isMd=false 消失，用户无法自行退回（用户实报）。
+  // 编辑态同理：不退出的话新文件会拿旧文件的内容进编辑器。
+  useEffect(() => {
+    setPreviewL(false);
+    setPreviewR(false);
+    setEditing(false);
+    setEditData(null);
+    setEditDirty(false);
+  }, [props.target]);
+
   useEffect(() => {
     if (!props.target) return;
     let cancelled = false;
@@ -547,13 +559,13 @@ export function DiffView(props: Props) {
     const next = (dMatchIdx + 1) % dMatches.length;
     setDMatchIdx(next);
     // 预览模式：无行元素，按匹配比例滚动预览容器（近似定位）
-    if (previewR) {
+    if (isMd && previewR) {
       const p = rightPane.current;
       if (p) p.scrollTop = (next / Math.max(1, dMatches.length)) * (p.scrollHeight - p.clientHeight);
       return;
     }
     rightRefs.current.get(dMatches[next]!)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [dMatches, dMatchIdx, previewR]);
+  }, [dMatches, dMatchIdx, previewR, isMd]);
 
   // 左栏搜索匹配 + 跳转
   const dMatchesL = useMemo(() => {
@@ -566,13 +578,13 @@ export function DiffView(props: Props) {
     const next = (dMatchLIdx + 1) % dMatchesL.length;
     setDMatchLIdx(next);
     // 预览模式：无行元素，按匹配比例滚动预览容器（近似定位）
-    if (previewL) {
+    if (isMd && previewL) {
       const p = leftPane.current;
       if (p) p.scrollTop = (next / Math.max(1, dMatchesL.length)) * (p.scrollHeight - p.clientHeight);
       return;
     }
     leftRefs.current.get(dMatchesL[next]!)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [dMatchesL, dMatchLIdx, previewL]);
+  }, [dMatchesL, dMatchLIdx, previewL, isMd]);
 
   // 滚动条预览标记：修改块位置（绿=有新增/修改行，红=纯删除）。
   // index 是块在 blocks 数组里的序号（curBlock / goBlock 的语义）；block 是 diff 块号（从 1 起，见
@@ -973,7 +985,7 @@ export function DiffView(props: Props) {
             {/* 左栏 + 滚动条预览标记（结构同右栏：pane 让出 12px 给标记条） */}
             <div style={{ position: 'relative', flex: '0 0 auto', width: `${leftRatio}%`, display: 'flex', minWidth: 0 }}>
             <div ref={leftPane} className="sb-pane" onScroll={onScrollSync('left')}>
-              {previewL ? (
+              {isMd && previewL ? (
                 <div
                   className="md-render"
                   style={{ padding: 16 }}
@@ -1059,7 +1071,7 @@ export function DiffView(props: Props) {
             ) : (
             <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0 }}>
             <div ref={rightPane} className="sb-pane" onScroll={onScrollSync('right')}>
-              {previewR ? (
+              {isMd && previewR ? (
                 <div
                   className="md-render"
                   style={{ padding: 16 }}
