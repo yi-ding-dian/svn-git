@@ -218,6 +218,37 @@ function winStartProcess(exe: string, args: string[], cwd: string, okMsg: string
   return launchDetached(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], okMsg, { windowsHide: true, detach: false });
 }
 
+/** WindowsApps 下的执行别名（wt.exe 等）是特殊 reparse point：fs.existsSync 会跟丢目标返回 false，
+ *  但 accessSync 正常。判定存在必须用它，否则会把「已装 Windows Terminal」误判成没装。 */
+const pathAccessible = (p: string): boolean => {
+  try {
+    fs.accessSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** 找 Windows Terminal（Store 版的 wt.exe 是 WindowsApps 下的执行别名）。
+ *  where 的输出按系统码页解码：中文用户名路径直接按 UTF-8 解会乱码（同 findBash）。
+ *  找不到返回 null，由调用方回退到经典 cmd 窗口。 */
+function findWindowsTerminal(): string | null {
+  try {
+    const r = spawnSync('where', ['wt.exe'], { encoding: 'buffer', windowsHide: true });
+    if (r.status === 0) {
+      const p = regToString(r.stdout ?? Buffer.alloc(0))
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .find((s) => s !== '' && pathAccessible(s));
+      if (p) return p;
+    }
+  } catch {
+    /* where 不可用：落到常见安装路径 */
+  }
+  const alias = process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', 'wt.exe');
+  return alias && pathAccessible(alias) ? alias : null;
+}
+
 /** 打开资源管理器窗口用的 Win32 声明（revealScript 里 Add-Type 现编译；几百毫秒，
  *  右键菜单的一次性动作，可接受） */
 const REVEAL_CS =
@@ -365,6 +396,21 @@ export const win32: Platform = {
     }
 
     await launchDetached(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', revealScript(abs, !isDir)], '', { windowsHide: true, detach: false });
+  },
+
+  async openTerminal(abs) {
+    // 已打开终端
+    const okMsg = t('plat.terminalOpened');
+    const wt = findWindowsTerminal();
+    if (wt) {
+      // 传绝对路径并自己加双引号：Start-Process 的 -ArgumentList 只做空格拼接、不做引号处理，
+      // 含空格的路径必须带着引号进去（打包版 wt 是否继承 WorkingDirectory 不可靠，别依赖 `.`）
+      const r = await winStartProcess(wt, ['-d', `"${abs}"`], abs, okMsg);
+      if (r.ok) return r;
+      // Windows Terminal 启动失败（alias 被禁用等）：继续回退 cmd，别让菜单项点了没反应
+    }
+    // 未装 Windows Terminal：经典 cmd 窗口；工作目录由 Start-Process 指定
+    return winStartProcess('cmd.exe', [], abs, okMsg);
   },
 
   openUrl(url) {

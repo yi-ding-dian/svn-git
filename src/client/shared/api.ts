@@ -692,6 +692,8 @@ export const post = {
     api<VcsResult>('/api/resolve-conflict', json({ path, mode, content })),
   textDiff: (left: string, right: string) => api<{ diff: string }>('/api/text-diff', json({ left, right })),
   reveal: (path: string) => api<{ ok: boolean }>('/api/reveal', json({ path })),
+  /** 在当前目录打开系统终端（Windows: Windows Terminal / cmd；Linux: 终端模拟器） */
+  openTerminal: (path: string) => api<{ ok: boolean; message: string }>('/api/open-terminal', json({ path })),
   svnLock: (action: 'lock' | 'unlock', path: string, force = false) => api<VcsResult>('/api/svn-lock', json({ action, path, force })),
   /** 内联编辑保存：按目标文件原编码写回（后端两道守卫，详见 writeTextKeepEncoding） */
   writeFile: (path: string, content: string) => api<VcsResult>('/api/write-file', json({ path, content })),

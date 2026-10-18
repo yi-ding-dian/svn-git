@@ -122,6 +122,8 @@ export const fs = {
   'fs.act.updateDir': 'Update Current Folder',
   'fs.act.updateRepo': 'Update Repository',
   'fs.act.commitModified': 'Commit Modified Files…',
+  'fs.act.openTerminal': 'Open Terminal',
+  'fs.act.openTerminalTitle': 'Open a system terminal window in the current folder',
   'fs.act.openFileManager': 'Open File Manager',
   'fs.act.copyCurPath': 'Copy Current Path',
   'fs.act.newFolder': 'New Folder…',

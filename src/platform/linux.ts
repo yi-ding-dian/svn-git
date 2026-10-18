@@ -252,6 +252,16 @@ export const linux: Platform = {
     await run('xdg-open', [target], { timeoutMs: 10_000 });
   },
 
+  async openTerminal(abs) {
+    // 在当前目录打开交互式终端（复用 runScript 的终端探测表 / $TERMINAL）。
+    // `; exec bash`：cd 失败时窗口也留着，不会一闪就关
+    const term = findTerminal(`cd ${shq(abs)}; exec bash`);
+    // 未找到可用的终端模拟器（可设置 $TERMINAL 环境变量）
+    if (!term) return { ok: false, message: t('plat.noTerminal') };
+    // 已打开终端
+    return launchDetached([term.bin, ...term.argv], t('plat.terminalOpened'));
+  },
+
   async trashPath(abs) {
     // 优先 gio（GLib 自带，桌面发行版必有）；回退 trash-put（trash-cli）；都失败则 throw（调用方交前端二次确认是否直接删）
     const attempts: { cmd: string; args: string[] }[] = [

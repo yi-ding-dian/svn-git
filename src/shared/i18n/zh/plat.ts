@@ -16,6 +16,7 @@ export const plat = {
   'plat.openUrlFail': '[svngit] 打开浏览器失败({cmd}): {msg}',
 
   // ---- 终端运行脚本（win32.ts / linux.ts 共用）----
+  'plat.terminalOpened': '已打开终端',
   'plat.ranScript': '已在系统终端中运行: {rel}',
   'plat.noBash': '未找到 bash（Windows 上运行 .sh 需安装 Git for Windows）',
   'plat.noTerminal': '未找到可用的终端模拟器（可设置 $TERMINAL 环境变量）',

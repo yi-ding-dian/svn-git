@@ -714,6 +714,16 @@ export function FsView(props: Props) {
     shiftAnchorRef.current = null;
   }, [dir]);
 
+  /** 在当前目录打开系统终端（/api/open-terminal：Windows Windows Terminal / cmd，Linux 终端模拟器） */
+  const openTerminal = (rel: string) => {
+    void post
+      .openTerminal(rel)
+      // 已打开终端 / 失败原因由平台层给出
+      .then((x) => props.onToast(x.message, !x.ok))
+      // 打开失败: {msg}
+      .catch((err: Error) => props.onToast(t('fs.menu.openFailed', { msg: err.message }), true));
+  };
+
   /** 打开系统文件管理器（复用 /api/reveal：Linux xdg-open 打开目录） */
   const openInFm = (rel: string) => {
     void post
@@ -744,6 +754,7 @@ export function FsView(props: Props) {
     onUpdateDir: props.onUpdateDir,
     onCommitSelect: props.onCommitSelect,
     onToast: props.onToast,
+    openTerminal,
     openInFm,
     removeFav,
     addFavDir,

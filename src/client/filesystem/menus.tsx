@@ -37,6 +37,8 @@ export interface MenuServices {
   onUpdateDir: (dir: string) => void;
   onCommitSelect: (dir: string, label: string) => void;
   onToast: (m: string, err?: boolean) => void;
+  /** 在当前目录打开系统终端窗口 */
+  openTerminal: (dir: string) => void;
   openInFm: (dir: string) => void;
   removeFav: (rel: string) => void;
   addFavDir: (rel: string) => void;
@@ -150,6 +152,8 @@ export function buildBlankItems(s: MenuServices): CtxMenuItem[] {
         void navigator.clipboard?.writeText(abs).then(() => s.onToast(t('fs.menu.curPathCopied')));
       },
     },
+    // 打开终端（系统终端窗口，工作目录 = 当前浏览目录）
+    { icon: <IconTerminal />, label: t('fs.act.openTerminal'), title: t('fs.act.openTerminalTitle'), action: () => s.openTerminal(s.dir) },
     // 打开文件管理器
     { icon: <IconFolder />, label: t('fs.act.openFileManager'), action: () => s.openInFm(s.dir) },
   ];

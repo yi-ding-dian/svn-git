@@ -244,5 +244,31 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/open-terminal' && req.method === 'POST') {
+        // 在当前浏览目录打开系统终端（Linux: 终端模拟器；Windows: Windows Terminal / cmd）。
+        // 工作目录同样做仓库边界校验——终端是"在那里执行任意命令"，越界就等于开了个仓库外 shell
+        const { repo } = vcsOf();
+        const body = await readBody(req);
+        const rel = String(body.path ?? '');
+        const abs = path.join(repo.root, rel);
+        if (!inRepoRoot(repo.root, abs)) {
+          sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
+          return true;
+        }
+        let isDir = false;
+        try {
+          isDir = fs.statSync(abs).isDirectory();
+        } catch {
+          /* 目录刚被删等：按不存在处理 */
+        }
+        if (!isDir) {
+          // 目录不存在：{path}
+          sendJson(res, 404, { error: t('srv.dirNotFound', { path: rel || '.' }) });
+          return true;
+        }
+        sendJson(res, 200, await platform.openTerminal(abs));
+        return true;
+      }
+
   return false;
 }

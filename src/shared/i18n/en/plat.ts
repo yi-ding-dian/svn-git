@@ -11,6 +11,7 @@ export const plat = {
   'plat.openUrlFail': '[svngit] Failed to open the browser ({cmd}): {msg}',
 
   // ---- Run script in terminal (shared by win32.ts / linux.ts) ----
+  'plat.terminalOpened': 'Terminal opened',
   'plat.ranScript': 'Running in system terminal: {rel}',
   'plat.noBash': 'bash not found (Git for Windows is required to run .sh on Windows)',
   'plat.noTerminal': 'No terminal emulator found (you can set the $TERMINAL environment variable)',

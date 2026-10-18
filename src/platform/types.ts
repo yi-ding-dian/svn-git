@@ -45,6 +45,8 @@ export interface Platform {
   resolveAppIcon(key: string): IconData | null;
   /** 在系统文件管理器中定位文件 / 打开其所在文件夹 */
   revealPath(abs: string): Promise<void>;
+  /** 在系统终端窗口中打开指定目录（Windows: Windows Terminal，缺失时回退 cmd；Linux: 终端模拟器） */
+  openTerminal(abs: string): Promise<LaunchResult>;
   /** 移到系统回收站（可从回收站恢复）。失败时 throw——调用方回退直接删除。
    *  Linux: gio trash → trash-put；Windows: PowerShell 的 SendToRecycleBin */
   trashPath(abs: string): Promise<void>;

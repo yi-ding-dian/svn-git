@@ -122,6 +122,8 @@ export const fs = {
   'fs.act.updateDir': '更新当前目录',
   'fs.act.updateRepo': '更新仓库',
   'fs.act.commitModified': '提交修改的文件…',
+  'fs.act.openTerminal': '打开终端',
+  'fs.act.openTerminalTitle': '在当前目录打开系统终端窗口',
   'fs.act.openFileManager': '打开文件管理器',
   'fs.act.copyCurPath': '复制当前路径',
   'fs.act.newFolder': '新建文件夹…',
