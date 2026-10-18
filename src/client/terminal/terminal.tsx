@@ -12,6 +12,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
+import { isImeComposing } from '../shared/utils.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { ConfirmModal } from '../ui/prompt.js';
 
@@ -326,6 +327,7 @@ export function TerminalModal(props: {
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (isImeComposing(e)) return; // 输入法选词不执行命令
     if (e.key === 'Enter') {
       e.preventDefault();
       submit();

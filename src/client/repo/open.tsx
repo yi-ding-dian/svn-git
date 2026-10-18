@@ -3,7 +3,7 @@
  *  「下载到…」/「所在目录」共用，底部「选择此目录」+ 新建文件夹/右键重命名）。
  *  浏览视图在 DirBrowser；这里只管数据与两种模式的语义 */
 import { useEffect, useRef, useState } from 'react';
-import { baseName, joinPath } from '../shared/utils.js';
+import { baseName, joinPath, isImeComposing } from '../shared/utils.js';
 import { get, post, type BrowseResult, type RepoInfo } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
@@ -375,6 +375,7 @@ export function OpenBrowser(props: {
                   if (v.includes('/')) ev.currentTarget.value = v.replace(/[/\\]/g, '');
                 }}
                 onKeyDown={(ev) => {
+                  if (isImeComposing(ev)) return;
                   if (ev.key === 'Enter') confirmCreate(ev.currentTarget.value);
                   if (ev.key === 'Escape') setCreating(false);
                 }}

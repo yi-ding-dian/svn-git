@@ -7,7 +7,7 @@ import { makeGitIgnoreChecker } from '../../vcs/ignore.js';
 import { compareName } from '../../shared/types.js';
 import { detectTextEncoding, decodeMixedText } from '../../shared/text.js';
 import { run } from '../../vcs/exec.js';
-import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, readTextFile, MAX_READ_BYTES, TOO_LARGE_PLACEHOLDER, vcsOf, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE, type Ctx } from './util.js';
+import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, readTextFileChecked, MAX_READ_BYTES, TOO_LARGE_PLACEHOLDER, vcsOf, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 忽略检测（svn status --no-ignore）的输出上限：超过就不解析。
@@ -755,15 +755,31 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           // 工作区（当前）
           rightLabel = b ? b : t('srv.worktreeLabel');
           left = await gitShow(a ?? 'HEAD', rel);
-          // 工作区裸读：readTextFile 含大小预检（>5MB 不整读入内存）
-          right = b ? await gitShow(b, rel) : readTextFile(abs);
+          // 工作区裸读：readTextFileChecked 含大小预检（>5MB 不整读入内存），读取失败明确报错
+          if (b) right = await gitShow(b, rel);
+          else {
+            const rd = readTextFileChecked(abs);
+            if (!rd.ok) {
+              sendJson(res, 500, { error: t('srv.readFailedDetail', { msg: rd.message }) });
+              return true;
+            }
+            right = rd.text;
+          }
         } else {
           // BASE（原版）
           leftLabel = a ? `r${a}` : t('srv.baseLabel');
           // 工作区（当前）
           rightLabel = b ? `r${b}` : t('srv.worktreeLabel');
           left = await svnCat(a ?? 'BASE', rel);
-          right = b ? await svnCat(b, rel) : readTextFile(abs);
+          if (b) right = await svnCat(b, rel);
+          else {
+            const rd = readTextFileChecked(abs);
+            if (!rd.ok) {
+              sendJson(res, 500, { error: t('srv.readFailedDetail', { msg: rd.message }) });
+              return true;
+            }
+            right = rd.text;
+          }
         }
         // 截断超大文件
         const MAX = 200_000;
@@ -905,7 +921,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             sendJson(res, 404, { ok: false, output: '', error: t('srv.fileNotFound') });
             return true;
           }
-          out = { ok: true, output: readTextFile(abs) };
+          const rd = readTextFileChecked(abs);
+          if (!rd.ok) {
+            // 读取失败（权限/文件被占用等）：**不能**返回空串——前端会当空文件显示，编辑保存会覆盖原文件
+            sendJson(res, 500, { ok: false, output: '', error: t('srv.readFailedDetail', { msg: rd.message }) });
+            return true;
+          }
+          out = { ok: true, output: rd.text };
         }
         // 编码提示：工作区文件不是 UTF-8（如 GBK）时告诉前端一声——用户才知道看到的是按什么编码解出来的，
         // 否则"不乱了"反而让人以为文件本来就是 UTF-8。探测看磁盘那份（预览的对象就是它）。

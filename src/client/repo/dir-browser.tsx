@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { get, type BrowseResult } from '../shared/api.js';
 import { GridIcon } from '../ui/icons.js';
-import { joinPath, parentPath, pathFromFile } from '../shared/utils.js';
+import { joinPath, parentPath, pathFromFile, isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 网格条目（/api/browse entries 的子集） */
@@ -128,6 +128,7 @@ export function DirBrowser(props: {
               value={props.pathInput.value}
               onChange={(e) => props.pathInput!.onChange(e.target.value)}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === 'Enter') props.pathInput!.onSubmit();
               }}
             />
@@ -194,6 +195,7 @@ export function DirBrowser(props: {
                     style={{ width: '100%', padding: '3px 5px', fontSize: 12, textAlign: 'center' }}
                     onFocus={(e) => e.target.select()}
                     onKeyDown={(e) => {
+                      if (isImeComposing(e)) return;
                       if (e.key === 'Enter') props.rename!.onSubmit(it.name, e.currentTarget.value);
                       if (e.key === 'Escape') props.rename!.onCancel();
                     }}

@@ -9,7 +9,7 @@
 import React from 'react';
 import { post } from '../shared/api.js';
 import { startTask, pollTransferProgress } from '../shared/tasks.js';
-import { joinPath } from '../shared/utils.js';
+import { joinPath, isImeComposing } from '../shared/utils.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { FormRow } from '../ui/ui.js';
 import { t } from '../../shared/i18n/index.js';
@@ -146,6 +146,7 @@ export function CheckoutAuthModal(props: { auth: CheckoutAuthAsk; onClose: () =>
             value={pass}
             onChange={(e) => setPass(e.target.value)}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return;
               if (e.key === 'Enter') retry();
             }}
           />

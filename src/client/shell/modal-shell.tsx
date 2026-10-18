@@ -75,6 +75,12 @@ import { t } from '../../shared/i18n/index.js';
 /** 边缘热区厚度(px) */
 const EDGE = 8;
 
+/** 弹窗栈：只有**栈顶**响应 Esc。原先每个弹窗都在 document 捕获阶段处理 Esc 并
+ *  只 stopPropagation —— 同一 EventTarget 上的其它监听照常执行，嵌套确认框会和外层
+ *  弹窗一起关（按一次 Esc 连关两层）。 */
+const modalStack: { id: number; onEsc?: () => void }[] = [];
+let modalSeq = 0;
+
 /** 8 方向 → 拖拽光标 */
 const CURSORS: Record<string, string> = {
   n: 'ns-resize',
@@ -134,6 +140,18 @@ export function ResizableModal(props: {
   onEsc?: () => void;
   children: React.ReactNode;
 }) {
+  // 本弹窗在栈里的身份（StrictMode 下也只分配一次）
+  const [modalId] = useState(() => ++modalSeq);
+  const escEntryRef = useRef<{ id: number; onEsc?: () => void }>({ id: modalId });
+  escEntryRef.current.onEsc = props.onEsc;
+  useEffect(() => {
+    const entry = escEntryRef.current;
+    modalStack.push(entry);
+    return () => {
+      const i = modalStack.indexOf(entry);
+      if (i >= 0) modalStack.splice(i, 1);
+    };
+  }, []);
   // 用户拖拽后的固定尺寸;null = 未拖拽,按默认尺寸自适应
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   // 拖拽开始后弹窗改为 fixed 定位并保持左上角位置(避免 flex 居中导致拖动时整窗平移)
@@ -169,7 +187,9 @@ export function ResizableModal(props: {
       if (e.key === 'Escape') {
         // 弹窗打开时 Esc 一律不穿透（即使不关闭，也防止底层视图收到）
         e.stopPropagation();
-        props.onEsc?.();
+        // **只让栈顶弹窗响应**：嵌套时按一次 Esc 只关最内层，不会连外层一起关
+        const top = modalStack[modalStack.length - 1];
+        if (top && top.id === modalId) top.onEsc?.();
         return;
       }
       if (e.key === 'Tab') {

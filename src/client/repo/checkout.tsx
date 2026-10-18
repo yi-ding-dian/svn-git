@@ -16,7 +16,7 @@ import { CheckoutConfirmDialog } from './checkout-confirm.js';
 import { FormRow } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { joinPath } from '../shared/utils.js';
+import { joinPath, isImeComposing } from '../shared/utils.js';
 import type { CheckoutParams } from './checkout-task.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -173,6 +173,7 @@ export function CheckoutDialog(props: {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === 'Enter' && validate()) setConfirmOpen(true);
           }}
         />

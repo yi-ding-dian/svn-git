@@ -120,7 +120,7 @@ export function GitHubForkModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={500} minWidth={420}>
+      <ResizableModal width={500} minWidth={420} onEsc={props.onClose}>
         {/* Fork 到自己账号 */}
         <h3>{t('repo.githubFork.title')}</h3>
         <div className="body">

@@ -157,7 +157,7 @@ export function PushConfirmModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={680} minWidth={520}>
+      <ResizableModal width={680} minWidth={520} onEsc={props.onCancel}>
         {/* 🔄 确认推送（{n} 个未推送提交） */}
         <h3>{t('ops.push.title', { n: unpushed.length })}</h3>
         <div className="body" style={{ maxHeight: '60vh', overflow: 'auto' }}>
@@ -334,7 +334,7 @@ export function PushConfirmModal(props: {
       {/* 修改注释弹窗 */}
       {amendOf && (
         <div className="modal-mask">
-          <ResizableModal width={autoSizeForText(amendMsg).width} minWidth={420}>
+          <ResizableModal width={autoSizeForText(amendMsg).width} minWidth={420} onEsc={() => setAmendOf(null)}>
             {/* ✏️ 修改提交注释 */}
             <h3>{t('ops.push.amendTitle')}</h3>
             <div className="body">

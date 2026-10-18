@@ -147,7 +147,8 @@ export function buildBlankItems(s: MenuServices): CtxMenuItem[] {
       // 复制当前路径
       label: t('fs.act.copyCurPath'),
       action: () => {
-        const abs = s.root ? `${s.root}${s.dir ? `/${s.dir}` : ''}` : s.dir;
+        // 分隔符按 root 形态统一（Windows 上是 `D:\repo\src`，不能拼成 `D:\repo/src`）
+        const abs = absPath(s.root, s.dir);
         // 当前路径已复制
         void navigator.clipboard?.writeText(abs).then(() => s.onToast(t('fs.menu.curPathCopied')));
       },

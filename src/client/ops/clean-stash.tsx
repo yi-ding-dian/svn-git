@@ -8,6 +8,7 @@ import { IconErr, IconHelp, IconStash } from '../ui/icons.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { runAction } from '../shared/vcs-action.js';
+import { isImeComposing } from '../shared/utils.js';
 import { ResultLine } from '../ui/result-line.js';
 import { t } from '../../shared/i18n/index.js';
 // ==================== git 清理未跟踪（预览+确认） ====================
@@ -358,6 +359,7 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === 'Enter') doPush();
           }}
           style={{ flex: 1 }}

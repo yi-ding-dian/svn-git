@@ -44,6 +44,11 @@ export function  repoInfo(): RepoInfo | null {
   return detectRepo(dir);
 }
 
+/** 按仓库复用 Vcs 实例。preflight / remote 缓存是**实例字段**（svn.ts preflightCache、
+ *  git.ts remoteCache）；原先每个请求 new 一个实例，缓存永远不命中——每次刷新/2 分钟轮询
+ *  都真跑 `git fetch` / `svn status -u`。按 root+type 缓存，凭据变化时重建。 */
+const vcsInstances = new Map<string, { credKey: string; vcs: ReturnType<typeof createVcs> }>();
+
 export function  vcsOf(): { vcs: ReturnType<typeof createVcs>; repo: RepoInfo } {
   const repo = repoInfo();
   if (!repo) throw new Error('NO_REPO');
@@ -51,7 +56,13 @@ export function  vcsOf(): { vcs: ReturnType<typeof createVcs>; repo: RepoInfo } 
   const cred: SvnCred | null = cfg.svn.username
     ? { username: cfg.svn.username, password: cfg.svn.password, trustServerCert: cfg.svn.trustServerCert }
     : null;
-  return { vcs: createVcs(repo, cred), repo };
+  const key = `${repo.type}::${repo.root}`;
+  const credKey = cred ? `${cred.username}\u0000${cred.password}\u0000${cred.trustServerCert ? 1 : 0}` : '';
+  const hit = vcsInstances.get(key);
+  if (hit && hit.credKey === credKey) return { vcs: hit.vcs, repo };
+  const vcs = createVcs(repo, cred);
+  vcsInstances.set(key, { credKey, vcs });
+  return { vcs, repo };
 }
 
 /** 认证失败错误码 */
@@ -175,6 +186,13 @@ export function  inRepoRoot(root: string, abs: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
+/** 仓库相对路径 → 绝对路径并做 realpath 边界校验；越界返回 null。
+ *  **新端点一律走这里**：裸 `startsWith(repoRoot)` 是词法比较，仓库内 symlink 指向仓库外时会被骗过。 */
+export function  resolveRepoPath(repo: RepoInfo, rel: string): string | null {
+  const abs = path.resolve(repo.root, rel);
+  return inRepoRoot(repo.root, abs) ? abs : null;
+}
+
 /** 文本读取上限：超过则 statSync 预检后跳过全量读（防超大日志/数据文件 OOM 服务进程） */
 export const  MAX_READ_BYTES = 5 * 1024 * 1024;
 
@@ -197,6 +215,18 @@ export function  readTextFile(abs: string): string {
     return decodeText(fs.readFileSync(abs));
   } catch {
     return '';
+  }
+}
+
+/** 读取文本文件（区分「空文件」与「读取失败」）。
+ *  readTextFile 为兼容旧调用点把异常吞成 ''——预览/编辑链路不能用它：
+ *  读失败会被当成空文件显示，接着点编辑保存就可用空内容覆盖原文件（数据丢失）。 */
+export function  readTextFileChecked(abs: string): { ok: true; text: string } | { ok: false; message: string } {
+  try {
+    if (fs.statSync(abs).size > MAX_READ_BYTES) return { ok: true, text: TOO_LARGE_PLACEHOLDER };
+    return { ok: true, text: decodeText(fs.readFileSync(abs)) };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
   }
 }
 

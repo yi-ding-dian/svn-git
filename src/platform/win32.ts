@@ -214,8 +214,32 @@ function findBash(): string | null {
  *  曾因此整条链「假成功」：接口报已在终端运行，实际没跑。 */
 function winStartProcess(exe: string, args: string[], cwd: string, okMsg: string): Promise<LaunchResult> {
   const argList = args.length ? ` -ArgumentList ${args.map(psq).join(',')}` : '';
-  const script = `Start-Process -FilePath ${psq(exe)}${argList} -WorkingDirectory ${psq(cwd)}`;
-  return launchDetached(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], okMsg, { windowsHide: true, detach: false });
+  // 必须等 powershell 真正退出并用退出码判定：launchDetached 在 spawn 事件就返回 ok，
+  // Start-Process 失败（Store 版 wt.exe 别名被策略禁用、路径不存在等）会变成"假成功"，
+  // 调用方的回退分支（如终端回退 cmd）永远走不到。
+  const script =
+    `$ErrorActionPreference='Stop'; try { Start-Process -FilePath ${psq(exe)}${argList} -WorkingDirectory ${psq(cwd)} -ErrorAction Stop; exit 0 } ` +
+    `catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }`;
+  return new Promise((resolve) => {
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      windowsHide: true,
+    });
+    let stderr = Buffer.alloc(0);
+    child.stderr.on('data', (d: Buffer) => {
+      if (stderr.length < 4096) stderr = Buffer.concat([stderr, d]);
+    });
+    child.once('error', (e) => resolve({ ok: false, message: t('plat.launchFail', { msg: e.message }) }));
+    child.once('close', (code) => {
+      if (code === 0) {
+        resolve({ ok: true, message: okMsg });
+        return;
+      }
+      // powershell 的报错是系统码页（中文系统 GBK），按注册表同一套解码
+      const msg = regToString(stderr).trim() || `exit ${code}`;
+      resolve({ ok: false, message: t('plat.launchFail', { msg }) });
+    });
+  });
 }
 
 /** WindowsApps 下的执行别名（wt.exe 等）是特殊 reparse point：fs.existsSync 会跟丢目标返回 false，
@@ -312,14 +336,9 @@ export const win32: Platform = {
 
   openDefault(abs, rel) {
     // 系统默认程序：Start-Process 即 ShellExecute，路径含空格也正确。
-    // detach:false + windowsHide：同 winStartProcess——detached 下这条命令不会执行（曾长期静默失效，
-    // 「用默认程序打开」报成功却什么都不发生）；不隐藏则会闪一下中转 powershell 的黑框
-    return launchDetached(
-      ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', `Start-Process -FilePath ${psq(abs)}`],
-      // 已用系统默认程序打开: {rel}
-      t('plat.openedDefault', { rel }),
-      { windowsHide: true, detach: false }
-    );
+    // 走 winStartProcess 而不是 launchDetached：后者在 spawn 事件就报成功，Start-Process
+    // 真失败（关联程序被删/策略拦截）时用户仍会看到"已打开"，且拿不到失败原因。
+    return winStartProcess(abs, [], path.dirname(abs), t('plat.openedDefault', { rel }));
   },
 
   async openWithApp(abs, exec, rel) {

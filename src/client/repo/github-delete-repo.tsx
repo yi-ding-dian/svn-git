@@ -7,6 +7,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
+import { isImeComposing } from '../shared/utils.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { t } from '../../shared/i18n/index.js';
 import { parseGithub } from '../../shared/github.js';
@@ -62,7 +63,7 @@ export function GitHubDeleteModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={480} minWidth={420}>
+      <ResizableModal width={480} minWidth={420} onEsc={props.onClose}>
         {/* GitHub 删除仓库 */}
         <h3>{t('repo.githubDelete.title')}</h3>
         <div className="body">
@@ -80,6 +81,7 @@ export function GitHubDeleteModal(props: {
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === 'Enter') submit();
               }}
               autoFocus
@@ -95,6 +97,7 @@ export function GitHubDeleteModal(props: {
               value={token}
               onChange={(e) => setToken(e.target.value)}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === 'Enter') submit();
               }}
             />

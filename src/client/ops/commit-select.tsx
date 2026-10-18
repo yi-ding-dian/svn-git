@@ -90,7 +90,7 @@ export function CommitSelectModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={autoWidth} maxed={maxed} onToggleMax={() => setMaxed((m) => !m)}>
+      <ResizableModal width={autoWidth} maxed={maxed} onToggleMax={() => setMaxed((m) => !m)} onEsc={props.onClose}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* 📝 提交修改的文件 */}
           <span style={{ flex: 1 }}>{t('ops.commitSelect.title')} ({props.repoType.toUpperCase()})</span>

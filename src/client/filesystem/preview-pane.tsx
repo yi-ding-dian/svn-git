@@ -8,6 +8,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
+import { isImeComposing } from '../shared/utils.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
 import { IconExternal } from '../ui/icons.js';
@@ -201,6 +202,11 @@ export function PreviewPane(props: Props) {
     setSearchActive(false);
     setSearchQ('');
     setMatchIdx(0);
+    // 换文件必须退出内联编辑：InlineEditor 的草稿只在挂载时取初值，不退出的话，
+    // 编辑 A 时切到 B，点保存会把 A 的内容写进 B（数据损坏）。编辑菜单同理，闭包里是旧文件。
+    setEditing(false);
+    setEditDirty(false);
+    setEditMenu(null);
     setJumpLine(target.line); // 内容搜索跳入的定位行（普通打开为 undefined）
     setImgViewer(null);
     if (target.img) {
@@ -233,6 +239,13 @@ export function PreviewPane(props: Props) {
   /** 进入内联编辑（「编辑」菜单的第一项）。**只对 UTF-8 开**，原因见 openEditMenu */
   const startEdit = () => {
     setEditMenu(null);
+    // 内容还没读到（加载中/读取失败）：没有正文可编辑。读取失败时服务端现在返回 ok:false
+    // 而不是空串，父级会退回列表；这里再挡一道，防止拿 '' 进编辑器后保存成空文件。
+    if (text === null) {
+      // 读取失败
+      props.onError(t('fs.pv.readFailed'));
+      return;
+    }
     // 纵深防御：菜单里已经不给非 UTF-8 这一项了，这里再挡一道
     // （fileEnc 要等内容读完才有，万一它在菜单渲染之后才到，菜单里会短暂出现这一项）
     if (fileEnc) {
@@ -285,17 +298,44 @@ export function PreviewPane(props: Props) {
   fullRef.current = full;
   const mdPopRef = useRef(mdThemePop);
   mdPopRef.current = mdThemePop;
+  // 叠层顺序：图片灯箱 / 目录气泡 / 编辑态都各自有 Esc 语义，不能被下面的"返回列表"抢走
+  const imgViewerRef = useRef(imgViewer);
+  imgViewerRef.current = imgViewer;
+  const tocPopRef = useRef(tocPop);
+  tocPopRef.current = tocPop;
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  const editDirtyRef = useRef(editDirty);
+  editDirtyRef.current = editDirty;
   useEffect(() => {
     if (!props.active) return; // 视图隐藏时键盘不响应（防止穿透到其他视图）
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 输入框内不拦截（搜索框自身 onKeyDown 处理 Enter/Esc）
+      // 图片放大有独立的 Esc 监听（只关灯箱）；这里先让位，否则一次 Esc 会把灯箱和预览一起关
+      if (imgViewerRef.current) return;
       if (mdPopRef.current) {
         if (e.key === 'Escape') setMdThemePop(null); // 气泡开着：Esc 只关气泡，不连预览一起关
         return;
       }
+      if (tocPopRef.current) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setTocPop(null); // 目录气泡开着：Esc 只关气泡
+        }
+        return;
+      }
       if (searchActiveRef.current) {
         if (e.key === 'Escape') setSearchActive(false);
+        return;
+      }
+      // 编辑态：Esc 不退出（避免静默丢草稿）；有改动时提示先保存或点「取消」
+      if (editingRef.current) {
+        if (e.key === 'Escape' && editDirtyRef.current) {
+          e.preventDefault();
+          // 有未保存的修改，先保存或点「取消」
+          props.onError(t('fs.pv.unsavedEdit'));
+        }
         return;
       }
       if (fullRef.current && e.key === 'Escape') {
@@ -390,6 +430,7 @@ export function PreviewPane(props: Props) {
                 setMatchIdx(0);
               }}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === 'Enter') goNextMatch();
                 if (e.key === 'Escape') setSearchActive(false);
               }}
@@ -516,6 +557,8 @@ export function PreviewPane(props: Props) {
       {/* md 阅读主题：变量 inline 打在这个滚动容器上，只作用其子树（工具栏/界面不受影响） */}
       {editing ? (
         <InlineEditor
+          // 强制按文件重挂载：即使 editing 因某个中间态多留一帧，草稿也必须来自新文件的 initialText
+          key={`${target.rel}${target.worktree ? '#worktree' : ''}`}
           ref={editorRef}
           rel={target.rel}
           initialText={text ?? ''}

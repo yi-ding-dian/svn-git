@@ -264,6 +264,7 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
         maxedWidth="98vw"
         maxedHeight="96vh"
         onToggleMax={() => setExpanded(false)}
+        onEsc={props.onClose}
       >
         <div className="row" style={{ alignItems: 'center' }}>
           {/* ⚠ 解决冲突（{n}） */}

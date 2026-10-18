@@ -143,6 +143,7 @@ export const srv = {
   'srv.worktreeLabel': '工作区（当前）',
   'srv.truncatedLarge': '…（文件过大已截断）',
   'srv.readFailed': '读取失败',
+  'srv.readFailedDetail': '读取失败：{msg}',
   'srv.imageOnly': '仅支持图片文件',
   'srv.imageTooLarge': '图片过大（超过 50MB），无法预览',
 

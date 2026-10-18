@@ -6,7 +6,8 @@ import fs from 'node:fs';
 import { decodeText } from '../../shared/text.js';
 import os from 'node:os';
 import path from 'node:path';
-import { sendJson, readBody, repoInfo, type Ctx } from './util.js';
+import { sendJson, readBody, repoInfo, resolveRepoPath, type Ctx } from './util.js';
+import type { RepoInfo } from '../../vcs/types.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 单条路径→描述 */
@@ -103,9 +104,10 @@ export function parseModuleIndex(md: string): IndexEntry[] {
 }
 
 /** 读仓库内 md 并解析（越界/不存在返回 null；前端 preview 与 POST 注入共用同一解析口径） */
-function parseRepoMd(repoRoot: string, mdRel: string): IndexEntry[] | null {
-  const mdAbs = path.resolve(repoRoot, mdRel);
-  if (!mdAbs.startsWith(repoRoot + path.sep)) return null;
+function parseRepoMd(repo: RepoInfo, mdRel: string): IndexEntry[] | null {
+  // realpath 校验：仓库内 symlink 指向仓库外时，词法 startsWith 会放行（结果直接进 readFileSync）
+  const mdAbs = resolveRepoPath(repo, mdRel);
+  if (!mdAbs) return null;
   let text: string;
   try {
     text = decodeText(fs.readFileSync(mdAbs)); // 仓库内的 md 也可能是 GBK（老项目）
@@ -138,7 +140,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       return true;
     }
     const md = url.searchParams.get('md') ?? '';
-    const entries = parseRepoMd(repo.root, md);
+    const entries = parseRepoMd(repo, md);
     if (!entries) {
       // 解析失败：md 文件不存在或不在仓库内，或未找到「路径 ← 描述」条目
       sendJson(res, 400, { error: t('srv.parseFailedFull') });
@@ -163,12 +165,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       sendJson(res, 400, { error: t('srv.scopeDirInvalid') });
       return true;
     }
-    if (dir && !path.resolve(repo.root, dir).startsWith(repo.root + path.sep)) {
-      // 作用目录越界
+    if (dir && !resolveRepoPath(repo, dir)) {
+      // 作用目录越界（realpath 校验：symlink 指向仓库外也算越界）
       sendJson(res, 400, { error: t('srv.scopeDirOutOfBounds') });
       return true;
     }
-    const entries = parseRepoMd(repo.root, md);
+    const entries = parseRepoMd(repo, md);
     if (!entries) {
       // 解析失败：md 文件不存在或不在仓库内
       sendJson(res, 400, { error: t('srv.parseFailed') });

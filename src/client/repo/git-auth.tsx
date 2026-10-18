@@ -1,6 +1,7 @@
 /** 推送认证弹窗（推送与克隆共用）：GitHub 用户名+Token / 服务器用户名+密码 / SSH 提示 */
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
+import { isImeComposing } from '../shared/utils.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { HelpNote } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
@@ -55,7 +56,7 @@ export function GitPushAuthModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={460} minWidth={420}>
+      <ResizableModal width={460} minWidth={420} onEsc={props.onClose}>
         <h3>
           {isGithub
             // 🔑 GitHub 获取仓库认证 / 🔑 GitHub 推送认证
@@ -107,6 +108,7 @@ export function GitPushAuthModal(props: {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyDown={(e) => {
+                    if (isImeComposing(e)) return;
                     if (e.key === 'Enter') save();
                   }}
                 />

@@ -81,6 +81,8 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.code === 'Backquote') {
+        // 已有弹窗打开时不响应：直接 setModal 会把当前弹窗替换掉，未提交的注释等状态随卸载丢失
+        if (document.querySelector('.modal-mask')) return;
         e.preventDefault();
         setModal({ type: 'terminal' });
       }
@@ -1119,7 +1121,7 @@ export function App() {
             <div className="content" onClick={touchHistory}>
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
               <div style={{ display: view === 'log' ? undefined : 'none', height: '100%' }}>
-                <HistoryView path={logPath} tick={tick} repoType={repo?.type ?? 'git'} onChanged={refresh} onBack={() => setView('browse')} />
+                <HistoryView path={logPath} tick={tick} active={view === 'log'} repoType={repo?.type ?? 'git'} onChanged={refresh} onBack={() => setView('browse')} />
               </div>
               <div style={{ display: view === 'diff' ? undefined : 'none', height: '100%' }}>
                 <DiffView

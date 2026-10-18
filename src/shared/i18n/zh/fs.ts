@@ -370,6 +370,7 @@ export const fs = {
   'fs.pv.encNoEditFull': '该文件是 {enc} 编码，不支持内联编辑（怕改坏原编码）；请用外部程序打开',
   'fs.pv.openFailedShort': '打开失败',
   'fs.pv.readFailed': '读取失败',
+  'fs.pv.unsavedEdit': '有未保存的修改：先保存，或点「取消」放弃后再返回',
   'fs.pv.saveFailed': '保存失败',
   'fs.pv.saveFailedMsg': '保存失败: {msg}',
   'fs.pv.saved': '已保存',

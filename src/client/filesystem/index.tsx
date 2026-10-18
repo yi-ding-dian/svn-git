@@ -30,7 +30,7 @@ import { ModuleIndexDialog } from './module-index.js';
 /** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
 import { IgnoreModal } from './ignore-modal.js';
 import { FavDirsModal } from './fav-dirs.js';
-import { fmtSize, statusColor, isBinaryFile, isImageFile } from '../shared/utils.js';
+import { fmtSize, statusColor, isBinaryFile, isImageFile, isImeComposing } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 /** 命令预览: 多路径缩写（前 3 个 + …） */
 import { ModalShell } from '../shell/modal-shell.js';
@@ -328,18 +328,21 @@ export function FsView(props: Props) {
     ['', ...expandedRef.current].forEach((d) => void loadNode(d, true));
   }, [loadNode]);
 
-  // 刷新（tick 变化）：静默强刷——保留渲染中的缓存、数据原地替换（不闪加载条/不闪整页转圈）
+  // 刷新（tick 变化）：静默强刷——保留渲染中的缓存、数据原地替换（不闪加载条/不闪整页转圈）。
+  // 视图隐藏时只失效缓存不请求：切回来（active 变化）会补拉，否则后台每个视图都在跟着 tick 跑。
   useEffect(() => {
     if (props.tick === 0) return;
     invalidateCache();
+    if (!props.active) return;
     void load(dir, true, true);
-  }, [props.tick, load]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [props.tick, props.active, load]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 树/浏览模式：初始化 + 刷新时重载根和已展开节点
+  // 树/浏览模式：初始化 + 刷新时重载根和已展开节点（同样只在视图可见时做）
   useEffect(() => {
     if (mode !== 'tree' && mode !== 'browse') return;
+    if (!props.active) return;
     reloadOpenNodes();
-  }, [mode, props.tick, loadNode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, props.tick, props.active, loadNode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 树模式：扁平化可见行
   const visibleRows = useMemo<VisibleRow[]>(() => {
@@ -1146,6 +1149,7 @@ export function FsView(props: Props) {
       style={{ textAlign: align }}
       onChange={(e) => setInlineText(e.target.value)}
       onKeyDown={(e) => {
+        if (isImeComposing(e)) return; // 输入法选词不算确认/取消
         if (e.key === 'Enter') {
           e.preventDefault();
           void commitInline();
@@ -1955,6 +1959,7 @@ export function FsView(props: Props) {
               value={ignorePattern}
               onChange={(e) => setIgnorePattern(e.target.value)}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === 'Enter' && ignorePattern.trim() && ignorePlan !== 'loading') doIgnore();
               }}
               autoFocus

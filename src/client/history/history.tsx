@@ -15,6 +15,8 @@ import { t } from '../../shared/i18n/index.js';
 interface Props {
   path?: string;
   tick: number;
+  /** 当前视图是否激活：隐藏时不高频重拉（视图常驻挂载，tick 变化照常会触发 effect） */
+  active: boolean;
   repoType?: 'svn' | 'git';
   /** 提交操作（修改注释/撤销提交）后通知父级刷新文件状态 */
   onChanged?: () => void;
@@ -147,6 +149,8 @@ export function HistoryView(props: Props) {
   }, []);
 
   useEffect(() => {
+    // 视图隐藏时不加载：否则每次 tick 都会在后台重拉 200 条历史（用户可能停在文件视图）
+    if (!props.active) return;
     let cancelled = false;
     setLogs(null);
     setError('');
@@ -172,7 +176,7 @@ export function HistoryView(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [props.path, props.tick, reloadKey]);
+  }, [props.path, props.tick, reloadKey, props.active]);
 
   /** 追加加载：一批 200 条追加到列表底部（滚动/选中/详情不动，可继续浏览）。
    *  target>0 = 追加至该条数；target=0 = 循环追加直到追完。本批不足 200 = 已全部（svn 据此隐藏按钮）。按 rev 去重防连点重复 */
@@ -685,7 +689,7 @@ export function HistoryView(props: Props) {
       {amendOf && (
         <div className="modal-mask">
           {/* 尺寸按注释长度自适应：长说明不再被固定 480px 宽 + 8 行高挤到只能滚动看 */}
-          <ResizableModal width={autoSizeForText(amendMsg).width} minWidth={420}>
+          <ResizableModal width={autoSizeForText(amendMsg).width} minWidth={420} onEsc={() => setAmendOf(null)}>
             {/* ✏️ 修改提交注释 */}
             <h3>{t('hist.amendTitle')}</h3>
             <div className="body">

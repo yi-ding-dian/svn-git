@@ -129,6 +129,7 @@ export const srv = {
   'srv.worktreeLabel': 'Working copy (current)',
   'srv.truncatedLarge': '… (file too large, truncated)',
   'srv.readFailed': 'Read failed',
+  'srv.readFailedDetail': 'Read failed: {msg}',
   'srv.imageOnly': 'Only image files are supported',
   'srv.imageTooLarge': 'Image too large (over 50MB); cannot preview',
 

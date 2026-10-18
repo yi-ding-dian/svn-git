@@ -10,7 +10,7 @@ import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { runAction } from '../shared/vcs-action.js';
 import { ResultLine } from '../ui/result-line.js';
-import { joinPath } from '../shared/utils.js';
+import { joinPath, isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 import { useGitHubCred, GitHubCredBox } from './github-cred.js';
 // ==================== 创建 / 克隆仓库 ====================
@@ -167,6 +167,7 @@ export function CreateRepoDialog(props: {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === 'Enter') submit();
           }}
         />
@@ -435,6 +436,7 @@ export function GetRepoDialog(props: {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === 'Enter') submit();
           }}
         />

@@ -55,7 +55,7 @@ export function RevertModal(props: {
       : t('fs.revert.titleRevert');
   return (
     <div className="modal-mask">
-      <ResizableModal width={autoWidth}>
+      <ResizableModal width={autoWidth} onEsc={props.onClose}>
         <h3>↩ {titleName} ({props.repoType.toUpperCase()})</h3>
         <div className="body" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           {/* 目录信息条：还原范围 + 勾选进度 */}

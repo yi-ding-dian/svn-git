@@ -6,6 +6,7 @@ import { IconTag } from '../ui/icons.js';
 import { HelpNote, FormRow } from '../ui/ui.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
+import { isImeComposing } from '../shared/utils.js';
 import { runAction } from '../shared/vcs-action.js';
 import { ResultLine } from '../ui/result-line.js';
 import { t } from '../../shared/i18n/index.js';
@@ -64,6 +65,7 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === 'Enter' && newName.trim()) act('create', newName.trim());
           }}
           style={{ flex: 1 }}
@@ -213,7 +215,7 @@ export function GitInfoModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={560} minWidth={480}>
+      <ResizableModal width={560} minWidth={480} onEsc={props.onClose}>
         {/* ⚙ Git 信息 */}
         <h3>{t('ops.gitInfo.title')}</h3>
         <div className="body">

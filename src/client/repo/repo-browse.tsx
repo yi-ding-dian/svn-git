@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { get, post } from '../shared/api.js';
+import { isImeComposing } from '../shared/utils.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { loadMdTheme, mdThemeVars } from '../shared/md-theme.js';
@@ -460,7 +461,7 @@ export function RepoBrowseModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={1130} height={500} maxed={maxed} onToggleMax={() => setMaxed((m) => !m)}>
+      <ResizableModal width={1130} height={500} maxed={maxed} onToggleMax={() => setMaxed((m) => !m)} onEsc={props.onClose}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* 仓库浏览（IconServer：远程仓库在服务器上） */}
           <span style={{ flex: 1 }}>
@@ -519,7 +520,7 @@ export function RepoBrowseModal(props: {
                     } else if (e.key === 'ArrowUp') {
                       e.preventDefault();
                       setQIdx((i) => Math.max(0, i - 1));
-                    } else if (e.key === 'Enter') {
+                    } else if (e.key === 'Enter' && !isImeComposing(e)) {
                       const it = qItems?.[Math.min(qIdx, (qItems?.length ?? 1) - 1)];
                       if (it) void pickResult(it);
                     }

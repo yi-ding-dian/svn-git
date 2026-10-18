@@ -1,6 +1,7 @@
 /** 备注弹窗（最近项目右键「备注」） */
 import React, { useState } from 'react';
 import { ResizableModal } from '../shell/modal-shell.js';
+import { isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 备注弹窗（最近项目右键「备注」）：给项目写一句自己的话，侧边栏显示在时间前面。
@@ -39,6 +40,7 @@ export function RemarkModal(props: {
             onChange={(e) => setText(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return;
               if (e.key === 'Enter' && !noop) submit();
             }}
             style={{ width: '100%' }}

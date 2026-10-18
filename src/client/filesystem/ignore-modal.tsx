@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
+import { isImeComposing } from '../shared/utils.js';
 import { get, post } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 
@@ -138,6 +139,7 @@ export function IgnoreModal(props: { dir: string; onClose: () => void; onChanged
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === 'Enter') add();
               }}
               style={{ flex: 1 }}

@@ -6,6 +6,7 @@ import { IconBranch } from '../ui/icons.js';
 import { HelpNote } from '../ui/ui.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
+import { isImeComposing } from '../shared/utils.js';
 import { useTasks } from '../shared/tasks.js';
 import { startTaskDeferred } from '../shell/bg-defer.js';
 import { launchMagicFlight } from '../animations/index.js';
@@ -397,6 +398,7 @@ export function BranchDialog(props: {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === 'Enter' && newName.trim()) confirmCreate(newName.trim());
           }}
           style={{ flex: 1 }}

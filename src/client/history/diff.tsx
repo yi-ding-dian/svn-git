@@ -1,6 +1,7 @@
 /** 差异视图：并排双栏对比（左原版/右当前，修改行 M 标识，语法高亮，点击联动）/ 版本间文本 diff */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get } from '../shared/api.js';
+import { isImeComposing } from '../shared/utils.js';
 import { DiffRender } from '../ui/diff-render.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { renderMarkdown } from '../shared/markdown.js';
@@ -280,6 +281,8 @@ export function DiffView(props: Props) {
 
   useEffect(() => {
     if (!props.target) return;
+    // 视图隐藏时不加载：看过一次 diff 后 target 常驻，否则每次 tick 都会在后台重拉两份文件 + diff
+    if (!props.active) return;
     let cancelled = false;
     setLoading(true);
     setError('');
@@ -327,7 +330,7 @@ export function DiffView(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [props.target, props.tick, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps -- reloadKey：就地编辑保存后重新对比
+  }, [props.target, props.tick, reloadKey, props.active]); // eslint-disable-line react-hooks/exhaustive-deps -- reloadKey：就地编辑保存后重新对比；active：隐藏时不加载，切回来补拉
 
   // 差异块导航
   const blocksRef = useRef<{ id: number; left: number; right: number }[]>([]);
@@ -456,7 +459,7 @@ export function DiffView(props: Props) {
 
   // 外部更新检测（3 秒轮询文件指纹）
   useEffect(() => {
-    if (!sideMode || !props.target?.path) return;
+    if (!sideMode || !props.target?.path || !props.active) return;
     const path = props.target.path;
     const timer = setInterval(() => {
       if (staleTip) return;
@@ -470,7 +473,7 @@ export function DiffView(props: Props) {
         .catch(() => {});
     }, 3000);
     return () => clearInterval(timer);
-  }, [sideMode, props.target, staleTip]);
+  }, [sideMode, props.target, staleTip, props.active]);
 
   // 并排行拆分：左栏 = 原版每行 + 删除行标记；右栏 = 当前每行 + 新增行标记。
   // 左栏在"新增"处插入空占位行（带背景标记），左右视觉对齐、定位直观。
@@ -855,6 +858,7 @@ export function DiffView(props: Props) {
                           setDMatchLIdx(0);
                         }}
                         onKeyDown={(e) => {
+                          if (isImeComposing(e)) return;
                           if (e.key === 'Enter') goNextLMatch();
                           if (e.key === 'Escape') setDSearchLActive(false);
                         }}
@@ -942,6 +946,7 @@ export function DiffView(props: Props) {
                           setDMatchIdx(0);
                         }}
                         onKeyDown={(e) => {
+                          if (isImeComposing(e)) return;
                           if (e.key === 'Enter') goNextDMatch();
                           if (e.key === 'Escape') setDSearchActive(false);
                         }}

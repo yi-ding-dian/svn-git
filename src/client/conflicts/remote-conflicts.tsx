@@ -42,7 +42,7 @@ export function RemoteConflictModal(props: { riskFiles: { path: string; lines: n
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={920} maxWidth="95vw">
+      <ResizableModal width={920} maxWidth="95vw" onEsc={props.onClose}>
         <h3>
           {/* ⚠ 这  */}
           {t('conflict.remote.titleA')}

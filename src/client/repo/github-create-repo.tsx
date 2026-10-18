@@ -6,6 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { get, post, type GitHubCreateResult } from '../shared/api.js';
+import { isImeComposing } from '../shared/utils.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { t } from '../../shared/i18n/index.js';
 import { normalizeGhRepoName, sanitizeGhRepoName } from '../../shared/github.js';
@@ -91,7 +92,7 @@ export function GitHubCreateModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={480} minWidth={420}>
+      <ResizableModal width={480} minWidth={420} onEsc={props.onClose}>
         {/* GitHub 新建仓库 */}
         <h3>{t('repo.githubCreate.title')}</h3>
         <div className="body">
@@ -106,6 +107,7 @@ export function GitHubCreateModal(props: {
               // 实时过滤非法字符（中文/空格等 → '-'，与 GitHub 网页行为一致）；提交时再做完整规范化
               onChange={(e) => setName(sanitizeGhRepoName(e.target.value))}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === 'Enter') submit();
               }}
               autoFocus

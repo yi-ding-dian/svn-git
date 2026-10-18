@@ -32,6 +32,14 @@ export function baseName(p: string): string {
   return segs.pop() ?? p;
 }
 
+/** 输入法组词中的按键：中文输入法里 Enter 是「选候选字」、Esc 是「取消组词」，
+ *  不能当成表单提交/取消处理（否则选词就把文件名/分支名提交了）。
+ *  `keyCode === 229` 覆盖部分浏览器/输入法在 compositionstart 前只报 229 的情况。 */
+export function isImeComposing(e: { nativeEvent?: KeyboardEvent; isComposing?: boolean; keyCode?: number }): boolean {
+  const native = e.nativeEvent;
+  return Boolean(native?.isComposing ?? e.isComposing) || (native?.keyCode ?? e.keyCode) === 229;
+}
+
 /** 拼「仓库根 + 版本库相对路径」，输出平台原生分隔符的绝对路径。
  *
  *  `root` 是**平台原生**的绝对路径（Windows 形如 `D:\svn-git`，来自服务端），

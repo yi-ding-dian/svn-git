@@ -370,6 +370,7 @@ export const fs = {
   'fs.pv.encNoEditFull': 'This file is {enc}-encoded; inline editing is unavailable (to avoid corrupting the encoding) — open it with an external application',
   'fs.pv.openFailedShort': 'Open failed',
   'fs.pv.readFailed': 'Read failed',
+  'fs.pv.unsavedEdit': 'Unsaved changes: save first, or click "Cancel" to discard them before going back',
   'fs.pv.saveFailed': 'Save failed',
   'fs.pv.saveFailedMsg': 'Save failed: {msg}',
   'fs.pv.saved': 'Saved',

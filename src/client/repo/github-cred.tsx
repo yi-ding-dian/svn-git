@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { get } from '../shared/api.js';
+import { isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 
 export interface GitHubCred {
@@ -90,6 +91,7 @@ export function GitHubCredBox({ cred, onEnter }: { cred: GitHubCred; onEnter?: (
           onKeyDown={
             onEnter
               ? (e) => {
+                  if (isImeComposing(e)) return;
                   if (e.key === 'Enter') onEnter();
                 }
               : undefined

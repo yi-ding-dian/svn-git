@@ -4,6 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
+import { isImeComposing } from '../shared/utils.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -66,7 +67,7 @@ export function GitIdentityModal(props: {
 
   return (
     <div className="modal-mask">
-      <ResizableModal width={480} minWidth={420}>
+      <ResizableModal width={480} minWidth={420} onEsc={props.onClose}>
         {/* 设置 Git 身份 */}
         <h3>{t('ops.gitIdentity.title')}</h3>
         <div className="body">
@@ -80,6 +81,7 @@ export function GitIdentityModal(props: {
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === 'Enter') submit();
               }}
               autoFocus
@@ -93,6 +95,7 @@ export function GitIdentityModal(props: {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
                 if (e.key === 'Enter') submit();
               }}
             />

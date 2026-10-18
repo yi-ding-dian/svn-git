@@ -7,6 +7,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get } from '../shared/api.js';
+import { isImeComposing } from '../shared/utils.js';
 // 命中高亮已提升 shared（仓库浏览搜索共用，边界规范）
 import { highlightMatch } from '../shared/highlight-match.js';
 
@@ -211,6 +212,7 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
             setSearchExpanded(false);
           }}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === 'ArrowDown') {
               e.preventDefault();
               setActiveIdx((i) => Math.min(count - 1, i + 1));
