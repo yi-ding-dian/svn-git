@@ -12,7 +12,7 @@ import { get, post, type RepoInfo } from '../shared/api.js';
 import { launchMagicFlight } from '../animations/index.js';
 import { CommitModal } from '../ops/commit.js';
 import { CommitSelectModal } from '../ops/commit-select.js';
-import { BranchDialog } from '../ops/branch.js';
+import { BranchDialog } from '../ops/branch/index.js';
 import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
 import { TagDialog, GitInfoModal } from '../ops/tag-git-info.js';
 import { GitHubCreateModal } from '../repo/github-create-repo.js';
