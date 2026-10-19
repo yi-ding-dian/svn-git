@@ -72,6 +72,8 @@ export const CMDS: Record<string, string> = {
   s_branch_create_from: 'svn copy %from% %target%',
   s_branch_switch: 'svn switch %branch%',
   s_branch_merge: 'svn merge ^/branches/%name%',
+  // 主干合并：来源是主干对应路径（如 trunk/src，由 copyfrom 推断），不是固定的 ^/branches
+  s_branch_merge_from: 'svn merge %source%',
   s_branch_delete: 'svn delete ^/branches/%name%',
   s_tag_create: 'svn copy ^/trunk ^/tags/%name%',
   s_tag_delete: 'svn delete ^/tags/%name%',

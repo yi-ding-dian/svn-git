@@ -20,6 +20,11 @@ export function BranchList(props: {
   onRemoteDelete: (name: string) => void;
 }) {
   const { repoType, data, sel, busy, hasRemote } = props;
+  // SVN 主干：不在 branches/ 下，单独合成一行（像 Git 列表里的 main/master）。
+  // Git 仓库 trunkUrl 恒为 undefined，列表行为完全不变。
+  const trunkUrl = repoType === 'svn' ? data?.mainlineUrl : undefined;
+  const trunkName = data?.mainlineRelative ?? 'trunk';
+  const trunkIsCurrent = data?.currentKind === 'trunk';
   return (
     <div className="vcs-list" style={{ flex: 1, minHeight: 60 }}>
       {/* 加载中… */}
@@ -29,6 +34,57 @@ export function BranchList(props: {
         <div className="dim" style={{ padding: '10px 6px' }}>
           {t('ops.branch.none')}
           {repoType === 'svn' ? t('ops.branch.noneSvn') : ''}
+        </div>
+      )}
+      {/* 主干行（SVN）：主干不在 branches/ 里，单独列在最上面，提供切换/合并；不提供删除 */}
+      {trunkUrl && (
+        <div
+          className="vcs-row"
+          // 当前分支
+          title={trunkIsCurrent ? t('ops.branch.isCurrent') : undefined}
+        >
+          <span className="vcs-current" style={{ visibility: trunkIsCurrent ? 'visible' : 'hidden' }}>●</span>
+          <span className="badge" style={{ background: trunkIsCurrent ? 'var(--ok)' : 'var(--accent)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>
+            {/* 当前 / 主干（和 Git 列表一致：当前项显示「当前」+ 绿点） */}
+            {t(trunkIsCurrent ? 'ops.branch.badgeCurrent' : 'ops.branch.trunkBadge')}
+          </span>
+          <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trunkName}</span>
+          {!trunkIsCurrent && (
+            <span className="row" style={{ gap: 4 }}>
+              <button
+                className="mini primary"
+                disabled={busy}
+                onClick={() => props.onSwitch('trunk')}
+                title={cmdOfRepo(repoType, 'branch_switch', { name: 'trunk' })}
+              >
+                {/* 切换 */}
+                {t('ops.branch.switchBtn')}
+              </button>
+              <button
+                className="mini btn-accent"
+                disabled={busy}
+                onClick={() => props.onMerge('trunk')}
+                title={`${cmdOfRepo(repoType, 'branch_merge_from', { source: trunkUrl })}\n\n${t('ops.branch.mergeTip')}`}
+              >
+                {/* 🔀 合并 */}
+                {t('ops.branch.mergeBtn')}
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+      {/* 当前位置行（SVN，当前在 tags/独立目录）：像 Git 的当前分支一样带绿点和「当前」，
+          否则列表里全是「本地」，看不出当前工作副本在哪 */}
+      {repoType === 'svn' && data && (data.currentKind === 'tag' || data.currentKind === 'other') && (
+        <div className="vcs-row" title={t('ops.branch.isCurrent')}>
+          <span className="vcs-current" style={{ visibility: 'visible' }}>●</span>
+          <span className="badge" style={{ background: 'var(--ok)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>
+            {/* 当前 */}
+            {t('ops.branch.badgeCurrent')}
+          </span>
+          <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {data.currentKind === 'tag' ? `tags/${data.current}` : data.current}
+          </span>
         </div>
       )}
       {data?.branches.map((b) => {
@@ -45,13 +101,19 @@ export function BranchList(props: {
         const remoteLocal = b.remote ? b.name.split('/').slice(1).join('/') : '';
         const remoteHasLocal = b.remote ? data.branches.some((r) => !r.remote && r.name === remoteLocal) : false;
         const remoteIsCurrent = b.remote && remoteLocal === data.current;
+        // SVN 分支的完整位置提示（列表里只显示名字，悬浮能看到它属于 branches/）
+        const branchTip = repoType === 'svn' ? `branches/${b.name}` : '';
+        const rowTitle = isCur
+          ? branchTip
+            ? `${branchTip}\n${t('ops.branch.isCurrent')}`
+            : t('ops.branch.isCurrent')
+          : branchTip || undefined;
         return (
           <div
             key={b.name}
             className={`vcs-row ${sel === b.name ? 'selected' : ''}`}
             onClick={() => props.onSelect(b.name)}
-            // 当前分支
-            title={isCur ? t('ops.branch.isCurrent') : undefined}
+            title={rowTitle}
           >
             <span className="vcs-current" style={{ visibility: isCur ? 'visible' : 'hidden' }}>●</span>
             <span className="badge" style={{ background: b.remote ? 'var(--dim)' : 'var(--ok)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>

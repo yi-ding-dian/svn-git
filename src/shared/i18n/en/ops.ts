@@ -242,6 +242,7 @@ export const ops = {
   'ops.branch.badgeCurrent': 'Current',
   'ops.branch.badgeRemote': 'Remote',
   'ops.branch.badgeLocal': 'Local',
+  'ops.branch.trunkBadge': 'Mainline',
   'ops.branch.remoteHasLocalTip': 'Local branch {local} already exists — {name} is its remote counterpart\nClick to switch to {local}',
   'ops.branch.remoteNoLocalTip': 'No local branch yet\nClick to create the local tracking branch {local} and switch to it',
   'ops.branch.switchToLocal': 'Switch to {local}',

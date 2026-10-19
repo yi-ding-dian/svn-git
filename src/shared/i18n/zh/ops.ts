@@ -243,6 +243,7 @@ export const ops = {
   'ops.branch.badgeCurrent': '当前',
   'ops.branch.badgeRemote': '远程',
   'ops.branch.badgeLocal': '本地',
+  'ops.branch.trunkBadge': '主干',
   'ops.branch.remoteHasLocalTip': '本地已有分支 {local} —— {name} 对应的就是它\n点此切换到 {local}',
   'ops.branch.remoteNoLocalTip': '本地还没有这个分支\n点此新建本地跟踪分支 {local} 并切换过去',
   'ops.branch.switchToLocal': '切到本地 {local}',

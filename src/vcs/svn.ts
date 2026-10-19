@@ -1226,17 +1226,20 @@ export class SvnVcs {
     return { ok: true, message: base };
   }
 
-  /** 合并分支到工作副本：svn merge <root>/branches/<name> */
+  /** 合并分支到工作副本：svn merge <root>/branches/<name>；
+   *  name=trunk/root 时合并主干对应路径（mainlineUrl，如 trunk/src）——与当前工作副本同层级 */
   async merge(branchName: string, signal?: AbortSignal): Promise<VcsResult> {
     const root = await this.projectRootUrl();
-    const res = await this.exec(['merge', `${root}/branches/${branchName}`], { timeoutMs: 300_000, signal });
+    const isTrunk = branchName === 'trunk' || branchName === 'root';
+    const source = isTrunk ? ((await this.mainlineUrl()) ?? `${root}/trunk`) : `${root}/branches/${branchName}`;
+    const res = await this.exec(['merge', source], { timeoutMs: 300_000, signal });
     if (res.code !== 0) {
       const auth = this.authError(res);
       // 合并失败（可能有冲突）
       return this.fail(auth, res.stderr.trim() || t('vcs.mergeFailedMaybeConflict'));
     }
-    // 已合并分支 {name} 的改动
-    const base = t('vcs.mergedBranch', { name: branchName });
+    // 已合并分支 {name} 的改动（主干显示其相对路径，如 trunk/src）
+    const base = t('vcs.mergedBranch', { name: isTrunk ? this.relOf(source, root) : branchName });
     // svn merge 遇文本冲突退出码仍为 0，需从输出识别冲突并提示用户处理
     const out = (res.stdout ?? '') + (res.stderr ?? '');
     // {msg}；⚠ 合并产生冲突，请打开冲突视图处理冲突文件
