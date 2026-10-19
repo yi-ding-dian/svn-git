@@ -1,6 +1,6 @@
 /** 分支管理弹窗：列表 / 新建 / 切换 / 合并 / 删除 / 推送（git + svn 通用） */
 import React, { useEffect, useRef, useState } from 'react';
-import { get, post, type BranchInfo } from '../shared/api.js';
+import { get, post, type BranchInfo, type MainlinePlan } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { IconBranch } from '../ui/icons.js';
 import { HelpNote } from '../ui/ui.js';
@@ -48,14 +48,64 @@ export function BranchDialog(props: {
   // 是否配置了远程：没有 origin 的本地孤仓库不显示「推送到远程」（推了也会失败）
   const [hasRemote, setHasRemote] = useState(false);
   // 工具风格二次确认
-  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void; confirmLabel?: string; hideCancel?: boolean; confirmCmd?: string; danger?: boolean } | null>(null);
+  const [cfm, setCfm] = useState<{ title: string; msg: React.ReactNode; action: () => void; confirmLabel?: string; hideCancel?: boolean; confirmCmd?: string; danger?: boolean } | null>(null);
   /** 新建分支确认（git 非主干带基点选择）：name=目标名；trunkBase=找到的主干基点 */
   const [createCfm, setCreateCfm] = useState<{ name: string; trunkBase?: string } | null>(null);
   /** 基点选择：trunk=基于主干（推荐）、current=基于当前分支（默认保持现状行为） */
   const [createBase, setCreateBase] = useState<'trunk' | 'current'>('current');
+  /** SVN 新建分支来源：trunk=标准主干、current=当前工作副本目录 */
+  const [svnBase, setSvnBase] = useState<'trunk' | 'current'>('trunk');
+  /** SVN 项目迁移面板（用户要求：分支管理里加「项目迁移」入口） */
+  const [migrateOpen, setMigrateOpen] = useState(false);
+  const [migrateMode, setMigrateMode] = useState<'devline' | 'project'>('devline');
+  const [migrateName, setMigrateName] = useState('');
+  const [migrateSwitch, setMigrateSwitch] = useState(true);
+  /** 合回主干面板（svn）：主干对应路径 + 本地主干工作副本 */
+  const [mainlineOpen, setMainlineOpen] = useState(false);
+  const [mainlineDir, setMainlineDir] = useState('');
+  const [mainlinePlan, setMainlinePlan] = useState<MainlinePlan | null>(null);
+  const [mainlineAutoCommit, setMainlineAutoCommit] = useState(true);
+  const [mainlineChecking, setMainlineChecking] = useState(false);
+  const [mainlineConflicts, setMainlineConflicts] = useState<string[]>([]);
 
   /** 主干分支：git main/master、svn trunk（团队稳定版本，禁止删除） */
   const isTrunkName = (name: string) => name === 'main' || name === 'master' || name === 'trunk';
+  /** 当前位置的可读名称（svn：tags/SCA_HB、branches/xxx；git 原样） */
+  const currentLabel = data
+    ? data.currentKind === 'tag'
+      ? `tags/${data.current}`
+      : data.currentKind === 'branch'
+        ? `branches/${data.current}`
+        : data.current
+    : '';
+  /** 当前项是否就是分支列表里的某项（tag/other 不在 branches 列表，不能高亮同名项） */
+  const isCurrentBranch = (name: string) => name === data?.current && data?.currentKind !== 'tag' && data?.currentKind !== 'other';
+  /** 项目迁移目标路径预览（按模式实时计算） */
+  const migrateTarget = (() => {
+    const root = data?.projectRoot;
+    const name = migrateName.trim();
+    if (!root || !name) return '';
+    return migrateMode === 'devline' ? `${root}/branches/${name}` : `${root.replace(/\/[^/]+$/, '')}/${name}/trunk`;
+  })();
+  /** 合回主干预检状态文案/颜色 */
+  const mainlineState = (() => {
+    const p = mainlinePlan;
+    if (mainlineChecking || !p) return { text: t('ops.branch.mainlineChecking'), color: 'var(--dim)' };
+    if (p.error) return { text: p.error, color: 'var(--err)' };
+    switch (p.targetState) {
+      case 'missing':
+        return { text: t('ops.branch.mainlineStateMissing'), color: 'var(--warn)' };
+      case 'not-wc':
+        return { text: t('ops.branch.mainlineStateNotWc'), color: 'var(--err)' };
+      case 'wrong-url':
+        return { text: t('ops.branch.mainlineStateWrongUrl', { url: p.targetUrl ?? '', target: p.mainlineUrl ?? '' }), color: 'var(--err)' };
+      case 'dirty':
+        return { text: t('ops.branch.mainlineStateDirty'), color: 'var(--err)' };
+      default:
+        return { text: t('ops.branch.mainlineStateReady'), color: 'var(--ok)' };
+    }
+  })();
+  const mainlineCanRun = Boolean(mainlinePlan && mainlineDir.trim() && (mainlinePlan.targetState === 'missing' || mainlinePlan.targetState === 'ready'));
 
   const load = () => {
     get
@@ -122,27 +172,172 @@ export function BranchDialog(props: {
     });
   };
 
+  /** 项目迁移执行：把当前工作副本独立成开发线/独立项目（>3 秒转后台，与分支操作同机制） */
+  const runMigrate = (name: string) => {
+    const mode = migrateMode;
+    const switchAfter = migrateSwitch;
+    const title = t('shell.tasks.projectMigrate', { name });
+    const from = fromRef.current ?? undefined;
+    fromRef.current = null;
+    startTaskDeferred({
+      kind: 'branch',
+      title,
+      run: async (signal) => {
+        const r = await post.projectMigrate(mode, name, switchAfter, signal);
+        setMsg(r.message);
+        setMsgErr(!r.ok);
+        if (r.ok) {
+          setMigrateOpen(false);
+          load();
+          props.onChanged();
+        }
+        return { ok: r.ok, message: r.message };
+      },
+      onSlow: () => {
+        props.onClose();
+        if (from) launchMagicFlight(from);
+        props.onToast(t('shell.tasks.backgrounded', { title }), false);
+      },
+    });
+  };
+
+  /** 迁移确认：列出将执行的多步 SVN 命令，确认后执行 */
+  const confirmMigrate = () => {
+    const name = migrateName.trim();
+    const root = data?.projectRoot;
+    if (!name || !root) return;
+    const fromRel = currentLabel || data?.current || '';
+    const newRoot = `${root.replace(/\/[^/]+$/, '')}/${name}`;
+    const cmd =
+      migrateMode === 'devline'
+        ? `svn copy ${data?.currentUrl ?? ''} ${root}/branches/${name} -m "${t('vcs.commitMsg.migrateDevline', { name, from: fromRel })}"`
+        : [
+            `svn mkdir --parents ${newRoot}/branches ${newRoot}/tags -m "${t('vcs.commitMsg.migrateProjectSkeleton', { name })}"`,
+            `svn copy ${data?.currentUrl ?? ''} ${newRoot}/trunk -m "${t('vcs.commitMsg.migrateProject', { name, from: fromRel })}"`,
+          ].join('\n');
+    setCfm({
+      // 项目迁移
+      title: t('ops.branch.migrateTitle'),
+      msg: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, whiteSpace: 'normal' }}>
+          <div>{t(migrateMode === 'devline' ? 'ops.branch.migrateDevlineConfirm' : 'ops.branch.migrateProjectConfirm', { name })}</div>
+          <pre className="mono small" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>{cmd}</pre>
+          {migrateSwitch && <div className="dim small">{t('ops.branch.migrateSwitchNote')}</div>}
+        </div>
+      ),
+      // 开始迁移
+      confirmLabel: t('ops.branch.migrateRun'),
+      action: () => runMigrate(name),
+    });
+  };
+
+  /** 合回主干：打开面板并做一次预检（空目录 → 返回推荐路径） */
+  const openMainline = async () => {
+    setMainlineOpen(true);
+    setMainlineConflicts([]);
+    setMainlineChecking(true);
+    try {
+      const p = await post.mergeMainlineCheck('');
+      setMainlinePlan(p);
+      if (!mainlineDir) setMainlineDir(p.suggestion);
+    } catch (e) {
+      setMsg((e as Error).message);
+      setMsgErr(true);
+    } finally {
+      setMainlineChecking(false);
+    }
+  };
+
+  /** 重新检查本地主干工作副本目录 */
+  const checkMainline = async () => {
+    setMainlineChecking(true);
+    try {
+      setMainlinePlan(await post.mergeMainlineCheck(mainlineDir.trim()));
+    } catch (e) {
+      setMsg((e as Error).message);
+      setMsgErr(true);
+    } finally {
+      setMainlineChecking(false);
+    }
+  };
+
+  /** 执行合回主干（>3 秒转后台）：在目标工作副本上 svn merge，冲突时不提交 */
+  const runMainline = (dir: string, autoCommit: boolean) => {
+    const title = t('shell.tasks.mergeMainline', { name: data?.mainlineRelative ?? '' });
+    const from = fromRef.current ?? undefined;
+    fromRef.current = null;
+    setMainlineConflicts([]);
+    startTaskDeferred({
+      kind: 'branch',
+      title,
+      run: async (signal) => {
+        const r = await post.mergeMainline(dir, autoCommit, signal);
+        setMsg(r.message);
+        setMsgErr(!r.ok);
+        if (r.conflicts?.length) setMainlineConflicts(r.conflicts);
+        if (r.ok) {
+          setMainlineOpen(false);
+          load();
+          props.onChanged();
+        }
+        // 结果落盘后再预检一次（冲突时面板里能看到目标工作副本的当前状态）
+        post.mergeMainlineCheck(dir).then(setMainlinePlan).catch(() => {});
+        return { ok: r.ok, message: r.message };
+      },
+      onSlow: () => {
+        props.onClose();
+        if (from) launchMagicFlight(from);
+        props.onToast(t('shell.tasks.backgrounded', { title }), false);
+      },
+    });
+  };
+
+  /** 合回主干确认：缺失目标时会先检出，命令/结果在任务里执行 */
+  const confirmMainline = () => {
+    const dir = mainlineDir.trim();
+    const p = mainlinePlan;
+    if (!dir || !p) return;
+    const willCheckout = p.targetState === 'missing';
+    setCfm({
+      // 合回主干
+      title: t('ops.branch.mergeMainlineTitle'),
+      msg: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, whiteSpace: 'normal' }}>
+          <div>
+            {willCheckout
+              ? t('ops.branch.mergeMainlineCheckoutConfirm', { mainline: p.mainlineUrl ?? '', dir, source: data?.currentUrl ?? '' })
+              : t('ops.branch.mergeMainlineConfirm', { source: data?.currentUrl ?? '', target: dir })}
+          </div>
+          <div className="small dim">
+            {mainlineAutoCommit ? t('ops.branch.mergeMainlineAutoNote') : t('ops.branch.mergeMainlinePendingNote')}
+          </div>
+        </div>
+      ),
+      // 检出并合并 / 开始合并
+      confirmLabel: willCheckout ? t('ops.branch.mergeMainlineCheckoutRun') : t('ops.branch.mergeMainlineRun'),
+      action: () => runMainline(dir, mainlineAutoCommit),
+    });
+  };
+
   /** 新建分支确认：确保创建的分支能按要求合回主干——
    *  git：当前在非主干时可选基点（基于主干/当前分支），基于主干可避免"新分支包含当前分支已提交的改动、合回主干时一并进入"；
-   *  svn：仅标准布局（有 trunk）允许，来源固定 trunk；无 trunk 弹「知道了」说明框（后端同样拒绝） */
+   *  svn：来源可选 trunk / 当前目录（非 trunk 检出的子项目也能开分支），默认按当前位置推断 */
   const confirmCreate = (name: string) => {
     const cur = data?.current;
     if (props.repoType === 'svn') {
-      if (!data?.layout?.trunk) {
+      const canTrunk = Boolean(data?.layout?.trunk);
+      const kind = data?.currentKind;
+      // 从当前目录复制：项目根（或其他非布局位置）会把 branches/tags 一起卷进去，禁止（后端同样拒绝）
+      const canCurrent = kind === 'trunk' || kind === 'branch' || kind === 'tag';
+      if (!canTrunk && !canCurrent) {
         // 无法创建分支 / 知道了 / 仓库没有 trunk（非标准布局），无法创建分支 {name}。\n分支需从 trunk 复制才能保证合并回主干；请先补建 trunk 目录。
         setCfm({ title: t('ops.branch.cannotCreate'), confirmLabel: t('ui.modal.gotIt'), hideCancel: true, msg: t('ops.branch.noTrunkMsg', { name }), action: () => setCfm(null) });
         return;
       }
-      setCfm({
-        // 新建分支
-        title: t('ops.branch.createTitle'),
-        // 确认从 trunk 复制创建分支 {name}？\n（标准分支策略：开发完成后在主干上点「合并」即可合回主干。创建后不自动切换，需手动切换使用。）
-        msg: t('ops.branch.createFromTrunk', { name }),
-        // 创建
-        confirmLabel: t('ops.branch.create'),
-        confirmCmd: cmdOfRepo(props.repoType, 'branch_create', { name }),
-        action: () => act('create', name),
-      });
+      // 默认来源：在 trunk/普通分支上用 trunk；在标签或独立目录里默认从当前目录复制（给子项目再开分支）
+      const defaultBase: 'trunk' | 'current' = canCurrent && kind !== 'trunk' && kind !== 'branch' ? 'current' : canTrunk ? 'trunk' : 'current';
+      setSvnBase(defaultBase);
+      setCreateCfm({ name });
       return;
     }
     // git：找主干基点（本地 main/master 优先，其次远程 origin/main|master）
@@ -193,15 +388,20 @@ export function BranchDialog(props: {
     } catch {
       /* 检查失败不阻塞，走默认确认流程 */
     }
-    // 工作区干净 → 直接切换，不弹确认
-    if (check && check.changed === 0) {
+    // svn：当前在 tags/独立目录——与 trunk/普通分支的目录层级可能不同，切换会整体替换目录树，不能零打扰
+    const svnForeign = props.repoType === 'svn' && (data?.currentKind === 'tag' || data?.currentKind === 'other');
+    // 工作区干净且层级正常 → 直接切换，不弹确认
+    if (check && check.changed === 0 && !svnForeign) {
       act('switch', name);
       return;
     }
     let msg: string;
     if (props.repoType === 'svn') {
-      // 当前有 {n} 个文件的本地改动，切换分支会尽量保留（可能产生冲突）。建议先提交；仍要切换？
-      msg = t('ops.branch.switchSvnWarn', { n: check?.changed ?? '?' });
+      // 当前在 tags/独立目录：提示层级风险（目标若不是从当前目录复制，切换会整体替换内容）
+      msg = svnForeign
+        ? t('ops.branch.switchSvnForeign', { current: currentLabel, target: name === 'trunk' ? 'trunk' : `branches/${name}` })
+        : t('ops.branch.switchSvnWarn', { n: check?.changed ?? '?' });
+      if (svnForeign && check && check.changed > 0) msg += `\n\n${t('ops.branch.switchSvnWarn', { n: check.changed })}`;
     } else if (name.includes('/')) {
       const local = name.split('/').slice(1).join('/');
       // 确认切换到远程分支 {name}？将自动创建本地跟踪分支 {local} 并切换过去。
@@ -389,8 +589,22 @@ export function BranchDialog(props: {
       )}
       {/* 仓库布局提示（svn 非标准布局时提醒） */}
       {props.repoType === 'svn' && data?.layout && <LayoutNote layout={data.layout} />}
-      {/* 新建分支 */}
-      <div className="row" style={{ margin: '12px 0' }}>
+      {/* 当前工作副本不在 branches/ 下（如 tags/定制项目）：说明列表与迁移入口 */}
+      {props.repoType === 'svn' && data && data.currentKind !== 'trunk' && data.currentKind !== 'branch' && (
+        <div className="small" style={{ color: 'var(--warn)', margin: '6px 0' }}>
+          {/* 当前工作副本在 {current}（不在 branches/ 下）。可「新建分支」从当前目录复制，或用「项目迁移」独立出去。 */}
+          {t('ops.branch.currentTagNote', { current: currentLabel })}
+          {data.mainlineRelative && (
+            <>
+              <br />
+              {/* 主干对应路径：{path}（「切回主干」会切到这里） */}
+              {t('ops.branch.mainlineNote', { path: data.mainlineRelative })}
+            </>
+          )}
+        </div>
+      )}
+      {/* 新建分支：输入行 */}
+      <div className="row" style={{ margin: '12px 0 6px', gap: 6 }}>
         <input
           type="text"
           // 新分支名称…（回车创建）
@@ -401,7 +615,7 @@ export function BranchDialog(props: {
             if (isImeComposing(e)) return;
             if (e.key === 'Enter' && newName.trim()) confirmCreate(newName.trim());
           }}
-          style={{ flex: 1 }}
+          style={{ flex: 1, minWidth: 160 }}
         />
         <button
           className="primary"
@@ -412,14 +626,162 @@ export function BranchDialog(props: {
           {/* ➕ 新建分支 */}
           {t('ops.branch.createBtn')}
         </button>
-        {props.repoType === 'svn' && data?.current && data.current !== 'trunk' && (
-          // 切回 trunk
-          <button className="mini" disabled={busy} onClick={() => confirmSwitch('trunk', true)} title={t('ops.branch.backToTrunkTip')}>
-            {/* ↩ 切回主干 */}
-            {t('ops.branch.backToTrunkBtn')}
-          </button>
-        )}
       </div>
+      {/* 分支辅助操作独立一行（避免把名称输入框挤窄）：切回主干 / 项目迁移 / 合回主干 */}
+      {props.repoType === 'svn' && data && (
+        <div className="row" style={{ margin: '0 0 10px', gap: 6, flexWrap: 'wrap' }}>
+          {data.current && data.currentKind !== 'trunk' && (
+            // 切回 trunk
+            <button className="mini" disabled={busy} onClick={() => confirmSwitch('trunk', true)} title={t('ops.branch.backToTrunkTip')}>
+              {/* ↩ 切回主干 */}
+              {t('ops.branch.backToTrunkBtn')}
+            </button>
+          )}
+          {/* 把当前开发线独立成长期开发线，或独立成带 trunk/branches/tags 的新项目 */}
+          <button
+            className="mini btn-accent"
+            disabled={busy}
+            onClick={() => {
+              if (!migrateOpen) setMigrateName(data.current || '');
+              setMigrateOpen((v) => !v);
+            }}
+            title={t('ops.branch.migrateTip')}
+          >
+            {/* 项目迁移… */}
+            {t('ops.branch.migrateBtn')}
+          </button>
+          {data.mainlineUrl && data.currentUrl && data.mainlineUrl !== data.currentUrl && data.currentKind !== 'trunk' && (
+            <button
+              className="mini"
+              disabled={busy}
+              onClick={() => void openMainline()}
+              title={t('ops.branch.mergeMainlineTip', { path: data.mainlineRelative ?? data.mainlineUrl })}
+            >
+              {/* 合回主干… */}
+              {t('ops.branch.mergeMainlineBtn')}
+            </button>
+          )}
+        </div>
+      )}
+      {/* SVN 项目迁移面板（入口在新建分支行右侧） */}
+      {props.repoType === 'svn' && migrateOpen && data && (
+        <div className="migrate-panel" style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', margin: '4px 0 10px' }}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* 项目迁移 */}
+            <strong>{t('ops.branch.migrateTitle')}</strong>
+            <button className="mini" onClick={() => setMigrateOpen(false)}>{t('common.cancel')}</button>
+          </div>
+          {/* 把当前工作副本独立出去：仍属于原项目的长期开发线，或一个带 trunk/branches/tags 的独立项目。 */}
+          <div className="small dim" style={{ margin: '6px 0' }}>{t('ops.branch.migrateIntro')}</div>
+          <div className="small mono" style={{ margin: '4px 0', wordBreak: 'break-all' }}>
+            {/* 来源：{url} */}
+            {t('ops.branch.migrateSource', { url: data.currentUrl ?? '' })}
+          </div>
+          <label className="row" style={{ alignItems: 'flex-start', gap: 6, cursor: 'pointer', margin: '6px 0' }}>
+            <input type="radio" checked={migrateMode === 'devline'} onChange={() => setMigrateMode('devline')} style={{ marginTop: 3 }} />
+            <span>
+              <strong>{t('ops.branch.migrateDevlineTitle')}</strong>
+              <span className="small dim" style={{ display: 'block' }}>{t('ops.branch.migrateDevlineDesc')}</span>
+            </span>
+          </label>
+          <label className="row" style={{ alignItems: 'flex-start', gap: 6, cursor: 'pointer', margin: '6px 0' }}>
+            <input type="radio" checked={migrateMode === 'project'} onChange={() => setMigrateMode('project')} style={{ marginTop: 3 }} />
+            <span>
+              <strong>{t('ops.branch.migrateProjectTitle')}</strong>
+              <span className="small dim" style={{ display: 'block' }}>{t('ops.branch.migrateProjectDesc')}</span>
+            </span>
+          </label>
+          <div className="row" style={{ gap: 6, margin: '8px 0 4px' }}>
+            {/* 新名称 */}
+            <span className="small">{t('ops.branch.migrateNameLabel')}</span>
+            <input
+              type="text"
+              value={migrateName}
+              onChange={(e) => setMigrateName(e.target.value)}
+              onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
+                if (e.key === 'Enter' && migrateName.trim()) confirmMigrate();
+              }}
+              style={{ flex: 1 }}
+            />
+          </div>
+          <div className="small" style={{ wordBreak: 'break-all' }}>
+            {/* 目标：{target} */}
+            {t('ops.branch.migrateTarget', { target: migrateTarget || '…' })}
+          </div>
+          <label className="row small" style={{ alignItems: 'center', gap: 6, cursor: 'pointer', margin: '6px 0' }}>
+            <input type="checkbox" checked={migrateSwitch} onChange={(e) => setMigrateSwitch(e.target.checked)} />
+            {/* 迁移完成后把当前工作副本切换过去 */}
+            {t('ops.branch.migrateSwitch')}
+          </label>
+          <div className="row" style={{ justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
+            <button className="mini" onClick={() => setMigrateOpen(false)}>{t('common.cancel')}</button>
+            <button className="primary" disabled={busy || !migrateName.trim()} onClick={confirmMigrate}>
+              {/* 开始迁移 */}
+              {t('ops.branch.migrateRun')}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* SVN 合回主干面板 */}
+      {props.repoType === 'svn' && mainlineOpen && data && (
+        <div className="mainline-panel" style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', margin: '4px 0 10px' }}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* 合回主干 */}
+            <strong>{t('ops.branch.mergeMainlineTitle')}</strong>
+            <button className="mini" onClick={() => setMainlineOpen(false)}>{t('common.cancel')}</button>
+          </div>
+          {/* 把当前工作副本的已提交改动合并到主干对应路径。SVN 必须站在目标工作副本上拉取合并。 */}
+          <div className="small dim" style={{ margin: '6px 0' }}>{t('ops.branch.mergeMainlineIntro')}</div>
+          <div className="small mono" style={{ margin: '4px 0', wordBreak: 'break-all' }}>
+            {/* 来源：{url} */}
+            {t('ops.branch.mergeMainlineSource', { url: data.currentUrl ?? '' })}
+          </div>
+          <div className="small mono" style={{ margin: '4px 0', wordBreak: 'break-all' }}>
+            {/* 主干目标：{path} */}
+            {t('ops.branch.mergeMainlineTarget', { path: data.mainlineRelative ?? data.mainlineUrl ?? '' })}
+          </div>
+          <div className="small" style={{ margin: '8px 0 4px' }}>
+            {/* 本地主干工作副本 */}
+            {t('ops.branch.mergeMainlineDirLabel')}
+          </div>
+          <div className="row" style={{ gap: 6 }}>
+            <input
+              type="text"
+              value={mainlineDir}
+              onChange={(e) => setMainlineDir(e.target.value)}
+              onBlur={() => void checkMainline()}
+              title={mainlineDir}
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <button className="mini" disabled={mainlineChecking || !mainlineDir.trim()} onClick={() => void checkMainline()}>
+              {/* 检查 */}
+              {t('ops.branch.mergeMainlineCheck')}
+            </button>
+          </div>
+          <div className="small" style={{ color: mainlineState.color, margin: '4px 0', wordBreak: 'break-all' }}>
+            {mainlineState.text}
+          </div>
+          {mainlineConflicts.length > 0 && (
+            <div className="small" style={{ color: 'var(--err)', margin: '4px 0' }}>
+              {/* 冲突文件（在目标工作副本中处理）：{files} */}
+              {t('ops.branch.mergeMainlineConflicts', { files: mainlineConflicts.join(t('common.listSep')) })}
+            </div>
+          )}
+          <label className="row small" style={{ alignItems: 'center', gap: 6, cursor: 'pointer', margin: '6px 0' }}>
+            <input type="checkbox" checked={mainlineAutoCommit} onChange={(e) => setMainlineAutoCommit(e.target.checked)} />
+            {/* 合并无冲突时自动提交 */}
+            {t('ops.branch.mergeMainlineAutoCommit')}
+          </label>
+          <div className="row" style={{ justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
+            <button className="mini" onClick={() => setMainlineOpen(false)}>{t('common.cancel')}</button>
+            <button className="primary" disabled={busy || !mainlineCanRun} onClick={confirmMainline}>
+              {/* 检出并合并 / 开始合并 */}
+              {mainlinePlan?.targetState === 'missing' ? t('ops.branch.mergeMainlineCheckoutRun') : t('ops.branch.mergeMainlineRun')}
+            </button>
+          </div>
+        </div>
+      )}
       {/* 分支列表 */}
       <div className="vcs-list" style={{ flex: 1, minHeight: 60 }}>
         {/* 加载中… */}
@@ -427,6 +789,8 @@ export function BranchDialog(props: {
         {/* 暂无分支 / （仓库根下没有 branches/ 目录） */}
         {data && data.branches.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.branch.none')}{props.repoType === 'svn' ? t('ops.branch.noneSvn') : ''}</div>}
         {data?.branches.map((b) => {
+          // 当前项（tag/独立目录不在 branches 列表里，不能高亮同名分支）
+          const isCur = isCurrentBranch(b.name);
           // 是否已推送：本地分支能否找到对应的 origin/<名字> 远程项
           const isPushed = data.branches.some((r) => r.remote && r.name === 'origin/' + b.name);
           // 远程行（origin/xxx；只有 git 有，svn 的 branchList 全是 remote:false）的「切换」实际语义
@@ -444,17 +808,17 @@ export function BranchDialog(props: {
               className={`vcs-row ${sel === b.name ? 'selected' : ''}`}
               onClick={() => setSel(b.name)}
               // 当前分支
-              title={b.name === data.current ? t('ops.branch.isCurrent') : undefined}
+              title={isCur ? t('ops.branch.isCurrent') : undefined}
             >
-              <span className="vcs-current" style={{ visibility: b.name === data.current ? 'visible' : 'hidden' }}>●</span>
+              <span className="vcs-current" style={{ visibility: isCur ? 'visible' : 'hidden' }}>●</span>
               <span className="badge" style={{ background: b.remote ? 'var(--dim)' : 'var(--ok)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>
-                {t(b.name === data.current ? 'ops.branch.badgeCurrent' : b.remote ? 'ops.branch.badgeRemote' : 'ops.branch.badgeLocal')}
+                {t(isCur ? 'ops.branch.badgeCurrent' : b.remote ? 'ops.branch.badgeRemote' : 'ops.branch.badgeLocal')}
               </span>
               <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
               {/* 非当前分支的常规操作；当前分支若未推送也显示「推送到远程」（仅仓库配了远程时） */}
-              {(b.name !== data.current || (props.repoType === 'git' && hasRemote && !b.remote && !isPushed)) && (
+              {(isCur === false || (props.repoType === 'git' && hasRemote && !b.remote && !isPushed)) && (
                 <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                  {b.name !== data.current && !remoteIsCurrent && (
+                  {!isCur && !remoteIsCurrent && (
                     <button
                       className="mini primary"
                       disabled={busy}
@@ -496,7 +860,7 @@ export function BranchDialog(props: {
                       </button>
                     );
                   })()}
-                  {!b.remote && b.name !== data.current && (
+                  {!b.remote && !isCur && (
                     <>
                       {/* 把该分支的改动合并到当前分支（先确保已切到目标分支） / 🔀 合并 */}
                       <button className="mini btn-accent" disabled={busy} onClick={() => confirmMerge(b.name)} title={`${cmdOfRepo(props.repoType, 'branch_merge', { name: b.name })}\n\n${t('ops.branch.mergeTip')}`}>{t('ops.branch.mergeBtn')}</button>
@@ -550,48 +914,88 @@ export function BranchDialog(props: {
           onCancel={() => setCfm(null)}
         />
       )}
-      {/* 新建分支（git 非主干）：带基点选择——基于主干（推荐）/ 基于当前分支 */}
+      {/* 新建分支确认：git 带基点选择（主干/当前分支）；svn 带来源选择（trunk/当前目录） */}
       {createCfm && data?.current && (
         <ConfirmModal
           // 新建分支
           title={t('ops.branch.createTitle')}
           width={480}
           message={
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, whiteSpace: 'normal' }}>
-              {/* 确认创建新分支 {name}？ */}
-              <div>{t('ops.branch.confirmCreate', { name: createCfm.name })}</div>
-              <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                <input type="radio" checked={createBase === 'trunk'} onChange={() => setCreateBase('trunk')} />
-                {/* 基于主干 {base}（推荐） */}
-                <span>{t('ops.branch.baseTrunk', { base: createCfm.trunkBase! })}</span>
-              </label>
-              <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer', flexWrap: 'wrap' }}>
-                <input type="radio" checked={createBase === 'current'} onChange={() => setCreateBase('current')} />
-                {/* 基于当前分支 {current} */}
-                <span>{t('ops.branch.baseCurrent', { current: data.current })}</span>
-                {createBase === 'current' && (
-                  <span className="small" style={{ color: 'var(--warn)' }}>
-                    {/* ⚠ 包含 {current} 已提交的改动，合并回主干时一并进入 */}
-                    {t('ops.branch.baseCurrentWarn', { current: data.current })}
-                  </span>
+            props.repoType === 'git' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, whiteSpace: 'normal' }}>
+                {/* 确认创建新分支 {name}？ */}
+                <div>{t('ops.branch.confirmCreate', { name: createCfm.name })}</div>
+                <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="radio" checked={createBase === 'trunk'} onChange={() => setCreateBase('trunk')} />
+                  {/* 基于主干 {base}（推荐） */}
+                  <span>{t('ops.branch.baseTrunk', { base: createCfm.trunkBase! })}</span>
+                </label>
+                <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer', flexWrap: 'wrap' }}>
+                  <input type="radio" checked={createBase === 'current'} onChange={() => setCreateBase('current')} />
+                  {/* 基于当前分支 {current} */}
+                  <span>{t('ops.branch.baseCurrent', { current: data.current })}</span>
+                  {createBase === 'current' && (
+                    <span className="small" style={{ color: 'var(--warn)' }}>
+                      {/* ⚠ 包含 {current} 已提交的改动，合并回主干时一并进入 */}
+                      {t('ops.branch.baseCurrentWarn', { current: data.current })}
+                    </span>
+                  )}
+                </label>
+                {/* 创建后不自动切换，仍停留在当前分支 {current}。 */}
+                <div className="dim small">{t('ops.branch.noAutoSwitch', { current: data.current })}</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, whiteSpace: 'normal' }}>
+                {/* 确认创建新分支 {name}？ */}
+                <div>{t('ops.branch.confirmCreate', { name: createCfm.name })}</div>
+                {data.layout?.trunk && (
+                  <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                    <input type="radio" checked={svnBase === 'trunk'} onChange={() => setSvnBase('trunk')} />
+                    {/* 从 trunk 复制（标准主干开发） */}
+                    <span>{t('ops.branch.baseSvnTrunk')}</span>
+                  </label>
                 )}
-              </label>
-              {/* 创建后不自动切换，仍停留在当前分支 {current}。 */}
-              <div className="dim small">{t('ops.branch.noAutoSwitch', { current: data.current })}</div>
-            </div>
+                <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer', flexWrap: 'wrap' }}>
+                  <input type="radio" checked={svnBase === 'current'} onChange={() => setSvnBase('current')} />
+                  {/* 从当前目录 {current} 复制 */}
+                  <span>{t('ops.branch.baseSvnCurrent', { current: currentLabel })}</span>
+                  {svnBase === 'current' && (
+                    <span className="small" style={{ color: 'var(--warn)' }}>
+                      {/* ⚠ 包含当前目录已提交的全部改动；若它不在 trunk 层级，合回主干时要指定对应子目录 */}
+                      {t('ops.branch.baseSvnCurrentWarn')}
+                    </span>
+                  )}
+                </label>
+                {/* 创建后不自动切换，仍停留在 {current}。 */}
+                <div className="dim small">{t('ops.branch.noAutoSwitch', { current: currentLabel })}</div>
+              </div>
+            )
           }
           // 创建
           confirmLabel={t('ops.branch.create')}
-          confirmCmd={cmdOfRepo(
-            'git',
-            'branch_create',
-            createBase === 'trunk' ? { name: createCfm.name, base: createCfm.trunkBase! } : { name: createCfm.name },
-          )}
+          confirmCmd={
+            props.repoType === 'git'
+              ? cmdOfRepo(
+                  'git',
+                  'branch_create',
+                  createBase === 'trunk' ? { name: createCfm.name, base: createCfm.trunkBase! } : { name: createCfm.name },
+                )
+              : svnBase === 'current'
+                ? cmdOfRepo('svn', 'branch_create_from', { name: createCfm.name, from: data.currentUrl ?? currentLabel, target: `${data.projectRoot}/branches/${createCfm.name}` })
+                : cmdOfRepo('svn', 'branch_create', { name: createCfm.name })
+          }
           onConfirm={(e) => {
             // 飞线起点：记下确认按钮位置（3 秒转后台时从这里起飞）
             fromRef.current = e.currentTarget.getBoundingClientRect();
             const { name, trunkBase } = createCfm;
-            const base = createBase === 'trunk' ? trunkBase : undefined;
+            const base =
+              props.repoType === 'git'
+                ? createBase === 'trunk'
+                  ? trunkBase
+                  : undefined
+                : svnBase === 'current'
+                  ? 'current'
+                  : undefined;
             setCreateCfm(null);
             act('create', name, false, base);
           }}

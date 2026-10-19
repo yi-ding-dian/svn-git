@@ -68,6 +68,8 @@ export const CMDS: Record<string, string> = {
   s_remove_keep: 'svn delete --keep-local %paths%',
   s_move: 'svn move %from% %to%',
   s_branch_create: 'svn copy ^/trunk ^/branches/%name%',
+  // 从当前工作副本目录复制（多项目仓库里 ^/branches 不一定是项目分支目录，直接显示完整目标 URL）
+  s_branch_create_from: 'svn copy %from% %target%',
   s_branch_switch: 'svn switch %branch%',
   s_branch_merge: 'svn merge ^/branches/%name%',
   s_branch_delete: 'svn delete ^/branches/%name%',

@@ -6,7 +6,7 @@ import { run } from './exec.js';
 import { invalidateSvnIgnoreMap } from './ignore.js';
 import { t } from '../shared/i18n/index.js';
 import { platform } from '../platform/index.js';
-import type { FileStatus, IgnorePlan, LogEntry, RepoInfo, SvnLayout, VcsResult } from './types.js';
+import type { BranchListResult, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
 /** svn 可执行文件解析：PATH 优先；找不到时试平台常见安装路径（Windows 上装完 svn 系统 PATH
  *  不会刷新到已运行的进程——兜底路径让「装完刷新页面即用」成立）。
@@ -66,6 +66,10 @@ const MAX_STATUS_BYTES = 1024 * 1024;
  *  加了实例级标记后仍稳定 1.7s = 全量 status 0.83s + --no-ignore 0.79s）。 */
 const HUGE_WCS = new Set<string>();
 
+/** 工作副本 URL → 主干对应 URL 的缓存（copyfrom 历史不会变；switch 后 URL 变了自然换 key）。
+ *  null 表示已查过但没有 copy 历史（避免每次弹窗都跑一遍 svn log）。 */
+const MAINLINE_CACHE = new Map<string, string | null>();
+
 /** 按行切开 svn 的**文本**输出，剥掉行尾 \r。
  *  **为什么必须有**：Windows 上 svn 的输出行尾是 CRLF，而 JS 正则里的 `.` 不吃 \r——
  *  `(.+)$` / `(.*)$` 这类"整行吃到尾"的模式会一条都匹配不上（update 的文件列表、blame
@@ -106,6 +110,45 @@ export class SvnVcs {
       decode: extra.decode,
       raw: extra.raw,
     });
+  }
+
+  /** 在另一个工作副本目录执行 svn（合回主干时目标 WC 不在当前 repo.root） */
+  private async execAt(
+    cwd: string,
+    args: string[],
+    extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal } = {},
+  ) {
+    const stdinData = extra.stdinData ?? (this.cred?.username ? this.cred.password + '\n' : undefined);
+    return run(await resolveSvnBin(), this.baseArgs().concat(args), {
+      cwd,
+      stdinData,
+      timeoutMs: extra.timeoutMs ?? 120_000,
+      signal: extra.signal,
+    });
+  }
+
+  /** 指定目录工作副本的 URL（不是工作副本/不可读 → null） */
+  private async infoUrlAt(cwd: string): Promise<string | null> {
+    const res = await this.execAt(cwd, ['info', '--xml'], { timeoutMs: 60_000 });
+    if (res.code !== 0) return null;
+    try {
+      const doc = this.xml.parse(res.stdout);
+      return String(doc?.info?.entry?.url ?? '') || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** svn status 文本 → 改动路径 / 内容改动 / 冲突路径（未版本化 ? 不算改动）。
+   *  只有属性列变化的（典型：合并后 mergeinfo）单独区分，避免产生“空内容提交”。 */
+  private parseStatusText(stdout: string): { changed: string[]; contentChanged: string[]; conflicts: string[] } {
+    const lines = svnTextLines(stdout).filter((l) => l.trim());
+    const changed = lines.filter((l) => !l.trimStart().startsWith('?')).map((l) => l.slice(8).trim());
+    // 第 0 列 = 内容状态；空格表示内容没变（M 只可能出现在属性列）
+    const contentChanged = lines.filter((l) => !l.trimStart().startsWith('?') && l[0] !== ' ').map((l) => l.slice(8).trim());
+    // 冲突：内容/属性冲突在第 0/1 列，树冲突在第 6 列（行首 7 列内出现 C）
+    const conflicts = lines.filter((l) => l.slice(0, 7).includes('C')).map((l) => l.slice(8).trim());
+    return { changed, contentChanged, conflicts };
   }
 
   /** 认证失败检查，返回错误信息或 null */
@@ -688,55 +731,190 @@ export class SvnVcs {
     return info.url ?? '';
   }
 
-  /** 当前分支名（URL 中 /branches/xxx 段；trunk 或非分支返回 trunk） */
-  private async currentBranchName(): Promise<string> {
+  /** 当前工作副本在项目布局中的位置：trunk / branches/x / tags/x / 其他（直接检出项目根或子目录） */
+  private async currentLocation(): Promise<{ url: string; name: string; kind: 'trunk' | 'branch' | 'tag' | 'other' }> {
     const url = await this.currentUrl();
-    const m = url.match(/\/branches\/([^/]+)/);
-    return m?.[1] ?? 'trunk';
+    const m = url.match(/\/(branches|tags)\/([^/]+)/);
+    if (m) return { url, name: m[2]!, kind: m[1] === 'branches' ? 'branch' : 'tag' };
+    if (/\/trunk(?:\/|$)/.test(url)) return { url, name: 'trunk', kind: 'trunk' };
+    const root = await this.projectRootUrl();
+    return { url, name: this.relOf(url, root) || '.', kind: 'other' };
   }
 
   /** 仓库布局探测：标准布局 trunk/branches/tags 目录是否存在（非标准布局时前端提示） */
   /** 仓库布局探测（server 层 /api/tags 等使用,经 Vcs 接口暴露） */
   async layout(): Promise<SvnLayout> {
-    const root = await this.repoRootUrl();
-    const exists = async (url: string): Promise<boolean> => {
-      try {
-        await this.ls(url + '/');
-        return true;
-      } catch {
-        return false;
-      }
+    const root = await this.projectRootUrl();
+    return {
+      trunk: await this.existsUrl(`${root}/trunk`),
+      branches: await this.existsUrl(`${root}/branches`),
+      tags: await this.existsUrl(`${root}/tags`),
     };
-    return { trunk: await exists(`${root}/trunk`), branches: await exists(`${root}/branches`), tags: await exists(`${root}/tags`) };
   }
 
-  /** 分支列表（svn list <root>/branches），附带仓库布局探测结果 */
-  async branchList(): Promise<{ current: string; branches: { name: string; remote: boolean }[]; layout: SvnLayout }> {
-    const root = await this.repoRootUrl();
+  /** 分支列表（svn list <项目根>/branches），附带仓库布局探测结果 */
+  async branchList(): Promise<BranchListResult> {
+    const root = await this.projectRootUrl();
     let names: { name: string; isDir: boolean }[] = [];
     try {
       names = await this.ls(`${root}/branches/`);
     } catch {
       names = [];
     }
-    const current = await this.currentBranchName();
+    const loc = await this.currentLocation();
+    const mainline = await this.mainlineUrl();
     return {
-      current,
+      current: loc.name,
+      currentKind: loc.kind,
+      currentUrl: loc.url,
+      projectRoot: root,
+      mainlineUrl: mainline ?? undefined,
+      mainlineRelative: mainline ? this.relOf(mainline, root) : undefined,
       branches: names.filter((n) => n.isDir).map((n) => ({ name: n.name.replace(/\/$/, ''), remote: false })),
       layout: await this.layout(),
     };
   }
 
-  /** 仓库根 URL */
+  /** URL 路径相对项目根的简写（提交信息里展示来源用） */
+  private relOf(url: string, root: string): string {
+    return url.startsWith(root + '/') ? url.slice(root.length + 1) : url;
+  }
+
+  /** URL 目录是否存在（只读探测：失败按不存在处理） */
+  private async existsUrl(url: string): Promise<boolean> {
+    try {
+      await this.ls(url + '/');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 分支/项目名合法性：不允许路径分隔符与空白（SVN URL 里会被拆段），禁止 . / .. */
+  private invalidName(name: string): string | null {
+    if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\') || /\s/.test(name)) {
+      return t('vcs.invalidName', { name });
+    }
+    return null;
+  }
+
+  /** 工作副本所在**项目**的根 URL。
+   *
+   *  **不能用 repos-root-url 当项目根**：一个 SVN 仓库里可以平级放多个项目
+   *  （如 .../software2/projects/CWBS-SCA/{trunk,branches,tags}），repos-root-url 是整个仓库根，
+   *  拿它去找 trunk/branches/tags 永远找不到（界面会误报「非标准布局」）。
+   *
+   *  识别顺序：
+   *  1. 工作副本 URL 里最近的一个 trunk/branches/tags 段 → 截断即项目根
+   *     （.../projects/CWBS-SCA/tags/SCA_HB → .../projects/CWBS-SCA）；
+   *  2. URL 不在布局段下：从当前目录向上逐级探测，第一个含 trunk|branches|tags 的目录；
+   *  3. 都找不到 → 回退 repos-root-url（单项目仓库 / 非标准布局的旧行为）。
+   */
+  private async projectRootUrl(): Promise<string> {
+    const url = (await this.info()).url ?? '';
+    // 贪婪 .* 取**最后一个**布局段（深层检出如 dev/branches/x 也能正确定位）
+    const m = url.match(/^(.*)\/(?:trunk|branches|tags)(?:\/.*)?$/);
+    if (m?.[1]) return m[1];
+    // URL 不在布局段下（直接检出项目根/子目录）：向上找最近的标准布局目录
+    let probe = url.replace(/\/+$/, '');
+    for (let i = 0; i < 6; i++) {
+      try {
+        const names = await this.ls(`${probe}/`);
+        if (names.some((n) => n.isDir && ['trunk', 'branches', 'tags'].includes(n.name.replace(/\/$/, '')))) return probe;
+      } catch {
+        /* 无权限/不存在：继续向上 */
+      }
+      const parent = probe.replace(/\/[^/]*$/, '');
+      if (!parent || parent === probe) break;
+      probe = parent;
+    }
+    return this.repoRootUrl();
+  }
+
+  /** 版本库根 URL（只作项目根识别的最后兜底） */
   private async repoRootUrl(): Promise<string> {
-    // 优先官方命令 repos-root-url（svn 1.9+）：返回真实仓库根，
-    // 非标准布局深层检出（如 dev/branches/xxx）也不会被正则误判为根
     const res = await this.exec(['info', '--show-item', 'repos-root-url'], { timeoutMs: 60_000 });
     const root = res.code === 0 ? res.stdout.trim().split('\n')[0] : '';
     if (root) return root;
-    // 兜底：从 wc URL 去掉 trunk/branches/tags 段
     const url = (await this.info()).url ?? '';
     return url.replace(/\/(trunk|branches|tags)(\/.*)?$/, '');
+  }
+
+  /** 某 URL 的复制来源（svn log --stop-on-copy 的**最老**一条里的 copyfrom-path，仓库绝对路径）。
+   *  注意 `-l 1` 配 `--stop-on-copy` 返回的是最新一条而非复制点，所以分两步：
+   *  先取日志列表的最后一条 revision（复制提交），再单独取该 revision 的路径详情。 */
+  private async copyFromPath(url: string): Promise<string | null> {
+    const q = await this.exec(['log', '--stop-on-copy', '-q', '--xml', url], { timeoutMs: 60_000 });
+    if (q.code !== 0 || !q.stdout.trim()) return null;
+    let oldest = '';
+    try {
+      const doc = this.xml.parse(q.stdout);
+      const entries = doc?.log?.logentry;
+      const arr = Array.isArray(entries) ? entries : entries ? [entries] : [];
+      const last = arr[arr.length - 1];
+      oldest = String(last?.['@_revision'] ?? '');
+    } catch {
+      return null;
+    }
+    if (!oldest) return null;
+    const res = await this.exec(['log', '-v', '--xml', '-r', oldest, url], { timeoutMs: 60_000 });
+    if (res.code !== 0 || !res.stdout.trim()) return null;
+    try {
+      const doc = this.xml.parse(res.stdout);
+      const entries = doc?.log?.logentry;
+      const arr = Array.isArray(entries) ? entries : entries ? [entries] : [];
+      for (const e of arr) {
+        const paths = e?.paths?.path;
+        const parr = Array.isArray(paths) ? paths : paths ? [paths] : [];
+        for (const p of parr) {
+          const cf = p?.['@_copyfrom-path'];
+          if (cf) return String(cf);
+        }
+      }
+    } catch {
+      /* XML 解析失败按无 copy 历史处理 */
+    }
+    return null;
+  }
+
+  /** 工作副本对应的**主干路径**（copyfrom 推断）。
+   *
+   *  典型场景：`tags/SCA_HB` 从 `trunk/src@44392` 复制 → 返回 `<项目根>/trunk/src`。
+   *  SVN 的 switch/merge 都按节点历史找共同祖先，工作副本根必须与目标在同一层级；
+   *  直接拿 `trunk` 当目标会报 E195012（没有共同祖先）。
+   *
+   *  - 当前已在 trunk 子树下 → 返回当前 URL 本身；
+   *  - 复制自 branches/tags → 继续向上追溯（最多 3 层）；
+   *  - 无 copy 历史 → null（调用方回退 `trunk`）。
+   *  结果按 URL 缓存（copy 历史不可变）。
+   */
+  private async mainlineUrl(): Promise<string | null> {
+    const root = await this.projectRootUrl();
+    const url = await this.currentUrl();
+    if (!url) return null;
+    if (url === `${root}/trunk` || url.startsWith(`${root}/trunk/`)) return url;
+    if (MAINLINE_CACHE.has(url)) return MAINLINE_CACHE.get(url)!;
+    const reposRoot = await this.repoRootUrl();
+    let probe = url;
+    let found: string | null = null;
+    for (let depth = 0; depth < 3; depth++) {
+      const from = await this.copyFromPath(probe);
+      if (!from) break;
+      const fromUrl = reposRoot + from;
+      // 复制自主干子树：这就是与当前工作副本同层级的主干路径
+      if (from.includes('/trunk')) {
+        found = fromUrl;
+        break;
+      }
+      // 复制自其他分支/标签：继续追溯它的来源
+      if (from.includes('/branches/') || from.includes('/tags/')) {
+        probe = fromUrl;
+        continue;
+      }
+      break;
+    }
+    MAINLINE_CACHE.set(url, found);
+    return found;
   }
 
   /** 确保 URL 目录存在（不存在则 svn mkdir 创建） */
@@ -751,24 +929,34 @@ export class SvnVcs {
     }
   }
 
-  /** 创建分支：svn copy <trunk> <root>/branches/<name>（仅标准布局：分支必须从 trunk 复制才保证可合并回主干；
-   *  无 trunk（非标准布局）直接拒绝，不 fallback 到当前 URL——从当前位置复制的分支无合并回主干意义） */
-  async branchCreate(name: string, _base?: string, signal?: AbortSignal): Promise<VcsResult> {
-    const root = await this.repoRootUrl();
+  /** 创建分支：svn copy <来源> <项目根>/branches/<name>
+   *  来源 base：
+   *  - 'current'：当前工作副本目录（给非 trunk 检出的子项目再开分支用；与来源同源，可切换）；
+   *  - 缺省：标准布局的 trunk（分支=trunk 的平行线，合并回主干才是它的出路）。
+   *  无 trunk 且未指定从当前目录复制时拒绝（保持原有安全语义）。 */
+  async branchCreate(name: string, base?: string, signal?: AbortSignal): Promise<VcsResult> {
+    const root = await this.projectRootUrl();
+    const invalid = this.invalidName(name);
+    if (invalid) return { ok: false, message: invalid };
+    const target = `${root}/branches/${name}`;
     // 目标已存在时 svn copy 会嵌套复制造成污染 → 先校验
-    try {
-      await this.ls(`${root}/branches/${name}/`);
+    if (await this.existsUrl(target)) {
       // 分支 {name} 已存在
       return { ok: false, message: t('vcs.branchExists', { name }) };
-    } catch {
-      /* 不存在，继续 */
     }
-    // 标准布局检查：无 trunk 拒绝创建（分支=trunk 的平行线，合并回主干才是它的出路）
-    try {
-      await this.ls(`${root}/trunk/`);
-    } catch {
-      // 仓库没有 trunk（非标准布局），无法创建分支。请先补建 trunk 目录（svn mkdir）
-      return { ok: false, message: t('vcs.noTrunkForBranch') };
+    const fromCurrent = base === 'current';
+    let from = `${root}/trunk`;
+    if (fromCurrent) {
+      from = await this.currentUrl();
+      if (!from) return { ok: false, message: t('vcs.noCurrentUrl') };
+    } else {
+      // 标准布局检查：无 trunk 拒绝创建（分支=trunk 的平行线，合并回主干才是它的出路）
+      try {
+        await this.ls(`${root}/trunk/`);
+      } catch {
+        // 仓库没有 trunk（非标准布局），无法创建分支。请先补建 trunk 目录（svn mkdir）
+        return { ok: false, message: t('vcs.noTrunkForBranch') };
+      }
     }
     try {
       await this.ensureDir(`${root}/branches`);
@@ -776,8 +964,11 @@ export class SvnVcs {
       // 创建 branches 目录失败: {err}
       return { ok: false, message: t('vcs.createBranchesDirFailed', { err: (err as Error).message }) };
     }
-    // 创建分支 {name}
-    const res = await this.exec(['copy', `${root}/trunk`, `${root}/branches/${name}`, '-m', t('vcs.commitMsg.branchCreate', { name })], { timeoutMs: 120_000, signal });
+    // 创建分支 {name}（从当前目录复制时把来源写进提交信息，便于日后追溯）
+    const msg = fromCurrent
+      ? t('vcs.commitMsg.branchCreateFrom', { name, from: this.relOf(from, root) })
+      : t('vcs.commitMsg.branchCreate', { name });
+    const res = await this.exec(['copy', from, target, '-m', msg], { timeoutMs: 120_000, signal });
     if (res.code !== 0) {
       const auth = this.authError(res);
       // 创建分支失败
@@ -787,9 +978,179 @@ export class SvnVcs {
     return { ok: true, message: t('vcs.branchCreated', { name }) };
   }
 
+  /** 项目迁移（SVN）：把当前工作副本独立出去。
+   *  mode='devline'：复制到 <项目根>/branches/<name>（仍属原项目的长期并行开发线）；
+   *  mode='project'：新建平级项目 <项目根父目录>/<name>/{trunk,branches,tags}，当前目录内容
+   *                  复制为它的 trunk（svn copy 保留 copy 历史）。
+   *  switchAfter：迁移完成后把当前工作副本 switch 到新路径。 */
+  async projectMigrate(
+    mode: 'devline' | 'project',
+    name: string,
+    switchAfter?: boolean,
+    signal?: AbortSignal,
+  ): Promise<VcsResult & { targetUrl?: string }> {
+    const root = await this.projectRootUrl();
+    const from = await this.currentUrl();
+    const invalid = this.invalidName(name);
+    if (invalid) return { ok: false, message: invalid };
+    if (!from) return { ok: false, message: t('vcs.noCurrentUrl') };
+    // 从项目根（或它的祖先）复制会把 branches/tags 一起卷进去，造成嵌套污染
+    if (from === root || root.startsWith(from + '/')) return { ok: false, message: t('vcs.migrateFromRoot') };
+    const fromRel = this.relOf(from, root);
+    let targetUrl = '';
+    if (mode === 'devline') {
+      targetUrl = `${root}/branches/${name}`;
+      if (await this.existsUrl(targetUrl)) return { ok: false, message: t('vcs.branchExists', { name }) };
+      try {
+        await this.ensureDir(`${root}/branches`);
+      } catch (err) {
+        return { ok: false, message: t('vcs.createBranchesDirFailed', { err: (err as Error).message }) };
+      }
+      const res = await this.exec(['copy', from, targetUrl, '-m', t('vcs.commitMsg.migrateDevline', { name, from: fromRel })], { timeoutMs: 120_000, signal });
+      if (res.code !== 0) return this.fail(this.authError(res), res.stderr.trim() || t('vcs.migrateFailed'));
+    } else {
+      const parent = root.replace(/\/[^/]+$/, '');
+      if (!parent || parent === root) return { ok: false, message: t('vcs.migrateNoParent') };
+      const newRoot = `${parent}/${name}`;
+      targetUrl = `${newRoot}/trunk`;
+      if (await this.existsUrl(newRoot)) return { ok: false, message: t('vcs.projectExists', { name }) };
+      // 1) 项目骨架 + 标准布局（--parents 顺带创建 newRoot；svn 1.8+）
+      const mk = await this.exec(
+        ['mkdir', '--parents', `${newRoot}/branches`, `${newRoot}/tags`, '-m', t('vcs.commitMsg.migrateProjectSkeleton', { name })],
+        { timeoutMs: 120_000, signal },
+      );
+      if (mk.code !== 0) return this.fail(this.authError(mk), mk.stderr.trim() || t('vcs.migrateFailed'));
+      // 2) 当前目录 → 新项目 trunk（copy 保留历史）
+      const cp = await this.exec(['copy', from, targetUrl, '-m', t('vcs.commitMsg.migrateProject', { name, from: fromRel })], { timeoutMs: 120_000, signal });
+      if (cp.code !== 0) {
+        // 本次刚创建的空容器：回滚掉，避免仓库里留下半个项目（copy 失败是原子提交，不会留下部分内容）
+        await this.exec(['delete', newRoot, '-m', t('vcs.commitMsg.migrateRollback', { name })], { timeoutMs: 120_000 });
+        return this.fail(this.authError(cp), cp.stderr.trim() || t('vcs.migrateFailed'));
+      }
+    }
+    // 可选：迁移后让当前工作副本指向新路径（新路径是当前目录的直接 copy，同源可 switch）
+    if (switchAfter) {
+      const sw = await this.exec(['switch', targetUrl], { timeoutMs: 300_000, signal });
+      if (sw.code !== 0) {
+        return { ok: true, message: t('vcs.migratedSwitchFailed', { target: targetUrl, err: sw.stderr.trim() }), targetUrl };
+      }
+    }
+    const base = mode === 'devline'
+      ? t('vcs.migratedDevline', { target: targetUrl })
+      : t('vcs.migratedProject', { target: targetUrl });
+    // {msg}；当前工作副本已切换到 {target}
+    return { ok: true, message: switchAfter ? t('vcs.migratedAndSwitched', { msg: base, target: targetUrl }) : base, targetUrl };
+  }
+
+  /** 合回主干预检：主干对应路径 + 本地主干工作副本状态 */
+  async mergeMainlineCheck(targetDir: string): Promise<MainlinePlan> {
+    const root = await this.projectRootUrl();
+    const sourceUrl = await this.currentUrl();
+    const mainline = await this.mainlineUrl();
+    const suggestion = path.join(path.dirname(this.repo.root), path.basename(this.repo.root) + '-mainline');
+    const plan: MainlinePlan = {
+      sourceUrl,
+      mainlineUrl: mainline,
+      mainlineRelative: mainline ? this.relOf(mainline, root) : undefined,
+      targetDir,
+      suggestion,
+      targetState: 'missing',
+    };
+    if (!mainline) {
+      plan.error = t('vcs.noMainline');
+      return plan;
+    }
+    if (!targetDir) return plan;
+    const dir = path.resolve(targetDir);
+    plan.targetDir = dir;
+    if (!fs.existsSync(dir)) return plan;
+    const url = await this.infoUrlAt(dir);
+    plan.targetUrl = url ?? undefined;
+    if (!url) {
+      plan.targetState = 'not-wc';
+      return plan;
+    }
+    if (url !== mainline) {
+      plan.targetState = 'wrong-url';
+      return plan;
+    }
+    const st = await this.execAt(dir, ['status'], { timeoutMs: 60_000 });
+    if (st.code !== 0) {
+      plan.error = st.stderr.trim() || undefined;
+      return plan;
+    }
+    const { changed } = this.parseStatusText(st.stdout);
+    plan.targetState = changed.length ? 'dirty' : 'ready';
+    return plan;
+  }
+
+  /** 合回主干：在主干工作副本（targetDir，缺失时自动检出）上执行 `svn merge <当前源 URL>`。
+   *  SVN 只有“站在目标上拉取”的合并方向；源工作副本的已提交改动会进入目标主干。
+   *  有冲突时不提交并返回冲突列表；autoCommit=true 且无冲突时自动提交。 */
+  async mergeMainline(
+    targetDir: string,
+    autoCommit?: boolean,
+    signal?: AbortSignal,
+  ): Promise<VcsResult & { targetDir?: string; conflicts?: string[]; committed?: boolean }> {
+    const root = await this.projectRootUrl();
+    const sourceUrl = await this.currentUrl();
+    const mainline = await this.mainlineUrl();
+    if (!mainline) return { ok: false, message: t('vcs.noMainline') };
+    if (!sourceUrl) return { ok: false, message: t('vcs.noCurrentUrl') };
+    if (sourceUrl === mainline) return { ok: false, message: t('vcs.mainlineSelf') };
+    const dir = path.resolve(targetDir);
+    // 1) 目标目录不存在 → 检出主干对应路径
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(path.dirname(dir), { recursive: true });
+      const co = await this.execAt(path.dirname(dir), ['checkout', mainline, dir], { timeoutMs: 600_000, signal });
+      if (co.code !== 0) return this.fail(this.authError(co), co.stderr.trim() || t('vcs.mainlineCheckoutFailed'));
+    }
+    // 2) 目标必须是“主干对应路径”的工作副本
+    const url = await this.infoUrlAt(dir);
+    if (!url) return { ok: false, message: t('vcs.mainlineNotWc', { dir }) };
+    if (url !== mainline) return { ok: false, message: t('vcs.mainlineWrongTarget', { url, target: mainline }) };
+    // 3) 目标必须干净（未跟踪文件不计，svn commit 不会带上它们）
+    const st = await this.execAt(dir, ['status'], { timeoutMs: 60_000, signal });
+    if (st.code !== 0) return this.fail(this.authError(st), st.stderr.trim() || t('vcs.mainlineNotWc', { dir }));
+    const before = this.parseStatusText(st.stdout);
+    if (before.changed.length) return { ok: false, message: t('vcs.mainlineTargetDirty', { n: before.changed.length }) };
+    // 4) 更新到最新（合并基于最新 BASE）
+    const up = await this.execAt(dir, ['update', '-q'], { timeoutMs: 600_000, signal });
+    if (up.code !== 0) return this.fail(this.authError(up), up.stderr.trim() || t('vcs.mainlineUpdateFailed'));
+    // 5) 合并
+    const mg = await this.execAt(dir, ['merge', sourceUrl], { timeoutMs: 600_000, signal });
+    const st2 = await this.execAt(dir, ['status'], { timeoutMs: 60_000, signal });
+    const after = this.parseStatusText(st2.stdout);
+    if (mg.code !== 0 && after.conflicts.length === 0) {
+      return this.fail(this.authError(mg), mg.stderr.trim() || t('vcs.mergeFailedMaybeConflict'));
+    }
+    // 6) 冲突：不提交，交由用户在目标工作副本处理
+    if (after.conflicts.length) {
+      return {
+        ok: false,
+        message: t('vcs.mainlineConflicts', { n: after.conflicts.length, target: dir }),
+        conflicts: after.conflicts,
+        targetDir: dir,
+      };
+    }
+    if (!after.contentChanged.length) {
+      // 只有 mergeinfo 属性变化（没有内容改动）：回退属性，避免产生一次空提交
+      if (after.changed.length) await this.execAt(dir, ['revert', '-R', '.'], { timeoutMs: 120_000, signal });
+      return { ok: true, message: t('vcs.mainlineNoChanges', { target: dir }), targetDir: dir, committed: false, conflicts: [] };
+    }
+    // 7) 无冲突：可选自动提交
+    if (autoCommit) {
+      const msg = t('vcs.commitMsg.mergeMainline', { source: this.relOf(sourceUrl, root), target: this.relOf(mainline, root) });
+      const cm = await this.execAt(dir, ['commit', '-m', msg], { timeoutMs: 600_000, signal });
+      if (cm.code !== 0) return this.fail(this.authError(cm), cm.stderr.trim() || t('vcs.mainlineCommitFailed'));
+      return { ok: true, message: t('vcs.mainlineMergedCommitted', { target: dir }), targetDir: dir, committed: true, conflicts: [] };
+    }
+    return { ok: true, message: t('vcs.mainlineMergedPending', { target: dir }), targetDir: dir, committed: false, conflicts: [] };
+  }
+
   /** 删除分支（远程删除 branches/<name>，危险操作由前端确认） */
   async branchDelete(name: string, _force?: boolean, signal?: AbortSignal): Promise<VcsResult> {
-    const root = await this.repoRootUrl();
+    const root = await this.projectRootUrl();
     // 删除分支 {name}
     const res = await this.exec(['delete', `${root}/branches/${name}`, '-m', t('vcs.commitMsg.branchDelete', { name })], { timeoutMs: 120_000, signal });
     if (res.code !== 0) {
@@ -832,24 +1193,27 @@ export class SvnVcs {
   }
 
   async branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult> {
-    const root = await this.repoRootUrl();
+    const root = await this.projectRootUrl();
     let target: string;
     if (name === 'trunk' || name === 'root' || name === '') {
-      try {
-        await this.ls(`${root}/trunk/`);
-      } catch {
+      // 主干对应路径：子项目工作副本（如 tags/SCA_HB 复制自 trunk/src）要切回同一层级，
+      // 直接切 trunk 会 E195012（没有共同祖先）
+      const mainline = await this.mainlineUrl();
+      target = mainline ?? `${root}/trunk`;
+      if (!(await this.existsUrl(target))) {
         // 无 trunk 时不能 fallback 到仓库根：svn 1.10 要求切换目标与当前 URL 有共同祖先，
         // 子目录工作副本 switch 到根必报 E195012，且提示"已切换到主干"是误报
         // 仓库没有 trunk 目录，无法切回主干（请确认仓库布局或直接切换到其他分支）
         return { ok: false, message: t('vcs.noTrunkSwitchBack') };
       }
-      target = `${root}/trunk`;
     } else {
       target = `${root}/branches/${name}`;
     }
     const res = await this.exec(['switch', target], { timeoutMs: 300_000, signal });
     if (res.code !== 0) {
       const auth = this.authError(res);
+      // E195012：工作副本与目标没有共同祖先（层级不同，例如 tags/SCA_HB 对应 trunk/src 而非 trunk）
+      if (/E195012/.test(res.stderr)) return { ok: false, message: t('vcs.switchNoAncestor', { target }) };
       // 切换分支失败
       return this.fail(auth, res.stderr.trim() || t('vcs.switchBranchFailed'));
     }
@@ -864,7 +1228,7 @@ export class SvnVcs {
 
   /** 合并分支到工作副本：svn merge <root>/branches/<name> */
   async merge(branchName: string, signal?: AbortSignal): Promise<VcsResult> {
-    const root = await this.repoRootUrl();
+    const root = await this.projectRootUrl();
     const res = await this.exec(['merge', `${root}/branches/${branchName}`], { timeoutMs: 300_000, signal });
     if (res.code !== 0) {
       const auth = this.authError(res);
@@ -882,7 +1246,7 @@ export class SvnVcs {
 
   /** 标签列表（svn list <root>/tags） */
   async tagList(): Promise<string[]> {
-    const root = await this.repoRootUrl();
+    const root = await this.projectRootUrl();
     try {
       const names = await this.ls(`${root}/tags/`);
       return names.filter((n) => n.isDir).map((n) => n.name.replace(/\/$/, ''));
@@ -893,7 +1257,7 @@ export class SvnVcs {
 
   /** 创建标签：svn copy <trunk/当前> <root>/tags/<name>（tags/ 自动创建） */
   async tagCreate(name: string): Promise<VcsResult> {
-    const root = await this.repoRootUrl();
+    const root = await this.projectRootUrl();
     // 目标已存在时 svn copy 会嵌套复制造成污染 → 先校验
     try {
       await this.ls(`${root}/tags/${name}/`);
@@ -928,7 +1292,7 @@ export class SvnVcs {
 
   /** 删除远程标签（svn delete URL，危险操作由前端确认） */
   async tagDelete(name: string): Promise<VcsResult> {
-    const root = await this.repoRootUrl();
+    const root = await this.projectRootUrl();
     // 删除标签 {name}
     const res = await this.exec(['delete', `${root}/tags/${name}`, '-m', t('vcs.commitMsg.tagDelete', { name })], { timeoutMs: 120_000 });
     if (res.code !== 0) {

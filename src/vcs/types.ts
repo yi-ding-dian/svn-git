@@ -92,6 +92,20 @@ export interface SvnLayout {
   tags: boolean;
 }
 
+/** 合回主干预检：源工作副本、主干对应路径、本地主干工作副本状态 */
+export interface MainlinePlan {
+  sourceUrl: string;
+  /** 由 copyfrom 推断的主干对应 URL（如 trunk/src）；null=无法推断 */
+  mainlineUrl: string | null;
+  mainlineRelative?: string;
+  targetDir: string;
+  /** 推荐的目标工作副本目录（目标目录缺失时前端预填） */
+  suggestion: string;
+  targetState: 'missing' | 'not-wc' | 'wrong-url' | 'dirty' | 'ready';
+  targetUrl?: string;
+  error?: string;
+}
+
 /** preflight 返回：git/svn 字段略有差异（ahead/lockedByOthers），统一可选化 */
 export interface PreflightResult {
   remoteHasUpdate: boolean;
@@ -108,6 +122,14 @@ export interface PreflightResult {
 /** branchList 返回：svn 多 layout 字段 */
 export interface BranchListResult {
   current: string;
+  /** svn：当前工作副本在项目布局中的位置（trunk/branches/tags/其他） */
+  currentKind?: 'trunk' | 'branch' | 'tag' | 'other';
+  /** svn：当前工作副本 URL 与识别出的项目根 URL（项目迁移弹窗展示来源/目标用） */
+  currentUrl?: string;
+  projectRoot?: string;
+  /** svn：由 copyfrom 推断出的主干对应 URL（如 tags/SCA_HB → trunk/src）与相对路径 */
+  mainlineUrl?: string;
+  mainlineRelative?: string;
   branches: { name: string; remote: boolean }[];
   layout?: SvnLayout;
 }
@@ -154,7 +176,8 @@ export interface Vcs {
     lineConflicts?: string[];
     outdated?: { wcRev: string; headRev: string } | null;
   }>;
-  /** 创建分支（git 可选基点 base：git branch <名> [基点]；svn 固定从 trunk 复制）。
+  /** 创建分支（git 可选基点 base：git branch <名> [基点]；svn：base='current' 从当前工作副本目录复制，
+   *  缺省从项目根 trunk 复制）。
    *  signal：取消/转后台（前端断开 → 后端杀掉在跑的子进程） */
   branchCreate(name: string, base?: string, signal?: AbortSignal): Promise<VcsResult>;
   branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult>;
@@ -216,6 +239,14 @@ export interface Vcs {
   // ---- svn 独有 ----
   info?(): Promise<{ url?: string; revision?: string; relUrl?: string }>;
   layout?(): Promise<SvnLayout>;
+  /** 项目迁移：把当前工作副本独立成长期开发线（devline）或独立项目（project）。
+   *  仅 SVN 实现；switchAfter=迁移后把当前工作副本切到新路径 */
+  projectMigrate?(mode: 'devline' | 'project', name: string, switchAfter?: boolean, signal?: AbortSignal): Promise<VcsResult & { targetUrl?: string }>;
+  /** 合回主干预检：识别主干对应路径 + 目标工作副本状态（missing/not-wc/wrong-url/dirty/ready） */
+  mergeMainlineCheck?(targetDir: string): Promise<MainlinePlan>;
+  /** 合回主干：在主干工作副本（targetDir，缺失时自动检出）上执行 svn merge <当前源 URL>。
+   *  有冲突时不提交并返回 conflicts；autoCommit=true 且无冲突时自动提交。 */
+  mergeMainline?(targetDir: string, autoCommit?: boolean, signal?: AbortSignal): Promise<VcsResult & { targetDir?: string; conflicts?: string[]; committed?: boolean }>;
   diffUrl?(a: string, b: string, url: string): Promise<DiffResult>;
   catRev?(rev: string, pathRel: string): Promise<DiffResult>;
   update?(pathRel?: string, signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }>;

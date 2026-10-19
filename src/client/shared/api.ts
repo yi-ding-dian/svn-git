@@ -548,8 +548,28 @@ export interface SvnLayout {
   tags: boolean;
 }
 
+/** 合回主干预检（svn）：主干对应路径 + 本地主干工作副本状态 */
+export interface MainlinePlan {
+  sourceUrl: string;
+  mainlineUrl: string | null;
+  mainlineRelative?: string;
+  targetDir: string;
+  suggestion: string;
+  targetState: 'missing' | 'not-wc' | 'wrong-url' | 'dirty' | 'ready';
+  targetUrl?: string;
+  error?: string;
+}
+
 export interface BranchInfo {
   current: string;
+  /** svn：当前位置类型（trunk/branches/tags/其他） */
+  currentKind?: 'trunk' | 'branch' | 'tag' | 'other';
+  /** svn：当前工作副本 URL 与项目根 URL（项目迁移弹窗展示用） */
+  currentUrl?: string;
+  projectRoot?: string;
+  /** svn：由 copyfrom 推断出的主干对应 URL/相对路径（tags/SCA_HB → trunk/src） */
+  mainlineUrl?: string;
+  mainlineRelative?: string;
   branches: { name: string; remote: boolean }[];
   /** svn 仓库布局探测结果（git 无此概念，不返回） */
   layout?: SvnLayout;
@@ -621,6 +641,17 @@ export const post = {
     api<{ ok: boolean; fullName?: string; message?: string }>('/api/github-delete-repo', json({ confirm, token })),
   branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete', name: string, force = false, signal?: AbortSignal, base?: string) =>
     api<VcsResult>('/api/branch', json({ action, name, force, base }, signal)),
+  /** SVN 项目迁移：当前工作副本独立成长期开发线（devline）或独立项目（project）。
+   *  switchAfter=迁移完成后把当前工作副本切到新路径。 */
+  projectMigrate: (mode: 'devline' | 'project', name: string, switchAfter: boolean, signal?: AbortSignal) =>
+    api<VcsResult & { targetUrl?: string }>('/api/project-migrate', json({ mode, name, switchAfter }, signal)),
+  /** 合回主干（仅 svn）：precheck 目标工作副本状态 / 在目标 WC 上执行 svn merge（可选自动提交） */
+  mergeMainlineCheck: (targetDir: string) => api<MainlinePlan>('/api/merge-mainline', json({ action: 'check', targetDir })),
+  mergeMainline: (targetDir: string, autoCommit: boolean, signal?: AbortSignal) =>
+    api<VcsResult & { targetDir?: string; conflicts?: string[]; committed?: boolean }>(
+      '/api/merge-mainline',
+      json({ action: 'run', targetDir, autoCommit }, signal),
+    ),
   /** 终端：执行 git / svn 命令（护栏见 routes/terminal.ts）。
    *  confirm=true 表示用户已在确认框里点过"仍要执行"（危险命令第二次调用）。 */
   terminalRun: (cmd: string, dir = '', confirm = false, signal?: AbortSignal) =>

@@ -74,6 +74,7 @@ export const srv = {
 
   // ---- 分支 / 标签 / Stash（branch.ts）----
   'srv.missingBranch': '缺少分支名',
+  'srv.missingName': '缺少名称',
   'srv.missingRev': '缺少 rev 参数',
   'srv.mergeAbortUnsupported': '当前仓库不支持中止合并',
   'srv.remoteBranchName': '需远程分支名（origin/名字）',

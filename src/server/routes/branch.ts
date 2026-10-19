@@ -115,6 +115,78 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/project-migrate' && req.method === 'POST') {
+        // 项目迁移（仅 svn）：当前工作副本独立成长期开发线 / 独立项目
+        const { vcs, repo } = vcsOf();
+        if (repo.type !== 'svn') {
+          // 仅 SVN 仓库支持
+          sendJson(res, 400, { error: t('srv.svnOnly') });
+          return true;
+        }
+        const body = await readBody(req);
+        const mode = String(body.mode ?? '');
+        const name = String(body.name ?? '').trim();
+        if (mode !== 'devline' && mode !== 'project') {
+          // 未知操作
+          sendJson(res, 400, { error: t('srv.unknownAction') });
+          return true;
+        }
+        if (!name) {
+          // 缺少名称
+          sendJson(res, 400, { error: t('srv.missingName') });
+          return true;
+        }
+        // 网络写操作（svn copy / mkdir / switch）可取消：客户端断开即杀子进程
+        const ac = new AbortController();
+        res.on('close', () => {
+          if (!res.writableEnded) ac.abort();
+        });
+        const result = (await vcs.projectMigrate?.(mode, name, Boolean(body.switchAfter), ac.signal)) ?? {
+          ok: false,
+          message: MSG_UNSUPPORTED_OP(),
+        };
+        // 迁移后工作副本可能已 switch 到新路径：状态缓存失效（项目根由下次请求重新探测）
+        if (result.ok) invalidateStatusCache(repo.root);
+        sendJson(res, 200, { ...result, authError: authErrorOf(result) });
+        return true;
+      }
+
+      if (p === '/api/merge-mainline' && req.method === 'POST') {
+        // 合回主干（仅 svn）：识别主干对应路径，并在主干工作副本上拉取合并
+        const { vcs, repo } = vcsOf();
+        if (repo.type !== 'svn') {
+          sendJson(res, 400, { error: t('srv.svnOnly') });
+          return true;
+        }
+        const body = await readBody(req);
+        const action = String(body.action ?? '');
+        const targetDir = String(body.targetDir ?? '').trim();
+        if (action === 'check') {
+          const plan = await vcs.mergeMainlineCheck?.(targetDir);
+          if (!plan) {
+            sendJson(res, 400, { error: MSG_UNSUPPORTED_OP() });
+            return true;
+          }
+          sendJson(res, 200, plan);
+          return true;
+        }
+        if (action === 'run') {
+          const ac = new AbortController();
+          res.on('close', () => {
+            if (!res.writableEnded) ac.abort();
+          });
+          const result = (await vcs.mergeMainline?.(targetDir, Boolean(body.autoCommit), ac.signal)) ?? {
+            ok: false,
+            message: MSG_UNSUPPORTED_OP(),
+          };
+          sendJson(res, 200, { ...result, authError: authErrorOf(result) });
+          return true;
+        }
+        // 未知操作
+        sendJson(res, 400, { error: t('srv.unknownAction') });
+        return true;
+      }
+
       if (p === '/api/commit-message') {
         // 读取提交的完整说明（标题+正文，仅 git）：「修改注释」弹窗回显（列表接口只带标题）
         const { vcs, repo } = vcsOf();

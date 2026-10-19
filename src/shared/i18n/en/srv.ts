@@ -60,6 +60,7 @@ export const srv = {
 
   // ---- 分支 / 标签 / Stash（branch.ts）----
   'srv.missingBranch': 'Missing branch name',
+  'srv.missingName': 'Missing name',
   'srv.missingRev': 'Missing rev parameter',
   'srv.mergeAbortUnsupported': 'Aborting a merge is not supported for the current repository',
   'srv.remoteBranchName': 'Remote branch name required (origin/name)',

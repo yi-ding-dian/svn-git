@@ -136,6 +136,8 @@ export const shell = {
   'shell.tasks.branchSwitch': 'Switch branch · {name}',
   'shell.tasks.branchDelete': 'Delete branch · {name}',
   'shell.tasks.branchMerge': 'Merge branch · {name}',
+  'shell.tasks.projectMigrate': 'Migrate project · {name}',
+  'shell.tasks.mergeMainline': 'Merge to mainline · {name}',
   'shell.tasks.branchPush': 'Push branch · {name}',
   'shell.tasks.branchRemoteDelete': 'Delete remote branch · {name}',
   // SVN cleanup task title
