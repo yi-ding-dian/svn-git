@@ -39,8 +39,13 @@ export const hist = {
   'hist.changes.title': '文件变动详情',
   'hist.changes.commit': '提交',
   'hist.changes.files': '变更文件（{n}）',
+  'hist.changes.collapseFiles': '收起文件列表',
+  'hist.changes.expandFiles': '展开文件列表',
+  'hist.changes.resizeFiles': '拖动调整宽度 · 拖到最左侧自动收起 · 双击收起/展开',
+  'hist.changes.before': '修改前（{rev} 的上一提交）',
+  'hist.changes.beforeRoot': '修改前（空文件）',
+  'hist.changes.after': '修改后（{rev}）',
   'hist.changes.pickFile': '点击左侧文件查看差异',
-  'hist.changes.hint': '点左侧文件切换差异 · Esc 关闭',
 
   // ---- 差异查看（详情面板内嵌 / 差异视图共用的标题与提示）----
   'hist.diffOf': '差异: {rev}',

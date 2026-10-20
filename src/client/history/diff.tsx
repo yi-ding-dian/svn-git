@@ -94,6 +94,8 @@ interface Props {
   embedded?: boolean;
   /** 只读模式（看历史版本时）：隐藏就地编辑、不做工作区文件指纹轮询——历史内容不该被写回 */
   readOnly?: boolean;
+  /** 覆盖版本行标签（历史提交弹窗用人类可读文案）；不传则用 file-versions 返回的原始版本号 */
+  labels?: { left?: string; right?: string };
 }
 
 export function DiffView(props: Props) {
@@ -1056,46 +1058,77 @@ export function DiffView(props: Props) {
     return t('hist.restoreBlockMsgMod', { a, d });
   }, [restoreTarget, diffLines]);
 
+  const goPrevBlock = () => goBlock((curBlock - 1 + blocks.length) % blocks.length);
+  const goNextBlock = () => goBlock((curBlock + 1) % blocks.length);
+  /** 嵌入弹窗时的差异块导航：只显示 ↑/↓，放在左右两栏中间的缝隙里（不单占一行） */
+  const embeddedBlockNav = sideMode && blocks.length > 0 && (
+    <div
+      style={{
+        position: 'absolute',
+        right: '50%',
+        top: 0,
+        marginRight: 8,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {/* 差异点 {i}/{n} */}
+      <span className="dim small nowrap">{t('hist.blockCounter', { i: curBlock + 1, n: blocks.length })}</span>
+      <button className="mini" style={{ padding: '0 6px', height: 20, lineHeight: '18px' }} title={t('hist.prevBlock')} onClick={goPrevBlock}>↑</button>
+      <button className="mini" style={{ padding: '0 6px', height: 20, lineHeight: '18px' }} title={t('hist.nextBlock')} onClick={goNextBlock}>↓</button>
+      {showAll && (
+        <button
+          className={`mini${syncMode ? ' primary' : ''}`}
+          style={{ padding: '0 6px', height: 20, lineHeight: '18px' }}
+          onClick={() => setSyncMode((v) => !v)}
+          title={t('hist.syncTip')}
+        >
+          {/* ↔ 同步滚动 */}
+          {t('hist.syncScroll')}
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div className="row" style={{ marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-        {!props.embedded && (
+      {/* 顶栏（标题 / 块导航 / 返回）：嵌入弹窗时整行隐藏，块导航挪到两栏缝隙 */}
+      {!props.embedded && (
+        <div className="row" style={{ marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
           <span className="dim">
             {/* 差异: {rev} — {path} / 差异: {rev} */}
             {props.target?.path ? t('hist.diffOfPath', { rev: title, path: props.target.path }) : t('hist.diffOf', { rev: title })}
           </span>
-        )}
-        <span className="grow" />
-        {sideMode && blocks.length > 0 && (
-          <>
-            {/* 差异点 {i}/{n} */}
-            <span className="dim small nowrap">{t('hist.blockCounter', { i: curBlock + 1, n: blocks.length })}</span>
-            {/* 上一个 ↑ */}
-            <button className="mini" onClick={() => goBlock((curBlock - 1 + blocks.length) % blocks.length)}>{t('hist.prevBlock')}</button>
-            {/* 下一个 ↓ */}
-            <button className="mini" onClick={() => goBlock((curBlock + 1) % blocks.length)}>{t('hist.nextBlock')}</button>
-            {showAll && (
-              <button
-                className={`mini${syncMode ? ' primary' : ''}`}
-                onClick={() => setSyncMode((v) => !v)}
-                // 开启后滚动任一栏，另一栏自动跟随（预览模式下为按比例跟随，无行对齐）
-                title={t('hist.syncTip')}
-              >
-                {/* ↔ 同步滚动 */}
-                {t('hist.syncScroll')}
-              </button>
-            )}
-          </>
-        )}
-        {!props.embedded && (
-          <>
-            {/* ← 键返回 */}
-            <span className="dim small">{t('hist.arrowKeyBack')}</span>
-            {/* ← 返回 */}
-            <button className="mini" onClick={props.onBack}>{t('hist.back')}</button>
-          </>
-        )}
-      </div>
+          <span className="grow" />
+          {sideMode && blocks.length > 0 && (
+            <>
+              {/* 差异点 {i}/{n} */}
+              <span className="dim small nowrap">{t('hist.blockCounter', { i: curBlock + 1, n: blocks.length })}</span>
+              {/* 上一个 ↑ */}
+              <button className="mini" onClick={goPrevBlock}>{t('hist.prevBlock')}</button>
+              {/* 下一个 ↓ */}
+              <button className="mini" onClick={goNextBlock}>{t('hist.nextBlock')}</button>
+              {showAll && (
+                <button
+                  className={`mini${syncMode ? ' primary' : ''}`}
+                  onClick={() => setSyncMode((v) => !v)}
+                  // 开启后滚动任一栏，另一栏自动跟随（预览模式下为按比例跟随，无行对齐）
+                  title={t('hist.syncTip')}
+                >
+                  {/* ↔ 同步滚动 */}
+                  {t('hist.syncScroll')}
+                </button>
+              )}
+            </>
+          )}
+          {/* ← 键返回 */}
+          <span className="dim small">{t('hist.arrowKeyBack')}</span>
+          {/* ← 返回 */}
+          <button className="mini" onClick={props.onBack}>{t('hist.back')}</button>
+        </div>
+      )}
       {staleTip && (
         <div className="stale-tip" style={{ marginBottom: 8 }}>
           {/* ⚠ 文件已更新，是否更新文件？ */}
@@ -1138,11 +1171,26 @@ export function DiffView(props: Props) {
       {loading && !error && <div className="loading">{t('hist.loadingCompare')}</div>}
       {!loading && !error && sideMode && versions && (
         <>
+          {/* 版本号行：左右标签分别对齐两栏起点；嵌入弹窗的块导航贴在这行右侧（分隔线左边） */}
+          <div style={{ position: 'relative', height: 20, marginBottom: 4, flexShrink: 0 }}>
+            <span
+              className="dim small"
+              style={{ position: 'absolute', left: 0, top: 0, maxWidth: '40%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              ◀ {props.labels?.left ?? versions.leftLabel}
+            </span>
+            <span
+              className="dim small"
+              style={{ position: 'absolute', left: '50%', top: 0, maxWidth: '40%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              ▶ {props.labels?.right ?? versions.rightLabel}
+            </span>
+            {props.embedded && embeddedBlockNav}
+          </div>
           {/* 栏头：左右各带独立搜索框（定位各自栏内代码） */}
           <div style={{ display: 'flex', flexShrink: 0, marginBottom: 6, gap: 8 }}>
             {/* 左栏：原版 */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="dim small" style={{ marginBottom: 4 }}>◀ {versions.leftLabel}</div>
               <div className="row" style={{ gap: 6 }}>
                 {dSearchLActive ? (
                   <>
@@ -1218,7 +1266,6 @@ export function DiffView(props: Props) {
             </div>
             {/* 右栏：当前 */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="dim small" style={{ marginBottom: 4 }}>▶ {versions?.rightLabel}</div>
               <div className="row" style={{ gap: 6 }}>
                 {editing ? (
                   <>

@@ -40,8 +40,13 @@ export const hist = {
   'hist.changes.title': 'File Changes',
   'hist.changes.commit': 'Commit',
   'hist.changes.files': 'Changed files ({n})',
+  'hist.changes.collapseFiles': 'Collapse file list',
+  'hist.changes.expandFiles': 'Expand file list',
+  'hist.changes.resizeFiles': 'Drag to resize · drag to the far left to collapse · double-click to toggle',
+  'hist.changes.before': 'Before (parent of {rev})',
+  'hist.changes.beforeRoot': 'Before (empty file)',
+  'hist.changes.after': 'After ({rev})',
   'hist.changes.pickFile': 'Select a file on the left to view its diff',
-  'hist.changes.hint': 'Click a file to switch diffs · Esc to close',
 
   // ---- 差异查看（详情面板内嵌 / 差异视图共用的标题与提示）----
   'hist.diffOf': 'Diff: {rev}',

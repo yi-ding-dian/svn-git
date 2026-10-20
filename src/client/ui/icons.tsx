@@ -763,6 +763,15 @@ export function IconInfo({ size = 16 }: IconProps) {
   );
 }
 
+/** 水平拖拽分隔条：左右箭头 + 中间竖线（currentColor，跟随所在文字色） */
+export function IconResizeHorizontal({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path d="M9 12H2m0 0 3-3m-3 3 3 3M15 12h7m0 0-3-3m3 3-3 3M12 4v16" />
+    </svg>
+  );
+}
+
 /** 帮助问号（黄）：长说明收进悬浮提示后的入口——不占版面，悬浮出全文。
  *  固定黄色（不走 currentColor）：在 16 套主题下都能一眼看出"这里可以问"，与文件夹图标同一套黄 */
 export function IconHelp({ size = 15 }: IconProps) {
