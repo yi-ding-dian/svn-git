@@ -108,6 +108,8 @@ export function DiffConnectors(props: Props) {
     };
 
     groups.forEach((g, index) => {
+      // 某一侧没有这个块的行：不画连接带（冲突解决里手动编辑完结果后，中栏不再有块行）
+      if (g.left.length === 0 || g.right.length === 0) return;
       const leftFirst = elementOf(g.left[0]!, 'left');
       const leftLast = elementOf(g.left[g.left.length - 1]!, 'left');
       const rightFirst = elementOf(g.right[0]!, 'right');

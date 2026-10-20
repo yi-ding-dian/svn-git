@@ -669,6 +669,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   cursor: pointer; border-radius: 4px;
 }
 .modal-x:hover { background: var(--panel2); color: var(--text); }
+.modal-x:disabled { opacity: .4; cursor: default; background: transparent; color: var(--dim); }
 
 /* ---------- 浏览模式（文件管理器图标网格，整体放大 20%） ---------- */
 .grid-view {
@@ -999,6 +1000,81 @@ body.drag-trash-hot .drag-src {
 }
 .sb-marker { width: 20px; text-align: center; color: var(--warn); font-weight: 700; flex-shrink: 0; }
 .sb-code { flex: 1; white-space: pre-wrap; word-break: break-all; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
+
+/* ---------- 冲突解决：三栏合并编辑器（左=对方 / 中=结果 / 右=本地） ---------- */
+/* 三栏复用并排对比的 .sb-pane/.sb-line/.sb-no/.sb-code；中栏是结果，行可双击编辑 */
+.merge-view { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; }
+.merge-toolbar { display: flex; align-items: center; gap: 6px; padding: 4px 0 6px; flex-wrap: wrap; }
+/* 三栏标题：与下面三栏同步（同样的 flex-grow 权重；两条连接带各 44px） */
+.merge-heads { display: flex; align-items: center; padding-bottom: 4px; }
+.merge-head-slot { display: flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: wrap; }
+.merge-head-gap { flex: 0 0 44px; }
+.merge-pane-tag { font-size: 11px; padding: 1px 7px; border-radius: 4px; flex-shrink: 0; }
+.merge-pane-tag.theirs { color: var(--err); background: rgba(207, 34, 46, .10); }
+.merge-pane-tag.result { color: var(--accent); background: rgba(88, 166, 255, .12); }
+.merge-pane-tag.ours { color: var(--ok); background: rgba(26, 127, 55, .12); }
+.merge-panes {
+  display: flex; flex: 1; min-height: 0; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.merge-panes > .sb-pane { min-width: 0; }
+/* 连接带外层：固定 44px，右缘叠一条拖拽分隔条（可调整左右两栏宽度） */
+.merge-connect { position: relative; flex: 0 0 44px; width: 44px; display: flex; }
+.merge-connect > .sb-connect { flex: 1; min-width: 0; }
+.merge-resizer {
+  position: absolute; top: 0; right: -3px; width: 7px; height: 100%;
+  cursor: col-resize; z-index: 3; background: transparent;
+  transition: background .12s;
+}
+.merge-resizer:hover, .merge-resizer.active { background: var(--accent); opacity: .55; }
+/* 结果栏：底色略深，和左右"参考"栏区分开（它才是要保存的东西） */
+.merge-result { background: var(--panel); position: relative; }
+/* 「结果」标签旁的编辑入口 / 编辑中的取消、完成 */
+.merge-edit-btn { flex-shrink: 0; }
+/* 整段手动编辑：中栏整块换成等宽文本框（左右两栏保留作对照） */
+.merge-text-edit {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  resize: none; border: none; outline: none; border-radius: 0;
+  padding: 4px 8px; margin: 0;
+  background: var(--panel); color: var(--text);
+  font-family: var(--code-font, "JetBrains Mono", Consolas, monospace);
+  font-size: 13px; line-height: 1.55; tab-size: 4;
+  white-space: pre; overflow: auto;
+}
+/* 左右栏里落在冲突块区间内的行：黄色左边线 + 淡黄底（只是定位提示，不改内容语义） */
+.sb-conflict-hl { background: rgba(210, 153, 34, .12); box-shadow: inset 3px 0 0 var(--warn); }
+/* 结果栏的冲突块：未选边时保留标记行；已选边后整块绿色左边线 */
+.sb-conflict-row { background: var(--panel2); }
+.sb-conflict-marker { background: rgba(210, 153, 34, .18); color: var(--warn); }
+.sb-conflict-marker .sb-code { color: var(--warn); }
+.sb-side-ours { background: rgba(26, 127, 55, .10); }
+.sb-side-theirs { background: rgba(207, 34, 46, .10); }
+.sb-resolved { box-shadow: inset 3px 0 0 var(--ok); }
+/* 块级选择条：每个冲突块在结果栏顶部一行（不在结果文本里，保存时不会带上）。
+   不做 sticky —— 滚动时多个块的按钮条会一起吸在顶部，分不清是第几处的 */
+.sb-choice-bar {
+  display: flex; align-items: center; gap: 4px; padding: 3px 6px;
+  background: var(--panel2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.sb-choice-bar .mini { padding: 1px 6px; font-size: 11px; }
+/* 结果行双击后的行内输入框：占满代码区，不改变行高 */
+.sb-edit-input {
+  flex: 1; min-width: 0; height: 1.45em; padding: 0 4px;
+  font: inherit; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace);
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 3px;
+}
+.base-details { margin-top: 8px; }
+.base-details summary { cursor: pointer; user-select: none; }
+.base-details[open] summary { margin-bottom: 4px; }
+/* 删除/新增冲突（一侧或两侧没有该文件）：横幅说明"采用这一侧 = 删除文件" */
+.merge-banner {
+  margin-bottom: 6px; padding: 6px 10px; border-radius: 6px; font-size: 12px;
+  color: var(--warn); background: rgba(210, 153, 34, .10);
+  border: 1px solid rgba(210, 153, 34, .35);
+}
+.merge-missing { padding: 16px 12px; color: var(--dim); font-size: 12px; text-align: center; }
 
 /* 语法高亮（浅色主题适配） */
 .hljs-keyword, .hljs-literal, .hljs-selector-tag { color: var(--hl-keyword); }

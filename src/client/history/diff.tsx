@@ -10,7 +10,7 @@ import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { parseUnifiedDiff, lineMarksOf, type DiffLine } from '../../shared/diff-parse.js';
 import { t } from '../../shared/i18n/index.js';
 import { InlineEditor, type InlineEditorHandle } from '../shared/inline-editor.js';
-import { DiffConnectors } from './diff-connectors.js';
+import { DiffConnectors } from '../shared/diff-connectors.js';
 import { ConfirmModal } from '../ui/prompt.js';
 
 export interface DiffTarget {

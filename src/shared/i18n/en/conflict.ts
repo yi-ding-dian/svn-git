@@ -10,14 +10,8 @@ export const conflict = {
   'conflict.loading': 'Loading…',
   'conflict.none': 'No conflicts',
 
-  // ---- Three-pane tabs (base / local / theirs) ----
-  'conflict.tab.base': 'Base',
-  'conflict.tab.ours': 'Local',
-  'conflict.tab.theirs': 'Theirs',
-
-  // ---- Content area (fallbacks for the read-only preview) ----
-  'conflict.identical': '(local and theirs are identical)',
-  'conflict.noContent': '(no content)',
+  // ---- Base version disclosure (viewing history outside the three panes) ----
+  'conflict.tab.base': 'Base version',
 
   // ---- Binary file (no content, no diff — only take one whole side) ----
   'conflict.bin.lead': 'This file is ',
@@ -26,20 +20,37 @@ export const conflict = {
   'conflict.bin.noTextDiff': 'text diff is not supported',
   'conflict.bin.hint': 'Click "Use Local" / "Use Theirs" to keep one version, or open the file in an external program to handle it manually',
 
-  // ---- Side-by-side toolbar / scrollbar conflict markers ----
-  'conflict.vs.lead': '🔀 Side-by-side: ',
-  'conflict.vs.left': 'left = theirs',
-  'conflict.vs.right': 'right = local',
-  'conflict.vs.mod': 'M = modified',
-  'conflict.vs.expand': '⛶ Expand',
-  // "Restore" here means restoring the pane size, not reverting changes
-  'conflict.vs.restore': '⛶ Restore',
-  'conflict.vs.scrollTip': 'Conflict positions (click to scroll both panes in sync)',
-  'conflict.vs.markAdd': 'Their change',
-  'conflict.vs.markDel': 'Local deletion',
+  // ---- Three-pane merge editor: toolbar / block choices / inline editing ----
+  'conflict.merge.tagTheirs': 'Theirs',
+  'conflict.merge.tagResult': 'Result (editable)',
+  'conflict.merge.tagOurs': 'Local',
+  'conflict.merge.progress': '{done}/{total} chosen',
+  'conflict.merge.noMarkers': 'No conflict markers in this file — edit the result directly',
+  'conflict.merge.allTheirs': 'All Theirs',
+  'conflict.merge.allOurs': 'All Local',
+  'conflict.merge.prevTip': 'Previous conflict',
+  'conflict.merge.nextTip': 'Next conflict',
+  'conflict.merge.takeTheirs': 'Take Theirs',
+  'conflict.merge.takeOurs': 'Take Local',
+  'conflict.merge.both': 'Both',
+  'conflict.merge.blockN': 'Conflict {n}',
+  'conflict.merge.editHint': 'Double-click a result row to edit',
+  'conflict.merge.edit': '✎ Edit',
+  'conflict.merge.editTip': 'Edit the whole merge result as text',
+  'conflict.merge.editDone': '✓ Done',
+  'conflict.merge.editCancel': '✕ Cancel',
+  'conflict.merge.editing': 'Manual editing: click Done when finished; saving is blocked while conflict markers remain',
+  'conflict.merge.resizeTip': 'Drag to resize panes (double-click to reset)',
+  'conflict.merge.unresolved': '{n} conflict(s) still unchosen — choose them before saving',
+  // One/both sides have no such file (delete/add conflict)
+  'conflict.merge.oursMissing': 'The local side has no such file (delete/add conflict): "Take Local" deletes it',
+  'conflict.merge.theirsMissing': 'The other side has no such file (delete/add conflict): "Take Theirs" deletes it',
+  'conflict.merge.bothMissing': 'Neither side has this file: taking either side deletes it',
+  'conflict.merge.sideEmpty': '(no such file on this side)',
 
-  // ---- Manual edit + non-UTF-8 encoding warning (warnA has an {enc} placeholder) ----
-  'conflict.manual.label': 'Manually edit the merge result (starts as the current merged content):',
+  // ---- Expand / restore pane size (not reverting changes) ----
+  'conflict.vs.expand': '⛶ Expand',
+  'conflict.vs.restore': '⛶ Restore',
   'conflict.enc.warnA': '⚠ This file is not UTF-8 (the tool guessed {enc} for decoding):',
   'conflict.enc.warnB': 'If it is actually in another encoding such as Japanese or Traditional Chinese, saving will corrupt the original encoding.',
   'conflict.enc.warnC': 'If unsure, use "Use Local" / "Use Theirs", or fix the file in an external program first.',
@@ -47,7 +58,7 @@ export const conflict = {
   // ---- Action buttons (titles also show cmdOfRepo command previews — real commands, not in the pack) ----
   'conflict.takeOurs': 'Use Local',
   'conflict.takeTheirs': 'Use Theirs',
-  'conflict.saveManual': '💾 Save Edits',
+  'conflict.saveManual': '💾 Save & Mark Resolved',
   'conflict.abort': '↩ Abort Merge',
   'conflict.abortTip': 'Discard this merge (git merge --abort): drops all changes since the merge began, returning the working copy to its pre-merge state. Branches themselves are unaffected and can be merged again later.',
   'conflict.reveal': 'Open Folder',
@@ -62,6 +73,8 @@ export const conflict = {
   'conflict.confirm.ours': 'This will overwrite the conflicted file with your version, losing the other side\'s changes. Use Local?',
   'conflict.confirm.theirs': 'This will overwrite the conflicted file with the other side\'s version, losing your changes. Use Theirs?',
   'conflict.confirm.manual': 'This will overwrite the conflicted file with your edited content. Save?',
+  'conflict.confirm.oursDelete': 'The local side has no such file (delete/add conflict). Taking Local will delete the file from the working tree and mark it resolved. Continue?',
+  'conflict.confirm.theirsDelete': 'The other side has no such file (delete/add conflict). Taking Theirs will delete the file from the working tree and mark it resolved. Continue?',
 
   // ---- Confirm abort merge (git only) ----
   'conflict.abortConfirm.title': '⚠ Confirm Abort Merge',

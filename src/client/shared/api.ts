@@ -381,7 +381,20 @@ export const get = {
       remoteLogs?: LogEntry[];
     }>('/api/preflight', { signal }),
   conflicts: () =>
-    api<{ conflicts: { path: string; ours: string; theirs: string; base: string; work: string }[] }>('/api/conflicts'),
+    api<{
+      conflicts: {
+        path: string;
+        ours: string;
+        theirs: string;
+        base: string;
+        work: string;
+        binary?: boolean;
+        encoding?: string;
+        /** 该侧没有这个文件（一侧删除/未添加的冲突）：采用这一侧 = 删除文件 */
+        oursExists?: boolean;
+        theirsExists?: boolean;
+      }[];
+    }>('/api/conflicts'),
   ignoreRules: (path: string) =>
     api<{ rules: string[]; sources?: { pattern: string; where: string }[] }>(`/api/ignore?path=${encodeURIComponent(path)}`),
   /** 忽略预案（仅 svn）：规则最终写到哪个目录、内容是什么 —— 弹窗确认前如实展示 */
