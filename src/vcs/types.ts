@@ -166,9 +166,9 @@ export interface Vcs {
   switchCheck(branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>;
   /** 合并预检：
    *  git：switchCheck 文件级交集（工作区脏必拒）+ lineConflicts（merge-tree 三方试算：两边已提交改动重叠、提交后再合并仍冲突的文件）
-   *  svn：改动统计 + outdated 检测（WC 落后标记，null=无法检测）
+   *  svn：改动统计 + outdated 检测（WC 落后标记，null=无法检测）；pathRel 限定只检查该目录/文件
    *  svn 无 lineConflicts（返回不带该字段） */
-  mergeCheck?(branch: string): Promise<{
+  mergeCheck?(branch: string, pathRel?: string): Promise<{
     changed: number;
     tracked: number;
     untracked: number;
@@ -182,7 +182,9 @@ export interface Vcs {
   branchCreate(name: string, base?: string, signal?: AbortSignal): Promise<VcsResult>;
   branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult>;
   branchDelete(name: string, force?: boolean, signal?: AbortSignal): Promise<VcsResult>;
-  merge(name: string, signal?: AbortSignal): Promise<VcsResult>;
+  /** 合并分支（svn 可选 pathRel：只合并分支下某个目录/文件；空=整树）。
+   *  signal：取消/转后台（前端断开 → 后端杀掉在跑的子进程） */
+  merge(name: string, pathRel?: string, signal?: AbortSignal): Promise<VcsResult>;
   /** 中止进行中的合并（git 独有：merge --abort；svn 无对应物） */
   mergeAbort?(): Promise<VcsResult>;
   /** 推送指定本地分支到远程（git 独有；首次推送自动 git push -u origin <名字> 建立上游） */
@@ -242,11 +244,12 @@ export interface Vcs {
   /** 项目迁移：把当前工作副本独立成长期开发线（devline）或独立项目（project）。
    *  仅 SVN 实现；switchAfter=迁移后把当前工作副本切到新路径 */
   projectMigrate?(mode: 'devline' | 'project', name: string, switchAfter?: boolean, signal?: AbortSignal): Promise<VcsResult & { targetUrl?: string }>;
-  /** 合回主干预检：识别主干对应路径 + 目标工作副本状态（missing/not-wc/wrong-url/dirty/ready） */
-  mergeMainlineCheck?(targetDir: string): Promise<MainlinePlan>;
+  /** 合回主干预检：识别主干对应路径 + 目标工作副本状态（missing/not-wc/wrong-url/dirty/ready）。
+   *  pathRel 非空时同时校验目标工作副本里的该目录/文件存在 */
+  mergeMainlineCheck?(targetDir: string, pathRel?: string): Promise<MainlinePlan>;
   /** 合回主干：在主干工作副本（targetDir，缺失时自动检出）上执行 svn merge <当前源 URL>。
-   *  有冲突时不提交并返回 conflicts；autoCommit=true 且无冲突时自动提交。 */
-  mergeMainline?(targetDir: string, autoCommit?: boolean, signal?: AbortSignal): Promise<VcsResult & { targetDir?: string; conflicts?: string[]; committed?: boolean }>;
+   *  pathRel 非空时只合并该目录/文件。有冲突时不提交并返回 conflicts；autoCommit=true 且无冲突时自动提交。 */
+  mergeMainline?(targetDir: string, autoCommit?: boolean, pathRel?: string, signal?: AbortSignal): Promise<VcsResult & { targetDir?: string; conflicts?: string[]; committed?: boolean }>;
   diffUrl?(a: string, b: string, url: string): Promise<DiffResult>;
   catRev?(rev: string, pathRel: string): Promise<DiffResult>;
   update?(pathRel?: string, signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }>;

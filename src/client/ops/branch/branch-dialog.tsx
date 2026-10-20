@@ -18,6 +18,7 @@ import { BranchList } from './branch-list.js';
 import { CreateBranchConfirm } from './create-branch-confirm.js';
 import { ProjectMigratePanel } from './project-migrate-panel.js';
 import { MergeMainlinePanel } from './merge-mainline-panel.js';
+import { MergeScopeDialog } from './merge-scope-dialog.js';
 
 export function BranchDialog(props: {
   repoType: 'svn' | 'git';
@@ -78,7 +79,7 @@ export function BranchDialog(props: {
   /** 分支操作统一入口（**3 秒延迟后台化**——用户定稿）：任务从发起起就在 store 里，
    *  3 秒内完成：弹窗内照常收尾（结果行/列表刷新），用户无感；
    *  超时未完成：收起弹窗 + 飞线（起点=确认按钮）+ 轻提示"已转入后台"，完成走统一通知。 */
-  const act = (action: BranchAction, name: string, force = false, base?: string) => {
+  const act = (action: BranchAction, name: string, force = false, base?: string, pathRel?: string) => {
     const title = t(BRANCH_TITLE_KEY[action], { name });
     const from = fromRef.current ?? undefined;
     fromRef.current = null; // 用掉即清（每次确认时重新记）
@@ -86,7 +87,7 @@ export function BranchDialog(props: {
       kind: 'branch',
       title,
       run: async (signal) => {
-        const r = await post.branch(action, name, force, signal, base);
+        const r = await post.branch(action, name, force, signal, base, pathRel);
         // 未合并导致删除被拒 → 不干巴巴报错，改弹"强制删除"二次确认（3 秒内弹窗还开着才有意义；
         // 已转后台的失败可从通知里看到提示后重新进弹窗强删）。
         // （确认框文案早就写着"可强制删除"，但 force 从没传下去过，未合并的分支根本删不掉 —— 用户实报）
@@ -222,16 +223,30 @@ export function BranchDialog(props: {
    *  L2 提交级：merge-tree 三方试算的 lineConflicts——即使提交后再合并仍冲突的文件（两边已提交改动重叠）。
    *  L2 干净工作区时作为"合并将冲突"预先提示（可合并，解决冲突视图处理）；L1 拦截时作为"提交也没用"的预告。
    *  svn：outdated 拦截（WC 必须最新才能合并）+ 本地改动提示。 */
-  const confirmMerge = async (name: string) => {
+  /** SVN 合并范围对话框（选择整树或某个目录/文件）；Git 不经过这里 */
+  const [mergeScopeFor, setMergeScopeFor] = useState<string | null>(null);
+
+  /** 合并入口：SVN 先选范围（可留空），Git 保持原有直接确认流程 */
+  const startMerge = (name: string) => {
+    if (props.repoType === 'svn') {
+      setMergeScopeFor(name);
+      return;
+    }
+    void confirmMerge(name);
+  };
+
+  const confirmMerge = async (name: string, scope?: string) => {
     let check: Awaited<ReturnType<typeof get.mergeCheck>> | null = null;
     try {
-      check = await get.mergeCheck(name);
+      check = await get.mergeCheck(name, scope);
     } catch {
       /* 检查失败不阻塞，走默认确认流程 */
     }
     const lineConflicts = check?.lineConflicts ?? [];
-    // 干净且无冲突预告 → 直接合并（零打扰，与切换一致）
-    if (check && check.changed === 0 && !check.outdated && lineConflicts.length === 0) {
+    // 指定范围时在确认框里明确写出来
+    const scopeNote = scope ? `\n\n${t('ops.mergeScope.confirmNote', { path: scope })}` : '';
+    // 干净且无冲突预告 → 直接合并（零打扰，与切换一致）；指定了范围时不零打扰，至少让用户看到范围命令
+    if (check && check.changed === 0 && !check.outdated && lineConflicts.length === 0 && !scope) {
       act('merge', name);
       return;
     }
@@ -278,8 +293,8 @@ export function BranchDialog(props: {
         // 合并分支（可能冲突）
         title: t('ops.branch.mergeMaybeConflict'),
         // 确认将分支 {name} 合并到当前分支？\n\n⚠ 合并将对 {n} 个文件产生冲突（两边已改动相同区域）：\n{files}\n\n仍要合并？合并后可在「解决冲突」中处理。
-        msg: t('ops.branch.mergeConflictMsg', { name, n: lineConflicts.length, files: lineConflicts.join(t('common.listSep')) }),
-        action: () => act('merge', name),
+        msg: `${t('ops.branch.mergeConflictMsg', { name, n: lineConflicts.length, files: lineConflicts.join(t('common.listSep')) })}${scopeNote}`,
+        action: () => act('merge', name, false, undefined, scope),
       });
       return;
     }
@@ -287,8 +302,8 @@ export function BranchDialog(props: {
       // 合并分支
       title: t('ops.branch.mergeTitle'),
       // 确认将分支 {name} 合并到当前分支？
-      msg: `${t('ops.branch.mergeMsg', { name })}${lines.length ? '\n\n' + lines.join('\n') : ''}`,
-      action: () => act('merge', name),
+      msg: `${t('ops.branch.mergeMsg', { name })}${lines.length ? '\n\n' + lines.join('\n') : ''}${scopeNote}`,
+      action: () => act('merge', name, false, undefined, scope),
     });
   };
   /** 推送到远程：本地分支未推送（无 origin/<名字>）时可推，首次自动建立上游跟踪。
@@ -385,16 +400,9 @@ export function BranchDialog(props: {
           {t('ops.branch.createBtn')}
         </button>
       </div>
-      {/* 分支辅助操作独立一行（避免把名称输入框挤窄）：切回主干 / 项目迁移 / 合回主干 */}
+      {/* 分支辅助操作独立一行：项目迁移 / 合并到主干（切回主干走列表主干行的「切换」） */}
       {props.repoType === 'svn' && data && (
         <div className="row" style={{ margin: '0 0 10px', gap: 6, flexWrap: 'wrap' }}>
-          {data.current && data.currentKind !== 'trunk' && (
-            // 切回 trunk
-            <button className="mini" disabled={busy} onClick={() => confirmSwitch('trunk', true)} title={t('ops.branch.backToTrunkTip')}>
-              {/* ↩ 切回主干 */}
-              {t('ops.branch.backToTrunkBtn')}
-            </button>
-          )}
           {/* 把当前开发线独立成长期开发线，或独立成带 trunk/branches/tags 的新项目 */}
           <button className="mini btn-accent" disabled={busy} onClick={() => setMigrateOpen((v) => !v)} title={t('ops.branch.migrateTip')}>
             {/* 项目迁移… */}
@@ -451,13 +459,25 @@ export function BranchDialog(props: {
         busy={busy}
         hasRemote={hasRemote}
         onSelect={setSel}
-        onSwitch={confirmSwitch}
-        onMerge={confirmMerge}
+        onSwitch={(n) => void confirmSwitch(n, n === 'trunk')}
+        onMerge={startMerge}
         onDelete={confirmDelete}
         onPush={confirmPush}
         onRemoteDelete={confirmRemoteDelete}
       />
       <ResultLine msg={msg} err={msgErr} />
+      {/* SVN 合并范围（目录/文件级）；留空回车 = 整个分支 */}
+      {mergeScopeFor && (
+        <MergeScopeDialog
+          name={mergeScopeFor}
+          onCancel={() => setMergeScopeFor(null)}
+          onConfirm={(scope) => {
+            const name = mergeScopeFor;
+            setMergeScopeFor(null);
+            if (name) void confirmMerge(name, scope);
+          }}
+        />
+      )}
       {/* 通用二次确认（切换/合并/删除/推送等） */}
       {cfm && (
         <ConfirmModal

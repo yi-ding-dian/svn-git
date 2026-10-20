@@ -798,6 +798,18 @@ export class SvnVcs {
     return null;
   }
 
+  /** 合并范围路径：空串=整树；返回规范化相对路径；非法返回 null。
+   *  目录和文件共用（svn merge 支持两者，文件级要求两边有共同历史）。 */
+  private normalizeMergePath(pathRel?: string): string | null {
+    const raw = (pathRel ?? '').trim();
+    if (!raw) return '';
+    if (path.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw)) return null;
+    const rel = raw.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (!rel) return '';
+    if (rel.split('/').some((p) => p === '.' || p === '..')) return null;
+    return rel;
+  }
+
   /** 工作副本所在**项目**的根 URL。
    *
    *  **不能用 repos-root-url 当项目根**：一个 SVN 仓库里可以平级放多个项目
@@ -1043,10 +1055,11 @@ export class SvnVcs {
   }
 
   /** 合回主干预检：主干对应路径 + 本地主干工作副本状态 */
-  async mergeMainlineCheck(targetDir: string): Promise<MainlinePlan> {
+  async mergeMainlineCheck(targetDir: string, pathRel?: string): Promise<MainlinePlan> {
     const root = await this.projectRootUrl();
     const sourceUrl = await this.currentUrl();
     const mainline = await this.mainlineUrl();
+    const rel = this.normalizeMergePath(pathRel);
     const suggestion = path.join(path.dirname(this.repo.root), path.basename(this.repo.root) + '-mainline');
     const plan: MainlinePlan = {
       sourceUrl,
@@ -1058,6 +1071,10 @@ export class SvnVcs {
     };
     if (!mainline) {
       plan.error = t('vcs.noMainline');
+      return plan;
+    }
+    if (rel === null) {
+      plan.error = t('vcs.invalidMergePath');
       return plan;
     }
     if (!targetDir) return plan;
@@ -1081,23 +1098,32 @@ export class SvnVcs {
     }
     const { changed } = this.parseStatusText(st.stdout);
     plan.targetState = changed.length ? 'dirty' : 'ready';
+    // 限定范围时，目标工作副本里必须存在该目录/文件（文件级合并还要求两边有共同历史）
+    if (rel) {
+      const info = await this.execAt(dir, ['info', path.join(dir, rel)], { timeoutMs: 60_000 });
+      if (info.code !== 0) plan.error = t('vcs.mergePathMissing', { path: rel });
+    }
     return plan;
   }
 
   /** 合回主干：在主干工作副本（targetDir，缺失时自动检出）上执行 `svn merge <当前源 URL>`。
    *  SVN 只有“站在目标上拉取”的合并方向；源工作副本的已提交改动会进入目标主干。
+   *  pathRel 非空时只合并该目录/文件。
    *  有冲突时不提交并返回冲突列表；autoCommit=true 且无冲突时自动提交。 */
   async mergeMainline(
     targetDir: string,
     autoCommit?: boolean,
+    pathRel?: string,
     signal?: AbortSignal,
   ): Promise<VcsResult & { targetDir?: string; conflicts?: string[]; committed?: boolean }> {
     const root = await this.projectRootUrl();
     const sourceUrl = await this.currentUrl();
     const mainline = await this.mainlineUrl();
+    const rel = this.normalizeMergePath(pathRel);
     if (!mainline) return { ok: false, message: t('vcs.noMainline') };
     if (!sourceUrl) return { ok: false, message: t('vcs.noCurrentUrl') };
     if (sourceUrl === mainline) return { ok: false, message: t('vcs.mainlineSelf') };
+    if (rel === null) return { ok: false, message: t('vcs.invalidMergePath') };
     const dir = path.resolve(targetDir);
     // 1) 目标目录不存在 → 检出主干对应路径
     if (!fs.existsSync(dir)) {
@@ -1117,8 +1143,16 @@ export class SvnVcs {
     // 4) 更新到最新（合并基于最新 BASE）
     const up = await this.execAt(dir, ['update', '-q'], { timeoutMs: 600_000, signal });
     if (up.code !== 0) return this.fail(this.authError(up), up.stderr.trim() || t('vcs.mainlineUpdateFailed'));
-    // 5) 合并
-    const mg = await this.execAt(dir, ['merge', sourceUrl], { timeoutMs: 600_000, signal });
+    // 5) 合并（pathRel 非空时只合并该目录/文件）
+    let targetPath = dir;
+    let source = sourceUrl;
+    if (rel) {
+      targetPath = path.join(dir, rel);
+      const ti = await this.execAt(dir, ['info', targetPath], { timeoutMs: 60_000, signal });
+      if (ti.code !== 0) return { ok: false, message: t('vcs.mergePathMissing', { path: rel }) };
+      source = `${sourceUrl}/${rel}`;
+    }
+    const mg = await this.execAt(dir, rel ? ['merge', source, targetPath] : ['merge', source], { timeoutMs: 600_000, signal });
     const st2 = await this.execAt(dir, ['status'], { timeoutMs: 60_000, signal });
     const after = this.parseStatusText(st2.stdout);
     if (mg.code !== 0 && after.conflicts.length === 0) {
@@ -1140,7 +1174,9 @@ export class SvnVcs {
     }
     // 7) 无冲突：可选自动提交
     if (autoCommit) {
-      const msg = t('vcs.commitMsg.mergeMainline', { source: this.relOf(sourceUrl, root), target: this.relOf(mainline, root) });
+      const sourceLabel = rel ? `${this.relOf(sourceUrl, root)}/${rel}` : this.relOf(sourceUrl, root);
+      const targetLabel = rel ? `${this.relOf(mainline, root)}/${rel}` : this.relOf(mainline, root);
+      const msg = t('vcs.commitMsg.mergeMainline', { source: sourceLabel, target: targetLabel });
       const cm = await this.execAt(dir, ['commit', '-m', msg], { timeoutMs: 600_000, signal });
       if (cm.code !== 0) return this.fail(this.authError(cm), cm.stderr.trim() || t('vcs.mainlineCommitFailed'));
       return { ok: true, message: t('vcs.mainlineMergedCommitted', { target: dir }), targetDir: dir, committed: true, conflicts: [] };
@@ -1175,8 +1211,11 @@ export class SvnVcs {
   }
 
   /** 合并预检：本地改动统计 + outdated 检测（svn 规则：merge 前工作副本必须是最新的，否则合到旧 BASE 产生虚假冲突/重复合并。检测失败(null)不拦截） */
-  async mergeCheck(_branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[]; outdated?: { wcRev: string; headRev: string } | null }> {
-    const st = await this.status();
+  async mergeCheck(_branch: string, pathRel?: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[]; outdated?: { wcRev: string; headRev: string } | null }> {
+    const rel = this.normalizeMergePath(pathRel);
+    // 非法范围路径：交给真正执行合并时报错（这里返回空统计，不阻塞弹窗）
+    if (rel === null) return { changed: 0, tracked: 0, untracked: 0, conflicts: [], outdated: null };
+    const st = await this.status(rel || undefined);
     const items = st.filter((i) => i.code !== 'I' && i.code !== 'X'); // 排除 ignored/external，与状态视图口径一致
     const untracked = items.filter((i) => i.code === '?').length;
     let outdated: { wcRev: string; headRev: string } | null = null;
@@ -1219,31 +1258,48 @@ export class SvnVcs {
     }
     // 已切换到主干 / 已切换到分支 {name}
     const base = name === 'trunk' || name === 'root' ? t('vcs.switchedToTrunk') : t('vcs.switchedToBranch', { name });
-    // svn switch 遇文本冲突时退出码仍为 0，需从输出识别冲突并提示用户处理
-    const out = (res.stdout ?? '') + (res.stderr ?? '');
-    // {msg}；⚠ 切换时产生冲突，请打开冲突视图处理冲突文件
-    if (/冲突概要|conflict/i.test(out)) return { ok: true, message: t('vcs.switchConflict', { msg: base }) }; // i18n-ignore: 「冲突概要」是 svn switch 的中文输出标记（解析用，非文案）
+    // 冲突检测看工作副本状态（内容/属性/树冲突），不看命令输出——
+    // 输出里出现 "conflict" 可能只是文件名/路径包含这个词（测试仓库里的 conflict-*.txt 就是实例）
+    const st = await this.exec(['status'], { timeoutMs: 120_000 });
+    if (st.code === 0 && this.parseStatusText(st.stdout).conflicts.length > 0) {
+      // {msg}；⚠ 切换时产生冲突，请打开冲突视图处理冲突文件
+      return { ok: true, message: t('vcs.switchConflict', { msg: base }) };
+    }
     return { ok: true, message: base };
   }
 
   /** 合并分支到工作副本：svn merge <root>/branches/<name>；
-   *  name=trunk/root 时合并主干对应路径（mainlineUrl，如 trunk/src）——与当前工作副本同层级 */
-  async merge(branchName: string, signal?: AbortSignal): Promise<VcsResult> {
+   *  name=trunk/root 时合并主干对应路径（mainlineUrl，如 trunk/src）——与当前工作副本同层级。
+   *  pathRel：只合并该目录/文件（相对工作副本根，目录与文件都支持）；空=整树。 */
+  async merge(branchName: string, pathRel?: string, signal?: AbortSignal): Promise<VcsResult> {
     const root = await this.projectRootUrl();
+    const rel = this.normalizeMergePath(pathRel);
+    if (rel === null) return { ok: false, message: t('vcs.invalidMergePath') };
     const isTrunk = branchName === 'trunk' || branchName === 'root';
-    const source = isTrunk ? ((await this.mainlineUrl()) ?? `${root}/trunk`) : `${root}/branches/${branchName}`;
-    const res = await this.exec(['merge', source], { timeoutMs: 300_000, signal });
+    const sourceBase = isTrunk ? ((await this.mainlineUrl()) ?? `${root}/trunk`) : `${root}/branches/${branchName}`;
+    const source = rel ? `${sourceBase}/${rel}` : sourceBase;
+    let target: string | undefined;
+    if (rel) {
+      // 目标必须是已版本化条目（文件级合并要求两边有共同历史）
+      target = path.join(this.repo.root, rel);
+      const info = await this.exec(['info', target], { timeoutMs: 60_000 });
+      if (info.code !== 0) return { ok: false, message: t('vcs.mergePathMissing', { path: rel }) };
+    }
+    const res = await this.exec(rel ? ['merge', source, target!] : ['merge', source], { timeoutMs: 300_000, signal });
     if (res.code !== 0) {
       const auth = this.authError(res);
       // 合并失败（可能有冲突）
       return this.fail(auth, res.stderr.trim() || t('vcs.mergeFailedMaybeConflict'));
     }
-    // 已合并分支 {name} 的改动（主干显示其相对路径，如 trunk/src）
-    const base = t('vcs.mergedBranch', { name: isTrunk ? this.relOf(source, root) : branchName });
-    // svn merge 遇文本冲突退出码仍为 0，需从输出识别冲突并提示用户处理
-    const out = (res.stdout ?? '') + (res.stderr ?? '');
-    // {msg}；⚠ 合并产生冲突，请打开冲突视图处理冲突文件
-    if (/冲突概要|conflict/i.test(out)) return { ok: true, message: t('vcs.mergeConflict', { msg: base }) }; // i18n-ignore: 「冲突概要」是 svn merge 的中文输出标记（解析用，非文案）
+    // 已合并分支 {name} 的改动（主干显示其相对路径，如 trunk/src；带范围时附在名字后）
+    const sourceRel = isTrunk ? this.relOf(sourceBase, root) : branchName;
+    const base = t('vcs.mergedBranch', { name: rel ? `${sourceRel}/${rel}` : sourceRel });
+    // 冲突检测看工作副本状态（内容/属性/树冲突），不看命令输出（文件名可能包含 conflict）
+    const st = await this.exec(['status'], { timeoutMs: 120_000 });
+    if (st.code === 0 && this.parseStatusText(st.stdout).conflicts.length > 0) {
+      // {msg}；⚠ 合并产生冲突，请打开冲突视图处理冲突文件
+      return { ok: true, message: t('vcs.mergeConflict', { msg: base }) };
+    }
     return { ok: true, message: base };
   }
 

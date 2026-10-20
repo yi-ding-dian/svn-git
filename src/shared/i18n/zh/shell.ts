@@ -139,7 +139,7 @@ export const shell = {
   'shell.tasks.branchDelete': '删除分支 · {name}',
   'shell.tasks.branchMerge': '合并分支 · {name}',
   'shell.tasks.projectMigrate': '项目迁移 · {name}',
-  'shell.tasks.mergeMainline': '合回主干 · {name}',
+  'shell.tasks.mergeMainline': '合并到主干 · {name}',
   'shell.tasks.branchPush': '推送分支 · {name}',
   'shell.tasks.branchRemoteDelete': '删除远程分支 · {name}',
   // SVN 清理任务标题

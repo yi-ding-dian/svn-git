@@ -405,9 +405,9 @@ export const get = {
       `/api/switch-check?branch=${encodeURIComponent(branch)}`,
     ),
   /** 合并预检：git 同 switchCheck + lineConflicts（提交级冲突试算）；svn 额外 outdated 标记 */
-  mergeCheck: (branch: string) =>
+  mergeCheck: (branch: string, pathRel?: string) =>
     api<{ changed: number; tracked: number; untracked: number; conflicts: string[]; lineConflicts?: string[]; outdated?: { wcRev: string; headRev: string } | null }>(
-      `/api/merge-check?branch=${encodeURIComponent(branch)}`,
+      `/api/merge-check?branch=${encodeURIComponent(branch)}${pathRel ? `&path=${encodeURIComponent(pathRel)}` : ''}`,
     ),
   tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),
@@ -639,18 +639,19 @@ export const post = {
    *  凭据用已存 Git 凭据（classic Token 需 delete_repo）；本地 origin 不自动改动。 */
   githubDeleteRepo: (confirm: string, token: string) =>
     api<{ ok: boolean; fullName?: string; message?: string }>('/api/github-delete-repo', json({ confirm, token })),
-  branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete', name: string, force = false, signal?: AbortSignal, base?: string) =>
-    api<VcsResult>('/api/branch', json({ action, name, force, base }, signal)),
+  branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete', name: string, force = false, signal?: AbortSignal, base?: string, pathRel?: string) =>
+    api<VcsResult>('/api/branch', json({ action, name, force, base, path: pathRel }, signal)),
   /** SVN 项目迁移：当前工作副本独立成长期开发线（devline）或独立项目（project）。
    *  switchAfter=迁移完成后把当前工作副本切到新路径。 */
   projectMigrate: (mode: 'devline' | 'project', name: string, switchAfter: boolean, signal?: AbortSignal) =>
     api<VcsResult & { targetUrl?: string }>('/api/project-migrate', json({ mode, name, switchAfter }, signal)),
   /** 合回主干（仅 svn）：precheck 目标工作副本状态 / 在目标 WC 上执行 svn merge（可选自动提交） */
-  mergeMainlineCheck: (targetDir: string) => api<MainlinePlan>('/api/merge-mainline', json({ action: 'check', targetDir })),
-  mergeMainline: (targetDir: string, autoCommit: boolean, signal?: AbortSignal) =>
+  mergeMainlineCheck: (targetDir: string, pathRel?: string) =>
+    api<MainlinePlan>('/api/merge-mainline', json({ action: 'check', targetDir, path: pathRel })),
+  mergeMainline: (targetDir: string, autoCommit: boolean, pathRel?: string, signal?: AbortSignal) =>
     api<VcsResult & { targetDir?: string; conflicts?: string[]; committed?: boolean }>(
       '/api/merge-mainline',
-      json({ action: 'run', targetDir, autoCommit }, signal),
+      json({ action: 'run', targetDir, autoCommit, path: pathRel }, signal),
     ),
   /** 终端：执行 git / svn 命令（护栏见 routes/terminal.ts）。
    *  confirm=true 表示用户已在确认框里点过"仍要执行"（危险命令第二次调用）。 */

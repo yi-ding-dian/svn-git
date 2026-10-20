@@ -55,7 +55,7 @@ export function BranchList(props: {
                 className="mini primary"
                 disabled={busy}
                 onClick={() => props.onSwitch('trunk')}
-                title={cmdOfRepo(repoType, 'branch_switch', { name: 'trunk' })}
+                title={cmdOfRepo(repoType, 'branch_switch_target', { target: trunkName })}
               >
                 {/* 切换 */}
                 {t('ops.branch.switchBtn')}

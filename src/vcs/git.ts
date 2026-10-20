@@ -1190,7 +1190,7 @@ export class GitVcs {
   /** 合并分支到当前分支。
    *  提示一律"说人话"：不带分支名看不出合的是谁，不区分"已是最新"会让人以为合了（其实什么都没发生），
    *  冲突时只丢一句"可能有冲突"还得自己去翻——下面按 git 的真实输出分情况给结果。 */
-  async merge(name: string, signal?: AbortSignal): Promise<VcsResult> {
+  async merge(name: string, _pathRel?: string, signal?: AbortSignal): Promise<VcsResult> {
     // 当前分支名（提示里要说清"合并进哪个分支"）。用 rev-parse --abbrev-ref 而不是 branch --show-current：
     // 后者是 git 2.22+ 才有的，本机 2.20.1 会报 unknown option（实测）。分离头指针时它返回 "HEAD"
     const curRaw = await this.exec(['rev-parse', '--abbrev-ref', 'HEAD']);
