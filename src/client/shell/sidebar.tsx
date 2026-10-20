@@ -4,7 +4,7 @@ import { IconClock, IconEye, IconEyeClosed, IconFolder, IconRename, IconServer }
 // import { IconDiff } from '../ui/icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from '../ui/context-menu.js';
 import { RemarkModal } from '../repo/remark.js';
-import { THEMES, THEME_PINNED } from './header.js';
+import { THEMES, THEME_PINNED } from './header/index.js';
 import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js';
 import { baseName } from '../shared/utils.js';
 import { startTask, useTasks } from '../shared/tasks.js';

@@ -6,7 +6,7 @@
  *  - 字号 / 字体：写 CSS 变量 + localStorage，空字体值表示回退 CSS 默认栈。
  */
 import { useCallback, useEffect, useState } from 'react';
-import { THEMES } from '../shell/header.js';
+import { THEMES } from '../shell/header/index.js';
 import { deriveThemeVars, THEME_VAR_KEYS, type MyTheme } from '../shared/theme.js';
 import { FONT_MIN, FONT_MAX } from './font-modal.js';
 

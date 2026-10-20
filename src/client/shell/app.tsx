@@ -6,7 +6,7 @@ import { DiffView, type DiffTarget } from '../history/diff.js';
 import { FsView } from '../filesystem/index.js';
 import { OpenView } from '../repo/open.js';
 import { type Modal } from './modal-types.js';
-import { AppHeader } from './header.js';
+import { AppHeader } from './header/index.js';
 import { useAppearance } from '../appearance/use-appearance.js';
 import { useRepoStatus } from './use-repo-status.js';
 import { useProjectHistory } from '../repo/use-project-history.js';

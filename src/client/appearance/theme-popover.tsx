@@ -10,7 +10,7 @@
  *  关闭：点遮罩 / Esc / 关闭时取消未保存的预览（onPreview(null) 回到正式主题）。
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { THEMES, type ThemeDef } from '../shell/header.js';
+import { THEMES, type ThemeDef } from '../shell/header/index.js';
 import { IconPalette } from '../ui/icons.js';
 import { type MyTheme, toHex } from '../shared/theme.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
