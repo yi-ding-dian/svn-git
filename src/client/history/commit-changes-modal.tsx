@@ -5,7 +5,7 @@
  *  根提交没有父，用 Git 空树对象作为"前一版本"（差异表现为整文件新增）。 */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ResizableModal } from '../shell/modal-shell.js';
-import { DiffView } from './diff.js';
+import { DiffView } from './diff/index.js';
 import { isBinaryFile } from '../shared/utils.js';
 import { IconResizeHorizontal } from '../ui/icons.js';
 import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';

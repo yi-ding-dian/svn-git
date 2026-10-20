@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo, type VcsResult } from '../shared/api.js';
 import { HistoryView } from '../history/history.js';
-import { DiffView, type DiffTarget } from '../history/diff.js';
+import { DiffView, type DiffTarget } from '../history/diff/index.js';
 import { FsView } from '../filesystem/index.js';
 import { OpenView } from '../repo/open.js';
 import { type Modal } from './modal-types.js';
