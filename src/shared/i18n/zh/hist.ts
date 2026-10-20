@@ -31,6 +31,7 @@ export const hist = {
   'hist.collapse': '收起 ▲',
   'hist.expandLines': '展开全文（共 {n} 行）▼',
   'hist.changedFiles': '变更文件（点击查看 diff）：',
+  'hist.mergeStatTip': '合并提交：显示相对第一父（本次合入当前分支）的文件数，点开可看差异',
   'hist.noChanged': '无文件变更',
   'hist.viewFullDiff': '查看本次提交完整 diff',
 

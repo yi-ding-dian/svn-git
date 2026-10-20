@@ -74,8 +74,9 @@ function parseGitLog(stdout: string): LogEntry[] {
           date: (date ?? '').replace('T', ' ').replace(/[+-]\d{2}:\d{2}$/, ''),
           msg: msg ?? '',
           changed: [],
-          // 多父 = 合并提交（%P 空格分隔；根提交/单父都不算）。合并提交自身无文件变更
-          //（git log --name-status 对 merge 默认不列文件），界面据此显示「合并」而非「0 文件」
+          // 多父 = 合并提交（%P 空格分隔；根提交/单父都不算）。文件变更是否带出来取决于调用方：
+          // log() 带了 --diff-merges=first-parent（合并提交列出合入的文件）；
+          // unpushedLog / remoteCheck 没带，changed 为空，界面据此显示「合并」而非「0 文件」
           isMerge: String(parents ?? '').trim().split(/\s+/).filter(Boolean).length > 1,
         };
         out.push(cur);
@@ -328,7 +329,9 @@ export class GitVcs {
     const args = ['-c', 'core.quotepath=false', 'log'];
     if (limit > 0) args.push('-n', String(limit));
     if (offset > 0) args.push('--skip', String(offset));
-    args.push('--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e', '--name-status');
+    // --diff-merges=first-parent：合并提交默认不输出 diff（changed 为空），历史里只能看到 ⇄；
+    // 指定后按"相对第一父"列出本次合并实际带进来的文件，点开也能看差异
+    args.push('--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e', '--diff-merges=first-parent', '--name-status');
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args);
     // 刚 git init 的空仓库（尚无任何提交）：git log 直接失败，返回空列表即可，不该让上游 500

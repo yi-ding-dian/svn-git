@@ -32,6 +32,7 @@ export const hist = {
   'hist.collapse': 'Collapse ▲',
   'hist.expandLines': 'Expand Full Message ({n} lines) ▼',
   'hist.changedFiles': 'Changed files (click to view diff):',
+  'hist.mergeStatTip': 'Merge commit: file count vs first parent (what this merge brought in); click for diffs',
   'hist.noChanged': 'No file changes',
   'hist.viewFullDiff': 'View full diff of this commit',
 
