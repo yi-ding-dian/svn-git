@@ -10,14 +10,8 @@ export const conflict = {
   'conflict.loading': '加载中…',
   'conflict.none': '暂无冲突',
 
-  // ---- 三栏切换（基础 / 本地 / 对方）----
-  'conflict.tab.base': '基础',
-  'conflict.tab.ours': '本地',
-  'conflict.tab.theirs': '对方',
-
-  // ---- 内容区（只读预览的兜底文案）----
-  'conflict.identical': '（本地与对方内容一致）',
-  'conflict.noContent': '（无内容）',
+  // ---- 基础版本折叠（三栏之外的历史版本查看）----
+  'conflict.tab.base': '基础版本',
 
   // ---- 二进制文件（不读内容不对比，只能整份采用一侧；两句含 <b> 拆段）----
   'conflict.bin.lead': '该文件为 ',
@@ -26,20 +20,37 @@ export const conflict = {
   'conflict.bin.noTextDiff': '不支持文本对比',
   'conflict.bin.hint': '请用「采用本地 / 采用对方」直接选择一个版本保留，或在外部程序中打开文件手动处理',
 
-  // ---- 双栏对比工具条 / 滚动条冲突标记 ----
-  'conflict.vs.lead': '🔀 双栏对比：',
-  'conflict.vs.left': '左=对方',
-  'conflict.vs.right': '右=本地',
-  'conflict.vs.mod': 'M=修改处',
-  'conflict.vs.expand': '⛶ 放大',
-  // 这里是「还原尺寸」（对比区撑满 → 恢复），不是撤回改动的「还原」
-  'conflict.vs.restore': '⛶ 还原',
-  'conflict.vs.scrollTip': '冲突位置（点击双栏同步跳转）',
-  'conflict.vs.markAdd': '对方修改处',
-  'conflict.vs.markDel': '删除处',
+  // ---- 三栏合并编辑器：工具条 / 块级选择 / 行内编辑 ----
+  'conflict.merge.tagTheirs': '对方',
+  'conflict.merge.tagResult': '结果（可编辑）',
+  'conflict.merge.tagOurs': '本地',
+  'conflict.merge.progress': '已选 {done}/{total} 处',
+  'conflict.merge.noMarkers': '文件里没有冲突标记，可直接编辑结果',
+  'conflict.merge.allTheirs': '全部采用对方',
+  'conflict.merge.allOurs': '全部采用本地',
+  'conflict.merge.prevTip': '上一处冲突',
+  'conflict.merge.nextTip': '下一处冲突',
+  'conflict.merge.takeTheirs': '采用对方',
+  'conflict.merge.takeOurs': '采用本地',
+  'conflict.merge.both': '两边都要',
+  'conflict.merge.blockN': '第 {n} 处',
+  'conflict.merge.editHint': '双击结果栏的行可编辑',
+  'conflict.merge.edit': '✎ 编辑',
+  'conflict.merge.editTip': '手动编辑合并结果（整段文本）',
+  'conflict.merge.editDone': '✓ 完成',
+  'conflict.merge.editCancel': '✕ 取消',
+  'conflict.merge.editing': '手动编辑中：改完点「完成」；文本里还有冲突标记时不能保存',
+  'conflict.merge.resizeTip': '拖动调整栏宽（双击恢复均分）',
+  'conflict.merge.unresolved': '还有 {n} 处冲突未选择，先选完再保存',
+  // 一侧/两侧没有该文件（删除/新增冲突）
+  'conflict.merge.oursMissing': '本地没有这个文件（一侧删除/未添加的冲突）：选「采用本地」就是删除它',
+  'conflict.merge.theirsMissing': '对方没有这个文件（一侧删除/未添加的冲突）：选「采用对方」就是删除它',
+  'conflict.merge.bothMissing': '双方都没有这个文件：采用任一边都会删除它',
+  'conflict.merge.sideEmpty': '（这一侧没有此文件）',
 
-  // ---- 手动编辑 + 非 UTF-8 编码警告（warnA 含 {enc} 插值）----
-  'conflict.manual.label': '手动编辑合并结果（初始为当前合并内容）：',
+  // ---- 放大 / 还原尺寸（不是撤回改动的「还原」）----
+  'conflict.vs.expand': '⛶ 放大',
+  'conflict.vs.restore': '⛶ 还原',
   'conflict.enc.warnA': '⚠ 该文件不是 UTF-8（工具按 {enc} 猜测解码）：',
   'conflict.enc.warnB': '若它其实是日文/繁体等其他编码，保存会把原编码改坏。',
   'conflict.enc.warnC': '拿不准就用「采用本地 / 采用对方」，或先用外部程序改好再回来。',
@@ -47,7 +58,7 @@ export const conflict = {
   // ---- 操作按钮（title 里另有 cmdOfRepo 的命令预览，是真实命令不入包）----
   'conflict.takeOurs': '采用本地',
   'conflict.takeTheirs': '采用对方',
-  'conflict.saveManual': '💾 保存手动编辑',
+  'conflict.saveManual': '💾 保存并标记已解决',
   'conflict.abort': '↩ 中止合并',
   'conflict.abortTip': '放弃本次合并（git merge --abort）：丢弃合并以来所有改动，工作区回到合并前。分支本身不受影响，可稍后再合并。',
   'conflict.reveal': '打开文件夹',
@@ -62,6 +73,8 @@ export const conflict = {
   'conflict.confirm.ours': '将用【你的版本】覆盖冲突文件，对方的修改会丢失。确认采用本地？',
   'conflict.confirm.theirs': '将用【对方的版本】覆盖冲突文件，你的修改会丢失。确认采用对方？',
   'conflict.confirm.manual': '将用你编辑的内容覆盖冲突文件。确认保存？',
+  'conflict.confirm.oursDelete': '本地没有这个文件（删除/新增冲突）。采用本地将从工作区删除该文件并标记为已解决，确认？',
+  'conflict.confirm.theirsDelete': '对方没有这个文件（删除/新增冲突）。采用对方将从工作区删除该文件并标记为已解决，确认？',
 
   // ---- 中止合并二次确认（仅 git）----
   'conflict.abortConfirm.title': '⚠ 确认中止合并',

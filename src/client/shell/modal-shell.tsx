@@ -185,6 +185,17 @@ export function ResizableModal(props: {
       const tag = (e.target as HTMLElement)?.tagName;
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable;
       if (e.key === 'Escape') {
+        // 行内编辑（如冲突解决结果栏双击改行）：Esc 应该是"取消这次编辑"，不是关弹窗。
+        // 但捕获阶段拦下事件会连输入框自己的 onKeyDown 一起吞掉，所以这里打了取消标记后
+        // 主动失焦 —— 输入框的 onBlur 读标记决定"取消"而不是"提交"。
+        const inlineEdit = (target as Element | null)?.closest?.('[data-inline-edit]') as HTMLElement | null;
+        if (inlineEdit) {
+          e.stopPropagation();
+          e.preventDefault();
+          inlineEdit.dataset.escapeCancel = '1';
+          inlineEdit.blur();
+          return;
+        }
         // 弹窗打开时 Esc 一律不穿透（即使不关闭，也防止底层视图收到）
         e.stopPropagation();
         // **只让栈顶弹窗响应**：嵌套时按一次 Esc 只关最内层，不会连外层一起关

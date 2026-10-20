@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { BranchInfo, MainlinePlan } from '../../shared/api.js';
 import { post } from '../../shared/api.js';
 import { ConfirmModal } from '../../ui/prompt.js';
+import { ModalShell } from '../../shell/modal-shell.js';
 import { useTasks } from '../../shared/tasks.js';
 import { startTaskDeferred } from '../../shell/bg-defer.js';
 import { t } from '../../../shared/i18n/index.js';
@@ -16,6 +17,7 @@ export function MergeMainlinePanel(props: {
 }) {
   const { data } = props;
   const [dir, setDir] = useState('');
+  const [scope, setScope] = useState('');
   const [plan, setPlan] = useState<MainlinePlan | null>(null);
   const [autoCommit, setAutoCommit] = useState(true);
   const [checking, setChecking] = useState(false);
@@ -25,11 +27,11 @@ export function MergeMainlinePanel(props: {
   const bgTasks = useTasks();
   const busy = bgTasks.some((tk) => tk.kind === 'branch' && tk.status === 'running');
 
-  /** 预检目标目录（空目录 → 后端返回推荐路径） */
-  const check = async (target: string) => {
+  /** 预检目标目录（空目录 → 后端返回推荐路径）；pathRel 限定范围（目录/文件） */
+  const check = async (target: string, pathRel = scope) => {
     setChecking(true);
     try {
-      const p = await post.mergeMainlineCheck(target);
+      const p = await post.mergeMainlineCheck(target, pathRel.trim() || undefined);
       setPlan(p);
       if (!target) setDir((d) => d || p.suggestion);
     } catch (e) {
@@ -62,7 +64,7 @@ export function MergeMainlinePanel(props: {
         return { text: t('ops.branch.mainlineStateReady'), color: 'var(--ok)' };
     }
   })();
-  const canRun = Boolean(plan && dir.trim() && (plan.targetState === 'missing' || plan.targetState === 'ready'));
+  const canRun = Boolean(plan && dir.trim() && !plan.error && (plan.targetState === 'missing' || plan.targetState === 'ready'));
 
   /** 执行合回主干（>3 秒转后台）：在目标工作副本上 svn merge，冲突时不提交 */
   const run = (target: string, commit: boolean) => {
@@ -74,7 +76,7 @@ export function MergeMainlinePanel(props: {
       kind: 'branch',
       title,
       run: async (signal) => {
-        const r = await post.mergeMainline(target, commit, signal);
+        const r = await post.mergeMainline(target, commit, scope.trim() || undefined, signal);
         props.onResult(r.message, !r.ok);
         if (r.conflicts?.length) setConflicts(r.conflicts);
         if (r.ok) {
@@ -82,7 +84,7 @@ export function MergeMainlinePanel(props: {
           props.onChanged();
         }
         // 结果落盘后再预检一次（冲突时面板里能看到目标工作副本的当前状态）
-        post.mergeMainlineCheck(target).then(setPlan).catch(() => {});
+        post.mergeMainlineCheck(target, scope.trim() || undefined).then(setPlan).catch(() => {});
         return { ok: r.ok, message: r.message };
       },
       onSlow: () => props.onBackground(title, from),
@@ -104,12 +106,21 @@ export function MergeMainlinePanel(props: {
 
   return (
     <>
-      <div className="mainline-panel" style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', margin: '4px 0 10px' }}>
-        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          {/* 合回主干 */}
-          <strong>{t('ops.branch.mergeMainlineTitle')}</strong>
-          <button className="mini" onClick={props.onClose}>{t('common.cancel')}</button>
-        </div>
+      <ModalShell
+        // 合并到主干
+        title={t('ops.branch.mergeMainlineTitle')}
+        width={600}
+        onClose={props.onClose}
+        foot={
+          <div className="row" style={{ justifyContent: 'flex-end', gap: 6 }}>
+            <button onClick={props.onClose}>{t('common.cancel')}</button>
+            <button className="primary" disabled={busy || !canRun} onClick={confirm}>
+              {/* 检出并合并 / 开始合并 */}
+              {plan?.targetState === 'missing' ? t('ops.branch.mergeMainlineCheckoutRun') : t('ops.branch.mergeMainlineRun')}
+            </button>
+          </div>
+        }
+      >
         {/* 把当前工作副本的已提交改动合并到主干对应路径。SVN 必须站在目标工作副本上拉取合并。 */}
         <div className="small dim" style={{ margin: '6px 0' }}>{t('ops.branch.mergeMainlineIntro')}</div>
         <div className="small mono" style={{ margin: '4px 0', wordBreak: 'break-all' }}>
@@ -138,6 +149,19 @@ export function MergeMainlinePanel(props: {
             {t('ops.branch.mergeMainlineCheck')}
           </button>
         </div>
+        <div className="small" style={{ margin: '8px 0 4px' }}>
+          {/* 合并范围（可选） */}
+          {t('ops.mergeScope.mainlineLabel')}
+        </div>
+        <input
+          type="text"
+          value={scope}
+          onChange={(e) => setScope(e.target.value)}
+          onBlur={() => void check(dir.trim())}
+          placeholder={t('ops.mergeScope.placeholder')}
+          style={{ width: '100%' }}
+        />
+        <div className="small dim" style={{ margin: '4px 0' }}>{t('ops.mergeScope.note')}</div>
         <div className="small" style={{ color: state.color, margin: '4px 0', wordBreak: 'break-all' }}>{state.text}</div>
         {conflicts.length > 0 && (
           <div className="small" style={{ color: 'var(--err)', margin: '4px 0' }}>
@@ -150,14 +174,7 @@ export function MergeMainlinePanel(props: {
           {/* 合并无冲突时自动提交 */}
           {t('ops.branch.mergeMainlineAutoCommit')}
         </label>
-        <div className="row" style={{ justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
-          <button className="mini" onClick={props.onClose}>{t('common.cancel')}</button>
-          <button className="primary" disabled={busy || !canRun} onClick={confirm}>
-            {/* 检出并合并 / 开始合并 */}
-            {plan?.targetState === 'missing' ? t('ops.branch.mergeMainlineCheckoutRun') : t('ops.branch.mergeMainlineRun')}
-          </button>
-        </div>
-      </div>
+      </ModalShell>
       {cfm && (
         <ConfirmModal
           // 合回主干
@@ -172,6 +189,7 @@ export function MergeMainlinePanel(props: {
               <div className="small dim">
                 {autoCommit ? t('ops.branch.mergeMainlineAutoNote') : t('ops.branch.mergeMainlinePendingNote')}
               </div>
+              {scope.trim() && <div className="small dim">{t('ops.mergeScope.confirmNote', { path: scope.trim() })}</div>}
             </div>
           }
           confirmLabel={cfm.confirmLabel}

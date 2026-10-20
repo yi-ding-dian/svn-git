@@ -3,6 +3,7 @@ import React, { useRef, useState } from 'react';
 import type { BranchInfo } from '../../shared/api.js';
 import { post } from '../../shared/api.js';
 import { ConfirmModal } from '../../ui/prompt.js';
+import { ModalShell } from '../../shell/modal-shell.js';
 import { useTasks } from '../../shared/tasks.js';
 import { startTaskDeferred } from '../../shell/bg-defer.js';
 import { isImeComposing } from '../../shared/utils.js';
@@ -75,12 +76,21 @@ export function ProjectMigratePanel(props: {
 
   return (
     <>
-      <div className="migrate-panel" style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', margin: '4px 0 10px' }}>
-        <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          {/* 项目迁移 */}
-          <strong>{t('ops.branch.migrateTitle')}</strong>
-          <button className="mini" onClick={props.onClose}>{t('common.cancel')}</button>
-        </div>
+      <ModalShell
+        // 项目迁移
+        title={t('ops.branch.migrateTitle')}
+        width={600}
+        onClose={props.onClose}
+        foot={
+          <div className="row" style={{ justifyContent: 'flex-end', gap: 6 }}>
+            <button onClick={props.onClose}>{t('common.cancel')}</button>
+            <button className="primary" disabled={busy || !name.trim()} onClick={confirmMigrate}>
+              {/* 开始迁移 */}
+              {t('ops.branch.migrateRun')}
+            </button>
+          </div>
+        }
+      >
         {/* 把当前工作副本独立出去：仍属于原项目的长期开发线，或一个带 trunk/branches/tags 的独立项目。 */}
         <div className="small dim" style={{ margin: '6px 0' }}>{t('ops.branch.migrateIntro')}</div>
         <div className="small mono" style={{ margin: '4px 0', wordBreak: 'break-all' }}>
@@ -124,14 +134,7 @@ export function ProjectMigratePanel(props: {
           {/* 迁移完成后把当前工作副本切换过去 */}
           {t('ops.branch.migrateSwitch')}
         </label>
-        <div className="row" style={{ justifyContent: 'flex-end', gap: 6, marginTop: 8 }}>
-          <button className="mini" onClick={props.onClose}>{t('common.cancel')}</button>
-          <button className="primary" disabled={busy || !name.trim()} onClick={confirmMigrate}>
-            {/* 开始迁移 */}
-            {t('ops.branch.migrateRun')}
-          </button>
-        </div>
-      </div>
+      </ModalShell>
       {cfm && (
         <ConfirmModal
           // 项目迁移

@@ -13,6 +13,16 @@
   --hl-attr: #0550ae;
   --hl-meta: #1a7f37;
   --hl-section: #8250df;
+  /* 并排对比连接带：固定 rgba（不用 color-mix——旧浏览器不认识会让 SVG fill 回落成黑色）。
+     深色主题在下方统一覆盖为亮色版。 */
+  --link-del-fill: rgba(207, 34, 46, .13);
+  --link-del-line: rgba(207, 34, 46, .50);
+  --link-add-fill: rgba(26, 127, 55, .13);
+  --link-add-line: rgba(26, 127, 55, .50);
+  --link-mod-fill: rgba(9, 105, 218, .13);
+  --link-mod-line: rgba(9, 105, 218, .50);
+  --link-cur-fill: rgba(9, 105, 218, .24);
+  --link-cur-line: rgba(9, 105, 218, .85);
 }
 :root, body[data-theme="light"] {
   --bg: #ffffff;
@@ -317,6 +327,15 @@ body[data-theme="violet"], body[data-theme="charcoal"] {
   --hl-attr: #79c0ff;
   --hl-meta: #7ee787;
   --hl-section: #d2a8ff;
+  /* 连接带在深色底上提亮：低透明度色在暗背景里会糊成一片 */
+  --link-del-fill: rgba(248, 81, 73, .20);
+  --link-del-line: rgba(248, 81, 73, .72);
+  --link-add-fill: rgba(63, 185, 80, .20);
+  --link-add-line: rgba(63, 185, 80, .72);
+  --link-mod-fill: rgba(88, 166, 255, .20);
+  --link-mod-line: rgba(88, 166, 255, .72);
+  --link-cur-fill: rgba(88, 166, 255, .32);
+  --link-cur-line: rgba(88, 166, 255, .95);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -650,6 +669,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   cursor: pointer; border-radius: 4px;
 }
 .modal-x:hover { background: var(--panel2); color: var(--text); }
+.modal-x:disabled { opacity: .4; cursor: default; background: transparent; color: var(--dim); }
 
 /* ---------- 浏览模式（文件管理器图标网格，整体放大 20%） ---------- */
 .grid-view {
@@ -900,6 +920,33 @@ body.drag-trash-hot .drag-src {
   width: 6px; cursor: col-resize; background: var(--border); flex-shrink: 0; position: relative; z-index: 2;
 }
 .sb-resizer:hover { background: var(--accent); }
+/* 中间连接带：左右差异块之间的曲线/色带（Beyond Compare 风格）。
+   宽度与 diff-connectors.tsx 的 CONNECT_WIDTH 保持一致；颜色走 CSS 变量（见文件顶部，
+   深色主题统一覆盖）——不用 color-mix，避免旧浏览器上 fill 回落到默认黑色。 */
+.sb-connect {
+  width: 44px; flex-shrink: 0; position: relative; overflow: hidden; pointer-events: none;
+  background: var(--panel); border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+}
+.sb-connect svg { display: block; }
+.sb-connect .sb-link { pointer-events: auto; cursor: pointer; stroke-width: 1.5; transition: opacity .12s; }
+.sb-connect .sb-link.del { fill: var(--link-del-fill); stroke: var(--link-del-line); }
+.sb-connect .sb-link.add { fill: var(--link-add-fill); stroke: var(--link-add-line); }
+.sb-connect .sb-link.mod { fill: var(--link-mod-fill); stroke: var(--link-mod-line); }
+/* 两栏明显错位（跨度超过 35% 视口高）：填充降到很淡，避免多条跨屏带子交叉糊成一片；
+   描边保留，仍能看出块的对应关系 */
+.sb-connect .sb-link.far { fill-opacity: .25; }
+.sb-connect .sb-link:hover { fill: var(--link-cur-fill); }
+/* 当前差异块（「上一个/下一个」或点刻度定位到的块）：同色加深，不动布局 */
+.sb-connect .sb-link.current { fill: var(--link-cur-fill); stroke: var(--link-cur-line); stroke-width: 2; }
+/* 还原箭头：块首行左侧、指向左栏（把原版内容「拉回来」）。默认半透明，hover 实心 */
+.sb-restore-btn {
+  position: absolute; left: 2px; width: 24px; height: 24px; transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center; padding: 0;
+  border: none; border-radius: 5px; background: transparent; color: var(--err);
+  pointer-events: auto; cursor: pointer; opacity: .55; transition: opacity .12s, background .12s;
+}
+.sb-restore-btn:hover { opacity: 1; background: var(--panel2); }
+.sb-restore-btn:active { transform: translateY(-50%) scale(.92); }
 .sb-scrollbar {
   width: 12px; position: relative; background: var(--border2); flex-shrink: 0; cursor: pointer;
   border-left: 1px solid var(--border);
@@ -921,14 +968,30 @@ body.drag-trash-hot .drag-src {
 /* 左栏新增占位行：空行 + 绿色背景标记（提示右栏此处有新增） */
 .sb-ph {
   background: rgba(26, 127, 55, .10); cursor: pointer;
-  min-height: 1.5em; box-shadow: inset 3px 0 0 var(--ok);
+  /* 与 .sb-pane 的 13px × line-height 1.55 = 20.15px 对齐：占位区动辄上百行，
+     0.5px 的差累计后左右块底边会明显错位 */
+  min-height: 1.55em; box-shadow: inset 3px 0 0 var(--ok);
 }
+/* 大块折叠行（左右栏通用）：整块超过阈值时只渲染前 10 行 + 这一行，点击展开；
+   展开后块尾是「− 收起」行。行高与普通行一致，保证两栏对齐 */
+.sb-fold {
+  min-height: 1.55em; cursor: pointer;
+  background: var(--panel2);
+}
+.sb-fold:hover { background: var(--border2); }
+.sb-fold-text { color: var(--ok); font-size: 11px; padding-left: 6px; white-space: nowrap; }
+.sb-fold-tail { background: transparent; }
+.sb-fold-tail:hover { background: var(--panel2); }
+.sb-fold-tail .sb-fold-text { color: var(--dim); }
+/* 左栏的折叠占位行：只占行高让两栏对齐，不显示文字、不响应悬停 */
+.sb-fold-ghost { background: transparent; cursor: default; }
+.sb-fold-ghost:hover { background: transparent; }
 .sb-ph .sb-no { color: transparent; } /* 占位行不显示行号 */
 /* 右栏删除占位行：与左栏 .sb-ph 对称（那边提示"右栏有新增"，这边提示"左栏有删除"）。
    常驻显示：行号位留空，内容位换成提示文字 */
 .sb-ph-del {
   background: rgba(207, 34, 46, .10); cursor: pointer;
-  min-height: 1.5em; box-shadow: inset 3px 0 0 var(--err);
+  min-height: 1.55em; box-shadow: inset 3px 0 0 var(--err);
 }
 .sb-ph-hint { color: var(--err); font-size: 11px; padding-left: 6px; white-space: nowrap; }
 .sb-no {
@@ -937,6 +1000,81 @@ body.drag-trash-hot .drag-src {
 }
 .sb-marker { width: 20px; text-align: center; color: var(--warn); font-weight: 700; flex-shrink: 0; }
 .sb-code { flex: 1; white-space: pre-wrap; word-break: break-all; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
+
+/* ---------- 冲突解决：三栏合并编辑器（左=对方 / 中=结果 / 右=本地） ---------- */
+/* 三栏复用并排对比的 .sb-pane/.sb-line/.sb-no/.sb-code；中栏是结果，行可双击编辑 */
+.merge-view { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; }
+.merge-toolbar { display: flex; align-items: center; gap: 6px; padding: 4px 0 6px; flex-wrap: wrap; }
+/* 三栏标题：与下面三栏同步（同样的 flex-grow 权重；两条连接带各 44px） */
+.merge-heads { display: flex; align-items: center; padding-bottom: 4px; }
+.merge-head-slot { display: flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: wrap; }
+.merge-head-gap { flex: 0 0 44px; }
+.merge-pane-tag { font-size: 11px; padding: 1px 7px; border-radius: 4px; flex-shrink: 0; }
+.merge-pane-tag.theirs { color: var(--err); background: rgba(207, 34, 46, .10); }
+.merge-pane-tag.result { color: var(--accent); background: rgba(88, 166, 255, .12); }
+.merge-pane-tag.ours { color: var(--ok); background: rgba(26, 127, 55, .12); }
+.merge-panes {
+  display: flex; flex: 1; min-height: 0; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.merge-panes > .sb-pane { min-width: 0; }
+/* 连接带外层：固定 44px，右缘叠一条拖拽分隔条（可调整左右两栏宽度） */
+.merge-connect { position: relative; flex: 0 0 44px; width: 44px; display: flex; }
+.merge-connect > .sb-connect { flex: 1; min-width: 0; }
+.merge-resizer {
+  position: absolute; top: 0; right: -3px; width: 7px; height: 100%;
+  cursor: col-resize; z-index: 3; background: transparent;
+  transition: background .12s;
+}
+.merge-resizer:hover, .merge-resizer.active { background: var(--accent); opacity: .55; }
+/* 结果栏：底色略深，和左右"参考"栏区分开（它才是要保存的东西） */
+.merge-result { background: var(--panel); position: relative; }
+/* 「结果」标签旁的编辑入口 / 编辑中的取消、完成 */
+.merge-edit-btn { flex-shrink: 0; }
+/* 整段手动编辑：中栏整块换成等宽文本框（左右两栏保留作对照） */
+.merge-text-edit {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  resize: none; border: none; outline: none; border-radius: 0;
+  padding: 4px 8px; margin: 0;
+  background: var(--panel); color: var(--text);
+  font-family: var(--code-font, "JetBrains Mono", Consolas, monospace);
+  font-size: 13px; line-height: 1.55; tab-size: 4;
+  white-space: pre; overflow: auto;
+}
+/* 左右栏里落在冲突块区间内的行：黄色左边线 + 淡黄底（只是定位提示，不改内容语义） */
+.sb-conflict-hl { background: rgba(210, 153, 34, .12); box-shadow: inset 3px 0 0 var(--warn); }
+/* 结果栏的冲突块：未选边时保留标记行；已选边后整块绿色左边线 */
+.sb-conflict-row { background: var(--panel2); }
+.sb-conflict-marker { background: rgba(210, 153, 34, .18); color: var(--warn); }
+.sb-conflict-marker .sb-code { color: var(--warn); }
+.sb-side-ours { background: rgba(26, 127, 55, .10); }
+.sb-side-theirs { background: rgba(207, 34, 46, .10); }
+.sb-resolved { box-shadow: inset 3px 0 0 var(--ok); }
+/* 块级选择条：每个冲突块在结果栏顶部一行（不在结果文本里，保存时不会带上）。
+   不做 sticky —— 滚动时多个块的按钮条会一起吸在顶部，分不清是第几处的 */
+.sb-choice-bar {
+  display: flex; align-items: center; gap: 4px; padding: 3px 6px;
+  background: var(--panel2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.sb-choice-bar .mini { padding: 1px 6px; font-size: 11px; }
+/* 结果行双击后的行内输入框：占满代码区，不改变行高 */
+.sb-edit-input {
+  flex: 1; min-width: 0; height: 1.45em; padding: 0 4px;
+  font: inherit; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace);
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 3px;
+}
+.base-details { margin-top: 8px; }
+.base-details summary { cursor: pointer; user-select: none; }
+.base-details[open] summary { margin-bottom: 4px; }
+/* 删除/新增冲突（一侧或两侧没有该文件）：横幅说明"采用这一侧 = 删除文件" */
+.merge-banner {
+  margin-bottom: 6px; padding: 6px 10px; border-radius: 6px; font-size: 12px;
+  color: var(--warn); background: rgba(210, 153, 34, .10);
+  border: 1px solid rgba(210, 153, 34, .35);
+}
+.merge-missing { padding: 16px 12px; color: var(--dim); font-size: 12px; text-align: center; }
 
 /* 语法高亮（浅色主题适配） */
 .hljs-keyword, .hljs-literal, .hljs-selector-tag { color: var(--hl-keyword); }

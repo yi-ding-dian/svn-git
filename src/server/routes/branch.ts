@@ -43,7 +43,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const { vcs } = vcsOf();
         try {
-          sendJson(res, 200, (await vcs.mergeCheck?.(branch)) ?? (await vcs.switchCheck(branch)));
+          // path：svn 只合并分支下某个目录/文件（空=整树）
+          const mergePath = String(url.searchParams.get('path') ?? '').trim() || undefined;
+          sendJson(res, 200, (await vcs.mergeCheck?.(branch, mergePath)) ?? (await vcs.switchCheck(branch)));
         } catch (e) {
           sendJson(res, 500, { error: (e as Error).message });
         }
@@ -74,7 +76,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         else if (action === 'delete') result = await vcs.branchDelete(name, Boolean(body.force), ac.signal);
         else if (action === 'merge') {
-          result = await vcs.merge(name, ac.signal);
+          // path：svn 只合并分支下某个目录/文件（空=整树；git 忽略）
+          result = await vcs.merge(name, String(body.path ?? '').trim() || undefined, ac.signal);
           // 合并成功/冲突都会让工作区状态骤变（C/MERGE_HEAD/干净），一律失效 30s 缓存
           //（冲突时虽然 ok=false，但界面需要立刻显示 C 状态，否则「解决冲突」入口不出现）
           invalidateStatusCache(vcsOf().repo.root);
@@ -168,8 +171,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const action = String(body.action ?? '');
         const targetDir = String(body.targetDir ?? '').trim();
+        const mergePath = String(body.path ?? '').trim() || undefined;
         if (action === 'check') {
-          const plan = await vcs.mergeMainlineCheck?.(targetDir);
+          const plan = await vcs.mergeMainlineCheck?.(targetDir, mergePath);
           if (!plan) {
             sendJson(res, 400, { error: MSG_UNSUPPORTED_OP() });
             return true;
@@ -182,7 +186,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           res.on('close', () => {
             if (!res.writableEnded) ac.abort();
           });
-          const result = (await vcs.mergeMainline?.(targetDir, Boolean(body.autoCommit), ac.signal)) ?? {
+          const result = (await vcs.mergeMainline?.(targetDir, Boolean(body.autoCommit), mergePath, ac.signal)) ?? {
             ok: false,
             message: MSG_UNSUPPORTED_OP(),
           };

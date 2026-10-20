@@ -70,8 +70,12 @@ export const CMDS: Record<string, string> = {
   s_branch_create: 'svn copy ^/trunk ^/branches/%name%',
   // 从当前工作副本目录复制（多项目仓库里 ^/branches 不一定是项目分支目录，直接显示完整目标 URL）
   s_branch_create_from: 'svn copy %from% %target%',
-  s_branch_switch: 'svn switch %branch%',
+  s_branch_switch: 'svn switch ^/branches/%name%',
+  // 主干行：实际切到主干对应路径（如 trunk/src），不是固定名字 trunk
+  s_branch_switch_target: 'svn switch ^/%target%',
   s_branch_merge: 'svn merge ^/branches/%name%',
+  // 只合并分支下某个目录/文件（目录与文件同语法）
+  s_branch_merge_scope: 'svn merge ^/branches/%name%/%path% %path%',
   // 主干合并：来源是主干对应路径（如 trunk/src，由 copyfrom 推断），不是固定的 ^/branches
   s_branch_merge_from: 'svn merge %source%',
   s_branch_delete: 'svn delete ^/branches/%name%',

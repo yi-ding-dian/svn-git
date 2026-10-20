@@ -21,7 +21,19 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const items = (await vcs.status()) as { code: string; path: string }[];
         const conflictPaths = items.filter((i) => i.code === 'C').map((i) => i.path);
         const read = (p: string) => (fs.existsSync(p) ? readTextFile(p) : '');
-        const out: { path: string; ours: string; theirs: string; base: string; work: string; binary: boolean; encoding?: string }[] = [];
+        const out: {
+          path: string;
+          ours: string;
+          theirs: string;
+          base: string;
+          work: string;
+          binary: boolean;
+          /** 该侧在此版本里没有这个文件（一侧删除/未添加的冲突）：空内容 ≠ 空文件，
+           *  界面据此提示"采用这一侧 = 删除文件"，而不是显示一个空栏 */
+          oursExists: boolean;
+          theirsExists: boolean;
+          encoding?: string;
+        }[] = [];
         for (const rel of conflictPaths) {
           const abs = path.join(repo.root, rel);
           // 二进制文件（Word/PDF/图片等）：不读内容（utf8 读取是乱码，对比无意义），界面显示提示块
@@ -29,20 +41,28 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           let ours = '';
           let theirs = '';
           let base = '';
+          let oursExists = true;
+          let theirsExists = true;
           const work = binary ? '' : read(abs);
           if (!binary) {
             if (repo.type === 'git') {
-              const show = async (stage: string): Promise<string> => {
+              const show = async (stage: string): Promise<{ text: string; exists: boolean }> => {
                 // decode: 'auto' —— 这是**内容型**调用点（见 vcs/exec.ts:50 的说明）：
                 // 取出来的是文件内容，可能是 GBK；默认按 UTF-8 硬解会让双栏 diff 整行乱码
                 // （实测：解出 "��һ�� �Է��ĵ�"，正确应为「第一行 本地改的」。
                 //  同一个面板里编辑框走 readTextFile 有探测、是对的，就这半边错 —— 就是这个漏传）
                 const r = await run('git', ['show', `:${stage}:${rel}`], { cwd: repo.root, timeoutMs: 30_000, decode: 'auto' });
-                return r.code === 0 ? r.stdout : '';
+                return { text: r.code === 0 ? r.stdout : '', exists: r.code === 0 };
               };
-              base = await show('1');
-              ours = await show('2');
-              theirs = await show('3');
+              const b = await show('1');
+              const o = await show('2');
+              const th = await show('3');
+              base = b.text;
+              ours = o.text;
+              theirs = th.text;
+              // add/add 冲突没有 stage 1（双方新增）、deleted-by-them 没有 stage 3，以此类推
+              oursExists = o.exists;
+              theirsExists = th.exists;
             } else {
               // svn 冲突文件：xxx.mine（本地）、xxx.r<新>（对方）、xxx.r<旧>（基础）
               const dir = path.dirname(abs);
@@ -58,9 +78,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               } catch {
                 /* ignore */
               }
-              ours = read(abs + '.mine');
-              theirs = rnums.length > 0 ? read(abs + '.r' + rnums[rnums.length - 1]!) : '';
+              const minePath = abs + '.mine';
+              const theirsPath = rnums.length > 0 ? abs + '.r' + rnums[rnums.length - 1]! : '';
+              ours = read(minePath);
+              theirs = theirsPath ? read(theirsPath) : '';
               base = rnums.length > 1 ? read(abs + '.r' + rnums[0]!) : '';
+              oursExists = fs.existsSync(minePath);
+              theirsExists = !!theirsPath && fs.existsSync(theirsPath);
             }
           }
           // 编码提示：非 UTF-8（GBK 等）时告诉前端一声，手动编辑框据此挂警告条 ——
@@ -76,7 +100,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               /* 读不到（已删除等）：不提示 */
             }
           }
-          out.push({ path: rel, ours, theirs, base, work, binary, encoding });
+          out.push({ path: rel, ours, theirs, base, work, binary, oursExists, theirsExists, encoding });
         }
         sendJson(res, 200, { conflicts: out });
         return true;
@@ -192,6 +216,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
         }
         if (repo.type === 'git') {
+          // 采用"没有该文件的那一侧"时用 git rm 解决（git rm 已经把删除暂存了，
+          // 下面不能再 git add —— 对已删除路径 `git add <path>` 会报 "pathspec did not match"）
+          let removed = false;
           if (mode === 'manual') {
             const w = writeTextKeepEncoding(abs, content);
             if (!w.ok) {
@@ -200,12 +227,31 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             }
           } else {
             const side = mode === 'ours' ? '--ours' : '--theirs';
-            const co = await run('git', ['checkout', side, rel], { cwd: repo.root, timeoutMs: 30_000 });
-            if (co.code !== 0) {
-              // 取用失败
-              sendJson(res, 200, { ok: false, message: co.stderr.trim() || t('srv.takeFailed') });
-              return true;
+            const stage = mode === 'ours' ? '2' : '3';
+            // 该侧在合并里没有这个文件（对方删了 / 我方新增之类）：采用它 = 从工作区删掉文件。
+            // 直接 checkout 会报错（stage 不存在），所以先把"存在性"本身当作选择的一部分。
+            const probe = await run('git', ['show', `:${stage}:${rel}`], { cwd: repo.root, timeoutMs: 15_000 });
+            if (probe.code !== 0) {
+              const rm = await run('git', ['rm', '-f', '--', rel], { cwd: repo.root, timeoutMs: 30_000 });
+              if (rm.code !== 0) {
+                sendJson(res, 200, { ok: false, message: rm.stderr.trim() || t('srv.takeFailed') });
+                return true;
+              }
+              removed = true;
+            } else {
+              const co = await run('git', ['checkout', side, rel], { cwd: repo.root, timeoutMs: 30_000 });
+              if (co.code !== 0) {
+                // 取用失败
+                sendJson(res, 200, { ok: false, message: co.stderr.trim() || t('srv.takeFailed') });
+                return true;
+              }
             }
+          }
+          if (removed) {
+            return runVcs(ctx, () => ({
+              ok: true,
+              message: t('srv.resolved', { path: rel, how: mode === 'ours' ? t('srv.takeOurs') : t('srv.takeTheirs') }),
+            }));
           }
           const added = await vcs.add([rel]);
           // git add 为纯本地操作（无网络认证），authErrorOf 恒 false——与原固定 authError:false 等价

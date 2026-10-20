@@ -16,6 +16,9 @@ export interface DiffLine {
   leftNo: number;
   rightNo: number;
   block: number;
+  /** 所属 hunk 序号（从 0 起）：行级配对只在同一 hunk 内进行。
+   *  跨 hunk 的删除段/新增段是两处独立改动，不能互相配成「修改」。 */
+  hunk: number;
 }
 
 /** 行级变更标记：M 修改 / + 新增 / - 删除 */
@@ -32,7 +35,12 @@ const MAX_PAIR_CELLS = 40000;
 /** 相似度以千分整数参与 DP，回溯时做整数相等比较（浮点相加的误差会让回溯选错分支） */
 const SCALE = 1000;
 
-/** 解析 unified diff。block 为变更块编号（上下文行为 -1）；同一块内先删后增是格式惯例。 */
+/** 解析 unified diff。block 为变更块编号（上下文行为 -1）；同一块内先删后增是格式惯例。
+ *
+ *  空行间隔合并：连续新增/删除段之间若只隔着**空白上下文行**，git 会把 BASE 里的空行
+ *  与新增段里的空行配对成"未改动行"，从而把一段连续改动拆成多块（左栏占位行因此被
+ *  空行切成几截）。这里对这种情况沿用上一个块号，让导航/连接带/折叠/还原按一整块处理；
+ *  隔着实打实代码的上下文行仍然分开。 */
 export function parseUnifiedDiff(text: string): DiffLine[] {
   const out: DiffLine[] = [];
   let leftNo = 0;
@@ -40,34 +48,56 @@ export function parseUnifiedDiff(text: string): DiffLine[] {
   let block = 0;
   let blockOpen = false;
   let inHunk = false;
+  /** hunk 序号：行级配对按它区分「同一处改动的两个块」与「两处独立改动」 */
+  let hunkIndex = -1;
+  /** 自上一个改动行以来的上下文行数，以及它们是否全为空白行（用于空行合并判断） */
+  let gapCount = 0;
+  let gapAllBlank = false;
+  /** 当前 hunk 内是否已经开过块：跨 hunk 绝不合并（新 hunk 开头的空上下文行不能算作间隔） */
+  let blockInHunk = false;
+  /** 进入新改动段：空行间隔时沿用上一块号，否则开新块 */
+  const openBlock = () => {
+    if (blockInHunk && gapCount > 0 && gapAllBlank && block > 0) {
+      // 同一 hunk 内只隔空白行：并回上一块
+    } else {
+      block += 1;
+    }
+    blockOpen = true;
+    blockInHunk = true;
+    gapCount = 0;
+    gapAllBlank = false;
+  };
   for (const raw of text.split('\n')) {
     const hunk = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)/);
     if (hunk && hunk[1] && hunk[2]) {
       leftNo = Number(hunk[1]);
       rightNo = Number(hunk[2]);
       inHunk = true;
+      hunkIndex += 1;
       blockOpen = false;
+      // 跨 hunk 不合并：两个 hunk 之间隔着超过 2×上下文行的内容
+      blockInHunk = false;
+      gapCount = 0;
+      gapAllBlank = false;
       continue;
     }
     if (!inHunk) continue;
     const ch = raw[0];
     if (ch === ' ') {
-      out.push({ text: raw.slice(1), type: 'ctx', leftNo: leftNo++, rightNo: rightNo++, block: -1 });
+      const lineText = raw.slice(1);
+      out.push({ text: lineText, type: 'ctx', leftNo: leftNo++, rightNo: rightNo++, block: -1, hunk: hunkIndex });
       blockOpen = false;
+      gapCount += 1;
+      // 用 trim：CRLF 文件的上下文行文本末尾带 \r
+      gapAllBlank = gapCount === 1 ? lineText.trim() === '' : gapAllBlank && lineText.trim() === '';
     } else if (ch === '-') {
-      if (!blockOpen) {
-        block += 1;
-        blockOpen = true;
-      }
-      out.push({ text: raw.slice(1), type: 'del', leftNo: leftNo++, rightNo: 0, block });
+      if (!blockOpen) openBlock();
+      out.push({ text: raw.slice(1), type: 'del', leftNo: leftNo++, rightNo: 0, block, hunk: hunkIndex });
     } else if (ch === '+') {
       // 注意：这里同样看 blockOpen——由删转增时不另开块（同一处替换的删与增同块），
       // 只有上下文行才重置 blockOpen。块号语义被导航/滚动条/占位行复用，不可更改。
-      if (!blockOpen) {
-        block += 1;
-        blockOpen = true;
-      }
-      out.push({ text: raw.slice(1), type: 'add', leftNo: 0, rightNo: rightNo++, block });
+      if (!blockOpen) openBlock();
+      out.push({ text: raw.slice(1), type: 'add', leftNo: 0, rightNo: rightNo++, block, hunk: hunkIndex });
     } else if (ch === '\\') {
       /* 无换行符提示，忽略 */
     } else {
@@ -175,16 +205,16 @@ function pairRows(dels: DiffLine[], adds: DiffLine[]): Array<[number, number]> {
  * 行级变更标记：逐行给出 M / + / -，同一块内可以混合出现。
  * - 纯新增块 → 全部 add；纯删除块 → 全部 del
  * - 有删有加 → 逐行相似度配对：配上的（删行,增行）都是 mod，落单的按各自类型标
- * - 纯删除块紧跟纯新增块（块号连续）→ 同一处替换，合并两段一起配对
- *   （与旧块级口径的配对范围一致，只是判定细化到了行）
+ * - 纯删除块紧跟纯新增块（块号连续且**同一 hunk**）→ 同一处替换，合并两段一起配对
+ *   （跨 hunk 的是两处独立改动，绝不配对——否则删除行会被误标 M、删除占位数也会算少）
  */
 export function lineMarksOf(lines: DiffLine[]): Map<DiffLine, LineMark> {
-  const blocks = new Map<number, { dels: DiffLine[]; adds: DiffLine[] }>();
+  const blocks = new Map<number, { dels: DiffLine[]; adds: DiffLine[]; hunk: number }>();
   for (const l of lines) {
     if (l.block < 0) continue; // 上下文行不属于任何块
     let b = blocks.get(l.block);
     if (!b) {
-      b = { dels: [], adds: [] };
+      b = { dels: [], adds: [], hunk: l.hunk };
       blocks.set(l.block, b);
     }
     if (l.type === 'del') b.dels.push(l);
@@ -197,11 +227,11 @@ export function lineMarksOf(lines: DiffLine[]): Map<DiffLine, LineMark> {
     const b = blocks.get(id)!;
     const dels = b.dels;
     let adds = b.adds;
-    // 纯删除块后紧跟纯新增块（编号连续 ⇒ 中间只隔了上下文行）→ 合并配对
+    // 纯删除块后紧跟纯新增块（编号连续、同一 hunk ⇒ 同一处替换）→ 合并配对
     const nextId = ids[i + 1];
     if (dels.length > 0 && adds.length === 0 && nextId === id + 1) {
       const nb = blocks.get(nextId)!;
-      if (nb.dels.length === 0 && nb.adds.length > 0) {
+      if (nb.dels.length === 0 && nb.adds.length > 0 && nb.hunk === b.hunk) {
         adds = nb.adds;
         i++; // 下一个块已并入本次处理
       }

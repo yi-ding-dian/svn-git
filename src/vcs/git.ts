@@ -91,7 +91,13 @@ function parseGitLog(stdout: string): LogEntry[] {
   return out;
 }
 
-/** git porcelain 状态码 -> 统一语义码 */
+/** git 未合并（冲突）状态：porcelain v1 的**两列组合**，共 7 种。
+ *  注意不能按单列映射 —— `AA`（双方新增）按列拆开是 A+A，会被当成"新增"，
+ *  于是 add/add、delete/delete 这类冲突在文件列表里没有 C 标、也不会进「解决冲突」列表
+ *  （用户实报：add/add 冲突文件根本没出现在解决器里）。 */
+const UNMERGED = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
+
+/** git porcelain 状态码（单列） -> 统一语义码 */
 function mapCode(x: string): string {
   switch (x) {
     case 'M':
@@ -104,12 +110,6 @@ function mapCode(x: string): string {
     case '?':
       return '?';
     case 'U':
-    case 'AA':
-    case 'DD':
-    case 'AU':
-    case 'UA':
-    case 'UD':
-    case 'DU':
       return 'C';
     case 'R':
       return 'R';
@@ -303,7 +303,8 @@ export class GitVcs {
       if (relPath.endsWith('/')) relPath = relPath.slice(0, -1);
       const main = mapCode(xy[0] ?? ' ');
       const wc = mapCode(xy[1] ?? ' ');
-      let code = main === ' ' ? wc : main;
+      // 未合并状态整对判断：AA/DD/AU/UA/UD/DU 拆成单列会丢掉"冲突"语义
+      let code = UNMERGED.has(xy) ? 'C' : main === ' ' ? wc : main;
       // worktree 列删除(" D"=磁盘删除,index/版本库还在)是「缺失」而非版本控制删除：
       // 更新(git pull/checkout)即可恢复，与 svn 的 '!' 语义一致；只有 index 列 D(git rm)才是真删除
       if (code === 'D' && xy[0] !== 'D') code = '!';
@@ -1197,7 +1198,7 @@ export class GitVcs {
   /** 合并分支到当前分支。
    *  提示一律"说人话"：不带分支名看不出合的是谁，不区分"已是最新"会让人以为合了（其实什么都没发生），
    *  冲突时只丢一句"可能有冲突"还得自己去翻——下面按 git 的真实输出分情况给结果。 */
-  async merge(name: string, signal?: AbortSignal): Promise<VcsResult> {
+  async merge(name: string, _pathRel?: string, signal?: AbortSignal): Promise<VcsResult> {
     // 当前分支名（提示里要说清"合并进哪个分支"）。用 rev-parse --abbrev-ref 而不是 branch --show-current：
     // 后者是 git 2.22+ 才有的，本机 2.20.1 会报 unknown option（实测）。分离头指针时它返回 "HEAD"
     const curRaw = await this.exec(['rev-parse', '--abbrev-ref', 'HEAD']);

@@ -89,11 +89,26 @@ export const hist = {
   // Show all (left pane expands from diff fragments to the full file; Sync Scroll only appears then)
   'hist.showAll': 'Show All',
   'hist.showAllTip': 'Expand the left pane to the full file (unchanged lines shown flat; diff lines still marked)',
+  // Large block folding: blocks over the threshold show the first 10 lines plus one summary row in the right pane; click to expand
+  'hist.rowsFolded': '+{n} more line(s) (click to expand)',
+  'hist.foldTail': '− Collapse',
+  'hist.foldExpandTip': 'Expand the full contents of this block',
+  'hist.foldCollapseTip': 'Collapse this block',
   // Collapse search (drag the edge narrow past the threshold and release; shown while dragging)
   'hist.releaseToCollapse': 'Release to collapse the search box',
   // Edit in place (edit the working-tree file right in the right pane; jumps to the current change)
   'hist.editInPlaceTip': 'Edit the file in place (jumps to the current change; re-compares automatically after saving)',
   'hist.arrowKeyBack': '← to go back',
+
+  // ---- Per-block restore (arrow next to a diff block: revert this block in the working tree) ----
+  'hist.restoreBlockTip': 'Restore this block (revert this part of the working tree to the original)',
+  'hist.restoreBlockTitle': 'Restore Block',
+  'hist.restoreBlockMsgAdd': 'The {n} added line(s) in the working tree will be removed. Other changes are unaffected. Restore?',
+  'hist.restoreBlockMsgDel': 'The {n} line(s) deleted from the original will be written back to the working tree. Other changes are unaffected. Restore?',
+  'hist.restoreBlockMsgMod': 'The {a} line(s) in the working tree will be replaced with the original {d} line(s). Other changes are unaffected. Restore?',
+  'hist.restoreBlockConfirm': 'Restore',
+  'hist.restoreDone': 'Block restored',
+  'hist.restoreStale': 'The file changed externally; reload the comparison before restoring',
 
   // ---- 文件外部更新提示（stale）----
   'hist.fileChanged': '⚠ The file has changed. Reload it?',
