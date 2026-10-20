@@ -15,7 +15,7 @@ import { t } from '../shared/i18n/index.js';
 import { isSafeOrigin, sendJson, readBody, isAuthError, type Ctx } from './routes/util.js';
 import { handle as handleConflicts } from './routes/conflicts.js';
 import { handle as handleBranch } from './routes/branch.js';
-import { handle as handleOps } from './routes/ops.js';
+import { handle as handleOps } from './routes/ops/index.js';
 import { handle as handleStage } from './routes/stage.js';
 import { handle as handleBrowse } from './routes/browse.js';
 import { handle as handleHost } from './routes/host.js';
