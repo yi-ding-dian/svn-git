@@ -1,5 +1,6 @@
 /** 版本管理扩展功能测试：分支/标签/Stash/合并/清理/Blame/忽略/锁定/创建仓库 */
 import path from 'node:path';
+import os from 'node:os';
 import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { run } from '../dist/vcs/exec.js';
@@ -261,6 +262,82 @@ console.log('== SVN 合并预检 mergeCheck ==');
   await run('svn', ['update', '-q'], { cwd: SVN_DIR });
   mc = await vcs.mergeCheck('any');
   check('更新后 outdated=null', !mc.outdated);
+}
+
+console.log('== Git 远程缓存失效（pull / 切分支 / 合并后立即重查）==');
+{
+  // 本地裸仓库充当 origin：不依赖网络，也能把"操作前先让 60s 缓存记住旧 behind"这条路走一遍。
+  // 回归的是：pull / branchSwitch / merge 成功后必须主动失效 remoteCache，否则界面在缓存
+  // 过期前仍显示旧的 ↓ 数字（用户实报"更新完仍显示 ↓12"）。
+  const REMOTE_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'svngit-remote-'));
+  try {
+    const origin = path.join(REMOTE_BASE, 'origin.git');
+    const seed = path.join(REMOTE_BASE, 'seed');
+    const w1 = path.join(REMOTE_BASE, 'w1');
+    const w2 = path.join(REMOTE_BASE, 'w2');
+    const git = (cwd, args) => run('git', args, { cwd });
+    fs.mkdirSync(seed, { recursive: true });
+    await git(REMOTE_BASE, ['init', '--bare', '-q', origin]);
+    await git(seed, ['init', '-q']); // -b 需 git>=2.28，分支名从 symbolic-ref 取
+    await git(seed, ['config', 'user.email', 'test@svngit.local']);
+    await git(seed, ['config', 'user.name', 'svngit-test']);
+    fs.writeFileSync(path.join(seed, 'a.txt'), '1\n');
+    await git(seed, ['add', '.']);
+    await git(seed, ['commit', '-qm', 'c1']);
+    const mainBranch = (await git(seed, ['symbolic-ref', '--short', 'HEAD'])).stdout.trim();
+    await git(seed, ['remote', 'add', 'origin', origin]);
+    await git(seed, ['push', '-qu', 'origin', mainBranch]);
+    await git(REMOTE_BASE, ['clone', '-q', origin, w1]);
+    await git(REMOTE_BASE, ['clone', '-q', origin, w2]);
+    for (const w of [w1, w2]) {
+      await git(w, ['config', 'user.email', 'test@svngit.local']);
+      await git(w, ['config', 'user.name', 'svngit-test']);
+    }
+
+    // 1) pull：缓存里记着 behind=1，拉完立即重查必须是 0
+    fs.writeFileSync(path.join(w2, 'a.txt'), '2\n');
+    await git(w2, ['commit', '-aqm', 'c2']);
+    await git(w2, ['push', '-q']);
+    const vcsPull = new GitVcs(detectRepo(w1));
+    const beforePull = await vcsPull.preflight();
+    check('pull 前 behind=1', beforePull.behind === 1, `behind=${beforePull.behind}`);
+    const pulled = await vcsPull.pull();
+    check('pull 成功', pulled.ok, pulled.message);
+    check('pull 后立即重查 behind=0', (await vcsPull.preflight()).behind === 0);
+
+    // 2) 切分支：本地 feature 停在 f1，远端已到 f2 → 切过去后必须是 1（不能沿用 master 的 0）
+    await git(w2, ['checkout', '-qb', 'feature']);
+    fs.writeFileSync(path.join(w2, 'b.txt'), 'x\n');
+    await git(w2, ['add', '.']);
+    await git(w2, ['commit', '-qm', 'f1']);
+    await git(w2, ['push', '-qu', 'origin', 'feature']);
+    await git(w1, ['fetch', '-q', 'origin']);
+    await git(w1, ['branch', '-q', 'feature', 'origin/feature']);
+    fs.writeFileSync(path.join(w2, 'b.txt'), 'y\n');
+    await git(w2, ['commit', '-aqm', 'f2']);
+    await git(w2, ['push', '-q']);
+    const vcsSwitch = new GitVcs(detectRepo(w1));
+    await vcsSwitch.preflight(); // 先把 master 的 behind=0 写进缓存
+    const sw1 = await vcsSwitch.branchSwitch('feature');
+    check('切到 feature 成功', sw1.ok, sw1.message);
+    check('切到落后分支后立即重查 behind=1', (await vcsSwitch.preflight()).behind === 1);
+    const sw2 = await vcsSwitch.branchSwitch(mainBranch);
+    check('切回主干成功', sw2.ok, sw2.message);
+    check('切回主干后立即重查 behind=0', (await vcsSwitch.preflight()).behind === 0);
+
+    // 3) 合并：缓存 behind=1，合并完立即重查必须是 0
+    await git(w2, ['checkout', '-q', mainBranch]);
+    fs.writeFileSync(path.join(w2, 'a.txt'), '3\n');
+    await git(w2, ['commit', '-aqm', 'c3']);
+    await git(w2, ['push', '-q']);
+    const vcsMerge = new GitVcs(detectRepo(w1));
+    check('合并前 behind=1', (await vcsMerge.preflight()).behind === 1);
+    const merged = await vcsMerge.merge(`origin/${mainBranch}`);
+    check('合并成功', merged.ok, merged.message);
+    check('合并后立即重查 behind=0', (await vcsMerge.preflight()).behind === 0);
+  } finally {
+    fs.rmSync(REMOTE_BASE, { recursive: true, force: true });
+  }
 }
 
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);

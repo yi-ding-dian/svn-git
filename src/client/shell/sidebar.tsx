@@ -131,6 +131,9 @@ export function Sidebar(props: {
   /** 顶栏「刷新」信号（App 的 tick 递增）：重跑一轮状态探测——当前项目**强制绕过后端
    *  30s 缓存**（刚提交/改文件后点刷新，↑● 角标必须立刻准，用户实报"刷新后 ↑18 还是旧的"） */
   refreshTick?: number;
+  /** 远程状态重算信号（App 在更新/切分支/合并成功后递增）：重跑「远程检查」。
+   *  与 refreshTick 分开：后者连文件操作都会变，不能每次都触发一批联网探测。 */
+  remoteCheckTick?: number;
   onNav: (v: View) => void;
   onOpenHistory: (h: { path: string }) => void;
   onRemoveHistory: (path: string) => void;
@@ -223,8 +226,10 @@ export function Sidebar(props: {
     return () => {
       alive = false;
     };
+    // remoteCheckTick：更新/切分支/合并后重跑一轮——这几种操作会改变 behind，而本 effect
+    // 原先只在项目清单变化时跑，拉取成功后 ⬇ 角标会一直停在旧数字（用户实报）
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyKey]);
+  }, [historyKey, props.remoteCheckTick]);
   // 点 ⬇ 就地更新该项目（**后台任务**——与推送/检出/更新同套）：飞行线从 ⬇ 按钮起飞，
   // 沙漏 / 任务面板可取消；完成/失败走统一通知（气泡 + 铃铛）。busy 态（⏳）由任务查询得出
   const tasks = useTasks();

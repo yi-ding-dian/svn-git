@@ -45,6 +45,9 @@ export function App() {
   const repo = info?.type ? info : null;
   const [view, setView] = useState<View>('browse');
   const [tick, setTick] = useState(0);
+  /** 远程状态重算信号（更新/切分支/合并成功后 +1）：侧边栏据此重跑「远程检查」。
+   *  与 tick 分开——tick 连文件保存都会加，不能每次都触发一批联网探测。 */
+  const [remoteCheckTick, setRemoteCheckTick] = useState(0);
   const [toast, setToast] = useState('');
   const [toastErr, setToastErr] = useState(false);
   /** 轻提示（1.5s 消失；重复操作提醒等"扫一眼就够"的）——见 showToast 的 quick 参数 */
@@ -163,8 +166,10 @@ export function App() {
     }
   }, [bgTasks]);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback((opts?: { remote?: boolean }) => {
     setTick((t) => t + 1);
+    // 更新/切分支/合并：连侧边栏的「远程检查」一起重跑（它有自己的 state，不重探就停在旧值）
+    if (opts?.remote) setRemoteCheckTick((t) => t + 1);
     void refreshUnpushed();
     void refreshStash();
     // 远程提示条也一并重查（否则侧栏 ⬇ 拉完当前项目后，顶部横条/⬇ 角标（三源取大里的
@@ -725,10 +730,11 @@ export function App() {
           try {
             const r = await post.update(dir || undefined, signal);
             if (r.ok) {
-              refresh();
+              // remote: 连侧栏的「远程检查」一起重跑——它的 ⬇ 角标有三个来源，只刷顶栏
+              // remoteHint 的话，旧的 remoteProbe 值会继续把角标撑在 12（用户实报）
+              refresh({ remote: true });
               // 更新带来的文件行「落座」（animations 动画域）：从上方滑入 + 左侧绿竖条标记新入列
               settleUpdatedRows(r.files?.map((f) => f.path) ?? []);
-              checkRemote(); // 更新完成立即刷新远程提示条（否则要等下一轮 2 分钟轮询）
               get.info().then((ri) => setInfo(ri)).catch(() => {}); // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]）
             }
             if (r.authError) setModal({ type: 'login' });
@@ -747,7 +753,7 @@ export function App() {
       // 进度轮询（git 拉取才有数据；svn update 那侧后端一直 ok=false，面板自然不显示进度条）
       stopPoll = pollTransferProgress(taskId, 'pull');
     },
-    [refresh, checkRemote, showToast, repo?.root, repo?.revOrBranch]
+    [refresh, showToast, repo?.root, repo?.revOrBranch]
   );
 
   // 提交失败弹窗：所有提交失败统一弹窗确认（不再 5 秒 toast 一闪而过）；
@@ -1092,6 +1098,9 @@ export function App() {
               currentRoot={repo?.root}
               // 顶栏「刷新」信号：侧边栏重跑状态探测（当前项目绕过后端缓存——刚提交后点刷新，↑ 角标立刻准）
               refreshTick={tick}
+              // 远程状态重算信号（更新/切分支/合并后 +1）：侧栏据此重跑一遍「远程检查」，
+              // 否则 ⬇ 角标会停在操作前的数（后端缓存虽已失效，前端不重探也看不到）
+              remoteCheckTick={remoteCheckTick}
               // 当前项目的"远程有新提交"（preflight 实时检查结果，顶部提示条同源）——
               // 侧边栏当前项目条目据此显示 ⬇（SVN 项目本地探测拿不到 behind，靠这条补上）
               remoteBehind={remoteHint?.behind ?? 0}

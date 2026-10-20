@@ -7,6 +7,7 @@ import {
   sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached, runVcs, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS, writeTextKeepEncoding, isBinaryFile,
 } from './util.js';
 import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile, invalidateSvnIgnoreMap } from '../../vcs/ignore.js';
+import { invalidateRemoteProbe } from './recent.js';
 import type { Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
 import { detectTextEncoding, decodeText, encodeText, type TextEncoding } from '../../shared/text.js';
@@ -142,7 +143,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           });
           result = (await vcs.push?.(ac.signal)) ?? { ok: false, message: MSG_UNSUPPORTED_OP() };
         }
-        if (result.ok) invalidateStatusCache(repo.root); // 状态改变 → 失效 30s 缓存,否则新文件过滤仍显示旧 ?/M
+        if (result.ok) {
+          invalidateStatusCache(repo.root); // 状态改变 → 失效 30s 缓存,否则新文件过滤仍显示旧 ?/M
+          // update 后工作副本版本已变：最近项目的"远程检查"缓存也要失效，否则侧栏 ⬇ 角标
+          // 要等 60s 过期才归零（拉取成功后界面仍显示"↓12"，用户实报）
+          if (p === '/api/update') invalidateRemoteProbe(repo.root);
+        }
         sendJson(res, 200, {
           ...(result as object),
           path: p === '/api/update' ? String(body.path ?? '') : undefined,

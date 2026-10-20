@@ -115,7 +115,8 @@ export interface ModalHostProps {
     doCommit: (paths: string[], msg: string) => Promise<unknown>;
     doCommitSelected: (paths: string[], msg: string, stagedOnly?: string[]) => Promise<unknown>;
     runOp: (op: Op, paths: string[]) => void;
-    refresh: () => void;
+    /** remote=true：连侧边栏的「远程检查」一起重跑（更新/切分支/合并后） */
+    refresh: (opts?: { remote?: boolean }) => void;
     /** 刷新最近项目列表；返回 Promise（检出完成的降落动画要等列表渲染完再定位目标项） */
     loadHistory: () => Promise<void>;
     gotoDiff: (path: string, a?: string, b?: string) => void;
@@ -136,7 +137,9 @@ export function ModalHost(props: ModalHostProps) {
    *  不显式重拉就停留在旧值（用户实报：`git branch -m` 后顶栏挂着旧分支名；
    *  GitHub 新建仓库成功后顶栏不显示仓库地址） */
   const refreshInfo = () => {
-    refresh();
+    // remote=true：分支切换/合并会改变"相对上游的 behind"，侧栏 ⬇ 角标必须跟着重探
+    //（其它走 refreshInfo 的操作多探一次也无妨——后端 60s 缓存挡着，只有刚变过的仓库会真联网）
+    refresh({ remote: true });
     get.info().then((r) => setInfo(r)).catch(() => {});
   };
 

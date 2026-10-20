@@ -818,6 +818,9 @@ export class GitVcs {
     const remotes = await this.remoteList();
     // 此仓库未配置远程（origin），无法拉取更新。
     if (remotes.length === 0) return { ok: false, message: t('vcs.noRemotePull') };
+    // pull 内含 fetch：即便合并失败/取消，origin/* 引用也可能已前移——先作废旧缓存，
+    // 保证"拉取成功后立即重查"一定拿到新值（顶栏横条 / 侧栏 ⬇ 角标才能立刻消失）
+    this.invalidatePreflight();
     // -c core.quotepath=false：更新输出的中文文件名不做八进制转义
     let res = await this.exec(['-c', 'core.quotepath=false', 'pull'], { timeoutMs: 600_000, signal });
     // 更新已取消
@@ -1166,6 +1169,8 @@ export class GitVcs {
         const res = await this.exec(['checkout', '-b', local, name], { timeoutMs: 60_000, signal });
         // 切换分支失败
         if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.switchBranchFailed') };
+        // 当前分支变了，上游跟着变：旧的 behind/ahead 不能再用（否则横条/⬇ 角标停在旧分支的数）
+        this.invalidatePreflight();
         // 已切换到 {name}（自动创建本地跟踪分支 {local}）
         return { ok: true, message: t('vcs.switchedWithTracking', { name, local }) };
       }
@@ -1174,6 +1179,8 @@ export class GitVcs {
     const res = await this.exec(['checkout', name], { timeoutMs: 60_000, signal });
     // 切换分支失败
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.switchBranchFailed') };
+    // 当前分支变了，上游跟着变（同上）
+    this.invalidatePreflight();
     // 已切换到 {name}
     return { ok: true, message: t('vcs.switchedTo', { name }) };
   }
@@ -1198,6 +1205,9 @@ export class GitVcs {
     // 当前分支
     const cur = !curName || curName === 'HEAD' ? t('vcs.currentBranch') : curName;
     const res = await this.exec(['merge', name], { timeoutMs: 120_000, signal });
+    // 合并会移动当前分支 HEAD（快进或合并提交），相对上游的 ahead/behind 随之变化；
+    // 冲突时 HEAD 虽未动，清一次也无害（错误分支上的旧值同样不能再展示）
+    this.invalidatePreflight();
     const out = res.stdout;
     const err = res.stderr;
 
@@ -1489,6 +1499,14 @@ export class GitVcs {
   /** 远程信息（fetch + ahead/behind + 远程变更文件/提交列表）：带缓存
    * 成功缓存 60s（远程提示存在即可，提交不必每次拉最新）；失败缓存 10s（弱网防连环挂起 15s） */
   private remoteCache: { time: number; ok: boolean; behind: number; ahead: number; updatedFiles: string[]; remoteLogs: LogEntry[] } | null = null;
+
+  /** 失效远程检查缓存（pull / 切分支 / 合并后调用）：这几种操作都会移动 HEAD 或改写
+   *  origin/* 引用，旧的 ahead/behind 不再对应当前分支。不清的话"操作完成立即重查"会命中
+   *  60s 缓存——顶栏横条与侧栏 ⬇ 角标继续挂着旧数字（用户实报"更新完仍显示 ⬇12"）。 */
+  invalidatePreflight(): void {
+    this.remoteCache = null;
+  }
+
   private async remoteCheck() {
     const now = Date.now();
     const c = this.remoteCache;

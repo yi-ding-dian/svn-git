@@ -1,5 +1,6 @@
 /** 版本管理扩展域端点：branches / branch / tags / tag / stash / git 子操作 */
 import { sendJson, readBody, vcsOf, authErrorOf, invalidateStatusCache, runVcs, MSG_UNSUPPORTED_OP } from './util.js';
+import { invalidateRemoteProbe } from './recent.js';
 import { t } from '../../shared/i18n/index.js';
 import type { VcsResult } from '../../vcs/index.js';
 import type { Ctx } from './util.js';
@@ -65,7 +66,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         else if (action === 'switch') {
           result = await vcs.branchSwitch(name, ac.signal);
           // svn switch 会改写工作副本文件（回主干等）；git checkout 后工作区内容换分支——防旧状态残留
-          if (result.ok) invalidateStatusCache(vcsOf().repo.root);
+          if (result.ok) {
+            invalidateStatusCache(vcsOf().repo.root);
+            // 分支变了，远端"待拉取"数也随之变（三源取大里的 remoteProbe）——不清会挂着旧分支的 ⬇ 角标
+            invalidateRemoteProbe(vcsOf().repo.root);
+          }
         }
         else if (action === 'delete') result = await vcs.branchDelete(name, Boolean(body.force), ac.signal);
         else if (action === 'merge') {
@@ -73,6 +78,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           // 合并成功/冲突都会让工作区状态骤变（C/MERGE_HEAD/干净），一律失效 30s 缓存
           //（冲突时虽然 ok=false，但界面需要立刻显示 C 状态，否则「解决冲突」入口不出现）
           invalidateStatusCache(vcsOf().repo.root);
+          // 合并改变当前分支内容（git 快进/合并提交；svn 工作副本），远程待拉取数同样要重算
+          invalidateRemoteProbe(vcsOf().repo.root);
         }
         else if (action === 'merge-abort') {
           // 当前仓库不支持中止合并

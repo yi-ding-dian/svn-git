@@ -102,6 +102,18 @@ function addHistory(entry: { path: string; type: 'svn' | 'git' }): void {
  *  preflight 自带超时（git fetch 15s / svn status -u 20s）与失败快速返回 — 不会卡请求；
  *  缓存：成功 60s / 失败 20s（打开侧边栏会成批请求，挡住重复联网）。 */
 const remoteCheckCache = new Map<string, { at: number; ok: boolean; behind: number }>();
+
+/** 失效某项目的远程检查缓存（更新 / 切分支 / 合并成功后调用）。
+ *  这些操作会让 remoteProbeAny 再算出的 behind 与缓存不一致；不清的话侧边栏 ⬇ 角标
+ *  最多要等 60s 缓存过期才归零（用户实报"更新完仍显示 ⬇12"）。
+ *  按 realpath 比对键值：历史里存的是打开时的目录，可能是仓库根的上级/子目录。 */
+export function invalidateRemoteProbe(dir: string): void {
+  const real = realpathSafe(dir);
+  for (const key of remoteCheckCache.keys()) {
+    if (key === dir || realpathSafe(key) === real) remoteCheckCache.delete(key);
+  }
+}
+
 async function remoteProbeAny(dir: string): Promise<{ behind?: number; error?: string }> {
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return { error: 'unavailable' };
   const repo = detectRepo(dir);
@@ -163,7 +175,7 @@ async function pullAny(
         // 当前仓库不支持更新
         : ((await vcs.update?.(undefined, signal)) ?? { ok: false, message: t('srv.updateUnsupported') });
     if (r.ok) {
-      remoteCheckCache.delete(dir); // 拉完重算（缓存失效）
+      invalidateRemoteProbe(dir); // 拉完重算（缓存失效）
       // 拉的正好是当前打开的仓库：当前会话单例（顶栏 preflight / 侧栏 ⬇ 都读它）的缓存
       // 也失效——本函数用的是临时实例，单例自己没经手这次 update；不清的话前端"拉完立即
       // 重查"会命中旧 behind，⬇ 角标/顶栏横条最多滞后 1 分钟才消失（用户实报）

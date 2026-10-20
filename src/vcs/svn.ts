@@ -1217,6 +1217,9 @@ export class SvnVcs {
       // 切换分支失败
       return this.fail(auth, res.stderr.trim() || t('vcs.switchBranchFailed'));
     }
+    // 工作副本 URL 变了：status -u 的"待更新"结果整个作废——不清的话切完分支仍挂着
+    // 上一分支的 behind（顶栏横条 / 侧栏 ⬇ 角标不消失）
+    this.invalidatePreflight();
     // 已切换到主干 / 已切换到分支 {name}
     const base = name === 'trunk' || name === 'root' ? t('vcs.switchedToTrunk') : t('vcs.switchedToBranch', { name });
     // svn switch 遇文本冲突时退出码仍为 0，需从输出识别冲突并提示用户处理
@@ -1238,6 +1241,8 @@ export class SvnVcs {
       // 合并失败（可能有冲突）
       return this.fail(auth, res.stderr.trim() || t('vcs.mergeFailedMaybeConflict'));
     }
+    // 工作副本内容/版本已变：待更新结果可能随之变化（同 update，见上方 invalidatePreflight 的说明）
+    this.invalidatePreflight();
     // 已合并分支 {name} 的改动（主干显示其相对路径，如 trunk/src）
     const base = t('vcs.mergedBranch', { name: isTrunk ? this.relOf(source, root) : branchName });
     // svn merge 遇文本冲突退出码仍为 0，需从输出识别冲突并提示用户处理
