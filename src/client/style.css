@@ -13,6 +13,16 @@
   --hl-attr: #0550ae;
   --hl-meta: #1a7f37;
   --hl-section: #8250df;
+  /* 并排对比连接带：固定 rgba（不用 color-mix——旧浏览器不认识会让 SVG fill 回落成黑色）。
+     深色主题在下方统一覆盖为亮色版。 */
+  --link-del-fill: rgba(207, 34, 46, .13);
+  --link-del-line: rgba(207, 34, 46, .50);
+  --link-add-fill: rgba(26, 127, 55, .13);
+  --link-add-line: rgba(26, 127, 55, .50);
+  --link-mod-fill: rgba(9, 105, 218, .13);
+  --link-mod-line: rgba(9, 105, 218, .50);
+  --link-cur-fill: rgba(9, 105, 218, .24);
+  --link-cur-line: rgba(9, 105, 218, .85);
 }
 :root, body[data-theme="light"] {
   --bg: #ffffff;
@@ -317,6 +327,15 @@ body[data-theme="violet"], body[data-theme="charcoal"] {
   --hl-attr: #79c0ff;
   --hl-meta: #7ee787;
   --hl-section: #d2a8ff;
+  /* 连接带在深色底上提亮：低透明度色在暗背景里会糊成一片 */
+  --link-del-fill: rgba(248, 81, 73, .20);
+  --link-del-line: rgba(248, 81, 73, .72);
+  --link-add-fill: rgba(63, 185, 80, .20);
+  --link-add-line: rgba(63, 185, 80, .72);
+  --link-mod-fill: rgba(88, 166, 255, .20);
+  --link-mod-line: rgba(88, 166, 255, .72);
+  --link-cur-fill: rgba(88, 166, 255, .32);
+  --link-cur-line: rgba(88, 166, 255, .95);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -900,6 +919,33 @@ body.drag-trash-hot .drag-src {
   width: 6px; cursor: col-resize; background: var(--border); flex-shrink: 0; position: relative; z-index: 2;
 }
 .sb-resizer:hover { background: var(--accent); }
+/* 中间连接带：左右差异块之间的曲线/色带（Beyond Compare 风格）。
+   宽度与 diff-connectors.tsx 的 CONNECT_WIDTH 保持一致；颜色走 CSS 变量（见文件顶部，
+   深色主题统一覆盖）——不用 color-mix，避免旧浏览器上 fill 回落到默认黑色。 */
+.sb-connect {
+  width: 44px; flex-shrink: 0; position: relative; overflow: hidden; pointer-events: none;
+  background: var(--panel); border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+}
+.sb-connect svg { display: block; }
+.sb-connect .sb-link { pointer-events: auto; cursor: pointer; stroke-width: 1.5; transition: opacity .12s; }
+.sb-connect .sb-link.del { fill: var(--link-del-fill); stroke: var(--link-del-line); }
+.sb-connect .sb-link.add { fill: var(--link-add-fill); stroke: var(--link-add-line); }
+.sb-connect .sb-link.mod { fill: var(--link-mod-fill); stroke: var(--link-mod-line); }
+/* 两栏明显错位（跨度超过 35% 视口高）：填充降到很淡，避免多条跨屏带子交叉糊成一片；
+   描边保留，仍能看出块的对应关系 */
+.sb-connect .sb-link.far { fill-opacity: .25; }
+.sb-connect .sb-link:hover { fill: var(--link-cur-fill); }
+/* 当前差异块（「上一个/下一个」或点刻度定位到的块）：同色加深，不动布局 */
+.sb-connect .sb-link.current { fill: var(--link-cur-fill); stroke: var(--link-cur-line); stroke-width: 2; }
+/* 还原箭头：块首行左侧、指向左栏（把原版内容「拉回来」）。默认半透明，hover 实心 */
+.sb-restore-btn {
+  position: absolute; left: 2px; width: 24px; height: 24px; transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center; padding: 0;
+  border: none; border-radius: 5px; background: transparent; color: var(--err);
+  pointer-events: auto; cursor: pointer; opacity: .55; transition: opacity .12s, background .12s;
+}
+.sb-restore-btn:hover { opacity: 1; background: var(--panel2); }
+.sb-restore-btn:active { transform: translateY(-50%) scale(.92); }
 .sb-scrollbar {
   width: 12px; position: relative; background: var(--border2); flex-shrink: 0; cursor: pointer;
   border-left: 1px solid var(--border);
@@ -921,14 +967,30 @@ body.drag-trash-hot .drag-src {
 /* 左栏新增占位行：空行 + 绿色背景标记（提示右栏此处有新增） */
 .sb-ph {
   background: rgba(26, 127, 55, .10); cursor: pointer;
-  min-height: 1.5em; box-shadow: inset 3px 0 0 var(--ok);
+  /* 与 .sb-pane 的 13px × line-height 1.55 = 20.15px 对齐：占位区动辄上百行，
+     0.5px 的差累计后左右块底边会明显错位 */
+  min-height: 1.55em; box-shadow: inset 3px 0 0 var(--ok);
 }
+/* 大块折叠行（左右栏通用）：整块超过阈值时只渲染前 10 行 + 这一行，点击展开；
+   展开后块尾是「− 收起」行。行高与普通行一致，保证两栏对齐 */
+.sb-fold {
+  min-height: 1.55em; cursor: pointer;
+  background: var(--panel2);
+}
+.sb-fold:hover { background: var(--border2); }
+.sb-fold-text { color: var(--ok); font-size: 11px; padding-left: 6px; white-space: nowrap; }
+.sb-fold-tail { background: transparent; }
+.sb-fold-tail:hover { background: var(--panel2); }
+.sb-fold-tail .sb-fold-text { color: var(--dim); }
+/* 左栏的折叠占位行：只占行高让两栏对齐，不显示文字、不响应悬停 */
+.sb-fold-ghost { background: transparent; cursor: default; }
+.sb-fold-ghost:hover { background: transparent; }
 .sb-ph .sb-no { color: transparent; } /* 占位行不显示行号 */
 /* 右栏删除占位行：与左栏 .sb-ph 对称（那边提示"右栏有新增"，这边提示"左栏有删除"）。
    常驻显示：行号位留空，内容位换成提示文字 */
 .sb-ph-del {
   background: rgba(207, 34, 46, .10); cursor: pointer;
-  min-height: 1.5em; box-shadow: inset 3px 0 0 var(--err);
+  min-height: 1.55em; box-shadow: inset 3px 0 0 var(--err);
 }
 .sb-ph-hint { color: var(--err); font-size: 11px; padding-left: 6px; white-space: nowrap; }
 .sb-no {

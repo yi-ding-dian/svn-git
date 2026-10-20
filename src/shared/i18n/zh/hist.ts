@@ -87,11 +87,26 @@ export const hist = {
   // 显示全部（左栏从"仅差异片段"展开为完整文件；同步滚动按钮只在展开后出现）
   'hist.showAll': '显示全部',
   'hist.showAllTip': '左栏展开为完整文件内容（未改动行平铺显示，差异行照旧标记）',
+  // 大块折叠：超过阈值的差异块只显示前 10 行 + 右栏一行汇总，点击展开（左栏只留对齐占位）
+  'hist.rowsFolded': '+{n} 行（点击展开）',
+  'hist.foldTail': '− 收起',
+  'hist.foldExpandTip': '展开这个差异块的全部内容',
+  'hist.foldCollapseTip': '收起这个差异块',
   // 收起搜索（往左拖窄过阈值松手即收起；拖动中显示此提示）
   'hist.releaseToCollapse': '松开鼠标将收起搜索框',
   // 就地编辑（右栏直接改工作区文件；定位到当前差异处、保存后重新对比）
   'hist.editInPlaceTip': '就地编辑当前文件（定位到当前差异处；保存后自动重新对比）',
   'hist.arrowKeyBack': '← 键返回',
+
+  // ---- 块级还原（左栏差异块旁的箭头：把工作区这一块改回原版）----
+  'hist.restoreBlockTip': '还原此块（工作区这部分改回原版）',
+  'hist.restoreBlockTitle': '还原差异块',
+  'hist.restoreBlockMsgAdd': '工作区这 {n} 行新增将被删除，其他修改不受影响。确定还原吗？',
+  'hist.restoreBlockMsgDel': '原版删除的 {n} 行将写回工作区，其他修改不受影响。确定还原吗？',
+  'hist.restoreBlockMsgMod': '工作区这 {a} 行将替换为原版的 {d} 行，其他修改不受影响。确定还原吗？',
+  'hist.restoreBlockConfirm': '还原',
+  'hist.restoreDone': '已还原此块',
+  'hist.restoreStale': '文件已被外部修改，请先更新对比再还原',
 
   // ---- 文件外部更新提示（stale）----
   'hist.fileChanged': '⚠ 文件已更新，是否更新文件？',
