@@ -17,7 +17,7 @@ import { handle as handleConflicts } from './routes/conflicts.js';
 import { handle as handleBranch } from './routes/branch.js';
 import { handle as handleOps } from './routes/ops/index.js';
 import { handle as handleStage } from './routes/stage.js';
-import { handle as handleBrowse } from './routes/browse.js';
+import { handle as handleBrowse } from './routes/browse/index.js';
 import { handle as handleHost } from './routes/host.js';
 import { handle as handleHistory } from './routes/history.js';
 import { handle as handleRecent } from './routes/recent.js';
