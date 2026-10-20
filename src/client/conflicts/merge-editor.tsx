@@ -10,6 +10,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { highlightLine } from '../shared/highlight.js';
 import { DiffConnectors } from '../shared/diff-connectors.js';
+import { IconResizeHorizontal } from '../ui/icons.js';
+import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { t } from '../../shared/i18n/index.js';
 import {
   blockResultLines,
@@ -100,6 +102,8 @@ export function MergeEditor(props: Props) {
   const [dragIndex, setDragIndex] = useState(-1);
   const panesRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ index: number; startX: number; widths: number[] } | null>(null);
+  /** 统一的分隔条拖拽光标（所有可调整尺寸的分隔条共用） */
+  const { ghostRef, start: startResizeCursor, move: moveResizeCursor, stop: stopResizeCursor } = useResizeCursor();
   const weightOf = (i: number) => weights?.[i] ?? 1;
   const paneStyle = (i: number): React.CSSProperties => ({ flexGrow: weightOf(i), flexBasis: 0, minWidth: 0 });
 
@@ -114,12 +118,14 @@ export function MergeEditor(props: Props) {
     if (widths.length !== 3) return;
     dragRef.current = { index, startX: e.clientX, widths };
     setDragIndex(index);
+    startResizeCursor(e.clientX, e.clientY);
   };
 
   useEffect(() => {
     if (dragIndex < 0) return;
     const MIN = 120;
     const onMove = (e: MouseEvent) => {
+      moveResizeCursor(e.clientX, e.clientY);
       const d = dragRef.current;
       if (!d) return;
       const dx = e.clientX - d.startX;
@@ -134,16 +140,16 @@ export function MergeEditor(props: Props) {
     const onUp = () => {
       dragRef.current = null;
       setDragIndex(-1);
+      stopResizeCursor();
     };
-    document.body.style.cursor = 'col-resize';
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
-      document.body.style.cursor = '';
+      stopResizeCursor();
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [dragIndex]);
+  }, [dragIndex, moveResizeCursor, stopResizeCursor]);
 
   const theirsLines = useMemo(() => theirs.split('\n'), [theirs]);
   const oursLines = useMemo(() => ours.split('\n'), [ours]);
@@ -266,6 +272,7 @@ export function MergeEditor(props: Props) {
 
   return (
     <div className="merge-view">
+      <ResizeCursor ghostRef={ghostRef} />
       <div className="merge-toolbar">
         {editText !== null ? (
           <>
@@ -362,7 +369,9 @@ export function MergeEditor(props: Props) {
             title={t('conflict.merge.resizeTip')}
             onMouseDown={startResize(0)}
             onDoubleClick={() => setWeights(null)}
-          />
+          >
+            <span className="sb-resizer-grip"><IconResizeHorizontal size={14} /></span>
+          </div>
         </div>
         {/* 中：结果（可编辑） */}
         <div ref={resultPane} className="sb-pane merge-result" style={paneStyle(1)}>
@@ -476,7 +485,9 @@ export function MergeEditor(props: Props) {
             title={t('conflict.merge.resizeTip')}
             onMouseDown={startResize(1)}
             onDoubleClick={() => setWeights(null)}
-          />
+          >
+            <span className="sb-resizer-grip"><IconResizeHorizontal size={14} /></span>
+          </div>
         </div>
         {/* 右：本地完整文件 */}
         <div ref={oursPane} className="sb-pane" style={paneStyle(2)}>

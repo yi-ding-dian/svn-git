@@ -5,7 +5,8 @@ import { isImeComposing } from '../shared/utils.js';
 import { DiffRender } from '../ui/diff-render.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { renderMarkdown } from '../shared/markdown.js';
-import { IconCopy } from '../ui/icons.js';
+import { IconCopy, IconResizeHorizontal } from '../ui/icons.js';
+import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { parseUnifiedDiff, lineMarksOf, type DiffLine } from '../../shared/diff-parse.js';
 import { t } from '../../shared/i18n/index.js';
@@ -226,16 +227,18 @@ export function DiffView(props: Props) {
   const wRefR = useRef(dSearchWR);
   wRefR.current = dSearchWR;
   const dResizeRef = useRef<{ side: 'L' | 'R'; startX: number; startW: number } | null>(null);
+  /** 统一的分隔条拖拽光标（所有可调整尺寸的分隔条共用） */
+  const { ghostRef, start: startResizeCursor, move: moveResizeCursor, stop: stopResizeCursor } = useResizeCursor();
   /** 右边缘拖拽：左右移动调宽；拖窄过阈值时显示"将收起"提示、松手收起（宽度还原为拖动前的值）。
-   *  拖拽期间定住全页光标/禁选中（鼠标滑出手柄不闪回默认光标） */
+   *  拖拽期间隐藏系统光标、由应用内图标跟随 */
   const onDSearchResizeDown = (side: 'L' | 'R') => (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const startW = side === 'L' ? wRefL.current : wRefR.current;
     dResizeRef.current = { side, startX: e.clientX, startW };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+    startResizeCursor(e.clientX, e.clientY);
     const onMove = (ev: MouseEvent) => {
+      moveResizeCursor(ev.clientX, ev.clientY);
       const d = dResizeRef.current;
       if (!d) return;
       const w = Math.min(SEARCH_W_MAX, Math.max(SEARCH_W_MIN, d.startW + (ev.clientX - d.startX)));
@@ -251,8 +254,7 @@ export function DiffView(props: Props) {
     const onUp = () => {
       const d = dResizeRef.current;
       dResizeRef.current = null;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      stopResizeCursor();
       setCollapseHint('');
       if (!d) return;
       const w = d.side === 'L' ? wRefL.current : wRefR.current;
@@ -526,19 +528,18 @@ export function DiffView(props: Props) {
   const dragState = useRef<{ startX: number; startRatio: number } | null>(null);
   const startDrag = (e: React.MouseEvent) => {
     dragState.current = { startX: e.clientX, startRatio: leftRatio };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+    startResizeCursor(e.clientX, e.clientY);
   };
   useEffect(() => {
     const move = (e: MouseEvent) => {
       if (!dragState.current) return;
+      moveResizeCursor(e.clientX, e.clientY);
       const delta = ((e.clientX - dragState.current.startX) / window.innerWidth) * 100;
       setLeftRatio(Math.min(85, Math.max(15, dragState.current.startRatio + delta)));
     };
     const up = () => {
       dragState.current = null;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      stopResizeCursor();
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
@@ -546,7 +547,7 @@ export function DiffView(props: Props) {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
     };
-  }, []);
+  }, [moveResizeCursor, stopResizeCursor]);
 
   // 外部更新检测（3 秒轮询文件指纹）
   useEffect(() => {
@@ -1094,6 +1095,7 @@ export function DiffView(props: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <ResizeCursor ghostRef={ghostRef} />
       {/* 顶栏（标题 / 块导航 / 返回）：嵌入弹窗时整行隐藏，块导航挪到两栏缝隙 */}
       {!props.embedded && (
         <div className="row" style={{ marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
@@ -1427,7 +1429,9 @@ export function DiffView(props: Props) {
             </div>
             {/* 拖拽手柄 */}
             {/* 拖动调整左右栏宽度 */}
-            <div className="sb-resizer" onMouseDown={startDrag} title={t('hist.dragResizer')} />
+            <div className="sb-resizer" onMouseDown={startDrag} title={t('hist.dragResizer')}>
+              <span className="sb-resizer-grip"><IconResizeHorizontal size={14} /></span>
+            </div>
             {/* 中间连接带：曲线连接左右对应的差异块（行元素缺失时自然留空，如 Markdown 预览/就地编辑） */}
             <DiffConnectors
               leftPane={leftPane}

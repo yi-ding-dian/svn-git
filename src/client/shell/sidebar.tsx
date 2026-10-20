@@ -9,6 +9,7 @@ import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js
 import { baseName } from '../shared/utils.js';
 import { startTask, useTasks } from '../shared/tasks.js';
 import { launchMagicFlight } from '../animations/index.js';
+import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 主视图类型（侧边栏导航目标） */
@@ -294,14 +295,16 @@ export function Sidebar(props: {
   });
   /** 最新宽度（mouseup 落盘用）——事件闭包拿不到最新 state，走 ref */
   const barWidthRef = useRef(barWidth);
-  /** 拖拽右边缘：左右移动调宽。拖动期间定格全页光标/禁选中（与文件搜索框手柄同款交互） */
+  /** 统一的分隔条拖拽光标：所有可调整尺寸的分隔条共用 */
+  const { ghostRef, start: startResizeCursor, move: moveResizeCursor, stop: stopResizeCursor } = useResizeCursor();
+  /** 拖拽右边缘：左右移动调宽。拖动期间隐藏系统光标、由应用内图标跟随 */
   const onBarResizeDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const start = { x: e.clientX, w: barWidthRef.current };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+    startResizeCursor(e.clientX, e.clientY);
     const onMove = (ev: MouseEvent) => {
+      moveResizeCursor(ev.clientX, ev.clientY);
       // 上限取 min(400, 40% 视口)：小窗口下别把内容区挤没
       const max = Math.min(SIDEBAR_W_MAX, Math.round(window.innerWidth * 0.4));
       const w = Math.min(max, Math.max(SIDEBAR_W_MIN, start.w + (ev.clientX - start.x)));
@@ -309,8 +312,7 @@ export function Sidebar(props: {
       setBarWidth(w);
     };
     const onUp = () => {
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      stopResizeCursor();
       localStorage.setItem(SIDEBAR_W_KEY, String(barWidthRef.current));
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
@@ -336,6 +338,7 @@ export function Sidebar(props: {
 
   return (
     <div className="sidebar" style={{ width: barWidth, display: props.view === 'diff' ? 'none' : undefined }}>
+      <ResizeCursor ghostRef={ghostRef} />
       {/* 右边缘拖拽手柄：左右拖调整侧栏宽度（双击恢复默认），与文件搜索框手柄同款交互 */}
       <span className="sidebar-resize" onMouseDown={onBarResizeDown} onDoubleClick={resetBarWidth} title={t('shell.sidebarResize')} />
       {NAV.map((n) => (

@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
+import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 // 命中高亮已提升 shared（仓库浏览搜索共用，边界规范）
 import { highlightMatch } from '../shared/highlight-match.js';
 
@@ -149,14 +150,16 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
   /** 最新宽度（mouseup 落盘 localStorage 用）——事件闭包拿不到最新 state，走 ref */
   const widthRef = useRef(boxWidth);
   const resizeRef = useRef<{ startX: number; startW: number } | null>(null);
-  /** 右边缘拖拽：左右移动调宽。拖拽期间定住全页光标/禁选中（鼠标滑出手柄时不闪回默认光标） */
+  /** 统一的分隔条拖拽光标（所有可调整尺寸的分隔条共用） */
+  const { ghostRef, start: startResizeCursor, move: moveResizeCursor, stop: stopResizeCursor } = useResizeCursor();
+  /** 右边缘拖拽：左右移动调宽。拖拽期间隐藏系统光标、由应用内图标跟随 */
   const onResizeDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     resizeRef.current = { startX: e.clientX, startW: widthRef.current };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+    startResizeCursor(e.clientX, e.clientY);
     const onMove = (ev: MouseEvent) => {
+      moveResizeCursor(ev.clientX, ev.clientY);
       const d = resizeRef.current;
       if (!d) return;
       const w = Math.min(WIDTH_MAX, Math.max(WIDTH_MIN, d.startW + (ev.clientX - d.startX)));
@@ -165,8 +168,7 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
     };
     const onUp = () => {
       resizeRef.current = null;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      stopResizeCursor();
       localStorage.setItem(WIDTH_KEY, String(widthRef.current));
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
@@ -189,6 +191,7 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
 
   return (
     <span className="row" style={{ position: 'relative' }}>
+      <ResizeCursor ghostRef={ghostRef} />
       <span style={{ position: 'relative' }} ref={wrapRef}>
         {/* 模式芯片：点击切换。stopPropagation——防冒泡出去被当"点外部"顺带收起下拉 */}
         <span

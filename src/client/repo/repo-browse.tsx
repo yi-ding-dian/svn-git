@@ -13,7 +13,8 @@ import { langOf, highlightLine } from '../shared/highlight.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { loadMdTheme, mdThemeVars } from '../shared/md-theme.js';
 import { highlightMatch } from '../shared/highlight-match.js';
-import { MiniIcon, IconServer, IconPin } from '../ui/icons.js';
+import { MiniIcon, IconServer, IconPin, IconResizeHorizontal } from '../ui/icons.js';
+import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { PickDirModal } from './pick-dir.js';
 import { CheckoutDialog } from './checkout.js';
@@ -412,26 +413,27 @@ export function RepoBrowseModal(props: {
   };
 
   // 左右拖拽（同并排对比的 sb-resizer 模式；delta 以弹窗内容宽为基准）
+  /** 统一的分隔条拖拽光标（所有可调整尺寸的分隔条共用） */
+  const { ghostRef, start: startResizeCursor, move: moveResizeCursor, stop: stopResizeCursor } = useResizeCursor();
   const startDrag = (e: React.MouseEvent) => {
     dragRef.current = {
       startX: e.clientX,
       startRatio: leftRatio,
       width: bodyRef.current?.clientWidth ?? window.innerWidth,
     };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+    startResizeCursor(e.clientX, e.clientY);
   };
   useEffect(() => {
     const move = (e: MouseEvent) => {
       const d = dragRef.current;
       if (!d) return;
+      moveResizeCursor(e.clientX, e.clientY);
       const pct = ((e.clientX - d.startX) / d.width) * 100;
       setLeftRatio(Math.min(75, Math.max(20, d.startRatio + pct)));
     };
     const up = () => {
       dragRef.current = null;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      stopResizeCursor();
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
@@ -439,7 +441,7 @@ export function RepoBrowseModal(props: {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
     };
-  }, []);
+  }, [moveResizeCursor, stopResizeCursor]);
 
   /** 面包屑：仓库根之后逐级（可点回跳） */
   const host = root.replace(/^[a-z]+:\/\//i, '').split('/')[0] ?? root;
@@ -461,6 +463,7 @@ export function RepoBrowseModal(props: {
 
   return (
     <div className="modal-mask">
+      <ResizeCursor ghostRef={ghostRef} />
       <ResizableModal width={1130} height={500} maxed={maxed} onToggleMax={() => setMaxed((m) => !m)} onEsc={props.onClose}>
         <h3 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* 仓库浏览（IconServer：远程仓库在服务器上） */}
@@ -739,8 +742,10 @@ export function RepoBrowseModal(props: {
                 })}
               </div>
             </div>
-            {/* 可拖分隔（并排对比同款；宽度收窄为 4px——用户定稿"再小点"） */}
-            <div className="sb-resizer" style={{ width: 4 }} onMouseDown={startDrag} title={t('repo.browse.dragTip')} />
+            {/* 可拖分隔（所有分隔条统一样式：12px 热区 + 中间手柄） */}
+            <div className="sb-resizer" onMouseDown={startDrag} title={t('repo.browse.dragTip')}>
+              <span className="sb-resizer-grip"><IconResizeHorizontal size={14} /></span>
+            </div>
             {/* 预览区：文件名+工具行**固定**（不随内容滚动——用户定稿），内容区独立滚动 */}
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               {/* 选中文件即出文件名行（复制/下载按钮立即可用——loading/出错/二进制时下载都需要） */}

@@ -917,9 +917,27 @@ body.drag-trash-hot .drag-src {
 
 /* ---------- 并排对比 ---------- */
 .sb-resizer {
-  width: 6px; cursor: col-resize; background: var(--border); flex-shrink: 0; position: relative; z-index: 2;
+  width: 12px; cursor: col-resize; background: transparent; flex-shrink: 0; position: relative; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
 }
-.sb-resizer:hover { background: var(--accent); }
+.sb-resizer::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 5.5px; width: 1px; background: var(--border);
+}
+.sb-resizer:hover::before { background: var(--accent); width: 2px; left: 5px; }
+/* 分隔条手柄：与提交文件变动弹窗同一个图标，深浅主题都跟随文字色 */
+.sb-resizer-grip {
+  position: relative; z-index: 1; background: var(--panel); color: var(--dim);
+  padding: 2px 0; border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+}
+.sb-resizer:hover .sb-resizer-grip { color: var(--text); }
+/* 所有调整尺寸的分隔条：悬浮也用同一枚自绘光标（系统 col-resize 在高 DPI 下发虚） */
+.sb-resizer,
+.sidebar-resize,
+.search-resize,
+.merge-resizer {
+  cursor: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48ZyBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNOSAxMkgybTAgMCAzLTNtLTMgMyAzIDNNMTUgMTJoN20wIDAtMy0zbTMgMy0zIDNNMTIgNHYxNiIvPjwvZz48ZyBmaWxsPSJub25lIiBzdHJva2U9IiMxZjIzMjgiIHN0cm9rZS13aWR0aD0iMS40IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik05IDEySDJtMCAwIDMtM20tMyAzIDMgM00xNSAxMmg3bTAgMC0zLTNtMyAzLTMgM00xMiA0djE2Ii8+PC9nPjwvc3ZnPg==") 12 12, col-resize;
+}
 /* 中间连接带：左右差异块之间的曲线/色带（Beyond Compare 风格）。
    宽度与 diff-connectors.tsx 的 CONNECT_WIDTH 保持一致；颜色走 CSS 变量（见文件顶部，
    深色主题统一覆盖）——不用 color-mix，避免旧浏览器上 fill 回落到默认黑色。 */
@@ -1022,11 +1040,14 @@ body.drag-trash-hot .drag-src {
 .merge-connect { position: relative; flex: 0 0 44px; width: 44px; display: flex; }
 .merge-connect > .sb-connect { flex: 1; min-width: 0; }
 .merge-resizer {
-  position: absolute; top: 0; right: -3px; width: 7px; height: 100%;
+  position: absolute; top: 0; right: -6px; width: 12px; height: 100%;
   cursor: col-resize; z-index: 3; background: transparent;
-  transition: background .12s;
+  display: flex; align-items: center; justify-content: center;
 }
-.merge-resizer:hover, .merge-resizer.active { background: var(--accent); opacity: .55; }
+.merge-resizer::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 5.5px; width: 1px; background: var(--border);
+}
+.merge-resizer:hover::before, .merge-resizer.active::before { background: var(--accent); width: 2px; left: 5px; }
 /* 结果栏：底色略深，和左右"参考"栏区分开（它才是要保存的东西） */
 .merge-result { background: var(--panel); position: relative; }
 /* 「结果」标签旁的编辑入口 / 编辑中的取消、完成 */
@@ -1284,21 +1305,22 @@ body.drag-trash-hot .drag-src {
   display: flex; align-items: center; justify-content: center;
   color: var(--dim); font-size: 11px;
 }
-/* 拖拽期间隐藏系统光标（改由页面内 SVG 图标跟随），并禁选中 */
-body.files-resizing,
-body.files-resizing * {
+/* 分隔条拖拽（所有调整尺寸的分隔条共用）：隐藏系统光标，改由页面内 SVG 图标跟随 */
+body.resizing,
+body.resizing * {
   cursor: none !important;
   user-select: none;
 }
-/* 拖拽跟随图标：与分隔条上的手柄同一个图标（同样大小/颜色），只加投影保证在深浅底色上都可见 */
-.files-resize-ghost {
+/* 拖拽跟随图标：与分隔条手柄同一个图标（同样大小/颜色），只加投影保证在深浅底色上都可见 */
+.resize-ghost {
   position: fixed; z-index: 999; pointer-events: none; display: none;
   width: 24px; height: 24px; align-items: center; justify-content: center;
   color: var(--text);
   filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
 }
 /* 拖拽中隐藏分隔条上的手柄，避免同时出现两个图标 */
-body.files-resizing .files-resizer-grip { opacity: 0; }
+body.resizing .files-resizer-grip,
+body.resizing .sb-resizer-grip { opacity: 0; }
 .files-resizer::before {
   content: ''; position: absolute; top: 0; bottom: 0; left: 5.5px; width: 1px; background: var(--border);
 }

@@ -7,7 +7,8 @@ import { ContextMenu } from '../ui/context-menu.js';
 import { ConfirmModal, InfoModal } from '../ui/prompt.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { ClickTip } from '../ui/ui.js';
-import { IconOk, IconErr } from '../ui/icons.js';
+import { IconOk, IconErr, IconResizeHorizontal } from '../ui/icons.js';
+import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { CommitChangesModal } from './commit-changes-modal.js';
@@ -127,21 +128,22 @@ export function HistoryView(props: Props) {
   // 左右栏比例拖拽（列表 / 详情，与 diff 界面同一套逻辑）
   const [leftRatio, setLeftRatio] = useState(38);
   const dragState = useRef<{ startX: number; startRatio: number } | null>(null);
+  /** 统一的分隔条拖拽光标（所有可调整尺寸的分隔条共用） */
+  const { ghostRef, start: startResizeCursor, move: moveResizeCursor, stop: stopResizeCursor } = useResizeCursor();
   const startDrag = (e: React.MouseEvent) => {
     dragState.current = { startX: e.clientX, startRatio: leftRatio };
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+    startResizeCursor(e.clientX, e.clientY);
   };
   useEffect(() => {
     const move = (e: MouseEvent) => {
       if (!dragState.current) return;
+      moveResizeCursor(e.clientX, e.clientY);
       const delta = ((e.clientX - dragState.current.startX) / window.innerWidth) * 100;
       setLeftRatio(Math.min(80, Math.max(20, dragState.current.startRatio + delta)));
     };
     const up = () => {
       dragState.current = null;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      stopResizeCursor();
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
@@ -149,7 +151,7 @@ export function HistoryView(props: Props) {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
     };
-  }, []);
+  }, [moveResizeCursor, stopResizeCursor]);
 
   useEffect(() => {
     // 视图隐藏时不加载：否则每次 tick 都会在后台重拉 200 条历史（用户可能停在文件视图）
@@ -450,7 +452,10 @@ export function HistoryView(props: Props) {
         )}
       </div>
       {/* 拖动调整左右栏宽度 */}
-      <div className="sb-resizer" onMouseDown={startDrag} title={t('hist.dragResizer')} />
+      <div className="sb-resizer" onMouseDown={startDrag} title={t('hist.dragResizer')}>
+        <span className="sb-resizer-grip"><IconResizeHorizontal size={14} /></span>
+      </div>
+      <ResizeCursor ghostRef={ghostRef} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         {/* 选择提交查看详情 */}
         {!sel && <div className="empty">{t('hist.selectHint')}</div>}

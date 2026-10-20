@@ -8,6 +8,7 @@ import { ResizableModal } from '../shell/modal-shell.js';
 import { DiffView } from './diff.js';
 import { isBinaryFile } from '../shared/utils.js';
 import { IconResizeHorizontal } from '../ui/icons.js';
+import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { t } from '../../shared/i18n/index.js';
 import type { LogEntry } from '../shared/api.js';
 
@@ -67,16 +68,8 @@ export function CommitChangesModal(props: {
     }
   });
   const dragRef = useRef<{ startX: number; startWidth: number; lastRaw: number } | null>(null);
-  /** 拖拽时跟随鼠标的图标（自己画的 SVG，DOM 直接定位，避免 mousemove 触发整窗重渲染） */
-  const ghostRef = useRef<HTMLSpanElement | null>(null);
-  const moveGhost = (x: number, y: number) => {
-    const g = ghostRef.current;
-    if (!g) return;
-    // 图标居中压在鼠标点上（浮层 24×24）：与按下时手柄图标的位置衔接，不显得"跳走"
-    g.style.display = 'flex';
-    g.style.left = `${x - 12}px`;
-    g.style.top = `${y - 12}px`;
-  };
+  /** 统一的分隔条拖拽光标（所有可调整尺寸的分隔条共用） */
+  const { ghostRef, start: startResizeCursor, move: moveResizeCursor, stop: stopResizeCursor } = useResizeCursor();
 
   const persistCollapsed = (next: boolean) => {
     try {
@@ -100,10 +93,9 @@ export function CommitChangesModal(props: {
     const startWidth = filesCollapsed ? 0 : filesWidth;
     dragRef.current = { startX: e.clientX, startWidth, lastRaw: startWidth };
     // 拖拽期间隐藏系统光标，改由页面内绘制的图标跟随鼠标
-    document.body.classList.add('files-resizing');
-    moveGhost(e.clientX, e.clientY);
+    startResizeCursor(e.clientX, e.clientY);
     const onMove = (ev: MouseEvent) => {
-      moveGhost(ev.clientX, ev.clientY);
+      moveResizeCursor(ev.clientX, ev.clientY);
       const d = dragRef.current;
       if (!d) return;
       const raw = d.startWidth + (ev.clientX - d.startX);
@@ -122,8 +114,7 @@ export function CommitChangesModal(props: {
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      document.body.classList.remove('files-resizing');
-      if (ghostRef.current) ghostRef.current.style.display = 'none';
+      stopResizeCursor();
       const d = dragRef.current;
       dragRef.current = null;
       if (!d) return;
@@ -313,9 +304,7 @@ export function CommitChangesModal(props: {
         </div>
       </ResizableModal>
       {/* 拖拽跟随图标：自己绘制的 SVG，拖拽期间替代系统光标 */}
-      <span ref={ghostRef} className="files-resize-ghost" aria-hidden="true">
-        <IconResizeHorizontal size={14} />
-      </span>
+      <ResizeCursor ghostRef={ghostRef} />
     </div>
   );
 }
