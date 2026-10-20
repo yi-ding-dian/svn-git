@@ -90,6 +90,10 @@ interface Props {
   active: boolean;
   /** 复制成功提示（全局 toast） */
   onToast?: (msg: string) => void;
+  /** 嵌入模式（弹窗内复用）：隐藏标题与「返回」按钮，←/Esc 不触发返回（交给弹窗自己关） */
+  embedded?: boolean;
+  /** 只读模式（看历史版本时）：隐藏就地编辑、不做工作区文件指纹轮询——历史内容不该被写回 */
+  readOnly?: boolean;
 }
 
 export function DiffView(props: Props) {
@@ -343,7 +347,8 @@ export function DiffView(props: Props) {
   const sideMode = Boolean(props.target?.path);
   /** 只有「工作区 vs 原版」才有块级还原语义：版本间对比（target.b 指定）右栏是历史版本，
    *  写回工作区会张冠李戴 */
-  const canRestoreBlock = sideMode && !props.target?.b;
+  // 块级还原会写工作区：只读模式（历史版本）一律不给
+  const canRestoreBlock = sideMode && !props.target?.b && !props.readOnly;
   // md 文件：左右栏预览（renderMarkdown 复用文件预览同款渲染；baseDir 供相对图片路径）
   const isMd = Boolean(props.target?.path?.toLowerCase().endsWith('.md'));
   const mdBaseDir = props.target?.path?.includes('/') ? props.target.path.slice(0, props.target.path.lastIndexOf('/')) : '';
@@ -473,8 +478,9 @@ export function DiffView(props: Props) {
     if (!props.active) return; // 视图隐藏时键盘不响应（防止穿透到其他视图）
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === 'ArrowLeft' || e.key === 'Escape') {
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // 嵌入弹窗时 ←/Esc 归弹窗管（Esc 关窗），这里只保留差异块导航
+      if (!props.embedded && (e.key === 'ArrowLeft' || e.key === 'Escape')) {
         e.preventDefault();
         props.onBack();
         return;
@@ -494,7 +500,7 @@ export function DiffView(props: Props) {
     // goBlock 是 useCallback，但它依赖 flashTarget/locateDel（变动较频繁）——
     // 入依赖会让全局键盘监听反复解绑/重绑。props 已按 onBack/active 精确到字段。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.onBack, sideMode, props.active]);
+  }, [props.onBack, sideMode, props.active, props.embedded]);
 
   // 差异块列表（只含真正的变更块：ctx 行的 block = -1 是「不属于任何块」的标记而不是块号，
   //  一并收进来的话会凭空多出一个"上下文伪块"——差异点计数多一站、滚动条多一个定位点）
@@ -542,7 +548,8 @@ export function DiffView(props: Props) {
 
   // 外部更新检测（3 秒轮询文件指纹）
   useEffect(() => {
-    if (!sideMode || !props.target?.path || !props.active) return;
+    // 只读（历史版本）不轮询：它比较的是工作区文件，和眼前这份历史内容无关
+    if (!sideMode || !props.target?.path || !props.active || props.readOnly) return;
     const path = props.target.path;
     const timer = setInterval(() => {
       if (staleTip) return;
@@ -556,7 +563,7 @@ export function DiffView(props: Props) {
         .catch(() => {});
     }, 3000);
     return () => clearInterval(timer);
-  }, [sideMode, props.target, staleTip, props.active]);
+  }, [sideMode, props.target, staleTip, props.active, props.readOnly]);
 
   // 并排行拆分：左栏 = 原版每行 + 删除行标记；右栏 = 当前每行 + 新增行标记。
   // 左栏在"新增"处插入空占位行（带背景标记），左右视觉对齐、定位直观。
@@ -1052,10 +1059,12 @@ export function DiffView(props: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div className="row" style={{ marginBottom: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-        <span className="dim">
-          {/* 差异: {rev} — {path} / 差异: {rev} */}
-          {props.target?.path ? t('hist.diffOfPath', { rev: title, path: props.target.path }) : t('hist.diffOf', { rev: title })}
-        </span>
+        {!props.embedded && (
+          <span className="dim">
+            {/* 差异: {rev} — {path} / 差异: {rev} */}
+            {props.target?.path ? t('hist.diffOfPath', { rev: title, path: props.target.path }) : t('hist.diffOf', { rev: title })}
+          </span>
+        )}
         <span className="grow" />
         {sideMode && blocks.length > 0 && (
           <>
@@ -1078,10 +1087,14 @@ export function DiffView(props: Props) {
             )}
           </>
         )}
-        {/* ← 键返回 */}
-        <span className="dim small">{t('hist.arrowKeyBack')}</span>
-        {/* ← 返回 */}
-        <button className="mini" onClick={props.onBack}>{t('hist.back')}</button>
+        {!props.embedded && (
+          <>
+            {/* ← 键返回 */}
+            <span className="dim small">{t('hist.arrowKeyBack')}</span>
+            {/* ← 返回 */}
+            <button className="mini" onClick={props.onBack}>{t('hist.back')}</button>
+          </>
+        )}
       </div>
       {staleTip && (
         <div className="stale-tip" style={{ marginBottom: 8 }}>
@@ -1259,8 +1272,11 @@ export function DiffView(props: Props) {
                   // 🔍 搜索此栏
                   <button className="mini" onClick={() => setDSearchActive(true)}>{t('hist.searchPane')}</button>
                 )}
-                {/* ✎ 编辑：右栏就地编辑（定位到当前差异处；非 UTF-8/超限文件点击时提示） */}
-                <button className="mini" onClick={startEdit} title={t('hist.editInPlaceTip')}>{t('fs.pv.edit')}</button>
+                {/* ✎ 编辑：右栏就地编辑（定位到当前差异处；非 UTF-8/超限文件点击时提示）。
+                    历史版本只读：不提供编辑入口 */}
+                {!props.readOnly && (
+                  <button className="mini" onClick={startEdit} title={t('hist.editInPlaceTip')}>{t('fs.pv.edit')}</button>
+                )}
                 {isMd && (
                   // 返回差异行视图 / Markdown 渲染预览（当前）
                   <button className="mini" onClick={() => setPreviewR((v) => !v)} title={previewR ? t('hist.backToDiff') : t('hist.mdPreviewRight')}>

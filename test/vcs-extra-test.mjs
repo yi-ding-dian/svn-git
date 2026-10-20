@@ -49,6 +49,11 @@ console.log('== Git 分支/标签/Stash ==');
   const bl = await vcs.branchList();
   check('分支列表（master 当前，无星号）', bl.current === 'master' && bl.branches.some((b) => b.name === 'master'));
 
+  // 历史详情弹窗靠 isRoot 给根提交选"前一版本"（空树）；根提交不能同时被当成合并提交
+  const logs = await vcs.log(0);
+  const root = logs[logs.length - 1];
+  check('根提交带 isRoot 标记', root?.isRoot === true && !root?.isMerge);
+
   const cr = await vcs.branchCreate('test-feat');
   check('创建分支 test-feat', cr.ok);
   // 带基点创建（从主干 master 拉新分支）

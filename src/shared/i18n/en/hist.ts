@@ -35,6 +35,13 @@ export const hist = {
   'hist.mergeStatTip': 'Merge commit: file count vs first parent (what this merge brought in); click for diffs',
   'hist.noChanged': 'No file changes',
   'hist.viewFullDiff': 'View full diff of this commit',
+  // ---- Commit changes modal (file list left, diff right) ----
+  'hist.changes.open': 'View file changes',
+  'hist.changes.title': 'File Changes',
+  'hist.changes.commit': 'Commit',
+  'hist.changes.files': 'Changed files ({n})',
+  'hist.changes.pickFile': 'Select a file on the left to view its diff',
+  'hist.changes.hint': 'Click a file to switch diffs · Esc to close',
 
   // ---- 差异查看（详情面板内嵌 / 差异视图共用的标题与提示）----
   'hist.diffOf': 'Diff: {rev}',

@@ -68,6 +68,7 @@ function parseGitLog(stdout: string): LogEntry[] {
       const head = line.slice(0, sep);
       const [hash, author, date, msg, parents] = head.split('\x1f');
       if (hash) {
+        const parentList = String(parents ?? '').trim().split(/\s+/).filter(Boolean);
         cur = {
           rev: hash.slice(0, 7),
           author: author ?? '',
@@ -77,7 +78,9 @@ function parseGitLog(stdout: string): LogEntry[] {
           // 多父 = 合并提交（%P 空格分隔；根提交/单父都不算）。文件变更是否带出来取决于调用方：
           // log() 带了 --diff-merges=first-parent（合并提交列出合入的文件）；
           // unpushedLog / remoteCheck 没带，changed 为空，界面据此显示「合并」而非「0 文件」
-          isMerge: String(parents ?? '').trim().split(/\s+/).filter(Boolean).length > 1,
+          isMerge: parentList.length > 1,
+          // 无父 = 根提交：历史详情弹窗要拿"空树"当左版本
+          isRoot: parentList.length === 0,
         };
         out.push(cur);
       }

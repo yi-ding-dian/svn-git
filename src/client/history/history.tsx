@@ -10,6 +10,7 @@ import { ClickTip } from '../ui/ui.js';
 import { IconOk, IconErr } from '../ui/icons.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { renderMarkdown } from '../shared/markdown.js';
+import { CommitChangesModal } from './commit-changes-modal.js';
 import { t } from '../../shared/i18n/index.js';
 
 interface Props {
@@ -29,6 +30,8 @@ export function HistoryView(props: Props) {
   const [error, setError] = useState('');
   const [sel, setSel] = useState<LogEntry | null>(null);
   const [diffOf, setDiffOf] = useState<{ rev: string; prev?: string; path?: string } | null>(null);
+  /** 文件变动详情弹窗（左侧文件列表 + 右侧差异，可在弹窗内切换提交） */
+  const [changesOpen, setChangesOpen] = useState(false);
   const [diffText, setDiffText] = useState('');
   const [diffLoading, setDiffLoading] = useState(false);
   /** 未推送提交（长 hash 列表，来自后端） */
@@ -459,6 +462,10 @@ export function HistoryView(props: Props) {
             <div className="row" style={{ marginBottom: 8, height: 24, alignItems: 'center', flexShrink: 0 }}>
               {/* ← 返回 */}
               <button className="mini" style={{ lineHeight: '16px' }} onClick={props.onBack}>{t('hist.back')}</button>
+              {/* 查看文件变动详情（最大化弹窗：左文件列表 + 右差异，可切换提交） */}
+              <button className="mini" style={{ lineHeight: '16px', marginLeft: 8 }} onClick={() => setChangesOpen(true)}>
+                {t('hist.changes.open')}
+              </button>
               <span className="grow" />
             </div>
             <div className="row" style={{ marginBottom: 10, flexShrink: 0 }}>
@@ -799,6 +806,10 @@ export function HistoryView(props: Props) {
           onCancel={() => setRestoreOf(null)}
           confirmCmd={cmdOfRepo(props.repoType ?? 'git', 'restore_rev', { rev: restoreOf.rev, path: props.path })}
         />
+      )}
+      {/* 提交文件变动详情（最大化弹窗；在弹窗内切换提交，文件列表与差异一起更新） */}
+      {changesOpen && sel && logs && (
+        <CommitChangesModal logs={logs} initialRev={sel.rev} onClose={() => setChangesOpen(false)} />
       )}
       {/* 非 HEAD 未推送提交操作说明弹窗 */}
       {infoTip && (

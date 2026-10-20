@@ -1274,6 +1274,8 @@ body.drag-trash-hot .drag-src {
 .changed { display: flex; flex-direction: column; }
 .changed-row { display: flex; gap: 10px; padding: 5px 8px; align-items: center; border-radius: 6px; }
 .changed-row:hover { background: var(--panel2); }
+/* 当前选中的文件（提交文件变动弹窗：左列表选中态） */
+.changed-row.active { background: var(--panel2); outline: 1px solid var(--accent); }
 .changed-row .act { font-weight: 700; width: 20px; flex-shrink: 0; }
 .changed-row .act.M { color: var(--warn); }
 .changed-row .act.A { color: var(--ok); }

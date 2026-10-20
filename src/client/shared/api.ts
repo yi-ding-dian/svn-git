@@ -155,6 +155,8 @@ export interface LogEntry {
   changed: { action: string; path: string }[];
   /** 合并提交（git 多父）：自身无文件变更，界面显示「合并」而非「0 文件」（见 vcs/types.ts） */
   isMerge?: boolean;
+  /** 根提交（无父）：历史详情弹窗用空树作为"前一版本"（见 vcs/types.ts） */
+  isRoot?: boolean;
 }
 
 export interface DiffResult {

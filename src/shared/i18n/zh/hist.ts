@@ -34,6 +34,13 @@ export const hist = {
   'hist.mergeStatTip': '合并提交：显示相对第一父（本次合入当前分支）的文件数，点开可看差异',
   'hist.noChanged': '无文件变更',
   'hist.viewFullDiff': '查看本次提交完整 diff',
+  // ---- 文件变动详情弹窗（左侧文件列表 + 右侧差异）----
+  'hist.changes.open': '查看文件变动详情',
+  'hist.changes.title': '文件变动详情',
+  'hist.changes.commit': '提交',
+  'hist.changes.files': '变更文件（{n}）',
+  'hist.changes.pickFile': '点击左侧文件查看差异',
+  'hist.changes.hint': '点左侧文件切换差异 · Esc 关闭',
 
   // ---- 差异查看（详情面板内嵌 / 差异视图共用的标题与提示）----
   'hist.diffOf': '差异: {rev}',

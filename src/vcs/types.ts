@@ -52,6 +52,8 @@ export interface LogEntry {
   /** 是否为合并提交（git 多父；svn 恒无）。合并提交自身无文件变更（changed 恒为空），
    *  改动都记在两侧的提交上 —— 界面据此显示「合并」而不是「0 文件」 */
   isMerge?: boolean;
+  /** 是否为根提交（无父提交；仅 git 可能）。历史详情弹窗据此用空树作为"前一版本" */
+  isRoot?: boolean;
 }
 
 export interface DiffResult {
