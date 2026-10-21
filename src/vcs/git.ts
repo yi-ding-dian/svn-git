@@ -76,8 +76,9 @@ function parseGitLog(stdout: string): LogEntry[] {
           msg: msg ?? '',
           changed: [],
           // 多父 = 合并提交（%P 空格分隔；根提交/单父都不算）。文件变更是否带出来取决于调用方：
-          // log() 带了 --diff-merges=first-parent（合并提交列出合入的文件）；
-          // unpushedLog / remoteCheck 没带，changed 为空，界面据此显示「合并」而非「0 文件」
+          // log() 在支持的 git 上用 --diff-merges=first-parent 直接带出合并提交的文件；旧 git
+          // 则在解析后由 fillMergeChanges 补齐；unpushedLog / remoteCheck 没带，changed 为空，
+          // 界面据此显示「合并」而非「0 文件」
           isMerge: parentList.length > 1,
           // 无父 = 根提交：历史详情弹窗要拿"空树"当左版本
           isRoot: parentList.length === 0,
@@ -325,6 +326,18 @@ export class GitVcs {
     return list;
   }
 
+  /** git 是否支持 --diff-merges=first-parent（2.30+）。旧版（本机实测 2.20）没有这个参数，
+   *  直接传给 git log 会以"未能识别的参数"失败——历史视图整个打不开。
+   *  结果按实例缓存（同一次运行里 git 可执行文件不会换版本）。 */
+  private diffMergesSupported: boolean | null = null;
+  private async supportsDiffMerges(): Promise<boolean> {
+    if (this.diffMergesSupported != null) return this.diffMergesSupported;
+    // 空仓库（尚无提交）git log 退出码仍是 0；只有参数不被识别才会非 0
+    const r = await this.exec(['log', '-1', '--diff-merges=first-parent', '--format=%H']);
+    this.diffMergesSupported = r.code === 0;
+    return this.diffMergesSupported;
+  }
+
   /** git log --name-status（可限定路径） */
   async log(limit = 200, pathRel?: string, offset = 0): Promise<LogEntry[]> {
     // -c core.quotepath=false：中文路径不做八进制转义（否则 changed 路径乱码）
@@ -333,8 +346,12 @@ export class GitVcs {
     if (limit > 0) args.push('-n', String(limit));
     if (offset > 0) args.push('--skip', String(offset));
     // --diff-merges=first-parent：合并提交默认不输出 diff（changed 为空），历史里只能看到 ⇄；
-    // 指定后按"相对第一父"列出本次合并实际带进来的文件，点开也能看差异
-    args.push('--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e', '--diff-merges=first-parent', '--name-status');
+    // 指定后按"相对第一父"列出本次合并实际带进来的文件，点开也能看差异。
+    // 旧 git 不支持该参数：主 log 不带它，解析后由 fillMergeChanges 单独补齐（见下）
+    const supportsDiffMerges = await this.supportsDiffMerges();
+    args.push('--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e');
+    if (supportsDiffMerges) args.push('--diff-merges=first-parent');
+    args.push('--name-status');
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args);
     // 刚 git init 的空仓库（尚无任何提交）：git log 直接失败，返回空列表即可，不该让上游 500
@@ -343,7 +360,28 @@ export class GitVcs {
       // git log 失败: {err}
       throw new Error(t('vcs.gitLogFailed', { err: res.stderr.trim() }));
     }
-    return parseGitLog(res.stdout);
+    const entries = parseGitLog(res.stdout);
+    // 旧 git（<2.30）：合并提交的 changed 是空的。逐条用 diff 第一父..该提交 补齐，
+    // 保持"合并提交也能看到合入文件"的行为（合并提交一般不多，200 条里通常个位数）
+    if (!supportsDiffMerges) await this.fillMergeChanges(entries, pathRel);
+    return entries;
+  }
+
+  /** 旧 git 兼容：给合并提交补上"相对第一父"的文件变更 */
+  private async fillMergeChanges(entries: LogEntry[], pathRel?: string): Promise<void> {
+    for (const e of entries) {
+      if (!e.isMerge) continue;
+      const args = ['-c', 'core.quotepath=false', 'diff', '--name-status', `${e.rev}^1`, e.rev];
+      if (pathRel) args.push('--', pathRel);
+      const r = await this.exec(args);
+      if (r.code !== 0) continue;
+      for (const line of r.stdout.split('\n')) {
+        const m = line.match(/^([MADRCU])\t(.+)$/);
+        if (!m || !m[1] || !m[2]) continue;
+        const p = m[2].includes('\t') ? m[2].split('\t').pop()! : m[2];
+        e.changed.push({ action: m[1], path: p });
+      }
+    }
   }
 
   /** 提交总数（rev-list --count 秒级精确） */
@@ -648,7 +686,10 @@ export class GitVcs {
   /** git show：单次提交完整内容（含 message + diff） */
   async show(rev: string, pathRel?: string): Promise<{ ok: boolean; output: string; error?: string }> {
     // -c core.quotepath=false：diff 头部路径行中文不做八进制转义
-    const args = ['-c', 'core.quotepath=false', 'show', rev];
+    // --first-parent -m：合并提交默认只输出 message、不带 diff（点文件会显示"无差异"）。
+    // 这两个参数让它按"相对第一父"列出改动，与历史列表 changed 的口径一致；
+    // 普通提交加与不加输出完全相同（实测 md5 一致）。
+    const args = ['-c', 'core.quotepath=false', 'show', '--first-parent', '-m', rev];
     if (pathRel) args.push('--', pathRel);
     const res = await this.exec(args, { timeoutMs: 120_000, decode: 'auto' });
     return {
