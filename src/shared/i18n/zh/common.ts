@@ -22,6 +22,7 @@ export const common = {
   'common.delete': '删除',
   'common.edit': '编辑',
   'common.refresh': '刷新',
+  'common.refreshed': '已刷新',
   'common.preview': '预览',
   'common.write': '编写',
 

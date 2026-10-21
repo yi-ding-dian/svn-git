@@ -18,6 +18,7 @@ export const common = {
   'common.delete': 'Delete',
   'common.edit': 'Edit',
   'common.refresh': 'Refresh',
+  'common.refreshed': 'Refreshed',
   'common.preview': 'Preview',
   'common.write': 'Write',
 

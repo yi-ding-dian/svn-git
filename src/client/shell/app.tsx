@@ -181,6 +181,19 @@ export function App() {
     void checkRemote();
   }, [refreshUnpushed, refreshStash, checkRemote]);
 
+  // F5 刷新：拦掉浏览器整页重载，改为重新扫描当前项目（与顶栏「刷新」同一动作）。
+  // 不重载页面 → 输入框内容、弹窗和视图状态都不会丢；轻提示 1.5 秒确认已生效。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F5' || e.repeat) return;
+      e.preventDefault();
+      refresh();
+      showToast(t('common.refreshed'), false, true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [refresh, showToast]);
+
   // 最近项目列表（加载 / 删除 / 设常用 / 备注）抽到 useProjectHistory；错误统一走 toast
   const { history, loadHistory, removeHistory, setFav, setRemark } = useProjectHistory((msg) => {
     showToast(msg, true);
