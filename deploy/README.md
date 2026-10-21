@@ -9,6 +9,8 @@
 |---|---|---|
 | `build.bat` | Windows | `svn-git-<版本>-portable.exe` — 免安装单文件 exe，默认档约 85MB（压缩级别可选，见下文） |
 | `build.sh` | Linux | `svn-git-<版本>.AppImage` — 免安装单文件，约 97MB（gzip；**勿换 xz**——冷启动会慢 20 倍，原因见 `electron-builder.yml` 注释） |
+| `build-wsl.sh` | WSL / 纯 Node | `svn-git-<版本>-wsl.tar.gz` — 浏览器模式，目标机需 Node 20.11+、git、svn；约 4MB |
+| `build-wsl-node.sh` | WSL / 内置 Node | `svn-git-<版本>-wsl-node.tar.gz` — 浏览器模式，目标机只需 git、svn；约 46MB |
 | （安装包） | Windows | `svn-git-<版本>-setup.exe` — NSIS 安装包，约 70MB |
 
 脚本名一律 ASCII 且两两成对：打包 `build.bat`（Windows 双击）/ `build.sh`（Linux），发版 `release.bat`（Windows 双击）/ `release.sh`（Linux）；流程逻辑统一在 `release.mjs`——两个入口都只是薄壳（cd 后转发给它）。
@@ -45,6 +47,28 @@ npm run dist:win            # NSIS 安装包（装到 Program Files + 开始菜�
 打好后可用 `../scripts/install-appimage.sh <AppImage 路径>` 把它装进系统应用菜单。
 
 **AppImage 只能在 Linux 上打**，Windows 打不出来；Windows 侧对应的免安装形态就是上面的 portable exe（首启会解压到临时目录，比 AppImage 挂载慢一两秒）。
+
+## WSL / 纯浏览器模式：`build-wsl.sh` / `build-wsl-node.sh`
+
+不需要 Electron / WSLg / FUSE，产物是纯 Node HTTP 服务，用 Windows 浏览器访问。
+
+```bash
+./deploy/build-wsl.sh        # 目标机需 Node 20.11+、git、svn；约 4MB
+./deploy/build-wsl-node.sh   # 内置 Linux x64 Node v22.23.1，目标机只需 git、svn；约 46MB
+```
+
+解压后：
+
+```bash
+tar -xzf svn-git-<版本>-wsl.tar.gz
+cd svn-git-<版本>-wsl
+./run-wsl.sh          # 后台常驻（本终端可关闭）
+./run-wsl.sh fg       # 前台运行，日志直接打在终端
+```
+
+Windows 浏览器打开 `http://localhost:23456`。WSL2 默认把 Windows 的 localhost 转发到 WSL；
+工作副本放 WSL 文件系统（如 `~/projects`），不要放 `/mnt/c`。页面里的文件浏览/上传操作的是
+WSL 文件系统，不是 Windows 盘。内置 Node 的版本可用 `WSL_NODE_VERSION=<版本>` 覆盖打包时下载的版本。
 
 ## 产物怎么用（自己拿到产物、或发给别人时看这节）
 
