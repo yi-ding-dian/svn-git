@@ -50,14 +50,14 @@ function parseSimple(buf: Buffer): Record<string, string> | null {
   return out;
 }
 
-interface CacheCred {
+export interface CacheCred {
   file: string;
   username: string;
   realm: string;
 }
-
-/** 找出缓存里匹配该 URL host 的凭据条目（realm 里出现 `://<host>` 且 host 后是 : 或 /） */
-function findCacheCreds(url: string): CacheCred[] {
+/** 找出缓存里匹配该 URL host 的凭据条目（realm 里出现 `://<host>` 且 host 后是 : 或 /）。
+ *  导出给 branch 路由：删除分支弹窗预填「操作系统凭据缓存里的用户名」（工具配置为空时） */
+export function findCacheCreds(url: string): CacheCred[] {
   let host = '';
   try {
     host = new URL(url).hostname.toLowerCase();

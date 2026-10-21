@@ -101,9 +101,32 @@ export class SvnVcs {
     return args;
   }
 
-  private async exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; decode?: 'utf8' | 'auto'; raw?: boolean } = {}) {
-    const stdinData = extra.stdinData ?? (this.cred?.username ? this.cred.password + '\n' : undefined);
-    return run(await resolveSvnBin(), this.baseArgs().concat(args), {
+  private async exec(
+    args: string[],
+    extra: {
+      stdinData?: string;
+      timeoutMs?: number;
+      signal?: AbortSignal;
+      decode?: 'utf8' | 'auto';
+      raw?: boolean;
+      /** 临时凭据（删除分支时用户手输的账号+密码）：覆盖配置里的账号，密码仍走 stdin */
+      auth?: { username: string; password: string };
+    } = {},
+  ) {
+    const stdinData = extra.auth
+      ? extra.auth.password + '\n'
+      : (extra.stdinData ?? (this.cred?.username ? this.cred.password + '\n' : undefined));
+    // 有临时凭据时用它替换配置账号（不能叠加：两个 --username 会让 svn 取错）
+    const base = extra.auth
+      ? [
+          '--username',
+          extra.auth.username,
+          '--password-from-stdin',
+          '--non-interactive',
+          ...(this.cred?.trustServerCert ? ['--trust-server-cert'] : []),
+        ]
+      : this.baseArgs();
+    return run(await resolveSvnBin(), base.concat(args), {
       cwd: this.repo.root,
       stdinData,
       timeoutMs: extra.timeoutMs ?? 120_000,
@@ -1261,22 +1284,24 @@ export class SvnVcs {
    *  - 最后一次提交：一次 info --xml 全拿到（不用 --show-item 三次网络往返）
    *  - 未合并版本数：只在当前位于 trunk/branches 时有意义；在 tags/独立目录下没有可比方向
    *  只读探测，任何一项失败都不阻塞删除（前端隐藏对应行） */
-  async branchDeleteCheck(name: string, password?: string): Promise<BranchDeleteCheck> {
+  async branchDeleteCheck(name: string, password?: string, username?: string): Promise<BranchDeleteCheck> {
     const root = await this.projectRootUrl();
     const url = `${root}/branches/${name}`;
-    const out: BranchDeleteCheck = { url, username: this.cred?.username ?? undefined };
+    // 账号优先用弹窗里输入的（未保存账号时可手填），其次用配置里的
+    const user = (username ?? this.cred?.username ?? '').trim();
+    const out: BranchDeleteCheck = { url, username: user || undefined };
     // 带密码时这一条 info 同时充当验证：认证不过就直接返回错误（弹窗内提示，不进入删除）
-    const usePw = password && this.cred?.username ? password : undefined;
+    const auth = password && user ? { username: user, password } : undefined;
     try {
-      const res = await this.exec(['info', '--xml', url], { timeoutMs: 60_000, ...(usePw ? { stdinData: usePw + '\n' } : {}) });
+      const res = await this.exec(['info', '--xml', url], { timeoutMs: 60_000, auth });
       if (res.code === 0) {
-        out.passwordOk = usePw ? true : undefined;
+        out.passwordOk = auth ? true : undefined;
         const entry = this.xml.parse(res.stdout)?.info?.entry ?? {};
         const commit = entry.commit ?? {};
         out.lastRev = commit['@_revision'] !== undefined ? String(commit['@_revision']) : undefined;
         out.lastAuthor = commit.author ? String(commit.author) : undefined;
         out.lastDate = commit.date ? String(commit.date) : undefined;
-      } else if (usePw) {
+      } else if (auth) {
         out.passwordOk = false;
         // 密码验证失败，未删除分支
         out.error = this.authError(res) ?? t('vcs.deleteAuthFailed');
@@ -1305,16 +1330,23 @@ export class SvnVcs {
     return out;
   }
 
-  async branchDelete(name: string, _force?: boolean, signal?: AbortSignal, password?: string, message?: string): Promise<VcsResult> {
+  async branchDelete(
+    name: string,
+    _force?: boolean,
+    signal?: AbortSignal,
+    password?: string,
+    message?: string,
+    username?: string,
+  ): Promise<VcsResult> {
     const root = await this.projectRootUrl();
-    // 用户输入了密码：先向服务器验证，成功后再用**同一个密码**执行删除——
-    // 避免"验证用一个、删除用缓存的另一个"导致提示和结果不一致。
-    // 密码只在本次调用内存里，不进日志/命令预览；匿名账号（无 username）忽略。
-    const usePw = password && this.cred?.username ? password : undefined;
-    const pin = usePw ? { stdinData: usePw + '\n' } : {};
+    // 账号/密码：优先用删除弹窗里输入的（未保存账号时可手填）。先用它验证能读，
+    // 再用同一份凭据执行删除——避免"验证用一个、删除用缓存的另一个"导致提示和结果不一致。
+    // 密码只在本次调用内存里，不进日志/命令预览。
+    const user = (username ?? this.cred?.username ?? '').trim();
+    const auth = password && user ? { username: user, password } : undefined;
     const url = `${root}/branches/${name}`;
-    if (usePw) {
-      const chk = await this.exec(['info', '--show-item', 'revision', url], { timeoutMs: 60_000, signal, ...pin });
+    if (auth) {
+      const chk = await this.exec(['info', '--show-item', 'revision', url], { timeoutMs: 60_000, signal, auth });
       if (chk.code !== 0) {
         // 密码验证失败，未删除分支
         return this.fail(this.authError(chk), chk.stderr.trim() || t('vcs.deleteAuthFailed'));
@@ -1322,11 +1354,16 @@ export class SvnVcs {
     }
     // 删除分支 {name}（提交信息可由弹窗编辑；空则回退模板——SVN 不接受空 log message）
     const delMsg = message?.trim() || t('vcs.commitMsg.branchDelete', { name });
-    const res = await this.exec(['delete', url, '-m', delMsg], { timeoutMs: 120_000, signal, ...pin });
+    const res = await this.exec(['delete', url, '-m', delMsg], { timeoutMs: 120_000, signal, auth });
     if (res.code !== 0) {
-      const auth = this.authError(res);
+      const authErr = this.authError(res);
+      // 用输入密码验证过"能读"，删除仍被拒 → 账号缺少写权限（SVN 两种情况都报 E170001，无法从文本区分）
+      if (authErr && auth) {
+        // 账号 {user} 能读取该分支，但没有删除权限（需要写权限），分支未删除
+        return { ok: false, message: t('vcs.deleteNoPermission', { user: auth.username }), code: 'AUTH' };
+      }
       // 删除分支失败
-      return this.fail(auth, res.stderr.trim() || t('vcs.deleteBranchFailed'));
+      return this.fail(authErr, res.stderr.trim() || t('vcs.deleteBranchFailed'));
     }
     // 已删除分支 {name}
     return { ok: true, message: t('vcs.branchDeleted', { name }) };

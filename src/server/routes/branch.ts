@@ -2,6 +2,7 @@
 import { sendJson, readBody, vcsOf, authErrorOf, invalidateStatusCache, runVcs, MSG_UNSUPPORTED_OP } from './util.js';
 import { progressDone } from '../../transfer-progress.js';
 import { invalidateRemoteProbe } from './recent.js';
+import { findCacheCreds } from './svn-auth.js';
 import { t } from '../../shared/i18n/index.js';
 import type { VcsResult } from '../../vcs/index.js';
 import type { Ctx } from './util.js';
@@ -67,9 +68,16 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         });
         if (action === 'create') result = await vcs.branchCreate(name, String(body.base ?? '') || undefined, ac.signal, String(body.message ?? '') || undefined);
         else if (action === 'delete-check') {
-          // 删除前风险信息（最后提交 / 未合并版本数）；带 password 时顺带验证账号。
+          // 删除前风险信息（最后提交 / 未合并版本数）；带账号密码时顺带验证。
           // 密码不落盘、不进日志；git 不实现 → 返回 null
-          sendJson(res, 200, (await vcs.branchDeleteCheck?.(name, String(body.password ?? '') || undefined)) ?? null);
+          const username = String(body.username ?? '') || undefined;
+          const check = (await vcs.branchDeleteCheck?.(name, String(body.password ?? '') || undefined, username)) ?? null;
+          // 工具配置里没有账号时，补上 svn 凭据缓存里的用户名（删除弹窗预填，密码仍需用户输入）
+          if (check && !check.username && check.url) {
+            const cached = findCacheCreds(check.url)[0];
+            if (cached) check.username = cached.username;
+          }
+          sendJson(res, 200, check);
           return true;
         }
         else if (action === 'switch') {
@@ -89,8 +97,16 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             sendJson(res, 400, { error: t('srv.deleteConfirmMismatch') });
             return true;
           }
-          // password：仅 svn 使用（可选，验证后即用即丢）；message：svn 提交信息（可编辑，空则后端回退模板）
-          result = await vcs.branchDelete(name, Boolean(body.force), ac.signal, String(body.password ?? '') || undefined, String(body.message ?? '') || undefined);
+          // password/username：仅 svn 使用（删除前验证账号与写权限，验证后即用即丢）；
+          // message：svn 提交信息（可编辑，空则后端回退模板）
+          result = await vcs.branchDelete(
+            name,
+            Boolean(body.force),
+            ac.signal,
+            String(body.password ?? '') || undefined,
+            String(body.message ?? '') || undefined,
+            String(body.username ?? '') || undefined,
+          );
         }
         else if (action === 'merge') {
           // path：svn 只合并分支下某个目录/文件（空=整树；git 忽略）

@@ -213,10 +213,10 @@ export interface Vcs {
    *  signal：取消/转后台（前端断开 → 后端杀掉在跑的子进程） */
   branchCreate(name: string, base?: string, signal?: AbortSignal, message?: string): Promise<VcsResult>;
   branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult>;
-  branchDelete(name: string, force?: boolean, signal?: AbortSignal, password?: string, message?: string): Promise<VcsResult>;
+  branchDelete(name: string, force?: boolean, signal?: AbortSignal, password?: string, message?: string, username?: string): Promise<VcsResult>;
   /** 删除分支前的风险信息（svn 专有：最后提交 + 未合并版本数）；git 不实现。
-   *  传 password 时顺带向服务器验证该密码（弹窗内即时提示错误，不用等删除请求） */
-  branchDeleteCheck?(name: string, password?: string): Promise<BranchDeleteCheck>;
+   *  传 password/username 时顺带向服务器验证该账号（弹窗内即时提示错误，不用等删除请求） */
+  branchDeleteCheck?(name: string, password?: string, username?: string): Promise<BranchDeleteCheck>;
   /** 合并分支（svn 可选 pathRel：只合并分支下某个目录/文件；空=整树）。
    *  signal：取消/转后台（前端断开 → 后端杀掉在跑的子进程） */
   merge(name: string, pathRel?: string, signal?: AbortSignal): Promise<VcsResult>;

@@ -53,7 +53,7 @@ export function BranchDialog(props: {
   /** 删除分支确认弹窗（SVN：输入分支名 + 可选密码）；值为要删除的分支名 */
   const [deleteFor, setDeleteFor] = useState<string | null>(null);
   /** 删除确认里输入的密码/分支名/提交信息（只在本次 act 调用内传递，用完即清，不落任何状态/存储） */
-  const deleteSecretRef = useRef<{ confirmName: string; password?: string; message?: string } | null>(null);
+  const deleteSecretRef = useRef<{ confirmName: string; password?: string; username?: string; message?: string } | null>(null);
   /** 新建分支弹窗里编辑的提交信息（svn copy 立即提交；git 忽略） */
   const createMsgRef = useRef<string | null>(null);
   /** SVN 项目迁移面板 */
@@ -120,7 +120,7 @@ export function BranchDialog(props: {
               ? await post.branchCreate(name, base, createMsg ?? undefined, signal)
               : action === 'delete'
                 // svn：服务端校验 confirmName 后才删；password 可选（验证后即用即丢）；message 可编辑
-                ? await post.branchDelete(name, del?.confirmName ?? name, del?.password, del?.message, signal)
+                ? await post.branchDelete(name, del?.confirmName ?? name, del?.password, del?.username, del?.message, signal)
                 : await post.branch(action, name, force, signal, base, pathRel);
         // 未合并导致删除被拒 → 不干巴巴报错，改弹"强制删除"二次确认（3 秒内弹窗还开着才有意义；
         // 已转后台的失败可从通知里看到提示后重新进弹窗强删）。
@@ -557,6 +557,14 @@ export function BranchDialog(props: {
           {/* ➕ 新建分支 */}
           {t('ops.branch.createBtn')}
         </button>
+        {/* 项目迁移（SVN）：把当前工作副本独立成带 trunk/branches/tags 的新项目。
+            跟「新建分支」放在同一行——两者都是“再造一条线”的入口 */}
+        {props.repoType === 'svn' && data && (
+          <button className="btn-accent" disabled={busy} onClick={() => setMigrateOpen((v) => !v)} title={t('ops.branch.migrateTip')}>
+            {/* 项目迁移… */}
+            {t('ops.branch.migrateBtn')}
+          </button>
+        )}
         {/* 获取远程：git fetch --all --prune（只刷新远程引用，不改工作区/本地分支）；SVN 无对应概念 */}
         {props.repoType === 'git' && (
           <button
@@ -574,16 +582,6 @@ export function BranchDialog(props: {
           </button>
         )}
       </div>
-      {/* 分支辅助操作独立一行：项目迁移（切回主干走列表主干行的「切换」） */}
-      {props.repoType === 'svn' && data && (
-        <div className="row" style={{ margin: '0 0 10px', gap: 6, flexWrap: 'wrap' }}>
-          {/* 把当前工作副本独立成带 trunk/branches/tags 的新项目 */}
-          <button className="mini btn-accent" disabled={busy} onClick={() => setMigrateOpen((v) => !v)} title={t('ops.branch.migrateTip')}>
-            {/* 项目迁移… */}
-            {t('ops.branch.migrateBtn')}
-          </button>
-        </div>
-      )}
       {/* SVN 项目迁移面板（独立子域，内部自管理状态） */}
       {props.repoType === 'svn' && migrateOpen && data && (
         <ProjectMigratePanel
@@ -636,11 +634,13 @@ export function BranchDialog(props: {
       {deleteFor && props.repoType === 'svn' && (
         <DeleteBranchModal
           name={deleteFor}
+          // 网络仓库（http/svn://）删除前必须再输账号密码；file:// 本地仓库无认证
+          needCred={!!data?.currentUrl && !/^file:/i.test(data.currentUrl)}
           onCancel={() => setDeleteFor(null)}
-          onConfirm={(password, from, message) => {
+          onConfirm={(password, from, message, username) => {
             if (from) fromRef.current = from;
-            // 密码/提交信息只交给本次删除任务，弹窗关闭后不再保留
-            deleteSecretRef.current = { confirmName: deleteFor, password, message };
+            // 密码/账号/提交信息只交给本次删除任务，弹窗关闭后不再保留
+            deleteSecretRef.current = { confirmName: deleteFor, password, username, message };
             setDeleteFor(null);
             act('delete', deleteFor);
           }}
