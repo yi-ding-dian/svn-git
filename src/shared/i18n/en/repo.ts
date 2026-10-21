@@ -359,11 +359,15 @@ export const repo = {
   'repo.picker.newFolder': '📁 New Folder',
   'repo.picker.dirTip': '{name}/\nDouble-click to enter · right-click to rename',
   'repo.picker.pathPlaceholder': 'Type a full directory path and press Enter, or drop a folder to switch…',
+  'repo.picker.outsideRoot': 'Choose a directory inside the current working copy.',
   'repo.picker.dropHint': '📁 Or drop a folder into this window to switch to that directory',
   'repo.picker.noSubdir': 'No subfolders (create one, or choose this directory)',
   'repo.picker.rename': 'Rename',
   'repo.picker.current': 'Current: {path}',
   'repo.picker.choose': 'Choose This Directory',
+  'repo.picker.chooseFile': 'Choose This File',
+  'repo.picker.fileSelected': 'Selected file: {name}',
+  'repo.picker.fileTip': 'Click to select this file: {name}',
 
   // ---- 环境检测 / 安装 ----
   'repo.env.title': 'Environment Check',

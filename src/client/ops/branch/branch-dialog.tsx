@@ -12,7 +12,7 @@ import { launchMagicFlight } from '../../animations/index.js';
 import { ResultLine } from '../../ui/result-line.js';
 import { t } from '../../../shared/i18n/index.js';
 import { LayoutNote } from '../layout-note.js';
-import { BRANCH_TITLE_KEY, currentLabelOf, isTrunkName, mergeSourceNoteOf, mergeTargetOf, type BranchAction } from './branch-shared.js';
+import { BRANCH_TITLE_KEY, currentLabelOf, isTrunkName, mergeSourceNoteOf, mergeTargetOf, type BranchAction, type PickDirRequest } from './branch-shared.js';
 import { BranchHelp } from './branch-help.js';
 import { BranchList } from './branch-list.js';
 import { CreateBranchConfirm } from './create-branch-confirm.js';
@@ -23,6 +23,10 @@ import { MergeSourceTarget } from './merge-source-target.js';
 
 export function BranchDialog(props: {
   repoType: 'svn' | 'git';
+  /** 当前工作副本本地根（合并到主干时作为范围目录浏览起点） */
+  workDir?: string;
+  /** 目录选择弹窗注入：ops 域不能直接引用 repo 的目录浏览器，由 shell 提供 */
+  onPickDir?: (req: PickDirRequest) => void;
   onClose: () => void;
   onChanged: () => void;
   /** 鼠标附近弹的全局提示（err=true 时按错误态显示、停留更久）：操作结果在弹窗里只有底部一行小字，
@@ -615,6 +619,8 @@ export function BranchDialog(props: {
           name={mergeScopeFor}
           target={mergeTarget.name}
           targetIsWorkCopy={mergeTarget.isWorkCopy}
+          workDir={props.workDir ?? ''}
+          onPickDir={props.onPickDir}
           onCancel={() => setMergeScopeFor(null)}
           onConfirm={(scope) => {
             const name = mergeScopeFor;

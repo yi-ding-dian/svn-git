@@ -44,6 +44,10 @@ export function DirBrowser(props: {
   };
   /** 拖入 / 系统选择器拿到的路径（语义由父层定）；传了才启用拖拽与兜底 */
   onPathPicked?: (path: string) => void;
+  /** 浏览下界：到了这个目录就不再显示「上级」与 `../`（合并范围等场景限制在本项目内） */
+  rootDir?: string;
+  /** 允许点选文件（合并范围的文件级合并）：单击选中/取消，选中名由父层保存；不传 = 文件不可选 */
+  fileSelect?: { selected: string | null; onSelect: (name: string | null) => void };
   /** 插槽：top=最近项目，toolbar=面包屑行右侧（新建文件夹），notice=识别条/操作反馈，footer=底部操作行 */
   slots?: { top?: React.ReactNode; toolbar?: React.ReactNode; notice?: React.ReactNode; footer?: React.ReactNode };
   /** 空判定（默认 entries.length === 0） */
@@ -91,12 +95,14 @@ export function DirBrowser(props: {
     void pickDir();
   };
 
-  const entries = props.data?.entries ?? [];
+  // 有浏览下界时，到下界就当作「已在根」：不显示 ←上级，也不渲染 `../`
+  const atRoot = Boolean(props.rootDir) && props.dir === props.rootDir;
+  const entries = (props.data?.entries ?? []).filter((e) => !(atRoot && e.name === '..'));
   const empty = props.data ? (props.isEmpty ? props.isEmpty(props.data) : entries.length === 0) : false;
   // 上级：到根返回自身（`/`、`D:\`）—— 顺带修掉旧 OpenBrowser 用 `dir !== '/'` 时
   // Windows 盘根也会显示「←上级」、点了没反应的问题
   const upTarget = props.dir ? parentPath(props.dir) : '';
-  const canUp = Boolean(props.dir) && upTarget !== props.dir;
+  const canUp = Boolean(props.dir) && upTarget !== props.dir && !atRoot;
 
   const tipOf = (it: DirEntry): string => {
     // `..` 无右键（见 onDirContextMenu 注释），提示里也不提重命名
@@ -176,8 +182,16 @@ export function DirBrowser(props: {
           {empty && <div className="empty" style={{ gridColumn: '1 / -1' }}>{props.emptyText ?? t('repo.open.emptyDir')}</div>}
           {entries.map((it) => {
             if (!it.isDir) {
+              const selected = props.fileSelect?.selected === it.name;
               return (
-                <div key={it.name} className="open-grid-item" title={tipOf(it)}>
+                <div
+                  key={it.name}
+                  className={`open-grid-item${selected ? ' selected' : ''}`}
+                  title={props.fileSelect ? t('repo.picker.fileTip', { name: it.name }) : tipOf(it)}
+                  // 文件级合并：单击选中/取消，双击也选中（不自动确认，仍走底部按钮）
+                  onClick={props.fileSelect ? () => props.fileSelect!.onSelect(selected ? null : it.name) : undefined}
+                  onDoubleClick={props.fileSelect ? () => props.fileSelect!.onSelect(it.name) : undefined}
+                >
                   <GridIcon isDir={false} name={it.name} size={38} />
                   <span className="open-grid-name">{it.name}</span>
                 </div>

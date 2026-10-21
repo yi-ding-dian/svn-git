@@ -7,12 +7,13 @@
  *  - appearance / theme：外观与主题
  *  - actions：提交、推送、刷新、diff 跳转等动作
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { get, post, type RepoInfo } from '../shared/api.js';
 import { launchMagicFlight } from '../animations/index.js';
 import { CommitModal } from '../ops/commit.js';
 import { CommitSelectModal } from '../ops/commit-select.js';
 import { BranchDialog } from '../ops/branch/index.js';
+import type { PickDirRequest } from '../ops/branch/branch-shared.js';
 import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
 import { TagDialog, GitInfoModal } from '../ops/tag-git-info.js';
 import { GitHubCreateModal } from '../repo/github-create-repo.js';
@@ -26,6 +27,7 @@ import { LoginModal } from '../repo/login.js';
 import { PracticeRepoDialog } from '../repo/practice/index.js';
 import { EnvInstallModal } from '../repo/env-install.js';
 import { RepoBrowseModal } from '../repo/repo-browse.js';
+import { PickDirModal } from '../repo/pick-dir.js';
 import { CreateRepoDialog, GetRepoDialog, type GitHubSetupOpts } from '../repo/repo-create.js';
 import { RevertModal } from '../filesystem/revert.js';
 import { RenameModal } from '../filesystem/rename.js';
@@ -137,6 +139,9 @@ export function ModalHost(props: ModalHostProps) {
    *  顶栏的远程地址 / [分支名]（以及 ⋯ 菜单里按远程地址显隐的 GitHub 各项）读的是 info，
    *  不显式重拉就停留在旧值（用户实报：`git branch -m` 后顶栏挂着旧分支名；
    *  GitHub 新建仓库成功后顶栏不显示仓库地址） */
+  /** 目录选择弹窗（业务域借用）：ops 不能直接引用 repo 的目录浏览器，由 shell 统一渲染 */
+  const [pickDir, setPickDir] = useState<PickDirRequest | null>(null);
+
   const refreshInfo = () => {
     // remote=true：分支切换/合并会改变"相对上游的 behind"，侧栏 ⬇ 角标必须跟着重探
     //（其它走 refreshInfo 的操作多探一次也无妨——后端 60s 缓存挡着，只有刚变过的仓库会真联网）
@@ -273,6 +278,8 @@ export function ModalHost(props: ModalHostProps) {
       {modal?.type === 'branches' && repo?.type && (
         <BranchDialog
           repoType={repo.type}
+          workDir={repo.root ?? ''}
+          onPickDir={(req) => setPickDir(req)}
           onClose={() => setModal(null)}
           onToast={(m, err) => {
             // 鼠标附近弹的全局提示：分支操作的结果原本只在弹窗底部一行小绿字，点完视线不往那儿去
@@ -627,6 +634,21 @@ export function ModalHost(props: ModalHostProps) {
                 }
               : undefined
           }
+        />
+      )}
+      {/* 目录选择：后渲染 → 叠在业务弹窗之上（合并范围「浏览…」等） */}
+      {pickDir && (
+        <PickDirModal
+          title={pickDir.title}
+          startDir={pickDir.startDir}
+          restrictTo={pickDir.restrictTo}
+          allowFiles={pickDir.allowFiles}
+          onClose={() => setPickDir(null)}
+          onPick={(p) => {
+            const cb = pickDir.onPick;
+            setPickDir(null);
+            cb(p);
+          }}
         />
       )}
     </>

@@ -361,11 +361,15 @@ export const repo = {
   'repo.picker.newFolder': '📁 新建文件夹',
   'repo.picker.dirTip': '{name}/\n双击进入 · 右键重命名',
   'repo.picker.pathPlaceholder': '输入完整目录路径后回车，或拖入文件夹切换目录…',
+  'repo.picker.outsideRoot': '只能选择当前工作副本内的目录。',
   'repo.picker.dropHint': '📁 或将文件夹直接拖入此窗口，切换到该目录',
   'repo.picker.noSubdir': '没有子文件夹（可新建文件夹，或直接选择当前目录）',
   'repo.picker.rename': '重命名',
   'repo.picker.current': '当前: {path}',
   'repo.picker.choose': '选择此目录',
+  'repo.picker.chooseFile': '选择此文件',
+  'repo.picker.fileSelected': '已选文件：{name}',
+  'repo.picker.fileTip': '单击选择此文件 {name}',
 
   // ---- 环境检测 / 安装（EnvInstallModal）----
   'repo.env.title': '环境检测',

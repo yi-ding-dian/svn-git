@@ -3,7 +3,7 @@
  *  「下载到…」/「所在目录」共用，底部「选择此目录」+ 新建文件夹/右键重命名）。
  *  浏览视图在 DirBrowser；这里只管数据与两种模式的语义 */
 import { useEffect, useRef, useState } from 'react';
-import { baseName, joinPath, isImeComposing } from '../shared/utils.js';
+import { baseName, joinPath, isImeComposing, isPathWithin } from '../shared/utils.js';
 import { get, post, type BrowseResult, type RepoInfo } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
@@ -34,14 +34,18 @@ export function OpenBrowser(props: {
   onOpened?: (repo: RepoInfo) => void;
   onToast?: (msg: string, err?: boolean) => void;
   /** 选择目录模式（「下载到…」/「所在目录」共用）：底部「选择此目录」+ 新建文件夹/右键重命名；
-   *  不显示最近项目与"进入此仓库"（打开语义），路径输入/拖入只做目录跳转 */
-  pick?: { onPick: (dir: string) => void };
+   *  不显示最近项目与"进入此仓库"（打开语义），路径输入/拖入只做目录跳转。
+   *  rootDir：浏览下界（如合并范围限制在当前工作副本内）——上翻/跳转/拖入超出时提示并停住
+   *  allowFiles：允许点选文件（合并范围的单文件合并） */
+  pick?: { onPick: (path: string) => void; rootDir?: string; allowFiles?: boolean };
 }) {
   const [data, setData] = useState<BrowseResult | null>(null);
   const [dir, setDir] = useState(props.startDir);
   const [error, setError] = useState('');
   const [svnBare, setSvnBare] = useState<string | null>(null); // 识别到 SVN 版本库存储目录 → 提示进入工作副本
   const [pathInput, setPathInput] = useState('');
+  /** 文件级选择（pick.allowFiles）：当前目录下选中的文件名；切目录即清空，避免跨目录误填 */
+  const [pickedFile, setPickedFile] = useState<string | null>(null);
   const [history, setHistory] = useState<{ path: string; type: 'svn' | 'git'; lastOpened: number }[]>([]);
   // 最近项目右键菜单（删除）
   const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string } | null>(null);
@@ -55,6 +59,8 @@ export function OpenBrowser(props: {
   const [noticeErr, setNoticeErr] = useState(false);
   // startDir 由 /api/info 异步返回(home 目录)：首次拿到值才初始化浏览位置(仅一次,后续 info 刷新不重置)
   const dirInitRef = useRef(false);
+  // 换了目录：清掉已选文件（选择只针对当前目录里的文件）
+  useEffect(() => setPickedFile(null), [dir]);
   useEffect(() => {
     if (!dirInitRef.current && props.startDir) {
       dirInitRef.current = true;
@@ -147,6 +153,11 @@ export function OpenBrowser(props: {
     const path = p.trim(); // 局部变量名避开 i18n 的 t()
     if (!path || path === dir) {
       setPathInput('');
+      return;
+    }
+    // 有浏览下界时只能在工作副本内跳转（拖入/系统选择器/手输路径统一在这里拦）
+    if (props.pick?.rootDir && !isPathWithin(props.pick.rootDir, path)) {
+      setError(t('repo.picker.outsideRoot'));
       return;
     }
     setError('');
@@ -326,7 +337,16 @@ export function OpenBrowser(props: {
         data={data}
         error={error}
         onError={setError}
-        onDirChange={setDir}
+        onDirChange={(d) => {
+          // 上翻 / 双击 `..` 也受限：超出下界时提示并留在当前目录
+          if (props.pick?.rootDir && !isPathWithin(props.pick.rootDir, d)) {
+            setError(t('repo.picker.outsideRoot'));
+            return;
+          }
+          setDir(d);
+        }}
+        rootDir={pick?.rootDir}
+        fileSelect={pick?.allowFiles ? { selected: pickedFile, onSelect: setPickedFile } : undefined}
         // 路径输入/拖入：打开模式走 openPath（识别/打开仓库）；pick 模式只做目录跳转
         onPathPicked={(p) => (pick ? jumpTo(p) : void openPath(p))}
         pathInput={{
@@ -441,13 +461,17 @@ export function OpenBrowser(props: {
               })()}
             </>
           ),
-          // 底部：当前路径 + 「选择此目录」——pick 模式（打开模式无底部，靠外层 hideFoot）
+          // 底部：当前路径 + 「选择此目录」（选了文件时改为「选择此文件」）——pick 模式（打开模式无底部，靠外层 hideFoot）
           footer: pick ? (
             <div className="foot" style={{ margin: 0, padding: '12px 0 0' }}>
-              {/* 当前: {path} */}
-              <span className="dim small" style={{ flex: 1, wordBreak: 'break-all' }}>{t('repo.picker.current', { path: dir })}</span>
-              {/* 选择此目录 */}
-              <button className="primary" onClick={() => pick.onPick(dir)}>{t('repo.picker.choose')}</button>
+              {/* 当前: {path} / 已选文件：{name} */}
+              <span className="dim small" style={{ flex: 1, wordBreak: 'break-all' }}>
+                {pickedFile ? t('repo.picker.fileSelected', { name: pickedFile }) : t('repo.picker.current', { path: dir })}
+              </span>
+              {/* 选择此目录 / 选择此文件 */}
+              <button className="primary" onClick={() => pick.onPick(pickedFile ? joinPath(dir, pickedFile) : dir)}>
+                {t(pickedFile ? 'repo.picker.chooseFile' : 'repo.picker.choose')}
+              </button>
             </div>
           ) : undefined,
         }}

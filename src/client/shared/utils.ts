@@ -101,6 +101,19 @@ export function parentPath(p: string): string {
   return i <= 0 ? '/' : t.slice(0, i);
 }
 
+/** p 是否位于 base 内（含 base 本身）。Windows 形态下 `\` 与 `/` 都接受，盘符比较忽略大小写。
+ *  目录选择器的「限制在某个根之下」用它：上翻/跳转/拖入都在这里兜底。 */
+export function isPathWithin(base: string, p: string): boolean {
+  const b = base.replace(/[\\/]+$/, '');
+  const q = p.replace(/[\\/]+$/, '');
+  if (!b) return true;
+  const same = (a: string, c: string) => (isWinPath(a) || isWinPath(c) ? a.toLowerCase() === c.toLowerCase() : a === c);
+  if (same(b, q)) return true;
+  return [b + '/', b + '\\', b.replace(/\\/g, '/') + '/'].some((prefix) =>
+    isWinPath(q) ? q.toLowerCase().startsWith(prefix.toLowerCase()) : q.startsWith(prefix),
+  );
+}
+
 /** 拖入的 File → 绝对路径（打开项目 / 目录选择器共用；取不到返回 null，由调用方兜底）。
  *  ① Electron 内嵌窗口：webUtils.getPathForFile（preload 注入，替代已移除的 File.path）
  *  ② 浏览器（Chrome/Edge 等）：File.path 属性

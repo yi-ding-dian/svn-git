@@ -1568,6 +1568,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
   border: 1px solid transparent;
 }
 .open-grid-item:hover { background: var(--panel2); border-color: var(--accent); }
+/* 文件级合并：选中的文件（单击选中，底部按钮确认） */
+.open-grid-item.selected { background: var(--panel2); border-color: var(--accent); outline: 1px solid var(--accent); }
 .open-grid-name {
   font-size: 12px; text-align: center; max-width: 100%; word-break: break-all;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;

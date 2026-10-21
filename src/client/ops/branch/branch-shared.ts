@@ -27,6 +27,16 @@ export function currentLabelOf(data: BranchInfo | null): string {
   return data.current;
 }
 
+/** 目录选择请求：ops 域不直接引用 repo 的目录浏览器，由 shell 注入并渲染。
+ *  restrictTo=浏览下界（合并范围限制在工作副本内）；allowFiles=允许选中文件（文件级合并） */
+export interface PickDirRequest {
+  title: string;
+  startDir: string;
+  restrictTo?: string;
+  allowFiles?: boolean;
+  onPick: (path: string) => void;
+}
+
 /** 当前项是否就是分支列表里的某项（tag/other 不在 branches 列表，不能高亮同名项） */
 export function isCurrentBranchOf(data: BranchInfo | null, name: string): boolean {
   return name === data?.current && data?.currentKind !== 'tag' && data?.currentKind !== 'other';
