@@ -116,6 +116,17 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           // 当前仓库类型不支持分支推送
           result = (await vcs.branchPush?.(name, ac.signal)) ?? { ok: false, message: t('srv.branchPushUnsupported') };
         }
+        else if (action === 'fetch') {
+          // 获取远程更新（git 独有）：只刷新远程跟踪引用/分支列表，不改工作区、不改本地分支；
+          // 远程引用变了，项目探测/待拉取角标依赖的缓存也要失效
+          result = (await vcs.fetchRemote?.(ac.signal)) ?? { ok: false, message: MSG_UNSUPPORTED_OP() };
+          invalidateStatusCache(vcsOf().repo.root);
+        }
+        else if (action === 'update') {
+          // 快进更新指定本地分支（git 独有）：当前分支会改工作区，成功/失败都让状态缓存失效
+          result = (await vcs.branchUpdate?.(name, Number(body.ahead) || 0, Number(body.behind) || 0, ac.signal)) ?? { ok: false, message: MSG_UNSUPPORTED_OP() };
+          invalidateStatusCache(vcsOf().repo.root);
+        }
         else {
           // 未知操作
           sendJson(res, 400, { error: t('srv.unknownAction') });

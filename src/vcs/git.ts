@@ -1055,13 +1055,37 @@ export class GitVcs {
 
   // ============ 分支管理 ============
 
-  /** 分支列表（本地+远程），current 为当前分支名 */
-  async branchList(): Promise<{ current: string; branches: { name: string; remote: boolean }[] }> {
+  /** 分支列表（本地+远程），current 为当前分支名。
+   *  本地分支附带上游跟踪信息（ahead/behind/upstream）——分支管理的 ↑N/↓N 徽标与快进更新用。 */
+  async branchList(): Promise<{
+    current: string;
+    branches: { name: string; remote: boolean; ahead?: number; behind?: number; upstream?: string }[];
+  }> {
     const cur = await this.branch();
     const res = await this.exec(['branch', '-a']);
     // git branch 失败: {err}
     if (res.code !== 0) throw new Error(t('vcs.gitBranchFailed', { err: res.stderr.trim() }));
-    const branches: { name: string; remote: boolean }[] = [];
+    // 上游跟踪：%(upstream:track) 形如 [ahead 1, behind 3] / [ahead 1] / [behind 3] / [gone]
+    // （gone = 上游分支已被删除，此时领先/落后没有意义，按"无上游"处理、不显示徽标）
+    // 单独用 for-each-ref 而不是解析 branch -vv：后者列宽/中英文对齐不稳定，机器解析容易错位
+    const trackRes = await this.exec([
+      '-c', 'core.quotepath=false', 'for-each-ref',
+      '--format=%(refname:short)%00%(upstream:short)%00%(upstream:track)',
+      'refs/heads',
+    ]);
+    const tracks = new Map<string, { ahead: number; behind: number; upstream: string }>();
+    if (trackRes.code === 0) {
+      for (const line of trackRes.stdout.split('\n')) {
+        if (!line) continue;
+        const [name, upstream, state = ''] = line.split('\0');
+        // 无上游 / 上游已删除：不提供领先落后信息
+        if (!name || !upstream || state.includes('gone')) continue;
+        const a = /ahead (\d+)/.exec(state);
+        const b = /behind (\d+)/.exec(state);
+        tracks.set(name, { ahead: a ? Number(a[1]) : 0, behind: b ? Number(b[1]) : 0, upstream });
+      }
+    }
+    const branches: { name: string; remote: boolean; ahead?: number; behind?: number; upstream?: string }[] = [];
     for (const line of res.stdout.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed) continue;
@@ -1072,7 +1096,9 @@ export class GitVcs {
         branches.push({ name: trimmed.replace(/^remotes\//, ''), remote: true });
       } else if (trimmed !== 'HEAD') {
         const name = trimmed.replace(/^\*\s*/, '');
-        if (name) branches.push({ name, remote: false });
+        if (!name) continue;
+        const tr = tracks.get(name);
+        branches.push(tr ? { name, remote: false, ...tr } : { name, remote: false });
       }
     }
     return { current: cur, branches };
@@ -1120,6 +1146,75 @@ export class GitVcs {
   async branchPush(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }> {
     // 已推送分支 {name} 到远程
     return this.pushWithAuth(['push', '-u', 'origin', name], t('vcs.branchPushed', { name }), signal);
+  }
+
+  /** 获取远程更新（分支管理「获取远程」）：git fetch --all --prune——只更新远程跟踪引用与分支列表，
+   *  不改工作区、不改本地分支。认证失败时与推送一样用保存的凭据重试。 */
+  async fetchRemote(signal?: AbortSignal): Promise<VcsResult> {
+    const runFetch = (env?: Record<string, string>) =>
+      this.exec(['fetch', '--all', '--prune'], { timeoutMs: 120_000, signal, env });
+    let res = await runFetch();
+    // 获取已取消
+    if (res.aborted) return { ok: false, message: t('vcs.fetchCancelled') };
+    if (res.code !== 0) {
+      const cred = loadConfig().git;
+      const isAuthError = /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(res.stderr + res.stdout);
+      if (isAuthError && cred?.username && cred?.password) {
+        const ask = createAskPass(cred);
+        res = await runFetch({ GIT_ASKPASS: ask.path });
+        ask.cleanup();
+        // 获取已取消
+        if (res.aborted) return { ok: false, message: t('vcs.fetchCancelled') };
+      }
+    }
+    // 失败时远程跟踪引用也可能已部分更新（--all 多远程），preflight 缓存一律失效
+    this.invalidatePreflight();
+    if (res.code !== 0) {
+      // 获取远程失败
+      return { ok: false, message: res.stderr.trim() || t('vcs.fetchFailed') };
+    }
+    // 已获取远程更新
+    return { ok: true, message: t('vcs.fetchDone') };
+  }
+
+  /** 快进更新指定本地分支到上游：
+   *  当前分支 = fetch + merge --ff-only（会改工作区；有未提交冲突时 git 拒绝并保留现状）；
+   *  非当前分支 = fetch origin <名>:<名>（不碰工作区；git 自己拒绝非快进）。
+   *  ahead>0 表示已分叉，快进不可能——直接返回原因，不执行命令。 */
+  async branchUpdate(name: string, ahead: number, behind: number, signal?: AbortSignal): Promise<VcsResult> {
+    // 已是最新（按钮本不应在 behind=0 时出现，后端兜底）
+    if (behind <= 0) return { ok: true, message: t('vcs.branchUpToDate', { name }) };
+    // 分叉：本地有远端没有的提交，快进会丢提交——不执行，直接说清
+    if (ahead > 0) return { ok: false, message: t('vcs.branchDiverged', { name, ahead, behind }) };
+    const curRaw = await this.exec(['rev-parse', '--abbrev-ref', 'HEAD']);
+    const cur = curRaw.stdout.trim();
+    let res;
+    if (cur === name) {
+      const f = await this.exec(['fetch', 'origin', name], { timeoutMs: 120_000, signal });
+      // 更新已取消
+      if (f.aborted) return { ok: false, message: t('vcs.updateCancelled') };
+      // 获取远程失败
+      if (f.code !== 0) return { ok: false, message: f.stderr.trim() || t('vcs.fetchFailed') };
+      // --ff-only：只允许快进，本地有独有提交时 git 拒绝，不会产生合并提交
+      res = await this.exec(['merge', '--ff-only', `origin/${name}`], { timeoutMs: 120_000, signal });
+    } else {
+      // 非当前分支：直接快进到同名本地分支（当前检出分支 git 会拒绝写入，所以当前分支走上面的 merge）
+      res = await this.exec(['fetch', 'origin', `${name}:${name}`], { timeoutMs: 120_000, signal });
+    }
+    this.invalidatePreflight();
+    // 更新已取消
+    if (res.aborted) return { ok: false, message: t('vcs.updateCancelled') };
+    if (res.code !== 0) {
+      const err = (res.stderr + res.stdout).trim();
+      // 非快进 / 工作区会被覆盖：git 原始输出中英文不定，统一换成可读提示
+      if (/not possible to fast-forward|not a fast-forward|non-fast-forward|would be overwritten/i.test(err)) {
+        return { ok: false, message: t('vcs.branchUpdateBlocked', { name }) };
+      }
+      // 更新分支失败
+      return { ok: false, message: err || t('vcs.branchUpdateFailed', { name }) };
+    }
+    // 已更新分支 {name}（{n} 个提交）
+    return { ok: true, message: t('vcs.branchUpdated', { name, n: behind }) };
   }
 
   /** 删除远程分支：name 为 origin/xxx 形式（拆 remote + branch），命令 push --delete；认证重试同推送 */

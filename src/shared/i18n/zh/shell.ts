@@ -141,6 +141,8 @@ export const shell = {
   'shell.tasks.projectMigrate': '项目迁移 · {name}',
   'shell.tasks.mergeMainline': '合并到主干 · {name}',
   'shell.tasks.branchPush': '推送分支 · {name}',
+  'shell.tasks.branchFetch': '获取远程更新',
+  'shell.tasks.branchUpdate': '更新分支 · {name}',
   'shell.tasks.branchRemoteDelete': '删除远程分支 · {name}',
   // SVN 清理任务标题
   'shell.tasks.cleanupTitle': '{repo} · 清理',

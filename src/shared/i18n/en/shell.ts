@@ -139,6 +139,8 @@ export const shell = {
   'shell.tasks.projectMigrate': 'Migrate project · {name}',
   'shell.tasks.mergeMainline': 'Merge into mainline · {name}',
   'shell.tasks.branchPush': 'Push branch · {name}',
+  'shell.tasks.branchFetch': 'Fetch remote updates',
+  'shell.tasks.branchUpdate': 'Update branch · {name}',
   'shell.tasks.branchRemoteDelete': 'Delete remote branch · {name}',
   // SVN cleanup task title
   'shell.tasks.cleanupTitle': '{repo} · Cleanup',

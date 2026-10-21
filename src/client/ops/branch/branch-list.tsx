@@ -18,6 +18,8 @@ export function BranchList(props: {
   onDelete: (name: string) => void;
   onPush: (name: string) => void;
   onRemoteDelete: (name: string) => void;
+  /** 点击本地分支的 ↑N/↓N 徽标（dialog 据 ahead/behind 决定更新/推送/分叉说明） */
+  onTrackClick: (b: { name: string; ahead: number; behind: number }) => void;
 }) {
   const { repoType, data, sel, busy, hasRemote } = props;
   // SVN 主干：不在 branches/ 下，单独合成一行（像 Git 列表里的 main/master）。
@@ -90,6 +92,10 @@ export function BranchList(props: {
       {data?.branches.map((b) => {
         // 当前项（tag/独立目录不在 branches 列表里，不能高亮同名分支）
         const isCur = isCurrentBranchOf(data, b.name);
+        // 本地分支的远程同步状态（仅 git 有 upstream 时）：↑领先 / ↓落后 / ✓同步
+        const tr = repoType === 'git' && !b.remote && b.upstream
+          ? { ahead: b.ahead ?? 0, behind: b.behind ?? 0, upstream: b.upstream }
+          : null;
         // 是否已推送：本地分支能否找到对应的 origin/<名字> 远程项
         const isPushed = data.branches.some((r) => r.remote && r.name === 'origin/' + b.name);
         // 远程行（origin/xxx；只有 git 有，svn 的 branchList 全是 remote:false）的「切换」实际语义
@@ -120,6 +126,35 @@ export function BranchList(props: {
               {t(isCur ? 'ops.branch.badgeCurrent' : b.remote ? 'ops.branch.badgeRemote' : 'ops.branch.badgeLocal')}
             </span>
             <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
+            {/* 远程同步徽标：状态即入口——↓ 点击更新、↑ 点击推送、分叉点击看说明、✓ 不可点 */}
+            {tr && (() => {
+              const { ahead, behind, upstream } = tr;
+              const clickable = ahead > 0 || behind > 0;
+              const tip =
+                ahead > 0 && behind > 0
+                  ? t('ops.branch.trackDivergedTip', { name: b.name, upstream, ahead, behind })
+                  : ahead > 0
+                    ? t('ops.branch.trackAheadTip', { name: b.name, upstream, ahead })
+                    : behind > 0
+                      ? t('ops.branch.trackBehindTip', { name: b.name, upstream, behind })
+                      : t('ops.branch.trackSyncedTip', { name: b.name, upstream });
+              return (
+                <span
+                  className={`branch-track${clickable ? ' clickable' : ''}`}
+                  title={tip}
+                  onClick={(e) => {
+                    // ✓（已同步）不响应；其余点击交给 dialog 决定动作
+                    if (!clickable) return;
+                    e.stopPropagation(); // 不触发行选中
+                    props.onTrackClick({ name: b.name, ahead, behind });
+                  }}
+                >
+                  {ahead > 0 && <span className="ahead">↑{ahead}</span>}
+                  {behind > 0 && <span className="behind">↓{behind}</span>}
+                  {!clickable && <span className="synced">✓</span>}
+                </span>
+              );
+            })()}
             {/* 非当前分支的常规操作；当前分支若未推送也显示「推送到远程」（仅仓库配了远程时） */}
             {(isCur === false || (repoType === 'git' && hasRemote && !b.remote && !isPushed)) && (
               <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>

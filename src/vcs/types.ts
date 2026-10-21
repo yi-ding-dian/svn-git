@@ -132,7 +132,16 @@ export interface BranchListResult {
   /** svn：由 copyfrom 推断出的主干对应 URL（如 tags/SCA_HB → trunk/src）与相对路径 */
   mainlineUrl?: string;
   mainlineRelative?: string;
-  branches: { name: string; remote: boolean }[];
+  branches: {
+    name: string;
+    remote: boolean;
+    /** git：本地分支相对上游的领先提交数（无 upstream 时缺省）——分支列表 ↑N 徽标 */
+    ahead?: number;
+    /** git：本地分支相对上游的落后提交数（无 upstream 时缺省）——分支列表 ↓N 徽标 */
+    behind?: number;
+    /** git：上游分支名（如 origin/main；无 upstream 时缺省）——徽标悬浮提示里说清和谁比 */
+    upstream?: string;
+  }[];
   layout?: SvnLayout;
 }
 
@@ -191,6 +200,12 @@ export interface Vcs {
   mergeAbort?(): Promise<VcsResult>;
   /** 推送指定本地分支到远程（git 独有；首次推送自动 git push -u origin <名字> 建立上游） */
   branchPush?(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }>;
+  /** 获取远程更新（git 独有）：git fetch --all --prune——只更新远程跟踪引用/分支列表，
+   *  不改工作区、不改本地分支。分支管理「获取远程」按钮用。 */
+  fetchRemote?(signal?: AbortSignal): Promise<VcsResult>;
+  /** 快进更新指定本地分支到上游（git 独有）：当前分支 fetch + merge --ff-only；
+   *  非当前分支 fetch origin <名>:<名>。ahead>0（分叉）时应由调用方拦截，后端仍由 git 拒绝非快进。 */
+  branchUpdate?(name: string, ahead: number, behind: number, signal?: AbortSignal): Promise<VcsResult>;
   /** 删除远程分支（git push --delete，name 为 origin/xxx 形式；最终仅在 reflog/push 后可恢复）。svn 无本地/远程之分，不实现 */
   branchRemoteDelete?(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }>;
   tagList(): Promise<string[]>;

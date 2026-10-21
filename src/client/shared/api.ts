@@ -585,7 +585,15 @@ export interface BranchInfo {
   /** svn：由 copyfrom 推断出的主干对应 URL/相对路径（tags/SCA_HB → trunk/src） */
   mainlineUrl?: string;
   mainlineRelative?: string;
-  branches: { name: string; remote: boolean }[];
+  branches: {
+    name: string;
+    remote: boolean;
+    /** git：本地分支相对上游的领先/落后提交数（无 upstream 时不返回）——分支列表 ↑N/↓N 徽标 */
+    ahead?: number;
+    behind?: number;
+    /** git：上游分支名（如 origin/main）——徽标悬浮提示用 */
+    upstream?: string;
+  }[];
   /** svn 仓库布局探测结果（git 无此概念，不返回） */
   layout?: SvnLayout;
 }
@@ -654,8 +662,16 @@ export const post = {
    *  凭据用已存 Git 凭据（classic Token 需 delete_repo）；本地 origin 不自动改动。 */
   githubDeleteRepo: (confirm: string, token: string) =>
     api<{ ok: boolean; fullName?: string; message?: string }>('/api/github-delete-repo', json({ confirm, token })),
-  branch: (action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete', name: string, force = false, signal?: AbortSignal, base?: string, pathRel?: string) =>
-    api<VcsResult>('/api/branch', json({ action, name, force, base, path: pathRel }, signal)),
+  branch: (
+    action: 'create' | 'switch' | 'delete' | 'merge' | 'merge-abort' | 'push' | 'remote-delete' | 'fetch' | 'update',
+    name: string,
+    force = false,
+    signal?: AbortSignal,
+    base?: string,
+    pathRel?: string,
+    ahead = 0,
+    behind = 0,
+  ) => api<VcsResult>('/api/branch', json({ action, name, force, base, path: pathRel, ahead, behind }, signal)),
   /** SVN 项目迁移：当前工作副本独立成长期开发线（devline）或独立项目（project）。
    *  switchAfter=迁移完成后把当前工作副本切到新路径。 */
   projectMigrate: (mode: 'devline' | 'project', name: string, switchAfter: boolean, signal?: AbortSignal) =>

@@ -3,7 +3,7 @@ import type { BranchInfo } from '../../shared/api.js';
 import type { I18nKey } from '../../../shared/i18n/index.js';
 
 /** 分支操作 → 任务标题 key（**模块级**：同 OP_BUSY_KEY 惯例，避免每次渲染重建） */
-export type BranchAction = 'create' | 'switch' | 'delete' | 'merge' | 'push' | 'remote-delete';
+export type BranchAction = 'create' | 'switch' | 'delete' | 'merge' | 'push' | 'remote-delete' | 'fetch' | 'update';
 
 export const BRANCH_TITLE_KEY: Record<BranchAction, I18nKey> = {
   create: 'shell.tasks.branchCreate',
@@ -12,6 +12,8 @@ export const BRANCH_TITLE_KEY: Record<BranchAction, I18nKey> = {
   merge: 'shell.tasks.branchMerge',
   push: 'shell.tasks.branchPush',
   'remote-delete': 'shell.tasks.branchRemoteDelete',
+  fetch: 'shell.tasks.branchFetch',
+  update: 'shell.tasks.branchUpdate',
 };
 
 /** 主干分支：git main/master、svn trunk（团队稳定版本，禁止删除） */

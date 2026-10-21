@@ -79,7 +79,7 @@ export function BranchDialog(props: {
   /** 分支操作统一入口（**3 秒延迟后台化**——用户定稿）：任务从发起起就在 store 里，
    *  3 秒内完成：弹窗内照常收尾（结果行/列表刷新），用户无感；
    *  超时未完成：收起弹窗 + 飞线（起点=确认按钮）+ 轻提示"已转入后台"，完成走统一通知。 */
-  const act = (action: BranchAction, name: string, force = false, base?: string, pathRel?: string) => {
+  const act = (action: BranchAction, name: string, force = false, base?: string, pathRel?: string, track?: { ahead: number; behind: number }) => {
     const title = t(BRANCH_TITLE_KEY[action], { name });
     const from = fromRef.current ?? undefined;
     fromRef.current = null; // 用掉即清（每次确认时重新记）
@@ -87,7 +87,12 @@ export function BranchDialog(props: {
       kind: 'branch',
       title,
       run: async (signal) => {
-        const r = await post.branch(action, name, force, signal, base, pathRel);
+        // fetch 只刷新远程引用（无分支名）；update 需要 ahead/behind 判断能否快进
+        const r = action === 'fetch'
+          ? await post.branch('fetch', '', false, signal)
+          : action === 'update'
+            ? await post.branch('update', name, false, signal, undefined, undefined, track?.ahead ?? 0, track?.behind ?? 0)
+            : await post.branch(action, name, force, signal, base, pathRel);
         // 未合并导致删除被拒 → 不干巴巴报错，改弹"强制删除"二次确认（3 秒内弹窗还开着才有意义；
         // 已转后台的失败可从通知里看到提示后重新进弹窗强删）。
         // （确认框文案早就写着"可强制删除"，但 force 从没传下去过，未合并的分支根本删不掉 —— 用户实报）
@@ -108,8 +113,9 @@ export function BranchDialog(props: {
         const text = action === 'merge' && !r.ok ? `${r.message} ${t('ops.branch.mergeAbortHint')}` : r.message;
         setMsg(text);
         setMsgErr(!r.ok);
-        // 成功刷新；合并"失败"（冲突 ok=false）时工作区也已变化——同样刷新后「解决冲突」入口才出现
-        if (r.ok || action === 'merge') {
+        // 成功刷新；合并"失败"（冲突 ok=false）时工作区也已变化——同样刷新后「解决冲突」入口才出现；
+        // fetch/update 失败时远程引用也可能已部分更新，一并刷新避免徽标停在旧值
+        if (r.ok || action === 'merge' || action === 'fetch' || action === 'update') {
           load();
           props.onChanged();
         }
@@ -333,6 +339,66 @@ export function BranchDialog(props: {
     });
   };
 
+  /** 快进更新指定本地分支（↓N 徽标点击）：
+   *  当前分支 = fetch + merge --ff-only（会改工作区，提前提示未提交改动）；
+   *  其它本地分支 = fetch origin <名>:<名>（不碰工作区）。
+   *  分叉（ahead>0）不走到这里——由 showDiverged 只做说明。 */
+  const confirmUpdate = async (name: string, ahead: number, behind: number) => {
+    let dirtyNote = '';
+    // 只有当前分支的更新会改工作区；其它分支的 fetch 不碰工作区
+    if (name === data?.current) {
+      try {
+        const st = await get.status();
+        const items = st.items ?? [];
+        const changed = items.filter((i) => i.code && i.code !== ' ' && i.code !== '?' && i.code !== 'I' && i.code !== 'X').length;
+        if (changed > 0) {
+          // 当前有 {changed} 个文件未提交/未暂存，更新会尽量保留；与更新内容冲突时 git 会中止并保持现状。
+          dirtyNote = `\n\n${t('ops.branch.updateDirtyNote', { changed })}`;
+        }
+      } catch {
+        /* 检测失败不阻塞 */
+      }
+    }
+    // 命令预览与后端实际执行保持一致（当前分支 merge --ff-only；其它分支 fetch 直接快进本地引用）
+    const cmd = name === data?.current
+      ? `git fetch origin ${name} && git merge --ff-only origin/${name}`
+      : `git fetch origin ${name}:${name}`;
+    setCfm({
+      // 更新分支
+      title: t('ops.branch.updateTitle'),
+      // 确认将本地分支 {name} 快进更新到 {upstream}？\n远端领先 {behind} 个提交。
+      msg: `${t('ops.branch.updateMsg', { name, upstream: `origin/${name}`, behind })}${dirtyNote}`,
+      confirmCmd: cmd,
+      action: () => act('update', name, false, undefined, undefined, { ahead, behind }),
+    });
+  };
+
+  /** 分叉（↑N ↓M）点徽标：只说明原因，不做任何写操作 */
+  const showDiverged = (name: string, ahead: number, behind: number) => {
+    setCfm({
+      // 无法快进更新
+      title: t('ops.branch.divergedTitle'),
+      // 本地 {name} 与 {upstream} 已分叉：本地领先 {ahead} 个提交，远端领先 {behind} 个提交。...
+      msg: t('ops.branch.divergedMsg', { name, upstream: `origin/${name}`, ahead, behind }),
+      confirmLabel: t('ui.modal.gotIt'),
+      hideCancel: true,
+      action: () => setCfm(null),
+    });
+  };
+
+  /** 徽标点击总入口：↓ 更新；↑ 推送；↑↓ 只说明；✓ 在列表里不可点（不会走到这里） */
+  const onTrackClick = ({ name, ahead, behind }: { name: string; ahead: number; behind: number }) => {
+    if (ahead > 0 && behind > 0) {
+      showDiverged(name, ahead, behind);
+      return;
+    }
+    if (behind > 0) {
+      void confirmUpdate(name, ahead, behind);
+      return;
+    }
+    void confirmPush(name);
+  };
+
   /** 删除远程分支：远程将不再存在（本地分支不受影响）；网络操作带进度窗可取消 */
   const confirmRemoteDelete = async (name: string) => {
     setCfm({
@@ -399,6 +465,18 @@ export function BranchDialog(props: {
           {/* ➕ 新建分支 */}
           {t('ops.branch.createBtn')}
         </button>
+        {/* 获取远程：git fetch --all --prune（只刷新远程引用，不改工作区/本地分支）；SVN 无对应概念 */}
+        {props.repoType === 'git' && (
+          <button
+            className="mini"
+            disabled={busy}
+            onClick={() => act('fetch', '')}
+            title={t('ops.branch.fetchTip')}
+          >
+            {/* ⟳ 获取远程 */}
+            {t('ops.branch.fetchBtn')}
+          </button>
+        )}
       </div>
       {/* 分支辅助操作独立一行：项目迁移 / 合并到主干（切回主干走列表主干行的「切换」） */}
       {props.repoType === 'svn' && data && (
@@ -464,6 +542,7 @@ export function BranchDialog(props: {
         onDelete={confirmDelete}
         onPush={confirmPush}
         onRemoteDelete={confirmRemoteDelete}
+        onTrackClick={onTrackClick}
       />
       <ResultLine msg={msg} err={msgErr} />
       {/* SVN 合并范围（目录/文件级）；留空回车 = 整个分支 */}
