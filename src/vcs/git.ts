@@ -1147,7 +1147,8 @@ export class GitVcs {
 
   /** 创建分支：git branch <名> [基点]。基点缺省=当前 HEAD（现状行为）；传主干名则从主干创建——
    * 从非主干分支开新分支会包含该分支已提交的改动，基于主干可避开（前端确认弹窗引导） */
-  async branchCreate(name: string, base?: string, signal?: AbortSignal): Promise<VcsResult> {
+  // message 仅 svn 使用（复制/删除会立即提交到服务器，需要 log message）；git 建分支不产生提交
+  async branchCreate(name: string, base?: string, signal?: AbortSignal, _message?: string): Promise<VcsResult> {
     const res = await this.exec(['branch', name, ...(base ? [base] : [])], { signal });
     // 创建分支失败
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.createBranchFailed') };

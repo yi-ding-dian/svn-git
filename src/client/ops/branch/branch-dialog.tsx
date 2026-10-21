@@ -54,6 +54,8 @@ export function BranchDialog(props: {
   const [deleteFor, setDeleteFor] = useState<string | null>(null);
   /** 删除确认里输入的密码/分支名/提交信息（只在本次 act 调用内传递，用完即清，不落任何状态/存储） */
   const deleteSecretRef = useRef<{ confirmName: string; password?: string; message?: string } | null>(null);
+  /** 新建分支弹窗里编辑的提交信息（svn copy 立即提交；git 忽略） */
+  const createMsgRef = useRef<string | null>(null);
   /** SVN 项目迁移面板 */
   const [migrateOpen, setMigrateOpen] = useState(false);
 
@@ -106,15 +108,20 @@ export function BranchDialog(props: {
         // 删除确认里输入的密码/分支名/提交信息：只取一次，防止 3 秒后转后台时还挂在 ref 上
         const del = action === 'delete' ? deleteSecretRef.current : null;
         deleteSecretRef.current = null;
+        const createMsg = action === 'create' ? createMsgRef.current : null;
+        createMsgRef.current = null;
         // fetch 只刷新远程引用（无分支名）；update 需要 ahead/behind 判断能否快进
         const r = action === 'fetch'
           ? await post.branch('fetch', '', false, signal)
           : action === 'update'
             ? await post.branch('update', name, false, signal, undefined, undefined, track?.ahead ?? 0, track?.behind ?? 0)
-            : action === 'delete'
-              // svn：服务端校验 confirmName 后才删；password 可选（验证后即用即丢）；message 可编辑
-              ? await post.branchDelete(name, del?.confirmName ?? name, del?.password, del?.message, signal)
-              : await post.branch(action, name, force, signal, base, pathRel);
+            : action === 'create'
+              // svn：提交信息可由弹窗编辑（空则后端回退模板）；git 无提交，忽略
+              ? await post.branchCreate(name, base, createMsg ?? undefined, signal)
+              : action === 'delete'
+                // svn：服务端校验 confirmName 后才删；password 可选（验证后即用即丢）；message 可编辑
+                ? await post.branchDelete(name, del?.confirmName ?? name, del?.password, del?.message, signal)
+                : await post.branch(action, name, force, signal, base, pathRel);
         // 未合并导致删除被拒 → 不干巴巴报错，改弹"强制删除"二次确认（3 秒内弹窗还开着才有意义；
         // 已转后台的失败可从通知里看到提示后重新进弹窗强删）。
         // （确认框文案早就写着"可强制删除"，但 force 从没传下去过，未合并的分支根本删不掉 —— 用户实报）
@@ -667,8 +674,10 @@ export function BranchDialog(props: {
           name={createCfm.name}
           trunkBase={createCfm.trunkBase}
           onCancel={() => setCreateCfm(null)}
-          onConfirm={(base, from) => {
+          onConfirm={(base, from, message) => {
             fromRef.current = from;
+            // svn copy 的提交信息（弹窗里可编辑；git 为空）
+            createMsgRef.current = message ?? null;
             const name = createCfm.name;
             setCreateCfm(null);
             act('create', name, false, base);

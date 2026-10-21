@@ -964,7 +964,7 @@ export class SvnVcs {
    *  - 'current'：当前工作副本目录（给非 trunk 检出的子项目再开分支用；与来源同源，可切换）；
    *  - 缺省：标准布局的 trunk（分支=trunk 的平行线，合并回主干才是它的出路）。
    *  无 trunk 且未指定从当前目录复制时拒绝（保持原有安全语义）。 */
-  async branchCreate(name: string, base?: string, signal?: AbortSignal): Promise<VcsResult> {
+  async branchCreate(name: string, base?: string, signal?: AbortSignal, message?: string): Promise<VcsResult> {
     const root = await this.projectRootUrl();
     const invalid = this.invalidName(name);
     if (invalid) return { ok: false, message: invalid };
@@ -994,10 +994,11 @@ export class SvnVcs {
       // 创建 branches 目录失败: {err}
       return { ok: false, message: t('vcs.createBranchesDirFailed', { err: (err as Error).message }) };
     }
-    // 创建分支 {name}（从当前目录复制时把来源写进提交信息，便于日后追溯）
-    const msg = fromCurrent
+    // 提交信息：弹窗可编辑（默认是下面的模板）；空则回退模板——SVN 不接受空 log message
+    const defaultMsg = fromCurrent
       ? t('vcs.commitMsg.branchCreateFrom', { name, from: this.relOf(from, root) })
       : t('vcs.commitMsg.branchCreate', { name });
+    const msg = message?.trim() || defaultMsg;
     const res = await this.exec(['copy', from, target, '-m', msg], { timeoutMs: 120_000, signal });
     if (res.code !== 0) {
       const auth = this.authError(res);

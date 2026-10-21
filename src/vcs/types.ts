@@ -211,7 +211,6 @@ export interface Vcs {
   /** 创建分支（git 可选基点 base：git branch <名> [基点]；svn：base='current' 从当前工作副本目录复制，
    *  缺省从项目根 trunk 复制）。
    *  signal：取消/转后台（前端断开 → 后端杀掉在跑的子进程） */
-  branchCreate(name: string, base?: string, signal?: AbortSignal): Promise<VcsResult>;
   branchCreate(name: string, base?: string, signal?: AbortSignal, message?: string): Promise<VcsResult>;
   branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult>;
   branchDelete(name: string, force?: boolean, signal?: AbortSignal, password?: string, message?: string): Promise<VcsResult>;

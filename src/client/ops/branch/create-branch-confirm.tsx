@@ -13,8 +13,9 @@ export function CreateBranchConfirm(props: {
   /** git：找到的主干基点（main/master） */
   trunkBase?: string;
   onCancel: () => void;
-  /** base：svn 的 'current' 或 git 的基点分支名；from=确认按钮位置（转后台时的飞线起点） */
-  onConfirm: (base: string | undefined, from: DOMRect) => void;
+  /** base：svn 的 'current' 或 git 的基点分支名；from=确认按钮位置（转后台时的飞线起点）；
+   *  message=svn copy 的提交信息（可编辑，空则后端回退模板） */
+  onConfirm: (base: string | undefined, from: DOMRect, message?: string) => void;
 }) {
   const { repoType, data, name, trunkBase } = props;
   const currentLabel = currentLabelOf(data);
@@ -30,8 +31,22 @@ export function CreateBranchConfirm(props: {
 
   /** SVN 预览：源 URL（trunk / 当前目录）→ 目标 URL（branches/新分支名）；显示 `^/` 简写 */
   const projectRoot = (data.projectRoot ?? '').replace(/\/+$/, '');
-  const svnSourceUrl =
-    svnBase === 'current' ? (data.currentUrl ?? '') : projectRoot ? `${projectRoot}/trunk` : '';
+  const sourceUrlOf = (b: 'trunk' | 'current') =>
+    b === 'current' ? (data.currentUrl ?? '') : projectRoot ? `${projectRoot}/trunk` : '';
+  const relOf = (url: string) => (projectRoot && url.startsWith(projectRoot + '/') ? url.slice(projectRoot.length + 1) : url);
+  /** svn copy 立即提交到服务器：提交信息默认按来源生成，可改；空则后端回退模板 */
+  const defaultMsgOf = (b: 'trunk' | 'current') =>
+    b === 'current'
+      ? t('vcs.commitMsg.branchCreateFrom', { name, from: relOf(sourceUrlOf('current')) })
+      : t('vcs.commitMsg.branchCreate', { name });
+  const [commitMsg, setCommitMsg] = useState(() => defaultMsgOf(defaultSvnBase));
+  const [msgEdited, setMsgEdited] = useState(false);
+  /** 切换来源时，用户没手改过就跟着换默认提交信息（改过则保留，避免覆盖输入） */
+  const chooseSvnBase = (b: 'trunk' | 'current') => {
+    setSvnBase(b);
+    if (!msgEdited) setCommitMsg(defaultMsgOf(b));
+  };
+  const svnSourceUrl = sourceUrlOf(svnBase);
   const svnTargetUrl = projectRoot ? `${projectRoot}/branches/${name}` : '';
   const shortUrl = (url: string) => {
     if (!projectRoot || !url.startsWith(projectRoot)) return url;
@@ -84,13 +99,13 @@ export function CreateBranchConfirm(props: {
             <div>{t('ops.branch.confirmCreate', { name })}</div>
             {data.layout?.trunk && (
               <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                <input type="radio" checked={svnBase === 'trunk'} onChange={() => setSvnBase('trunk')} />
+                <input type="radio" checked={svnBase === 'trunk'} onChange={() => chooseSvnBase('trunk')} />
                 {/* 从 trunk 复制（标准主干开发） */}
                 <span>{t('ops.branch.baseSvnTrunk')}</span>
               </label>
             )}
             <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer', flexWrap: 'wrap' }}>
-              <input type="radio" checked={svnBase === 'current'} onChange={() => setSvnBase('current')} />
+              <input type="radio" checked={svnBase === 'current'} onChange={() => chooseSvnBase('current')} />
               {/* 从当前目录 {current} 复制 */}
               <span>{t('ops.branch.baseSvnCurrent', { current: currentLabel })}</span>
               {svnBase === 'current' && (
@@ -102,6 +117,19 @@ export function CreateBranchConfirm(props: {
             </label>
             {/* 源（trunk/当前目录）→ 目标（branches/新分支名）预览 */}
             {svnPreview}
+            {/* 提交信息：svn copy 是立即提交到服务器，这条 log message 会记下来（可改；空则用默认模板） */}
+            <div className="small">{t('ops.branch.commitMsgLabel')}</div>
+            <input
+              type="text"
+              style={{ width: '100%' }}
+              value={commitMsg}
+              onChange={(e) => {
+                setCommitMsg(e.target.value);
+                setMsgEdited(true);
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
             {/* 创建后不自动切换，仍停留在 {current}。 */}
             <div className="dim small">{t('ops.branch.noAutoSwitch', { current: currentLabel })}</div>
           </div>
@@ -112,13 +140,16 @@ export function CreateBranchConfirm(props: {
       confirmCmd={
         repoType === 'git'
           ? cmdOfRepo('git', 'branch_create', createBase === 'trunk' ? { name, base: trunkBase! } : { name })
-          : svnBase === 'current'
-            ? cmdOfRepo('svn', 'branch_create_from', { name, from: data.currentUrl ?? currentLabel, target: `${data.projectRoot}/branches/${name}` })
-            : cmdOfRepo('svn', 'branch_create', { name })
+          : // svn copy 必须带 log message：在命令预览后补 -m（引号转义只为可读，实际参数不经 shell）
+            (svnBase === 'current'
+              ? cmdOfRepo('svn', 'branch_create_from', { name, from: data.currentUrl ?? currentLabel, target: `${data.projectRoot}/branches/${name}` })
+              : cmdOfRepo('svn', 'branch_create', { name }) ?? ''
+            ) +
+            ` -m "${(commitMsg.trim() || defaultMsgOf(svnBase)).replace(/"/g, '\\"')}"`
       }
       onConfirm={(e) => {
         const base = repoType === 'git' ? (createBase === 'trunk' ? trunkBase : undefined) : svnBase === 'current' ? 'current' : undefined;
-        props.onConfirm(base, e.currentTarget.getBoundingClientRect());
+        props.onConfirm(base, e.currentTarget.getBoundingClientRect(), repoType === 'svn' ? commitMsg.trim() || undefined : undefined);
       }}
       onCancel={props.onCancel}
     />

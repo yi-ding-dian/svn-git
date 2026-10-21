@@ -65,7 +65,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         res.on('close', () => {
           if (!res.writableEnded) ac.abort();
         });
-        if (action === 'create') result = await vcs.branchCreate(name, String(body.base ?? '') || undefined, ac.signal);
+        if (action === 'create') result = await vcs.branchCreate(name, String(body.base ?? '') || undefined, ac.signal, String(body.message ?? '') || undefined);
         else if (action === 'delete-check') {
           // 删除前风险信息（最后提交 / 未合并版本数）；带 password 时顺带验证账号。
           // 密码不落盘、不进日志；git 不实现 → 返回 null

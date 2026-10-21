@@ -709,6 +709,9 @@ export const post = {
   /** 删除分支前置检查：最后提交 + 未合并版本数（svn；git 返回 null）；带 password 时顺带验证账号 */
   branchDeleteCheck: (name: string, password?: string) =>
     api<BranchDeleteCheck | null>('/api/branch', json({ action: 'delete-check', name, password })),
+  /** 创建分支：message 仅 svn（svn copy 立即提交，需要 log message；空则后端用模板） */
+  branchCreate: (name: string, base?: string, message?: string, signal?: AbortSignal) =>
+    api<VcsResult>('/api/branch', json({ action: 'create', name, base, message }, signal)),
   /** 删除分支：必须带确认用的分支名（服务端二次校验）；password 仅 svn，验证后即用即丢；
    *  message 仅 svn（svn delete 立即提交，空则后端用模板） */
   branchDelete: (name: string, confirmName: string, password?: string, message?: string, signal?: AbortSignal) =>
