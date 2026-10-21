@@ -1329,7 +1329,8 @@ export class GitVcs {
   }
 
   /** 删除分支（force 为 true 时 -D） */
-  async branchDelete(name: string, force = false, signal?: AbortSignal): Promise<VcsResult> {
+  // password/message 仅 svn 使用（删除前验证账号、删除提交的 log message）；git 本地删除无此环节
+  async branchDelete(name: string, force = false, signal?: AbortSignal, _password?: string, _message?: string): Promise<VcsResult> {
     const res = await this.exec(['branch', force ? '-D' : '-d', name], { signal });
     // 删除分支失败
     if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.deleteBranchFailed') };

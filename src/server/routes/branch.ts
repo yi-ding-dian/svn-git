@@ -66,6 +66,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           if (!res.writableEnded) ac.abort();
         });
         if (action === 'create') result = await vcs.branchCreate(name, String(body.base ?? '') || undefined, ac.signal);
+        else if (action === 'delete-check') {
+          // 删除前风险信息（最后提交 / 未合并版本数）；带 password 时顺带验证账号。
+          // 密码不落盘、不进日志；git 不实现 → 返回 null
+          sendJson(res, 200, (await vcs.branchDeleteCheck?.(name, String(body.password ?? '') || undefined)) ?? null);
+          return true;
+        }
         else if (action === 'switch') {
           result = await vcs.branchSwitch(name, ac.signal);
           // svn switch 会改写工作副本文件（回主干等）；git checkout 后工作区内容换分支——防旧状态残留
@@ -75,7 +81,17 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             invalidateRemoteProbe(vcsOf().repo.root);
           }
         }
-        else if (action === 'delete') result = await vcs.branchDelete(name, Boolean(body.force), ac.signal);
+        else if (action === 'delete') {
+          // 服务端二次校验：前端要求输入分支名，绕过前端直接打 API 也不能误删
+          const confirmName = String(body.confirmName ?? '');
+          if (confirmName !== name) {
+            // 分支名确认不一致，未删除
+            sendJson(res, 400, { error: t('srv.deleteConfirmMismatch') });
+            return true;
+          }
+          // password：仅 svn 使用（可选，验证后即用即丢）；message：svn 提交信息（可编辑，空则后端回退模板）
+          result = await vcs.branchDelete(name, Boolean(body.force), ac.signal, String(body.password ?? '') || undefined, String(body.message ?? '') || undefined);
+        }
         else if (action === 'merge') {
           // path：svn 只合并分支下某个目录/文件（空=整树；git 忽略）
           result = await vcs.merge(name, String(body.path ?? '').trim() || undefined, ac.signal);

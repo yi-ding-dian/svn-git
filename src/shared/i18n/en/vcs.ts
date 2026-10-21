@@ -62,6 +62,7 @@ export const vcs = {
   'vcs.migratedAndSwitched': '{msg}; the working copy has been switched to it',
   'vcs.migratedSwitchFailed': 'Migration completed ({target}), but switching the working copy failed: {err}. Re-checkout that path manually',
   'vcs.deleteBranchFailed': 'Failed to delete branch',
+  'vcs.deleteAuthFailed': 'Password verification failed; the branch was not deleted',
   'vcs.branchDeleted': 'Deleted branch {name}',
   'vcs.noTrunkSwitchBack': 'This repository has no trunk directory, so it cannot switch back to trunk (check the repository layout or switch to another branch)',
   'vcs.switchNoAncestor': 'Switch failed: the working copy and target {target} have no common ancestor (different directory levels). Check the mainline path, or use "Merge into mainline" / project migration.',

@@ -609,6 +609,22 @@ export interface StashItem {
   label: string;
 }
 
+/** 删除分支前的风险信息（/api/branch action=delete-check；git 返回 null） */
+export interface BranchDeleteCheck {
+  url?: string;
+  lastRev?: string;
+  lastAuthor?: string;
+  lastDate?: string;
+  /** 该分支还有多少版本没合并到当前分支；undefined = 无法判断 */
+  unmerged?: number | null;
+  compareWith?: string;
+  /** 当前保存的 SVN 账号（有值才提供"验证密码"选项） */
+  username?: string;
+  /** 传了 password 时的验证结果（false 时 error 里是原因） */
+  passwordOk?: boolean;
+  error?: string;
+}
+
 /** 练习仓库生成结果（/api/practice/create） */
 export interface PracticeResult {
   ok: boolean;
@@ -690,6 +706,13 @@ export const post = {
     ahead = 0,
     behind = 0,
   ) => api<VcsResult>('/api/branch', json({ action, name, force, base, path: pathRel, ahead, behind }, signal)),
+  /** 删除分支前置检查：最后提交 + 未合并版本数（svn；git 返回 null）；带 password 时顺带验证账号 */
+  branchDeleteCheck: (name: string, password?: string) =>
+    api<BranchDeleteCheck | null>('/api/branch', json({ action: 'delete-check', name, password })),
+  /** 删除分支：必须带确认用的分支名（服务端二次校验）；password 仅 svn，验证后即用即丢；
+   *  message 仅 svn（svn delete 立即提交，空则后端用模板） */
+  branchDelete: (name: string, confirmName: string, password?: string, message?: string, signal?: AbortSignal) =>
+    api<VcsResult>('/api/branch', json({ action: 'delete', name, confirmName, password, message }, signal)),
   /** 练习仓库：在指定父目录下生成（成功后前端用 workDir 调用 /api/open 打开） */
   practiceCreate: (
     body: { type: 'git' | 'svn'; parentDir: string; scenarios: { remote?: boolean; conflict?: boolean }; projectLayout?: boolean },

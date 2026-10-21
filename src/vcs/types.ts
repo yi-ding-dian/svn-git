@@ -147,6 +147,25 @@ export interface BranchListResult {
   layout?: SvnLayout;
 }
 
+/** 删除分支前的风险信息（svn 专有；git 不实现）。弹窗据此提示"删掉会丢什么" */
+export interface BranchDeleteCheck {
+  /** 分支的完整 URL */
+  url?: string;
+  /** 最后一次提交：版本号 / 作者 / 时间（ISO） */
+  lastRev?: string;
+  lastAuthor?: string;
+  lastDate?: string;
+  /** 该分支还有多少版本没合并到当前分支；null/缺省 = 无法判断（不在 trunk/branches、无 mergeinfo、查询失败） */
+  unmerged?: number | null;
+  /** 未合并统计的对照分支名（当前所在主干/分支），null 时前端不展示 */
+  compareWith?: string;
+  /** 当前保存的 SVN 账号：有值时前端才提供"验证密码"选项（匿名访问无法用此方式确认） */
+  username?: string;
+  /** 传了 password 时的验证结果：true=服务器认可；false=失败，原因在 error */
+  passwordOk?: boolean;
+  error?: string;
+}
+
 /** 统一 VCS 操作接口：公共方法两实现均实现（必选），平台独有能力可选——server 层按 repo.type 分支或 ?. 调用。 */
 export interface Vcs {
   status(pathRel?: string): Promise<FileStatus[]>;
@@ -193,8 +212,12 @@ export interface Vcs {
    *  缺省从项目根 trunk 复制）。
    *  signal：取消/转后台（前端断开 → 后端杀掉在跑的子进程） */
   branchCreate(name: string, base?: string, signal?: AbortSignal): Promise<VcsResult>;
+  branchCreate(name: string, base?: string, signal?: AbortSignal, message?: string): Promise<VcsResult>;
   branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult>;
-  branchDelete(name: string, force?: boolean, signal?: AbortSignal): Promise<VcsResult>;
+  branchDelete(name: string, force?: boolean, signal?: AbortSignal, password?: string, message?: string): Promise<VcsResult>;
+  /** 删除分支前的风险信息（svn 专有：最后提交 + 未合并版本数）；git 不实现。
+   *  传 password 时顺带向服务器验证该密码（弹窗内即时提示错误，不用等删除请求） */
+  branchDeleteCheck?(name: string, password?: string): Promise<BranchDeleteCheck>;
   /** 合并分支（svn 可选 pathRel：只合并分支下某个目录/文件；空=整树）。
    *  signal：取消/转后台（前端断开 → 后端杀掉在跑的子进程） */
   merge(name: string, pathRel?: string, signal?: AbortSignal): Promise<VcsResult>;

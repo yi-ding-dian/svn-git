@@ -67,6 +67,7 @@ export const vcs = {
   'vcs.migratedAndSwitched': '{msg}；当前工作副本已切换过去',
   'vcs.migratedSwitchFailed': '迁移已完成（{target}），但切换当前工作副本失败：{err}。可手动重新检出该路径',
   'vcs.deleteBranchFailed': '删除分支失败',
+  'vcs.deleteAuthFailed': '密码验证失败，未删除分支',
   'vcs.branchDeleted': '已删除分支 {name}',
   'vcs.noTrunkSwitchBack': '仓库没有 trunk 目录，无法切回主干（请确认仓库布局或直接切换到其他分支）',
   'vcs.switchNoAncestor': '切换失败：当前工作副本与目标 {target} 没有共同祖先（目录层级不同）。请确认主干对应路径，或使用「合并到主干」/ 项目迁移。',

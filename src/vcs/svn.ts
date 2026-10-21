@@ -7,7 +7,7 @@ import { invalidateSvnIgnoreMap } from './ignore.js';
 import { t } from '../shared/i18n/index.js';
 import { progressStepsStart, progressStepsAdvance } from '../transfer-progress.js';
 import { platform } from '../platform/index.js';
-import type { BranchListResult, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, SvnLayout, VcsResult } from './types.js';
+import type { BranchDeleteCheck, BranchListResult, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
 /** svn 可执行文件解析：PATH 优先；找不到时试平台常见安装路径（Windows 上装完 svn 系统 PATH
  *  不会刷新到已运行的进程——兜底路径让「装完刷新页面即用」成立）。
@@ -854,6 +854,22 @@ export class SvnVcs {
     return url.replace(/\/(trunk|branches|tags)(\/.*)?$/, '');
   }
 
+  /** 某 URL 历史里最老的一条 revision（`--stop-on-copy` 的复制/创建提交）；取不到返回 null。
+   *  用于把"分支根创建"从未合并统计里剔除（刚建的分支不应提示有未合并改动）。 */
+  private async oldestRev(url: string): Promise<number | null> {
+    const q = await this.exec(['log', '--stop-on-copy', '-q', '--xml', url], { timeoutMs: 60_000 });
+    if (q.code !== 0 || !q.stdout.trim()) return null;
+    try {
+      const doc = this.xml.parse(q.stdout);
+      const entries = doc?.log?.logentry;
+      const arr = Array.isArray(entries) ? entries : entries ? [entries] : [];
+      const rev = Number(arr[arr.length - 1]?.['@_revision']); // --stop-on-copy：最后一条最老
+      return Number.isFinite(rev) ? rev : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** 某 URL 的复制来源（svn log --stop-on-copy 的**最老**一条里的 copyfrom-path，仓库绝对路径）。
    *  注意 `-l 1` 配 `--stop-on-copy` 返回的是最新一条而非复制点，所以分两步：
    *  先取日志列表的最后一条 revision（复制提交），再单独取该 revision 的路径详情。 */
@@ -1240,10 +1256,72 @@ export class SvnVcs {
   }
 
   /** 删除分支（远程删除 branches/<name>，危险操作由前端确认） */
-  async branchDelete(name: string, _force?: boolean, signal?: AbortSignal): Promise<VcsResult> {
+  /** 删除分支前的风险信息（弹窗展示"删掉会丢什么"）：
+   *  - 最后一次提交：一次 info --xml 全拿到（不用 --show-item 三次网络往返）
+   *  - 未合并版本数：只在当前位于 trunk/branches 时有意义；在 tags/独立目录下没有可比方向
+   *  只读探测，任何一项失败都不阻塞删除（前端隐藏对应行） */
+  async branchDeleteCheck(name: string, password?: string): Promise<BranchDeleteCheck> {
     const root = await this.projectRootUrl();
-    // 删除分支 {name}
-    const res = await this.exec(['delete', `${root}/branches/${name}`, '-m', t('vcs.commitMsg.branchDelete', { name })], { timeoutMs: 120_000, signal });
+    const url = `${root}/branches/${name}`;
+    const out: BranchDeleteCheck = { url, username: this.cred?.username ?? undefined };
+    // 带密码时这一条 info 同时充当验证：认证不过就直接返回错误（弹窗内提示，不进入删除）
+    const usePw = password && this.cred?.username ? password : undefined;
+    try {
+      const res = await this.exec(['info', '--xml', url], { timeoutMs: 60_000, ...(usePw ? { stdinData: usePw + '\n' } : {}) });
+      if (res.code === 0) {
+        out.passwordOk = usePw ? true : undefined;
+        const entry = this.xml.parse(res.stdout)?.info?.entry ?? {};
+        const commit = entry.commit ?? {};
+        out.lastRev = commit['@_revision'] !== undefined ? String(commit['@_revision']) : undefined;
+        out.lastAuthor = commit.author ? String(commit.author) : undefined;
+        out.lastDate = commit.date ? String(commit.date) : undefined;
+      } else if (usePw) {
+        out.passwordOk = false;
+        // 密码验证失败，未删除分支
+        out.error = this.authError(res) ?? t('vcs.deleteAuthFailed');
+      }
+    } catch {
+      /* 探测失败：不显示最后提交 */
+    }
+    const loc = await this.currentLocation();
+    if (loc.kind === 'trunk' || loc.kind === 'branch') {
+      out.compareWith = loc.name;
+      try {
+        // eligible：源分支里有、但还没合并进当前工作副本的版本（每行一个 rNNN）
+        const mi = await this.exec(['mergeinfo', '--show-revs', 'eligible', url, '.'], { timeoutMs: 60_000 });
+        if (mi.code === 0) {
+          const revs = mi.stdout.split(/\r?\n/).map((l) => l.trim()).filter((l) => /^r\d+/.test(l));
+          // 只算"分支创建之后"的版本：创建提交本身、以及 copy 之前的源分支历史（eligible 会把它们
+          // 一并列出，因为它们不在目标路径的 mergeinfo 里）都不是这个分支的未合并改动。
+          // 刚建的空分支因此显示 0；创建后再提交的每个版本各算 1。
+          const created = await this.oldestRev(url);
+          out.unmerged = revs.filter((l) => created === null || Number(l.slice(1)) > created).length;
+        }
+      } catch {
+        /* 无 mergeinfo / 网络失败：unmerged 保持 undefined（前端不显示） */
+      }
+    }
+    return out;
+  }
+
+  async branchDelete(name: string, _force?: boolean, signal?: AbortSignal, password?: string, message?: string): Promise<VcsResult> {
+    const root = await this.projectRootUrl();
+    // 用户输入了密码：先向服务器验证，成功后再用**同一个密码**执行删除——
+    // 避免"验证用一个、删除用缓存的另一个"导致提示和结果不一致。
+    // 密码只在本次调用内存里，不进日志/命令预览；匿名账号（无 username）忽略。
+    const usePw = password && this.cred?.username ? password : undefined;
+    const pin = usePw ? { stdinData: usePw + '\n' } : {};
+    const url = `${root}/branches/${name}`;
+    if (usePw) {
+      const chk = await this.exec(['info', '--show-item', 'revision', url], { timeoutMs: 60_000, signal, ...pin });
+      if (chk.code !== 0) {
+        // 密码验证失败，未删除分支
+        return this.fail(this.authError(chk), chk.stderr.trim() || t('vcs.deleteAuthFailed'));
+      }
+    }
+    // 删除分支 {name}（提交信息可由弹窗编辑；空则回退模板——SVN 不接受空 log message）
+    const delMsg = message?.trim() || t('vcs.commitMsg.branchDelete', { name });
+    const res = await this.exec(['delete', url, '-m', delMsg], { timeoutMs: 120_000, signal, ...pin });
     if (res.code !== 0) {
       const auth = this.authError(res);
       // 删除分支失败

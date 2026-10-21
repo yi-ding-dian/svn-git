@@ -16,6 +16,7 @@ import { BRANCH_TITLE_KEY, currentLabelOf, isTrunkName, mergeSourceNoteOf, merge
 import { BranchHelp } from './branch-help.js';
 import { BranchList } from './branch-list.js';
 import { CreateBranchConfirm } from './create-branch-confirm.js';
+import { DeleteBranchModal } from './delete-branch-modal.js';
 import { ProjectMigratePanel } from './project-migrate-panel.js';
 import { MergeScopeDialog } from './merge-scope-dialog.js';
 import { MergeSourceTarget } from './merge-source-target.js';
@@ -49,6 +50,10 @@ export function BranchDialog(props: {
   const [cfm, setCfm] = useState<{ title: string; msg: React.ReactNode; action: () => void; confirmLabel?: string; hideCancel?: boolean; confirmCmd?: string; danger?: boolean } | null>(null);
   /** 新建分支确认：name=目标名；trunkBase=git 找到的主干基点 */
   const [createCfm, setCreateCfm] = useState<{ name: string; trunkBase?: string } | null>(null);
+  /** 删除分支确认弹窗（SVN：输入分支名 + 可选密码）；值为要删除的分支名 */
+  const [deleteFor, setDeleteFor] = useState<string | null>(null);
+  /** 删除确认里输入的密码/分支名/提交信息（只在本次 act 调用内传递，用完即清，不落任何状态/存储） */
+  const deleteSecretRef = useRef<{ confirmName: string; password?: string; message?: string } | null>(null);
   /** SVN 项目迁移面板 */
   const [migrateOpen, setMigrateOpen] = useState(false);
 
@@ -98,12 +103,18 @@ export function BranchDialog(props: {
       kind: 'branch',
       title,
       run: async (signal) => {
+        // 删除确认里输入的密码/分支名/提交信息：只取一次，防止 3 秒后转后台时还挂在 ref 上
+        const del = action === 'delete' ? deleteSecretRef.current : null;
+        deleteSecretRef.current = null;
         // fetch 只刷新远程引用（无分支名）；update 需要 ahead/behind 判断能否快进
         const r = action === 'fetch'
           ? await post.branch('fetch', '', false, signal)
           : action === 'update'
             ? await post.branch('update', name, false, signal, undefined, undefined, track?.ahead ?? 0, track?.behind ?? 0)
-            : await post.branch(action, name, force, signal, base, pathRel);
+            : action === 'delete'
+              // svn：服务端校验 confirmName 后才删；password 可选（验证后即用即丢）；message 可编辑
+              ? await post.branchDelete(name, del?.confirmName ?? name, del?.password, del?.message, signal)
+              : await post.branch(action, name, force, signal, base, pathRel);
         // 未合并导致删除被拒 → 不干巴巴报错，改弹"强制删除"二次确认（3 秒内弹窗还开着才有意义；
         // 已转后台的失败可从通知里看到提示后重新进弹窗强删）。
         // （确认框文案早就写着"可强制删除"，但 force 从没传下去过，未合并的分支根本删不掉 —— 用户实报）
@@ -466,8 +477,14 @@ export function BranchDialog(props: {
     });
   };
 
-  /** 删除本地分支（列表行内按钮） */
+  /** 删除分支（列表行内按钮）：
+   *  svn → GitHub 式弹窗（原样输入分支名；保存了账号时可再用密码验证；删的是服务器目录不可撤销）
+   *  git → 原有二次确认（本地分支可恢复，未合并时由后端拒绝后转强制删除） */
   const confirmDelete = (name: string) => {
+    if (props.repoType === 'svn') {
+      setDeleteFor(name);
+      return;
+    }
     setCfm({
       // 删除分支
       title: t('ops.branch.deleteTitle'),
@@ -605,6 +622,20 @@ export function BranchDialog(props: {
             const name = mergeScopeFor;
             setMergeScopeFor(null);
             if (name) void confirmMerge(name, scope);
+          }}
+        />
+      )}
+      {/* 删除分支确认（SVN）：输入分支名 + 可选密码，展示最后提交/未合并版本/命令预览 */}
+      {deleteFor && props.repoType === 'svn' && (
+        <DeleteBranchModal
+          name={deleteFor}
+          onCancel={() => setDeleteFor(null)}
+          onConfirm={(password, from, message) => {
+            if (from) fromRef.current = from;
+            // 密码/提交信息只交给本次删除任务，弹窗关闭后不再保留
+            deleteSecretRef.current = { confirmName: deleteFor, password, message };
+            setDeleteFor(null);
+            act('delete', deleteFor);
           }}
         />
       )}
