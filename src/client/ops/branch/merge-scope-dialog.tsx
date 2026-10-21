@@ -4,9 +4,14 @@ import { ConfirmModal } from '../../ui/prompt.js';
 import { cmdOfRepo } from '../../shared/cmd-preview.js';
 import { isImeComposing } from '../../shared/utils.js';
 import { t } from '../../../shared/i18n/index.js';
+import { mergeSourceNoteOf } from './branch-shared.js';
+import { MergeSourceTarget } from './merge-source-target.js';
 
 export function MergeScopeDialog(props: {
   name: string;
+  /** 合并目标 = 当前工作副本位置 */
+  target: string;
+  targetIsWorkCopy: boolean;
   onCancel: () => void;
   /** scope 为空 = 整树 */
   onConfirm: (scope?: string) => void;
@@ -20,8 +25,15 @@ export function MergeScopeDialog(props: {
       width={480}
       message={
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, whiteSpace: 'normal' }}>
-          {/* 确认合并分支 {name} 的改动： */}
-          <div>{t('ops.mergeScope.intro', { name: props.name })}</div>
+          {/* 结构化「源 → 目标」：谁合到谁一目了然 */}
+          <MergeSourceTarget
+            source={props.name}
+            sourceNote={mergeSourceNoteOf('svn', props.name)}
+            target={props.target}
+            targetIsWorkCopy={props.targetIsWorkCopy}
+          />
+          {/* 可选只合并其中某个目录或文件： */}
+          <div>{t('ops.mergeScope.intro')}</div>
           <input
             type="text"
             autoFocus

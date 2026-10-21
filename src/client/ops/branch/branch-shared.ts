@@ -31,3 +31,15 @@ export function currentLabelOf(data: BranchInfo | null): string {
 export function isCurrentBranchOf(data: BranchInfo | null, name: string): boolean {
   return name === data?.current && data?.currentKind !== 'tag' && data?.currentKind !== 'other';
 }
+
+/** 合并的「目标」：就是当前工作副本所在位置。
+ *  SVN 在 tags/独立目录时它不是分支（合并提示里的「当前分支」要改说「当前工作副本」）。 */
+export function mergeTargetOf(repoType: 'svn' | 'git', data: BranchInfo | null): { name: string; isWorkCopy: boolean } {
+  const isWorkCopy = repoType === 'svn' && (data?.currentKind === 'tag' || data?.currentKind === 'other');
+  return { name: data?.current ?? '', isWorkCopy };
+}
+
+/** 合并源的路径说明：SVN 分支在 branches/ 下（列表只显示名字），主干行不放 */
+export function mergeSourceNoteOf(repoType: 'svn' | 'git', name: string): string | undefined {
+  return repoType === 'svn' && name !== 'trunk' ? `branches/${name}` : undefined;
+}

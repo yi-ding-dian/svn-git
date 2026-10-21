@@ -3,7 +3,7 @@ import React from 'react';
 import type { BranchInfo } from '../../shared/api.js';
 import { cmdOfRepo } from '../../shared/cmd-preview.js';
 import { t } from '../../../shared/i18n/index.js';
-import { isCurrentBranchOf, isTrunkName } from './branch-shared.js';
+import { isCurrentBranchOf, isTrunkName, mergeTargetOf } from './branch-shared.js';
 
 export function BranchList(props: {
   repoType: 'svn' | 'git';
@@ -27,6 +27,10 @@ export function BranchList(props: {
   const trunkUrl = repoType === 'svn' ? data?.mainlineUrl : undefined;
   const trunkName = data?.mainlineRelative ?? 'trunk';
   const trunkIsCurrent = data?.currentKind === 'trunk';
+  // 合并按钮的悬浮提示：代具体名字（谁合到谁），避免「该分支/当前分支」看不出指向
+  const mergeTarget = mergeTargetOf(repoType, data);
+  const mergeTipOf = (source: string) =>
+    t(mergeTarget.isWorkCopy ? 'ops.branch.mergeTipWorkCopy' : 'ops.branch.mergeTip', { source, target: mergeTarget.name });
   return (
     <div className="vcs-list" style={{ flex: 1, minHeight: 60 }}>
       {/* 加载中… */}
@@ -66,7 +70,7 @@ export function BranchList(props: {
                 className="mini btn-accent"
                 disabled={busy}
                 onClick={() => props.onMerge('trunk')}
-                title={`${cmdOfRepo(repoType, 'branch_merge_from', { source: trunkUrl })}\n\n${t('ops.branch.mergeTip')}`}
+                title={`${cmdOfRepo(repoType, 'branch_merge_from', { source: trunkUrl })}\n\n${mergeTipOf(trunkName)}`}
               >
                 {/* 🔀 合并 */}
                 {t('ops.branch.mergeBtn')}
@@ -155,8 +159,10 @@ export function BranchList(props: {
                 </span>
               );
             })()}
-            {/* 非当前分支的常规操作；当前分支若未推送也显示「推送到远程」（仅仓库配了远程时） */}
-            {(isCur === false || (repoType === 'git' && hasRemote && !b.remote && !isPushed)) && (
+            {/* 非当前分支的常规操作；当前分支若未推送也显示「推送到远程」（仅仓库配了远程时）。
+                当前分支没有任何操作按钮时补一组同宽的隐藏占位：否则名字列会把同步徽标顶到行尾，
+                与其它行的 ✓/↑N 列错开（用户实报）。 */}
+            {(isCur === false || (repoType === 'git' && hasRemote && !b.remote && !isPushed)) ? (
               <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
                 {!isCur && !remoteIsCurrent && (
                   <button
@@ -203,7 +209,7 @@ export function BranchList(props: {
                 {!b.remote && !isCur && (
                   <>
                     {/* 把该分支的改动合并到当前分支（先确保已切到目标分支） / 🔀 合并 */}
-                    <button className="mini btn-accent" disabled={busy} onClick={() => props.onMerge(b.name)} title={`${cmdOfRepo(repoType, 'branch_merge', { name: b.name })}\n\n${t('ops.branch.mergeTip')}`}>{t('ops.branch.mergeBtn')}</button>
+                    <button className="mini btn-accent" disabled={busy} onClick={() => props.onMerge(b.name)} title={`${cmdOfRepo(repoType, 'branch_merge', { name: b.name })}\n\n${mergeTipOf(b.name)}`}>{t('ops.branch.mergeBtn')}</button>
                     <button
                       className="mini danger"
                       disabled={busy || isTrunkName(b.name)}
@@ -220,7 +226,14 @@ export function BranchList(props: {
                   </>
                 )}
               </span>
-            )}
+            ) : tr ? (
+              // 当前分支（已同步到远程）：隐藏的占位按钮组，宽度与其它本地行的操作按钮一致
+              <span className="row" style={{ gap: 4, visibility: 'hidden' }} aria-hidden="true">
+                <button className="mini primary">{t('ops.branch.switchBtn')}</button>
+                <button className="mini btn-accent">{t('ops.branch.mergeBtn')}</button>
+                <button className="mini danger">{t('common.delete')}</button>
+              </span>
+            ) : null}
           </div>
         );
       })}

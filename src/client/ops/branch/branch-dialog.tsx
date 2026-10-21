@@ -12,13 +12,14 @@ import { launchMagicFlight } from '../../animations/index.js';
 import { ResultLine } from '../../ui/result-line.js';
 import { t } from '../../../shared/i18n/index.js';
 import { LayoutNote } from '../layout-note.js';
-import { BRANCH_TITLE_KEY, currentLabelOf, isTrunkName, type BranchAction } from './branch-shared.js';
+import { BRANCH_TITLE_KEY, currentLabelOf, isTrunkName, mergeSourceNoteOf, mergeTargetOf, type BranchAction } from './branch-shared.js';
 import { BranchHelp } from './branch-help.js';
 import { BranchList } from './branch-list.js';
 import { CreateBranchConfirm } from './create-branch-confirm.js';
 import { ProjectMigratePanel } from './project-migrate-panel.js';
 import { MergeMainlinePanel } from './merge-mainline-panel.js';
 import { MergeScopeDialog } from './merge-scope-dialog.js';
+import { MergeSourceTarget } from './merge-source-target.js';
 
 export function BranchDialog(props: {
   repoType: 'svn' | 'git';
@@ -51,6 +52,8 @@ export function BranchDialog(props: {
 
   /** 当前位置的可读名称（svn：tags/SCA_HB、branches/xxx；git 原样） */
   const currentLabel = currentLabelOf(data);
+  /** 合并目标 = 当前工作副本位置（列表 tooltip 与确认弹窗共用同一判断） */
+  const mergeTarget = mergeTargetOf(props.repoType, data);
 
   const load = () => {
     get
@@ -248,6 +251,24 @@ export function BranchDialog(props: {
     void confirmMerge(name);
   };
 
+  /** 合并确认正文：结构化「源 → 目标」+ 附加提示块（本地改动/副本落后/冲突预告/合并范围） */
+  const mergeMsgNode = (source: string, notes: string[], extra?: string[], scope?: string) => {
+    const blocks = [notes, extra ?? [], scope ? [t('ops.mergeScope.confirmNote', { path: scope })] : []].filter((b) => b.length > 0);
+    return (
+      <>
+        <MergeSourceTarget
+          source={source}
+          sourceNote={mergeSourceNoteOf(props.repoType, source)}
+          target={mergeTarget.name}
+          targetIsWorkCopy={mergeTarget.isWorkCopy}
+        />
+        {blocks.map((b, i) => (
+          <div key={i} style={{ whiteSpace: 'pre-wrap', marginTop: 10 }}>{b.join('\n')}</div>
+        ))}
+      </>
+    );
+  };
+
   const confirmMerge = async (name: string, scope?: string) => {
     let check: Awaited<ReturnType<typeof get.mergeCheck>> | null = null;
     try {
@@ -256,8 +277,6 @@ export function BranchDialog(props: {
       /* 检查失败不阻塞，走默认确认流程 */
     }
     const lineConflicts = check?.lineConflicts ?? [];
-    // 指定范围时在确认框里明确写出来
-    const scopeNote = scope ? `\n\n${t('ops.mergeScope.confirmNote', { path: scope })}` : '';
     // 干净且无冲突预告 → 直接合并（零打扰，与切换一致）；指定了范围时不零打扰，至少让用户看到范围命令
     if (check && check.changed === 0 && !check.outdated && lineConflicts.length === 0 && !scope) {
       act('merge', name);
@@ -305,8 +324,13 @@ export function BranchDialog(props: {
       setCfm({
         // 合并分支（可能冲突）
         title: t('ops.branch.mergeMaybeConflict'),
-        // 确认将分支 {name} 合并到当前分支？\n\n⚠ 合并将对 {n} 个文件产生冲突（两边已改动相同区域）：\n{files}\n\n仍要合并？合并后可在「解决冲突」中处理。
-        msg: `${t('ops.branch.mergeConflictMsg', { name, n: lineConflicts.length, files: lineConflicts.join(t('common.listSep')) })}${scopeNote}`,
+        // ⚠ 合并将对 {n} 个文件产生冲突（两边已改动相同区域）：\n{files}\n\n仍要合并？合并后可在「解决冲突」中处理。
+        msg: mergeMsgNode(
+          name,
+          [],
+          [t('ops.branch.mergeConflictMsg', { n: lineConflicts.length, files: lineConflicts.join(t('common.listSep')) })],
+          scope,
+        ),
         action: () => act('merge', name, false, undefined, scope),
       });
       return;
@@ -314,8 +338,8 @@ export function BranchDialog(props: {
     setCfm({
       // 合并分支
       title: t('ops.branch.mergeTitle'),
-      // 确认将分支 {name} 合并到当前分支？
-      msg: `${t('ops.branch.mergeMsg', { name })}${lines.length ? '\n\n' + lines.join('\n') : ''}${scopeNote}`,
+      // 结构化「源 → 目标」+ 本地改动/副本落后等提示
+      msg: mergeMsgNode(name, lines, undefined, scope),
       action: () => act('merge', name, false, undefined, scope),
     });
   };
@@ -589,6 +613,8 @@ export function BranchDialog(props: {
       {mergeScopeFor && (
         <MergeScopeDialog
           name={mergeScopeFor}
+          target={mergeTarget.name}
+          targetIsWorkCopy={mergeTarget.isWorkCopy}
           onCancel={() => setMergeScopeFor(null)}
           onConfirm={(scope) => {
             const name = mergeScopeFor;
