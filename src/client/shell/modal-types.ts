@@ -7,6 +7,7 @@ export type Modal =
   | { type: 'commit-select'; dir: string; dirLabel: string; items: { path: string; code: string; isDir: boolean }[]; checked?: string[]; stagedOnly?: string[]; msg?: string }
   | { type: 'login' }
   | { type: 'open' }
+  | { type: 'practice' }
   | { type: 'branches' }
   | { type: 'tags' }
   | { type: 'stash' }

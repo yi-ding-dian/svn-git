@@ -21,6 +21,7 @@ import { handle as handleBrowse } from './routes/browse/index.js';
 import { handle as handleHost } from './routes/host.js';
 import { handle as handleHistory } from './routes/history.js';
 import { handle as handleRecent } from './routes/recent.js';
+import { handle as handlePractice } from './routes/practice.js';
 import { handle as handleRepoBrowse } from './routes/repobrowse.js';
 import { handle as handleGithub } from './routes/github.js';
 import { handle as handleSvnAuth } from './routes/svn-auth.js';
@@ -133,6 +134,7 @@ export function startServer(): Promise<ServerHandle> {
         if (await handleHost(ctx)) return;
         if (await handleHistory(ctx)) return;
         if (await handleRecent(ctx)) return;
+        if (await handlePractice(ctx)) return;
         if (await handleRepoBrowse(ctx)) return;
         if (await handleGithub(ctx)) return;
         if (await handleSvnAuth(ctx)) return;

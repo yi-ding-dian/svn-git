@@ -23,6 +23,7 @@ import { GitHubMyReposModal } from '../repo/github-my-repos.js';
 import { GitIdentityModal } from '../ops/git-identity.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
 import { LoginModal } from '../repo/login.js';
+import { PracticeRepoDialog } from '../repo/practice/index.js';
 import { EnvInstallModal } from '../repo/env-install.js';
 import { RepoBrowseModal } from '../repo/repo-browse.js';
 import { CreateRepoDialog, GetRepoDialog, type GitHubSetupOpts } from '../repo/repo-create.js';
@@ -258,6 +259,16 @@ export function ModalHost(props: ModalHostProps) {
         />
       )}
 
+      {modal?.type === 'practice' && (
+        <PracticeRepoDialog
+          onClose={() => setModal(null)}
+          // 创建成功 → 复用「获取仓库」同款打开链路（切到新仓库 + 刷新最近项目）
+          onOpened={openClonedRepo}
+          // 目录浏览起始位置与「打开项目」一致；提示沿用全局 toast
+          startDir={info?.home ?? ''}
+          onToast={showToast}
+        />
+      )}
       {/* 版本管理对话框：操作后刷新数据 + 重新拉取仓库信息（分支/版本变化） */}
       {modal?.type === 'branches' && repo?.type && (
         <BranchDialog
@@ -469,6 +480,8 @@ export function ModalHost(props: ModalHostProps) {
         <CreateRepoDialog
           home={info?.home}
           onClose={() => setModal(null)}
+          // 与启动页「新建仓库」一致：弹窗内提供练习仓库入口（直接替换为 practice 弹窗）
+          onOpenPractice={() => setModal({ type: 'practice' })}
           onCreated={(dir, github) => {
             setModal(null);
             // 打开新创建的仓库

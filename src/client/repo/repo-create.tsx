@@ -30,6 +30,8 @@ export function CreateRepoDialog(props: {
   onClose: () => void;
   /** 创建完成（本地仓库已建好）；github 有值 = 选的是「GitHub 仓库」类型，由宿主继续 GitHub 步骤 */
   onCreated: (dir: string, github?: GitHubSetupOpts) => void;
+  /** 打开「创建练习仓库」弹窗（放在新建仓库流程里，避免分支弹窗出现无关入口） */
+  onOpenPractice?: () => void;
 }) {
   const [type, setType] = useState<'git' | 'svn' | 'github'>('git');
   const [dir, setDir] = useState(props.home ?? '');
@@ -131,6 +133,16 @@ export function CreateRepoDialog(props: {
         {/* 两种方式：Git 仓库 = 在本地目录初始化新仓库（git init）；SVN 仓库 = 用 svnadmin 创建本地仓库，默认创建标准布局（trunk / branches / tags）并检出 trunk 作为工作副本（目录名 + "-wc"）。 */}
         {t('repo.create.help')}
       </HelpNote>
+      {/* 不想从空仓库开始：直接生成一个预置分支/远程/冲突场景的练习仓库 */}
+      {props.onOpenPractice && (
+        <div className="row" style={{ marginTop: 10, gap: 8 }}>
+          <span className="dim small">{t('repo.practice.createHint')}</span>
+          <button className="mini" onClick={props.onOpenPractice} title={t('repo.practice.createEntryTip')}>
+            {/* 🧪 练习仓库… */}
+            {t('repo.practice.createEntry')}
+          </button>
+        </div>
+      )}
       <div style={{ marginTop: 12 }} />
       <div className="row" style={{ marginBottom: 12, gap: 6 }}>
         {(

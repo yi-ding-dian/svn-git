@@ -212,4 +212,13 @@ export const srv = {
   'srv.orphanRecovered': 'Cleaned up a leftover fetch process and half-downloaded directory from the previous run: {path}',
   'srv.portTakenOver': 'Port {port} was held by a previous instance of this tool — closed it and took over the port',
   'srv.badUrl': 'Only http/https links are allowed',
+  'srv.practiceParentRequired': 'Please select a parent directory',
+  'srv.practiceParentMissing': 'Parent directory does not exist: {dir}',
+  'srv.practiceParentNotDir': 'Not a directory: {dir}',
+  'srv.practiceParentNotWritable': 'Parent directory is not writable: {dir}',
+  'srv.practiceNoUniqueDir': 'Could not create a unique directory (too many same-name folders)',
+  'srv.practiceStepFailed': 'Generation failed ({step}): {msg}',
+  'srv.practiceCancelled': 'Practice repository creation cancelled',
+  'srv.practiceCreated': 'Practice repository created: {dir}',
+  'srv.practiceFailed': 'Failed to create the practice repository',
 };

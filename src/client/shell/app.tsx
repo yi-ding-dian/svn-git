@@ -1139,6 +1139,7 @@ export function App() {
               themePopOpen={Boolean(themePop)}
               invalidPaths={invalidPaths}
               onOpenProject={() => setModal({ type: 'open' })} // 与顶栏 ⋯ 菜单里的「打开项目」同一个弹窗
+              onOpenPractice={() => setModal({ type: 'practice' })}
               onShowTip={(msg) => {
                 showToast(msg, true); // 失效项目的原因说明（打不开/已删除）：按错误态显示
               }}
@@ -1192,6 +1193,7 @@ export function App() {
               onOpened={(r) => { setInfo(r); setOnboard(null); refresh(); loadHistory(); }}
               onCreatedRepo={(r) => setOnboard(onboardText(r))}
               onToast={showToast}
+              onOpenPractice={() => setModal({ type: 'practice' })}
             />
           </div>
         )}

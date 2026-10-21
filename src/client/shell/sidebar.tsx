@@ -164,6 +164,8 @@ export function Sidebar(props: {
   onShowTip: (msg: string) => void;
   /** 最近项目下方的「＋ 打开项目」：打开项目选择弹窗（与顶栏 ⋯ 菜单里那个同一入口） */
   onOpenProject: () => void;
+  /** 最近项目下方的「🧪 练习仓库」：打开创建练习仓库弹窗 */
+  onOpenPractice: () => void;
 }) {
   // 最近项目右键菜单（设常用 / 备注 / 浏览仓库 / 删除 / 取消）。remark/type 一并带出：
   // 菜单项要用它预填备注弹窗、决定是否显示「浏览仓库」（仅 SVN）
@@ -553,12 +555,19 @@ export function Sidebar(props: {
           </div>
         </>
       )}
-      {/* 打开项目：常驻在最近项目下方（没有历史记录时更要有这个入口） */}
-      {/* 打开其它项目（选择目录） */}
-      <button className="history-open" onClick={props.onOpenProject} title={t('shell.recent.openOther')}>
-        {/* ＋ 打开项目 */}
-        {t('shell.recent.open')}
-      </button>
+      {/* 打开项目 / 创建练习仓库：常驻在最近项目下方（没有历史记录时更要有这个入口） */}
+      <div className="row" style={{ gap: 6, margin: '6px 10px 0 20px' }}>
+        {/* 打开其它项目（选择目录） */}
+        <button className="history-open" style={{ flex: 1, minWidth: 0, margin: 0 }} onClick={props.onOpenProject} title={t('shell.recent.openOther')}>
+          {/* ＋ 打开项目 */}
+          {t('shell.recent.open')}
+        </button>
+        {/* 创建练习仓库（不影响当前项目） */}
+        <button className="history-open" style={{ flexShrink: 0, margin: 0 }} onClick={props.onOpenPractice} title={t('repo.practice.entryTip')}>
+          {/* 🧪 练习 */}
+          {t('repo.practice.entryShort')}
+        </button>
+      </div>
     </div>
   );
 }

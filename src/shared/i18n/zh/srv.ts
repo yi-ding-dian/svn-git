@@ -226,4 +226,13 @@ export const srv = {
   'srv.orphanRecovered': '已清理上次退出遗留的获取进程与半截目录：{path}',
   'srv.portTakenOver': '端口 {port} 被本工具的旧实例占用——已关掉旧实例并接管该端口',
   'srv.badUrl': '仅支持 http/https 链接',
+  'srv.practiceParentRequired': '请选择父目录',
+  'srv.practiceParentMissing': '父目录不存在：{dir}',
+  'srv.practiceParentNotDir': '不是目录：{dir}',
+  'srv.practiceParentNotWritable': '父目录不可写：{dir}',
+  'srv.practiceNoUniqueDir': '无法创建唯一目录（同名过多）',
+  'srv.practiceStepFailed': '生成失败（{step}）：{msg}',
+  'srv.practiceCancelled': '创建练习仓库已取消',
+  'srv.practiceCreated': '练习仓库已创建：{dir}',
+  'srv.practiceFailed': '创建练习仓库失败',
 } as const;

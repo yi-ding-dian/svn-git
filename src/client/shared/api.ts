@@ -425,6 +425,8 @@ export const get = {
       `/api/merge-check?branch=${encodeURIComponent(branch)}${pathRel ? `&path=${encodeURIComponent(pathRel)}` : ''}`,
     ),
   tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),
+  /** 练习仓库：能力探测（缺命令的类型由前端禁用） */
+  practiceProbe: () => api<{ git: boolean; svn: boolean; svnadmin: boolean }>('/api/practice/probe'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),
   projectStatus: (dir: string, force?: boolean) => api<ProjectProbe>(`/api/project-status?path=${encodeURIComponent(dir)}${force ? '&force=1' : ''}`),
   /** 远程检查（⬇ 待拉取；后端复用 preflight，自带超时与缓存、异步不阻塞） */
@@ -603,6 +605,18 @@ export interface StashItem {
   label: string;
 }
 
+/** 练习仓库生成结果（/api/practice/create） */
+export interface PracticeResult {
+  ok: boolean;
+  type?: 'git' | 'svn';
+  /** 生成的练习仓库根目录 */
+  root?: string;
+  /** 生成后要打开的工作副本目录 */
+  workDir?: string;
+  scenarios?: { remote?: boolean; conflict?: boolean };
+  message: string;
+}
+
 /** 最近项目仪表盘：单个项目的摘要状态（后端只读探测，30 秒缓存；error 时其余字段缺省） */
 export interface ProjectProbe {
   type?: 'git' | 'svn';
@@ -672,6 +686,11 @@ export const post = {
     ahead = 0,
     behind = 0,
   ) => api<VcsResult>('/api/branch', json({ action, name, force, base, path: pathRel, ahead, behind }, signal)),
+  /** 练习仓库：在指定父目录下生成（成功后前端用 workDir 调用 /api/open 打开） */
+  practiceCreate: (
+    body: { type: 'git' | 'svn'; parentDir: string; scenarios: { remote?: boolean; conflict?: boolean } },
+    signal?: AbortSignal,
+  ) => api<PracticeResult>('/api/practice/create', json(body, signal)),
   /** SVN 项目迁移：当前工作副本独立成长期开发线（devline）或独立项目（project）。
    *  switchAfter=迁移完成后把当前工作副本切到新路径。 */
   projectMigrate: (mode: 'devline' | 'project', name: string, switchAfter: boolean, signal?: AbortSignal) =>

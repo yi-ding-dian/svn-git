@@ -482,9 +482,13 @@ export function OpenView(props: {
   onToast: (msg: string, err?: boolean) => void;
   /** 新建仓库并成功打开后通知（引导条等） */
   onCreatedRepo?: (repo: RepoInfo) => void;
+  /** 打开「创建练习仓库」弹窗（由 app 注入全局 modal 动作） */
+  onOpenPractice?: () => void;
 }) {
   const [showCreate, setShowCreate] = useState(false);
   const [showGet, setShowGet] = useState(false);
+  // 练习仓库入口放在「新建仓库」弹窗里：先收起新建弹窗，再打开练习弹窗
+  const openPractice = props.onOpenPractice;
 
   // 打开（新建/获取后）：自动进入该仓库；新建的额外回调整 onCreatedRepo（引导条）
   const openRepo = async (dir: string, notifyCreated: boolean) => {
@@ -536,6 +540,7 @@ export function OpenView(props: {
           home={props.startDir}
           onClose={() => setShowCreate(false)}
           onCreated={onCreated}
+          onOpenPractice={openPractice ? () => { setShowCreate(false); openPractice(); } : undefined}
         />
       )}
       {showGet && (

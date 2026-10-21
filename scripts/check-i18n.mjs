@@ -84,6 +84,9 @@ for (const file of walk(SRC)) {
   // 语言包自身就是中文的（zh.ts 的每一项值），不该被算成"未搬运"
   if (rel.startsWith(path.join('shared', 'i18n'))) continue;
   const src = fs.readFileSync(file, 'utf8');
+  // 文件级豁免：整份文件的中文是**生成内容**（如练习仓库的源码/README/提交信息），
+  // 不是界面文案——文件头显式声明 i18n-ignore-file，避免逐行标记破坏模板字符串本身
+  if (src.includes('i18n-ignore-file')) continue;
   const state = { block: false, str: null };
   const lines = src.split('\n');
   let count = 0;
