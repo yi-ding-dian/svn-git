@@ -63,8 +63,9 @@ export type ToolbarLayout = { shown: ToolbarItem[]; hidden: string[] };
 
 /** 默认布局：工具栏按钮（可见时按此顺序渲染，sep=分隔符可拖拽调整），其余固定项默认收在 ⋯ 菜单 */
 export const DEFAULT_LAYOUT: ToolbarLayout = {
-  shown: ['conflicts', 'pull', 'update', 'push', 'stash', 'sep-1', 'branch', 'sep-2', 'clean', 'refresh', 'sep-3', 'exit'],
-  hidden: ['open', 'create', 'get', 'tags', 'terminal', 'font', 'git-info', 'login'], // terminal 紧跟 tags（用户要求）
+  // 标签紧跟分支（都是仓库级操作，放在一起）：默认可见，不再收在 ⋯ 菜单
+  shown: ['conflicts', 'pull', 'update', 'push', 'stash', 'sep-1', 'branch', 'tags', 'sep-2', 'clean', 'refresh', 'sep-3', 'exit'],
+  hidden: ['open', 'create', 'get', 'terminal', 'font', 'git-info', 'login'],
 };
 
 /** 新分隔符唯一 id（Date.now 毫秒，工具内足够） */
@@ -309,7 +310,7 @@ export const TOOLS: ToolDef[] = [
     }),
   },
   {
-    key: 'tags', zone: 'menu', visible: (c) => !!c.repoType, // 标签属于仓库操作，未进入仓库时不显示
+    key: 'tags', zone: 'toolbar', visible: (c) => !!c.repoType, // 标签属于仓库操作，未进入仓库时不显示
     render: (c) => ({
       icon: <IconTag />,
       // 标签
@@ -318,7 +319,7 @@ export const TOOLS: ToolDef[] = [
     }),
   },
   {
-    // 终端：非交互 git / svn 命令的快捷通道（护栏见 routes/terminal.ts）。默认紧跟「标签」在 ⋯ 菜单里；
+    // 终端：非交互 git / svn 命令的快捷通道（护栏见 routes/terminal.ts）。默认收在 ⋯ 菜单里；
     // 和别的项一样可拖到工具栏（想常驻也行）。快捷键 Ctrl+` 见 app.tsx。
     key: 'terminal', zone: 'menu', visible: (c) => !!c.repoType,
     render: (c) => ({
