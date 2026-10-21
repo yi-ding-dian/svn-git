@@ -25,8 +25,9 @@ export function BranchDialog(props: {
   onClose: () => void;
   onChanged: () => void;
   /** 鼠标附近弹的全局提示（err=true 时按错误态显示、停留更久）：操作结果在弹窗里只有底部一行小字，
-   *  点完视线不往那儿去就看不到（用户实报"点了没反应"）——两处都显示 */
-  onToast: (msg: string, err?: boolean) => void;
+   *  点完视线不往那儿去就看不到（用户实报"点了没反应"）——两处都显示。
+   *  durationMs：自定义停留时长（转后台提示用 2 秒） */
+  onToast: (msg: string, err?: boolean, quick?: boolean, durationMs?: number) => void;
 }) {
   const [data, setData] = useState<BranchInfo | null>(null);
   const [sel, setSel] = useState('');
@@ -69,11 +70,12 @@ export function BranchDialog(props: {
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** 3 秒转后台的统一收尾：收起弹窗 + 飞线 + 轻提示（子面板共用） */
+  /** 3 秒转后台的统一收尾：收起弹窗 + 飞线 + 轻提示（子面板共用）
+   *  提示 2 秒后自动消失（用户定稿：转后台的确认提示不用停留太久） */
   const background = (title: string, from?: { x: number; y: number }) => {
     props.onClose();
     if (from) launchMagicFlight(from);
-    props.onToast(t('shell.tasks.backgrounded', { title }), false);
+    props.onToast(t('shell.tasks.backgrounded', { title }), false, false, 2000);
   };
 
   /** 分支操作统一入口（**3 秒延迟后台化**——用户定稿）：任务从发起起就在 store 里，
@@ -314,27 +316,49 @@ export function BranchDialog(props: {
   };
   /** 推送到远程：本地分支未推送（无 origin/<名字>）时可推，首次自动建立上游跟踪。
    *  推送前检测工作区未提交修改（与切换/合并一致），提醒推送只包含已提交版本。 */
-  const confirmPush = async (name: string) => {
-    let changed = 0;
-    let untracked = 0;
-    try {
-      const st = await get.status();
-      const items = st.items ?? [];
-      changed = items.filter((i) => i.code && i.code !== ' ' && i.code !== 'I' && i.code !== 'X').length;
-      untracked = items.filter((i) => i.code === '?').length;
-    } catch {
-      /* 检测失败不阻塞，按 0 处理 */
+  /** 推送到远程：**只推已提交内容**，工作区未提交改动永远进不了推送，所以只提示、不拦截。
+   *  - 当前分支：统计并提示工作区未提交改动（这些不会被推送）
+   *  - 其它分支：工作区属于当前分支，与目标分支无关，不查、不误导
+   *  - ahead 为空 = 首次推送（还没有 origin/<名>），提示自动建立跟踪 */
+  const confirmPush = async (name: string, ahead?: number) => {
+    const isCurrent = name === data?.current;
+    let dirty = '';
+    // 只有推当前分支时，工作区状态才和这次推送"有关"（提醒哪些内容不会被推）
+    if (isCurrent) {
+      let changed = 0;
+      let untracked = 0;
+      try {
+        const st = await get.status();
+        const items = st.items ?? [];
+        changed = items.filter((i) => i.code && i.code !== ' ' && i.code !== 'I' && i.code !== 'X').length;
+        untracked = items.filter((i) => i.code === '?').length;
+      } catch {
+        /* 检测失败不阻塞，按 0 处理 */
+      }
+      dirty = changed > 0
+        // ⚠ 当前工作区有 {changed} 个未提交修改（含未跟踪 {untracked} 个）。\n推送只包含已提交的版本，这些修改不会被推上去。
+        ? `\n\n${t('ops.branch.pushDirtyWarn', { changed, untracked })}`
+        // 当前工作区无未提交修改。
+        : `\n\n${t('ops.branch.pushClean')}`;
     }
-    const warn = changed > 0
-      // ⚠ 当前工作区有 {changed} 个未提交修改（含未跟踪 {untracked} 个）。\n推送只包含已提交的版本，这些修改不会被推上去。
-      ? `\n\n${t('ops.branch.pushDirtyWarn', { changed, untracked })}`
-      // 当前工作区无未提交修改。
-      : `\n\n${t('ops.branch.pushClean')}`;
+    // ahead 有值 = 已有上游，能说清推几个提交；空 = 首次推送（行内按钮只在无 origin/同名 时出现）
+    const base = ahead == null
+      // 确认将本地分支 {name} 推送到远程服务器（origin）？\n首次推送会自动建立上游跟踪。
+      ? t('ops.branch.pushMsg', { name })
+      : isCurrent
+        // 确认推送当前分支 {name} 的 {n} 个提交到 {upstream}？
+        ? t('ops.branch.pushCurrentMsg', { name, n: ahead, upstream: `origin/${name}` })
+        // 确认推送分支 {name} 的 {n} 个提交到 origin/{name}？
+        : t('ops.branch.pushOtherMsg', { name, n: ahead });
+    // 非当前分支：明确说工作区未提交内容与它无关，避免把"当前工作区有改动"误读成阻止推送
+    const otherNote = !isCurrent && ahead != null
+      // 当前工作区在 {current}；未提交内容属于当前分支，与 {name} 的这次推送无关。
+      ? `\n\n${t('ops.branch.pushOtherNote', { current: data?.current ?? '', name })}`
+      : '';
     setCfm({
       // 推送到远程
       title: t('ops.branch.pushTitle'),
-      // 确认将本地分支 {name} 推送到远程服务器（origin）？\n首次推送会自动建立上游跟踪。
-      msg: `${t('ops.branch.pushMsg', { name })}${warn}`,
+      msg: `${base}${otherNote}${dirty}`,
       action: () => act('push', name),
     });
   };
@@ -396,7 +420,7 @@ export function BranchDialog(props: {
       void confirmUpdate(name, ahead, behind);
       return;
     }
-    void confirmPush(name);
+    void confirmPush(name, ahead);
   };
 
   /** 删除远程分支：远程将不再存在（本地分支不受影响）；网络操作带进度窗可取消 */
@@ -424,7 +448,14 @@ export function BranchDialog(props: {
 
   return (
     // 分支管理
-    <ModalShell icon={<IconBranch size={16} />} title={`${t('ops.branch.title')} (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={640}>
+    <ModalShell
+      icon={<IconBranch size={16} />}
+      title={`${t('ops.branch.title')} (${props.repoType.toUpperCase()})`}
+      onClose={props.onClose}
+      width={640}
+      closeIcon
+      hideFoot
+    >
       <BranchHelp repoType={props.repoType} />
       {/* 仓库布局提示（svn 非标准布局时提醒） */}
       {props.repoType === 'svn' && data?.layout && <LayoutNote layout={data.layout} />}
@@ -470,7 +501,11 @@ export function BranchDialog(props: {
           <button
             className="mini"
             disabled={busy}
-            onClick={() => act('fetch', '')}
+            onClick={(e) => {
+              // 起点=按钮位置：与顶栏「拉取」同款，点击立即飞线（act 里读取后起飞）
+              fromRef.current = e.currentTarget.getBoundingClientRect();
+              act('fetch', '');
+            }}
             title={t('ops.branch.fetchTip')}
           >
             {/* ⟳ 获取远程 */}
