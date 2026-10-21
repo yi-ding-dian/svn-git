@@ -1,5 +1,6 @@
 /** 版本管理扩展域端点：branches / branch / tags / tag / stash / git 子操作 */
 import { sendJson, readBody, vcsOf, authErrorOf, invalidateStatusCache, runVcs, MSG_UNSUPPORTED_OP } from './util.js';
+import { progressDone } from '../../transfer-progress.js';
 import { invalidateRemoteProbe } from './recent.js';
 import { t } from '../../shared/i18n/index.js';
 import type { VcsResult } from '../../vcs/index.js';
@@ -162,10 +163,19 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         res.on('close', () => {
           if (!res.writableEnded) ac.abort();
         });
-        const result = (await vcs.projectMigrate?.(mode, name, Boolean(body.switchAfter), ac.signal)) ?? {
-          ok: false,
-          message: MSG_UNSUPPORTED_OP(),
-        };
+        const trunkSubPath = typeof body.trunkSubPath === 'string' ? body.trunkSubPath : undefined;
+        const extraDirs = Array.isArray(body.extraDirs) ? body.extraDirs.filter((d): d is string => typeof d === 'string') : undefined;
+        const chan = typeof body.chan === 'string' ? body.chan : undefined;
+        let result: VcsResult & { targetUrl?: string };
+        try {
+          result = (await vcs.projectMigrate?.(mode, name, Boolean(body.switchAfter), ac.signal, trunkSubPath, extraDirs, chan)) ?? {
+            ok: false,
+            message: MSG_UNSUPPORTED_OP(),
+          };
+        } finally {
+          // 阶段进度表随手清理（成功/失败/取消都不留）
+          if (chan) progressDone(chan);
+        }
         // 迁移后工作副本可能已 switch 到新路径：状态缓存失效（项目根由下次请求重新探测）
         if (result.ok) invalidateStatusCache(repo.root);
         sendJson(res, 200, { ...result, authError: authErrorOf(result) });

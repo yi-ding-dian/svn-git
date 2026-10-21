@@ -17,7 +17,6 @@ import { BranchHelp } from './branch-help.js';
 import { BranchList } from './branch-list.js';
 import { CreateBranchConfirm } from './create-branch-confirm.js';
 import { ProjectMigratePanel } from './project-migrate-panel.js';
-import { MergeMainlinePanel } from './merge-mainline-panel.js';
 import { MergeScopeDialog } from './merge-scope-dialog.js';
 import { MergeSourceTarget } from './merge-source-target.js';
 
@@ -50,9 +49,8 @@ export function BranchDialog(props: {
   const [cfm, setCfm] = useState<{ title: string; msg: React.ReactNode; action: () => void; confirmLabel?: string; hideCancel?: boolean; confirmCmd?: string; danger?: boolean } | null>(null);
   /** 新建分支确认：name=目标名；trunkBase=git 找到的主干基点 */
   const [createCfm, setCreateCfm] = useState<{ name: string; trunkBase?: string } | null>(null);
-  /** SVN 项目迁移 / 合回主干面板 */
+  /** SVN 项目迁移面板 */
   const [migrateOpen, setMigrateOpen] = useState(false);
-  const [mainlineOpen, setMainlineOpen] = useState(false);
 
   /** 当前位置的可读名称（svn：tags/SCA_HB、branches/xxx；git 原样） */
   const currentLabel = currentLabelOf(data);
@@ -92,9 +90,9 @@ export function BranchDialog(props: {
     const title = t(BRANCH_TITLE_KEY[action], { name });
     const from = fromRef.current ?? undefined;
     fromRef.current = null; // 用掉即清（每次确认时重新记）
-    // 获取远程 / 更新分支：点击（或确认）当下就飞线——任务再快也能看到反馈；
+    // 获取远程 / 更新分支 / 新建分支：点击（或确认）当下就飞线——任务再快也能看到反馈；
     // 3 秒后转后台时不再重复飞，只收起弹窗 + 提示。其余分支操作仍保持"转后台才飞"
-    const flyNow = action === 'fetch' || action === 'update';
+    const flyNow = action === 'fetch' || action === 'update' || action === 'create';
     if (flyNow && from) launchMagicFlight(from);
     startTaskDeferred({
       kind: 'branch',
@@ -546,47 +544,22 @@ export function BranchDialog(props: {
           </button>
         )}
       </div>
-      {/* 分支辅助操作独立一行：项目迁移 / 合并到主干（切回主干走列表主干行的「切换」） */}
+      {/* 分支辅助操作独立一行：项目迁移（切回主干走列表主干行的「切换」） */}
       {props.repoType === 'svn' && data && (
         <div className="row" style={{ margin: '0 0 10px', gap: 6, flexWrap: 'wrap' }}>
-          {/* 把当前开发线独立成长期开发线，或独立成带 trunk/branches/tags 的新项目 */}
+          {/* 把当前工作副本独立成带 trunk/branches/tags 的新项目 */}
           <button className="mini btn-accent" disabled={busy} onClick={() => setMigrateOpen((v) => !v)} title={t('ops.branch.migrateTip')}>
             {/* 项目迁移… */}
             {t('ops.branch.migrateBtn')}
           </button>
-          {data.mainlineUrl && data.currentUrl && data.mainlineUrl !== data.currentUrl && data.currentKind !== 'trunk' && (
-            <button
-              className="mini"
-              disabled={busy}
-              onClick={() => setMainlineOpen(true)}
-              title={t('ops.branch.mergeMainlineTip', { path: data.mainlineRelative ?? data.mainlineUrl })}
-            >
-              {/* 合回主干… */}
-              {t('ops.branch.mergeMainlineBtn')}
-            </button>
-          )}
         </div>
       )}
-      {/* SVN 项目迁移 / 合回主干面板（独立子域，内部自管理状态） */}
+      {/* SVN 项目迁移面板（独立子域，内部自管理状态） */}
       {props.repoType === 'svn' && migrateOpen && data && (
         <ProjectMigratePanel
           data={data}
+          workDir={props.workDir ?? ''}
           onClose={() => setMigrateOpen(false)}
-          onResult={(m, err) => {
-            setMsg(m);
-            setMsgErr(err);
-          }}
-          onChanged={() => {
-            load();
-            props.onChanged();
-          }}
-          onBackground={background}
-        />
-      )}
-      {props.repoType === 'svn' && mainlineOpen && data && (
-        <MergeMainlinePanel
-          data={data}
-          onClose={() => setMainlineOpen(false)}
           onResult={(m, err) => {
             setMsg(m);
             setMsgErr(err);

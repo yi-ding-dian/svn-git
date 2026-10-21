@@ -114,12 +114,25 @@ export function pollTransferProgress(id: number, chan: string): () => void {
   const timer = setInterval(() => {
     void get
       .transferProgress(chan)
-      .then((r) => setTaskProgress(id, r.ok ? { phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0, files: r.files } : null))
+      .then((r) =>
+        setTaskProgress(
+          id,
+          r.ok ? { phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0, files: r.files, steps: r.steps, currentStep: r.currentStep } : null,
+        ),
+      )
       .catch(() => {
         /* 轮询失败不打扰：面板退化成只有标题与已用秒数 */
       });
   }, 1000);
   return () => clearInterval(timer);
+}
+
+/** 阶段进度定格为「全部完成」：任务收尾时轮询已停，否则详情里最后一步会一直显示进行中 */
+export function completeTaskSteps(id: number): void {
+  const task = tasks.find((x) => x.id === id);
+  const p = task?.progress;
+  if (!p?.steps) return;
+  patch(id, { progress: { ...p, currentStep: p.steps.length } });
 }
 
 /** 从面板移除一条记录（进行中的不允许移除——需先取消） */

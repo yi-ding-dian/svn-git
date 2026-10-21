@@ -519,7 +519,9 @@ export const get = {
   /** 传输进度（任务面板每秒轮询；ok=false = 没在跑，或这种操作没有进度信息——如 SVN 检出/更新）。
    *  chan = 获取的目标目录，或 'push' / 'pull'。 */
   transferProgress: (chan: string) =>
-    api<{ ok: boolean; phase?: TransferPhase; bytes?: number; speed?: number; total?: number; files?: number }>(`/api/transfer-progress?chan=${encodeURIComponent(chan)}`),
+    api<{ ok: boolean; phase?: TransferPhase; bytes?: number; speed?: number; total?: number; files?: number; steps?: string[]; currentStep?: number }>(
+      `/api/transfer-progress?chan=${encodeURIComponent(chan)}`,
+    ),
   /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */
   svnIdentity: (url: string) =>
     api<{ ok: boolean; config: { username: string } | null; cache: { username: string; realms: string[] } | null }>(
@@ -584,6 +586,8 @@ export interface BranchInfo {
   /** svn：当前工作副本 URL 与项目根 URL（项目迁移弹窗展示用） */
   currentUrl?: string;
   projectRoot?: string;
+  /** svn：版本库根 URL（迁移命令预览简写成 ^/…） */
+  reposRootUrl?: string;
   /** svn：由 copyfrom 推断出的主干对应 URL/相对路径（tags/SCA_HB → trunk/src） */
   mainlineUrl?: string;
   mainlineRelative?: string;
@@ -692,9 +696,19 @@ export const post = {
     signal?: AbortSignal,
   ) => api<PracticeResult>('/api/practice/create', json(body, signal)),
   /** SVN 项目迁移：当前工作副本独立成长期开发线（devline）或独立项目（project）。
-   *  switchAfter=迁移完成后把当前工作副本切到新路径。 */
-  projectMigrate: (mode: 'devline' | 'project', name: string, switchAfter: boolean, signal?: AbortSignal) =>
-    api<VcsResult & { targetUrl?: string }>('/api/project-migrate', json({ mode, name, switchAfter }, signal)),
+   *  switchAfter=迁移完成后把当前工作副本切到新路径；
+   *  trunkSubPath=project 模式下内容放到 trunk 的子目录（空=trunk 根）；extraDirs=trunk 下额外建的空目录。 */
+  projectMigrate: (
+    mode: 'devline' | 'project',
+    name: string,
+    switchAfter: boolean,
+    signal?: AbortSignal,
+    trunkSubPath?: string,
+    extraDirs?: string[],
+    /** 阶段进度通道（/api/transfer-progress 轮询） */
+    chan?: string,
+  ) =>
+    api<VcsResult & { targetUrl?: string }>('/api/project-migrate', json({ mode, name, switchAfter, trunkSubPath, extraDirs, chan }, signal)),
   /** 合回主干（仅 svn）：precheck 目标工作副本状态 / 在目标 WC 上执行 svn merge（可选自动提交） */
   mergeMainlineCheck: (targetDir: string, pathRel?: string) =>
     api<MainlinePlan>('/api/merge-mainline', json({ action: 'check', targetDir, path: pathRel })),

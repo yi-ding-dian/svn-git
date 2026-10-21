@@ -28,6 +28,7 @@ export const shell = {
 
   // ---- 顶栏：任务面板的传输进度（阶段文案如实反映 git 在干什么；"检出文件""等待服务器"两段 git 完全静默）----
   // 措辞中性：同一行"统计对象"在推送时是本地、在克隆时是远端，写死"服务端"就是错的
+  'shell.tasks.projectMigrate': 'Migrate project · {name}',
   'shell.tasks.phaseCounting': 'Counting objects…',
   'shell.tasks.phaseCompressing': 'Compressing objects…',
   'shell.tasks.phaseReceiving': 'Downloading…',
@@ -136,8 +137,6 @@ export const shell = {
   'shell.tasks.branchSwitch': 'Switch branch · {name}',
   'shell.tasks.branchDelete': 'Delete branch · {name}',
   'shell.tasks.branchMerge': 'Merge branch · {name}',
-  'shell.tasks.projectMigrate': 'Migrate project · {name}',
-  'shell.tasks.mergeMainline': 'Merge into mainline · {name}',
   'shell.tasks.branchPush': 'Push branch · {name}',
   'shell.tasks.branchFetch': 'Fetch remote updates',
   'shell.tasks.branchUpdate': 'Update branch · {name}',

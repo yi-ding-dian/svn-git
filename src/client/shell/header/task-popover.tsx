@@ -56,7 +56,7 @@ export function TaskPopover(props: { x: number; y: number; onClose: () => void; 
               <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.title}>{tk.title}</div>
               {/* 已用 {n} 秒 */}
               <div className="dim small">{t('shell.tasks.elapsed', { n: Math.max(0, Math.floor((now - tk.startedAt) / 1000)) })}</div>
-              {tk.progress && <TaskProgress p={tk.progress} />}
+              {tk.progress && <TaskProgress p={tk.progress} compact />}
             </span>
             {/* 取消（不让点击冒泡到"打开详情"）；检出要二次确认（半截目录会被清理）——交上层弹确认 */}
             <button

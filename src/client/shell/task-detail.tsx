@@ -25,7 +25,7 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
       void get
         .transferProgress(chan)
         .then((r) => {
-          if (r.ok) setProgress({ phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0, files: r.files });
+          if (r.ok) setProgress({ phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0, files: r.files, steps: r.steps, currentStep: r.currentStep });
         })
         .catch(() => {
           /* 轮询失败不打扰：保持上一次的进度 */

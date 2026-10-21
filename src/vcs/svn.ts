@@ -5,6 +5,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { run } from './exec.js';
 import { invalidateSvnIgnoreMap } from './ignore.js';
 import { t } from '../shared/i18n/index.js';
+import { progressStepsStart, progressStepsAdvance } from '../transfer-progress.js';
 import { platform } from '../platform/index.js';
 import type { BranchListResult, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
@@ -768,6 +769,7 @@ export class SvnVcs {
       currentKind: loc.kind,
       currentUrl: loc.url,
       projectRoot: root,
+      reposRootUrl: await this.repoRootUrl(),
       mainlineUrl: mainline ?? undefined,
       mainlineRelative: mainline ? this.relOf(mainline, root) : undefined,
       branches: names.filter((n) => n.isDir).map((n) => ({ name: n.name.replace(/\/$/, ''), remote: false })),
@@ -1000,6 +1002,12 @@ export class SvnVcs {
     name: string,
     switchAfter?: boolean,
     signal?: AbortSignal,
+    /** project 模式：内容放到 trunk 下的相对子目录（空 = trunk 根，如 src） */
+    trunkSubPath?: string,
+    /** project 模式：trunk 下额外创建的空目录（如 doc/package/ThirdPart） */
+    extraDirs?: string[],
+    /** 阶段进度通道（前端生成，/api/transfer-progress 轮询用）；不传则不上报 */
+    chan?: string,
   ): Promise<VcsResult & { targetUrl?: string }> {
     const root = await this.projectRootUrl();
     const from = await this.currentUrl();
@@ -1008,9 +1016,12 @@ export class SvnVcs {
     if (!from) return { ok: false, message: t('vcs.noCurrentUrl') };
     // 从项目根（或它的祖先）复制会把 branches/tags 一起卷进去，造成嵌套污染
     if (from === root || root.startsWith(from + '/')) return { ok: false, message: t('vcs.migrateFromRoot') };
-    const fromRel = this.relOf(from, root);
+    // 提交信息里的来源写**相对版本库根**的完整路径（projects/CWBS-SCA/tags/SCA_HB），
+    // 只写 tags/SCA_HB 看不出属于哪个项目
+    const fromRel = this.relOf(from, await this.repoRootUrl());
     let targetUrl = '';
     if (mode === 'devline') {
+      if (chan) progressStepsStart(chan, [t('vcs.migrateStepDevline')]);
       targetUrl = `${root}/branches/${name}`;
       if (await this.existsUrl(targetUrl)) return { ok: false, message: t('vcs.branchExists', { name }) };
       try {
@@ -1020,25 +1031,68 @@ export class SvnVcs {
       }
       const res = await this.exec(['copy', from, targetUrl, '-m', t('vcs.commitMsg.migrateDevline', { name, from: fromRel })], { timeoutMs: 120_000, signal });
       if (res.code !== 0) return this.fail(this.authError(res), res.stderr.trim() || t('vcs.migrateFailed'));
+      if (chan) progressStepsAdvance(chan);
     } else {
       const parent = root.replace(/\/[^/]+$/, '');
       if (!parent || parent === root) return { ok: false, message: t('vcs.migrateNoParent') };
       const newRoot = `${parent}/${name}`;
-      targetUrl = `${newRoot}/trunk`;
+      const trunkUrl = `${newRoot}/trunk`;
+      targetUrl = trunkUrl;
+      // 内容放到 trunk 下的子目录（可选）；空 = trunk 根
+      const sub = this.normalizeMergePath(trunkSubPath);
+      if (sub === null) return { ok: false, message: t('vcs.invalidMergePath') };
+      const extras = [...new Set((extraDirs ?? []).map((d) => d.trim()).filter(Boolean))];
+      const subFirst = sub.split('/')[0];
+      for (const d of extras) {
+        // 单段目录名；不能是 . / ..，也不能与内容子目录（首段）重名
+        if (!/^[^/\\]+$/.test(d) || d === '.' || d === '..' || d === subFirst) {
+          return { ok: false, message: t('vcs.invalidMergePath') };
+        }
+      }
       if (await this.existsUrl(newRoot)) return { ok: false, message: t('vcs.projectExists', { name }) };
-      // 1) 项目骨架 + 标准布局（--parents 顺带创建 newRoot；svn 1.8+）
+      // 阶段进度：骨架 → 复制内容 →（可选）切换工作副本
+      if (chan) {
+        progressStepsStart(chan, [
+          t('vcs.migrateStepSkeleton'),
+          t('vcs.migrateStepCopy'),
+          ...(switchAfter ? [t('vcs.migrateStepSwitch')] : []),
+        ]);
+      }
+      // 1) 骨架（--parents 顺带创建 newRoot；svn 1.8+）。
+      //    关键顺序：copy 的**目标父目录**必须存在、**目标本身**不能存在（否则会嵌套成 <目标>/<源目录名>）：
+      //    - sub 非空：先建 trunk 与附加目录，再 copy 到 trunk/<sub>
+      //    - sub 为空：只能先建 branches/tags，copy 到 trunk 之后再建附加目录
+      const skeleton = [`${newRoot}/branches`, `${newRoot}/tags`];
+      if (sub) {
+        skeleton.push(trunkUrl);
+        for (const d of extras) skeleton.push(`${trunkUrl}/${d}`);
+      }
       const mk = await this.exec(
-        ['mkdir', '--parents', `${newRoot}/branches`, `${newRoot}/tags`, '-m', t('vcs.commitMsg.migrateProjectSkeleton', { name })],
+        ['mkdir', '--parents', ...skeleton, '-m', t('vcs.commitMsg.migrateProjectSkeleton', { name })],
         { timeoutMs: 120_000, signal },
       );
       if (mk.code !== 0) return this.fail(this.authError(mk), mk.stderr.trim() || t('vcs.migrateFailed'));
-      // 2) 当前目录 → 新项目 trunk（copy 保留历史）
-      const cp = await this.exec(['copy', from, targetUrl, '-m', t('vcs.commitMsg.migrateProject', { name, from: fromRel })], { timeoutMs: 120_000, signal });
+      if (chan) progressStepsAdvance(chan); // 骨架完成 → 复制内容
+      // 2) 当前目录 → 新项目 trunk[/sub]（copy 保留历史）
+      const contentTarget = sub ? `${trunkUrl}/${sub}` : trunkUrl;
+      const cp = await this.exec(['copy', from, contentTarget, '-m', t('vcs.commitMsg.migrateProject', { name, from: fromRel })], { timeoutMs: 120_000, signal });
       if (cp.code !== 0) {
         // 本次刚创建的空容器：回滚掉，避免仓库里留下半个项目（copy 失败是原子提交，不会留下部分内容）
         await this.exec(['delete', newRoot, '-m', t('vcs.commitMsg.migrateRollback', { name })], { timeoutMs: 120_000 });
         return this.fail(this.authError(cp), cp.stderr.trim() || t('vcs.migrateFailed'));
       }
+      // 3) sub 为空时，附加目录在 copy 之后建（trunk 已存在）
+      if (!sub && extras.length) {
+        const mk2 = await this.exec(
+          ['mkdir', '--parents', ...extras.map((d) => `${trunkUrl}/${d}`), '-m', t('vcs.commitMsg.migrateProjectSkeletonExtra', { name })],
+          { timeoutMs: 120_000, signal },
+        );
+        if (mk2.code !== 0) {
+          await this.exec(['delete', newRoot, '-m', t('vcs.commitMsg.migrateRollback', { name })], { timeoutMs: 120_000 });
+          return this.fail(this.authError(mk2), mk2.stderr.trim() || t('vcs.migrateFailed'));
+        }
+      }
+      if (chan) progressStepsAdvance(chan); // 复制内容完成 → 切换（或结束）
     }
     // 可选：迁移后让当前工作副本指向新路径（新路径是当前目录的直接 copy，同源可 switch）
     if (switchAfter) {
@@ -1046,6 +1100,7 @@ export class SvnVcs {
       if (sw.code !== 0) {
         return { ok: true, message: t('vcs.migratedSwitchFailed', { target: targetUrl, err: sw.stderr.trim() }), targetUrl };
       }
+      if (chan) progressStepsAdvance(chan);
     }
     const base = mode === 'devline'
       ? t('vcs.migratedDevline', { target: targetUrl })

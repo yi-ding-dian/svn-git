@@ -5,7 +5,7 @@
  *   - 3 秒内完成：调用方照常收尾（弹窗内显示结果等），用户无感、零变化；
  *   - 超时未完成：自动调 onSlow **一次**（调用方在此收起弹窗、放飞线、轻提示"已转入后台"）。
  *  任何结局（成功/失败/取消）都会掐掉慢计时，避免完成后误触发。 */
-import { startTask, type TaskRunResult } from '../shared/tasks.js';
+import { startTask, pollTransferProgress, completeTaskSteps, type TaskRunResult } from '../shared/tasks.js';
 
 export function startTaskDeferred(opts: {
   kind?: string;
@@ -14,20 +14,28 @@ export function startTaskDeferred(opts: {
   /** 3 秒未完成 → 收起弹窗 + 飞线（起点=发起按钮 rect）+「已转入后台运行」轻提示 */
   onSlow: () => void;
   slowAfterMs?: number;
+  /** 进度通道：传了就自动轮询 /api/transfer-progress（传输进度或阶段进度都走这里） */
+  chan?: string;
 }): number {
   let slowTimer: ReturnType<typeof setTimeout> | null = null;
+  let stopPoll: (() => void) | null = null;
   const id = startTask({
     kind: opts.kind,
     title: opts.title,
+    chan: opts.chan,
     run: async (signal) => {
       try {
         return await opts.run(signal);
       } finally {
         // 任何结局都要掐掉慢计时（成功了就不该再提示"已转入后台"）
         if (slowTimer) clearTimeout(slowTimer);
+        stopPoll?.();
+        // 阶段进度定格为全部完成（轮询停了，否则详情里最后一步一直转圈）
+        if (opts.chan) completeTaskSteps(id);
       }
     },
   });
+  if (opts.chan) stopPoll = pollTransferProgress(id, opts.chan);
   slowTimer = setTimeout(() => opts.onSlow(), opts.slowAfterMs ?? 3000);
   return id;
 }

@@ -36,6 +36,10 @@ export interface TransferProgress {
   total: number;
   /** 已检出文件数（SVN 检出：靠周期扫盘上报，见 progressReport；git 流的进度里没有） */
   files?: number;
+  /** 阶段式进度（无字节/文件级进度的长操作，如项目迁移）：全部阶段名 */
+  steps?: string[];
+  /** 当前进行中的阶段索引（0-based；= steps.length 表示已全部完成） */
+  currentStep?: number;
 }
 
 /** 通道名 → 进度。通道是"哪一次传输"：获取用目标目录（可并发多个），
@@ -62,6 +66,18 @@ export function progressReport(chan: string, files: number, bytes: number): void
     p.files = files;
     p.bytes = bytes;
   }
+}
+
+/** 阶段式进度：项目迁移这类"服务器端操作、没有字节/文件进度"的长任务用。
+ *  前端轮询后显示 ✓ 已完成阶段 + ⟳ 当前阶段；不画假进度条 */
+export function progressStepsStart(chan: string, steps: string[]): void {
+  map.set(chan, { phase: 'waiting', bytes: 0, speed: 0, total: 0, steps, currentStep: 0 });
+}
+
+/** 当前阶段完成，进入下一步（越界封顶在 steps.length） */
+export function progressStepsAdvance(chan: string): void {
+  const p = map.get(chan);
+  if (p?.steps && p.currentStep !== undefined && p.currentStep < p.steps.length) p.currentStep += 1;
 }
 
 /** 传输结束（成功 / 失败 / 取消都调）：撤掉登记 */

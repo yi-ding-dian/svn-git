@@ -129,6 +129,8 @@ export interface BranchListResult {
   /** svn：当前工作副本 URL 与识别出的项目根 URL（项目迁移弹窗展示来源/目标用） */
   currentUrl?: string;
   projectRoot?: string;
+  /** svn：版本库根 URL（命令预览把完整 URL 简写成 ^/…） */
+  reposRootUrl?: string;
   /** svn：由 copyfrom 推断出的主干对应 URL（如 tags/SCA_HB → trunk/src）与相对路径 */
   mainlineUrl?: string;
   mainlineRelative?: string;
@@ -259,8 +261,18 @@ export interface Vcs {
   info?(): Promise<{ url?: string; revision?: string; relUrl?: string }>;
   layout?(): Promise<SvnLayout>;
   /** 项目迁移：把当前工作副本独立成长期开发线（devline）或独立项目（project）。
-   *  仅 SVN 实现；switchAfter=迁移后把当前工作副本切到新路径 */
-  projectMigrate?(mode: 'devline' | 'project', name: string, switchAfter?: boolean, signal?: AbortSignal): Promise<VcsResult & { targetUrl?: string }>;
+   *  仅 SVN 实现；switchAfter=迁移后把当前工作副本切到新路径；
+   *  trunkSubPath=project 模式下内容放到 trunk 的子目录（空=trunk 根）；extraDirs=trunk 下额外建的空目录 */
+  projectMigrate?(
+    mode: 'devline' | 'project',
+    name: string,
+    switchAfter?: boolean,
+    signal?: AbortSignal,
+    trunkSubPath?: string,
+    extraDirs?: string[],
+    /** 阶段进度通道（前端生成，轮询 /api/transfer-progress） */
+    chan?: string,
+  ): Promise<VcsResult & { targetUrl?: string }>;
   /** 合回主干预检：识别主干对应路径 + 目标工作副本状态（missing/not-wc/wrong-url/dirty/ready）。
    *  pathRel 非空时同时校验目标工作副本里的该目录/文件存在 */
   mergeMainlineCheck?(targetDir: string, pathRel?: string): Promise<MainlinePlan>;

@@ -7,8 +7,31 @@ import React from 'react';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 import type { TaskProgress as TaskProgressInfo } from '../shared/tasks.js';
 
-export function TaskProgress(props: { p: TaskProgressInfo; /** 任务已完成（详情弹窗定格）：不再显示进度条与"正在…"阶段行，只留数值 */ completed?: boolean }) {
+export function TaskProgress(props: { p: TaskProgressInfo; /** 任务已完成（详情弹窗定格）：不再显示进度条与"正在…"阶段行，只留数值 */ completed?: boolean; /** 紧凑模式（任务面板行）：阶段进度只显示当前一条 */ compact?: boolean }) {
   const p = props.p;
+  /** 阶段式进度（项目迁移等无字节/文件进度的长任务）：✓ 已完成 / ⟳ 当前 / ○ 未开始 */
+  if (p.steps && p.steps.length > 0) {
+    const cur = p.currentStep ?? 0;
+    const allDone = Boolean(props.completed) || cur >= p.steps.length;
+    if (props.compact) {
+      // 面板行只有一行位置：显示当前阶段（全部完成时显示最后一条 + ✓）
+      const idx = Math.min(cur, p.steps.length - 1);
+      return <div className="dim small">{allDone ? '✓' : '⟳'} {p.steps[idx]}</div>;
+    }
+    return (
+      <div className="small" style={{ margin: '4px 0' }}>
+        {p.steps.map((s, i) => {
+          const done = allDone || i < cur;
+          const active = !allDone && i === cur;
+          return (
+            <div key={i} style={{ color: done ? 'var(--ok)' : active ? 'var(--accent)' : 'var(--dim)' }}>
+              {done ? '✓' : active ? '⟳' : '○'} {s}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
   /** 百分比按**字节**算（git 自己的百分比是按对象个数，大小极不均匀），没结束前封顶 99% */
   const pct = p.total > 0 ? Math.min(99, Math.round((p.bytes / p.total) * 100)) : null;
   /** 字节 → MB / GB（超过 1 GB 进位——大仓库检出时"1024.0 MB"不如"1.02 GB"直观） */
