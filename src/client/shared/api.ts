@@ -419,6 +419,11 @@ export const get = {
     api<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>(
       `/api/switch-check?branch=${encodeURIComponent(branch)}`,
     ),
+  /** 切换前结构差异摘要（svn）：新增/删除/更新数 + 会被本地未跟踪文件挡住的路径 */
+  switchPlan: (branch: string) =>
+    api<{ added: number; deleted: number; modified: number; obstructed: string[] } | null>(
+      `/api/switch-plan?branch=${encodeURIComponent(branch)}`,
+    ),
   /** 合并预检：git 同 switchCheck + lineConflicts（提交级冲突试算）；svn 额外 outdated 标记 */
   mergeCheck: (branch: string, pathRel?: string) =>
     api<{ changed: number; tracked: number; untracked: number; conflicts: string[]; lineConflicts?: string[]; outdated?: { wcRev: string; headRev: string } | null }>(
@@ -722,6 +727,9 @@ export const post = {
     message?: string,
     signal?: AbortSignal,
   ) => api<VcsResult>('/api/branch', json({ action: 'delete', name, confirmName, password, username, message }, signal)),
+  /** 切换分支：chan 为进度通道（svn switch 上报已处理文件数；git 忽略） */
+  branchSwitch: (name: string, chan?: string, signal?: AbortSignal) =>
+    api<VcsResult>('/api/branch', json({ action: 'switch', name, chan }, signal)),
   /** 练习仓库：在指定父目录下生成（成功后前端用 workDir 调用 /api/open 打开） */
   practiceCreate: (
     body: { type: 'git' | 'svn'; parentDir: string; scenarios: { remote?: boolean; conflict?: boolean }; projectLayout?: boolean },

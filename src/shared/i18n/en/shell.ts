@@ -36,6 +36,7 @@ export const shell = {
   'shell.tasks.phaseWaiting': 'Waiting for the server…',
   'shell.tasks.phaseResolving': 'Resolving deltas…',
   'shell.tasks.phaseCheckout': 'Checking out files…',
+  'shell.tasks.phaseSwitch': 'Switching branch…',
   'shell.tasks.progressOf': '{done} / {total}',
   'shell.tasks.progressSpeed': '{speed}/s',
   'shell.tasks.downloaded': 'Downloaded {done}',
@@ -118,6 +119,7 @@ export const shell = {
   'shell.tasks.detailTarget': 'Target',
   // {n} files checked out · {size}
   'shell.tasks.checkoutFiles': '{n} files checked out · {size}',
+  'shell.tasks.switchFiles': '{n} files processed',
   // Checked-out files ({n} total)
   'shell.tasks.detailFiles': 'Checked-out files ({n} total)',
   // (showing first {m})

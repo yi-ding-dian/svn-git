@@ -101,9 +101,12 @@ export function BranchDialog(props: {
     // 3 秒后转后台时不再重复飞，只收起弹窗 + 提示。其余分支操作仍保持"转后台才飞"
     const flyNow = action === 'fetch' || action === 'update' || action === 'create';
     if (flyNow && from) launchMagicFlight(from);
+    // 切换进度通道：svn switch 每处理一个条目输出一行，后端按行上报「已处理 N 个文件」
+    const chan = action === 'switch' ? `switch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : undefined;
     startTaskDeferred({
       kind: 'branch',
       title,
+      ...(chan ? { chan } : {}),
       run: async (signal) => {
         // 删除确认里输入的密码/分支名/提交信息：只取一次，防止 3 秒后转后台时还挂在 ref 上
         const del = action === 'delete' ? deleteSecretRef.current : null;
@@ -121,7 +124,10 @@ export function BranchDialog(props: {
               : action === 'delete'
                 // svn：服务端校验 confirmName 后才删；password 可选（验证后即用即丢）；message 可编辑
                 ? await post.branchDelete(name, del?.confirmName ?? name, del?.password, del?.username, del?.message, signal)
-                : await post.branch(action, name, force, signal, base, pathRel);
+                : action === 'switch'
+                  // svn：带进度通道，任务详情显示已处理文件数
+                  ? await post.branchSwitch(name, chan, signal)
+                  : await post.branch(action, name, force, signal, base, pathRel);
         // 未合并导致删除被拒 → 不干巴巴报错，改弹"强制删除"二次确认（3 秒内弹窗还开着才有意义；
         // 已转后台的失败可从通知里看到提示后重新进弹窗强删）。
         // （确认框文案早就写着"可强制删除"，但 force 从没传下去过，未合并的分支根本删不掉 —— 用户实报）
@@ -230,10 +236,25 @@ export function BranchDialog(props: {
     let msg: string;
     if (props.repoType === 'svn') {
       // 当前在 tags/独立目录：提示层级风险（目标若不是从当前目录复制，切换会整体替换内容）
-      msg = svnForeign
-        ? t('ops.branch.switchSvnForeign', { current: currentLabel, target: name === 'trunk' ? 'trunk' : `branches/${name}` })
-        : t('ops.branch.switchSvnWarn', { n: check?.changed ?? '?' });
-      if (svnForeign && check && check.changed > 0) msg += `\n\n${t('ops.branch.switchSvnWarn', { n: check.changed })}`;
+      const svnTarget = name === 'trunk' ? 'trunk' : `branches/${name}`;
+      msg = svnForeign ? t('ops.branch.switchSvnForeign', { current: currentLabel, target: svnTarget }) : '';
+      if (check && (check.tracked > 0 || check.untracked > 0)) {
+        // 已跟踪改动才可能冲突；未跟踪文件不会被切换替换，单独说明
+        const dirty = t('ops.branch.switchSvnWarnSplit', { tracked: check.tracked, untracked: check.untracked });
+        // 逐个比对过目标分支的已跟踪改动（后端最多查 20 个）：列出前 3 个会冲突的
+        let conflictNote = '';
+        if (check.conflicts.length > 0) {
+          const shown = check.conflicts.slice(0, 3).join(t('common.listSep'));
+          conflictNote =
+            '\n' +
+            (check.conflicts.length > 3
+              ? t('ops.branch.switchSvnConflictMore', { files: shown, n: check.conflicts.length })
+              : t('ops.branch.switchSvnConflict', { files: shown }));
+        }
+        msg = msg ? `${msg}\n\n${dirty}${conflictNote}` : `${dirty}${conflictNote}`;
+      } else if (!msg) {
+        msg = t('ops.branch.switchSvnWarn', { n: check?.changed ?? '?' });
+      }
     } else if (name.includes('/')) {
       const local = name.split('/').slice(1).join('/');
       // 确认切换到远程分支 {name}？将自动创建本地跟踪分支 {local} 并切换过去。
@@ -252,7 +273,35 @@ export function BranchDialog(props: {
       // 确认切换到分支 {name}？工作区有未提交修改且会被覆盖时，切换会失败（请先提交或储藏）。
       msg = t('ops.branch.switchWarn', { name });
     }
-    setCfm({ title: t(isTrunk ? 'ops.branch.switchTrunkTitle' : 'ops.branch.switchTitle'), msg, action: () => act('switch', name) });
+    const run = () => act('switch', name);
+    setCfm({ title: t(isTrunk ? 'ops.branch.switchTrunkTitle' : 'ops.branch.switchTitle'), msg, action: run });
+    // 结构差异摘要（svn）：异步补进确认框——大项目可能要几秒，不能让点「切换」卡住等
+    if (props.repoType === 'svn') {
+      get
+        .switchPlan(name)
+        .then((plan) => {
+          if (!plan) return;
+          const parts: string[] = [];
+          if (plan.added || plan.deleted || plan.modified) {
+            // 目标分支与当前内容差异：新增 {added} 个、删除 {deleted} 个、更新 {modified} 个文件。
+            parts.push(t('ops.branch.switchPlan', { added: plan.added, deleted: plan.deleted, modified: plan.modified }));
+          }
+          if (plan.obstructed.length > 0) {
+            // ⚠ 这些本地未跟踪文件会挡住切换：{files}（请先移走或提交）
+            parts.push(
+              t('ops.branch.switchPlanObstructed', {
+                files: plan.obstructed.slice(0, 3).join(t('common.listSep')),
+              }),
+            );
+          }
+          if (parts.length === 0) return;
+          // 只更新同一确认框（用户可能已点取消/确认，别把新弹窗内容覆盖掉）
+          setCfm((prev) => (prev && prev.action === run ? { ...prev, msg: `${msg}\n\n${parts.join('\n')}` } : prev));
+        })
+        .catch(() => {
+          /* 摘要失败：不显示，不影响切换 */
+        });
+    }
   };
   /** 合并预检（/api/merge-check）：
    *  L1 工作区级：未提交改动 ∩ 分支改动文件 → 拦截（git 对未提交改动按文件级拒绝）；

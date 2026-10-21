@@ -212,7 +212,10 @@ export interface Vcs {
    *  缺省从项目根 trunk 复制）。
    *  signal：取消/转后台（前端断开 → 后端杀掉在跑的子进程） */
   branchCreate(name: string, base?: string, signal?: AbortSignal, message?: string): Promise<VcsResult>;
-  branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult>;
+  branchSwitch(name: string, signal?: AbortSignal, chan?: string): Promise<VcsResult>;
+  /** 切换前的结构差异摘要（svn 专有）：目标分支相对当前 BASE 的新增/删除/更新数，
+   *  以及会被本地未跟踪文件挡住的路径（obstructed）。失败返回全 0。 */
+  switchPlan?(branch: string): Promise<{ added: number; deleted: number; modified: number; obstructed: string[] }>;
   branchDelete(name: string, force?: boolean, signal?: AbortSignal, password?: string, message?: string, username?: string): Promise<VcsResult>;
   /** 删除分支前的风险信息（svn 专有：最后提交 + 未合并版本数）；git 不实现。
    *  传 password/username 时顺带向服务器验证该账号（弹窗内即时提示错误，不用等删除请求） */

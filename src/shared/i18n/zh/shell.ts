@@ -38,6 +38,7 @@ export const shell = {
   'shell.tasks.phaseWaiting': '正在等待服务器…',
   'shell.tasks.phaseResolving': '正在解包…',
   'shell.tasks.phaseCheckout': '正在检出文件…',
+  'shell.tasks.phaseSwitch': '正在切换分支…',
   'shell.tasks.progressOf': '{done} / {total}',
   'shell.tasks.progressSpeed': '{speed}/s',
   'shell.tasks.downloaded': '已下载 {done}',
@@ -120,6 +121,7 @@ export const shell = {
   'shell.tasks.detailTarget': '目标',
   // 已检出 {n} 个文件 · {size}
   'shell.tasks.checkoutFiles': '已检出 {n} 个文件 · {size}',
+  'shell.tasks.switchFiles': '已处理 {n} 个文件',
   // 检出文件（共 {n} 个）
   'shell.tasks.detailFiles': '检出文件（共 {n} 个）',
   // （仅显示前 {m} 条）

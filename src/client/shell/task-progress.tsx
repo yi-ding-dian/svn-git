@@ -47,6 +47,7 @@ export function TaskProgress(props: { p: TaskProgressInfo; /** 任务已完成�
     waiting: 'shell.tasks.phaseWaiting',
     resolving: 'shell.tasks.phaseResolving',
     checkout: 'shell.tasks.phaseCheckout',
+    switch: 'shell.tasks.phaseSwitch',
   }[p.phase] as I18nKey;
   /** 上传类阶段说"已上传"，其余说"已下载"（同一串字节，方向不同） */
   const verb = p.phase === 'uploading' || p.phase === 'waiting' ? 'shell.tasks.uploaded' : 'shell.tasks.downloaded';
@@ -67,9 +68,14 @@ export function TaskProgress(props: { p: TaskProgressInfo; /** 任务已完成�
           {p.speed > 0 ? ` · ${t('shell.tasks.progressSpeed', { speed })}` : ''}
         </div>
       )}
-      {/* 已检出 {n} 个文件 · {size}（SVN 检出：后端周期扫盘上报） */}
+      {/* 已检出 {n} 个文件 · {size}（SVN 检出：后端周期扫盘上报）；
+          切换分支同一条通道只报文件数（没有字节/总大小） */}
       {p.files !== undefined && (
-        <div className="dim small">{t('shell.tasks.checkoutFiles', { n: p.files.toLocaleString(), size: size(p.bytes) })}</div>
+        <div className="dim small">
+          {p.phase === 'switch'
+            ? t('shell.tasks.switchFiles', { n: p.files.toLocaleString() })
+            : t('shell.tasks.checkoutFiles', { n: p.files.toLocaleString(), size: size(p.bytes) })}
+        </div>
       )}
       {!props.completed && (
         <div className="dim small">

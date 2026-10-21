@@ -2,10 +2,10 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { XMLParser } from 'fast-xml-parser';
-import { run } from './exec.js';
+import { run, runStream, type RunResult } from './exec.js';
 import { invalidateSvnIgnoreMap } from './ignore.js';
 import { t } from '../shared/i18n/index.js';
-import { progressStepsStart, progressStepsAdvance } from '../transfer-progress.js';
+import { progressDone, progressReport, progressStart, progressStepsStart, progressStepsAdvance } from '../transfer-progress.js';
 import { platform } from '../platform/index.js';
 import type { BranchDeleteCheck, BranchListResult, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
@@ -1370,15 +1370,99 @@ export class SvnVcs {
   }
 
   /** 切换分支：svn switch <root>/branches/<name>；name=trunk/root 时切回主干 */
-  /** 切换分支前的改动检查：svn switch 是 update 语义，本地改动尽量保留（可能冲突），只统计数量 */
-  async switchCheck(_branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }> {
-    const res = await this.exec(['status']);
-    // svn status 失败: {err}
-    if (res.code !== 0) throw new Error(t('vcs.svnStatusFailed', { err: res.stderr.trim() }));
-    const lines = res.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
-    const untracked = lines.filter((l) => l.startsWith('?')).length;
-    const tracked = lines.length - untracked;
-    return { changed: lines.length, tracked, untracked, conflicts: [] };
+  /** 切换分支前的改动检查：svn switch 是 update 语义，本地改动尽量保留（可能冲突）。
+   *  - untracked 不参与切换（不会被替换），单独计数，不当作冲突
+   *  - tracked 改动逐个与目标分支的同名文件比较：内容不同（或目标没有该文件）→ 切换时会冲突
+   *  逐个比较要两次网络请求，故最多查 20 个（超过只报数量，前端会说明）。 */
+  async switchCheck(branch: string): Promise<{ changed: number; tracked: number; untracked: number; conflicts: string[] }> {
+    const items = await this.status();
+    const untrackedItems = items.filter((i) => i.code === '?');
+    const trackedItems = items.filter((i) => i.code !== '?');
+    // 目标位置：主干走 mainlineUrl（子项目检出如 tags/SCA_HB 对应 trunk/src），其余走 branches/<名字>
+    const root = await this.projectRootUrl();
+    const target =
+      branch === 'trunk' || branch === 'root' || branch === ''
+        ? ((await this.mainlineUrl()) ?? `${root}/trunk`)
+        : `${root}/branches/${branch}`;
+    const conflicts: string[] = [];
+    for (const f of trackedItems.slice(0, 20)) {
+      if (f.isDir) continue; // 目录改动不做内容比较（树冲突由 svn 自己判定）
+      const targetFile = `${target}/${f.path}`;
+      // 目标分支上的同名文件（不含本地改动）
+      const t = await this.exec(['cat', targetFile], { timeoutMs: 60_000, raw: true });
+      if (f.code === 'A' || f.code === 'R') {
+        // 本地新增/复制：目标已有同名文件 → add/add 冲突；目标没有 → 切换不受影响
+        if (t.code === 0) conflicts.push(f.path);
+        continue;
+      }
+      if (t.code !== 0) {
+        // 目标没有这个文件：本地改动/删除会与目标侧删除冲突（或被切换删掉）
+        conflicts.push(f.path);
+        continue;
+      }
+      // 本地 BASE 内容：与目标内容不同 → 两边都改过同一文件 → 冲突
+      const b = await this.exec(['cat', '-r', 'BASE', f.path], { timeoutMs: 60_000, raw: true });
+      if (b.code !== 0) {
+        conflicts.push(f.path);
+        continue;
+      }
+      if (!(b.stdoutBuf ?? Buffer.from(b.stdout)).equals(t.stdoutBuf ?? Buffer.from(t.stdout))) conflicts.push(f.path);
+    }
+    return { changed: items.length, tracked: trackedItems.length, untracked: untrackedItems.length, conflicts };
+  }
+
+  /** 切换前的结构差异摘要（一次跨路径 diff，可能较慢，前端异步加载）：
+   *  - added/deleted/modified：目标分支相对当前 BASE 的新增/删除/更新条目数
+   *  - obstructed：目标新增、但本地已有同名未跟踪文件的路径（switch 会报 obstructed 失败）
+   *  失败时返回全 0（不阻塞切换，只是没有摘要）。 */
+  async switchPlan(branch: string): Promise<{ added: number; deleted: number; modified: number; obstructed: string[] }> {
+    const empty = { added: 0, deleted: 0, modified: 0, obstructed: [] as string[] };
+    const root = await this.projectRootUrl();
+    const target =
+      branch === 'trunk' || branch === 'root' || branch === ''
+        ? ((await this.mainlineUrl()) ?? `${root}/trunk`)
+        : `${root}/branches/${branch}`;
+    const info = await this.info();
+    const oldUrl = (info.url ?? '').replace(/\/+$/, '');
+    const baseRev = info.revision ?? '';
+    if (!oldUrl || !baseRev) return empty;
+    const res = await this.exec(
+      ['diff', '--summarize', `--old=${oldUrl}@${baseRev}`, `--new=${target}@HEAD`],
+      { timeoutMs: 180_000 },
+    );
+    if (res.code !== 0) return empty;
+    const added: string[] = [];
+    let deleted = 0;
+    let modified = 0;
+    for (const line of res.stdout.split(/\r?\n/)) {
+      const m = line.match(/^([AMDR])\S*\s+(.+)$/);
+      if (!m) continue;
+      const status = m[1]!;
+      let rel = m[2]!.trim();
+      if (rel.startsWith(oldUrl + '/')) rel = rel.slice(oldUrl.length + 1);
+      try {
+        rel = decodeURIComponent(rel);
+      } catch {
+        /* 非法转义：保留原样 */
+      }
+      if (status === 'A') added.push(rel);
+      else if (status === 'D') deleted += 1;
+      else modified += 1;
+    }
+    // 本地未跟踪项（status 对未跟踪目录只列目录本身）→ 与目标新增路径做逐级前缀匹配
+    const untracked = new Set((await this.status()).filter((i) => i.code === '?').map((i) => i.path));
+    const obstructed = added.filter((rel) => {
+      let cur = rel;
+      for (;;) {
+        if (untracked.has(cur)) return true;
+        const idx = cur.lastIndexOf('/');
+        if (idx < 0) return false;
+        cur = cur.slice(0, idx);
+      }
+    });
+    // 父路径已列出时省略子路径（`newdir` 与 `newdir/n.txt` 同时被挡，只提示更上层那个）
+    const dedup = obstructed.filter((p) => !obstructed.some((q) => q !== p && p.startsWith(q + '/')));
+    return { added: added.length, deleted, modified, obstructed: dedup.slice(0, 20) };
   }
 
   /** 合并预检：本地改动统计 + outdated 检测（svn 规则：merge 前工作副本必须是最新的，否则合到旧 BASE 产生虚假冲突/重复合并。检测失败(null)不拦截） */
@@ -1402,7 +1486,7 @@ export class SvnVcs {
     return { changed: items.length, tracked: items.length - untracked, untracked, conflicts: [], outdated };
   }
 
-  async branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult> {
+  async branchSwitch(name: string, signal?: AbortSignal, chan?: string): Promise<VcsResult> {
     const root = await this.projectRootUrl();
     let target: string;
     if (name === 'trunk' || name === 'root' || name === '') {
@@ -1419,7 +1503,31 @@ export class SvnVcs {
     } else {
       target = `${root}/branches/${name}`;
     }
-    const res = await this.exec(['switch', target], { timeoutMs: 300_000, signal });
+    // 流式执行：svn switch 每处理一个条目输出一行（A/U/D/E…），按行计数上报「已处理 N 个文件」。
+    // 结构差异大的分支切换可能要几分钟，只有"已用 n 秒"看不出在动。
+    let files = 0;
+    // 先登记进度通道（progressReport 只更新已登记的通道）
+    if (chan) progressStart(chan);
+    const res = await (async (): Promise<RunResult> => {
+      try {
+        return await runStream(await resolveSvnBin(), this.baseArgs().concat(['switch', target]), {
+          cwd: this.repo.root,
+          stdinData: this.cred?.username ? this.cred.password + '\n' : undefined,
+          timeoutMs: 300_000,
+          signal,
+          onLine: (line) => {
+            if (!chan) return;
+            // 条目行形如 `A    path` / `UU   path` / `D    path`（前 1-2 个大写字母 + 空白）
+            if (/^[A-Z]{1,2}\s{2,}\S/.test(line)) {
+              files += 1;
+              progressReport(chan, files, 0, 'switch');
+            }
+          },
+        });
+      } finally {
+        if (chan) progressDone(chan);
+      }
+    })();
     if (res.code !== 0) {
       const auth = this.authError(res);
       // E195012：工作副本与目标没有共同祖先（层级不同，例如 tags/SCA_HB 对应 trunk/src 而非 trunk）

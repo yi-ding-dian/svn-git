@@ -1301,7 +1301,8 @@ export class GitVcs {
   }
 
   /** 切换分支（git 2.20 无 switch，用 checkout）。signal：大仓库切换慢，可取消/转后台 */
-  async branchSwitch(name: string, signal?: AbortSignal): Promise<VcsResult> {
+  // chan 仅 svn 使用（switch 输出行 → 已处理文件数进度）；git checkout 无文件级输出
+  async branchSwitch(name: string, signal?: AbortSignal, _chan?: string): Promise<VcsResult> {
     // 远程分支（origin/xxx，refs/remotes 下存在）：
     // 直接 checkout origin/xxx 会进游离 HEAD（detached），改动不在任何分支上易丢失；
     // 本地已有同名分支则切本地（跟踪关系保留），否则自动创建本地跟踪分支。

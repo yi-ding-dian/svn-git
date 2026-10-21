@@ -35,6 +35,22 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/switch-plan') {
+        // 切换前结构差异摘要（svn）：新增/删除/更新数 + 会被本地未跟踪文件挡住的路径
+        const branch = String(url.searchParams.get('branch') ?? '');
+        if (!branch) {
+          sendJson(res, 400, { error: t('srv.missingBranch') });
+          return true;
+        }
+        const { vcs } = vcsOf();
+        try {
+          sendJson(res, 200, (await vcs.switchPlan?.(branch)) ?? null);
+        } catch (e) {
+          sendJson(res, 500, { error: (e as Error).message });
+        }
+        return true;
+      }
+
       if (p === '/api/merge-check') {
         // 合并预检：与切换同一交集判断（git 未实现 mergeCheck → 回退 switchCheck）；svn 额外带 outdated 检测
         const branch = String(url.searchParams.get('branch') ?? '');
@@ -81,7 +97,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         else if (action === 'switch') {
-          result = await vcs.branchSwitch(name, ac.signal);
+          // chan：进度通道（svn switch 按输出行上报已处理文件数）；git 忽略
+          result = await vcs.branchSwitch(name, ac.signal, String(body.chan ?? '') || undefined);
           // svn switch 会改写工作副本文件（回主干等）；git checkout 后工作区内容换分支——防旧状态残留
           if (result.ok) {
             invalidateStatusCache(vcsOf().repo.root);

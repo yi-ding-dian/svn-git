@@ -24,7 +24,9 @@ export type TransferPhase =
   | 'resolving'
   | 'uploading'
   | 'waiting'
-  | 'checkout';
+  | 'checkout'
+  /** svn switch：按输出行统计已处理的文件数（没有字节/总大小） */
+  | 'switch';
 
 export interface TransferProgress {
   phase: TransferPhase;
@@ -59,10 +61,10 @@ export function progressSetTotal(chan: string, total: number): void {
 
 /** SVN 检出等"没有原生进度输出"的场景：外部**周期扫盘**后上报累计（已落盘文件数 + 字节）。
  *  置 phase='checkout'（界面显示"正在检出文件"）；没登记过（任务已收尾）则忽略 */
-export function progressReport(chan: string, files: number, bytes: number): void {
+export function progressReport(chan: string, files: number, bytes: number, phase: 'checkout' | 'switch' = 'checkout'): void {
   const p = map.get(chan);
   if (p) {
-    p.phase = 'checkout';
+    p.phase = phase;
     p.files = files;
     p.bytes = bytes;
   }
