@@ -692,7 +692,7 @@ export const post = {
   ) => api<VcsResult>('/api/branch', json({ action, name, force, base, path: pathRel, ahead, behind }, signal)),
   /** 练习仓库：在指定父目录下生成（成功后前端用 workDir 调用 /api/open 打开） */
   practiceCreate: (
-    body: { type: 'git' | 'svn'; parentDir: string; scenarios: { remote?: boolean; conflict?: boolean } },
+    body: { type: 'git' | 'svn'; parentDir: string; scenarios: { remote?: boolean; conflict?: boolean }; projectLayout?: boolean },
     signal?: AbortSignal,
   ) => api<PracticeResult>('/api/practice/create', json(body, signal)),
   /** SVN 项目迁移：当前工作副本独立成长期开发线（devline）或独立项目（project）。

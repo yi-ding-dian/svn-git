@@ -52,8 +52,15 @@ function write(dir: string, rel: string, content: string): void {
   fs.writeFileSync(abs, content);
 }
 
-/** 生成 SVN 练习仓库。root 已被 planPracticeRoot 创建；失败由调用方清理。 */
-export async function generateSvnPractice(root: string, scenarios: PracticeScenarios, signal?: AbortSignal): Promise<void> {
+/** 生成 SVN 练习仓库。root 已被 planPracticeRoot 创建；失败由调用方清理。
+ *  projectLayout=true：版本库内用 projects/demo-project/{trunk,branches,tags} 多项目布局
+ *  （项目根≠版本库根，可练习项目迁移）；默认是版本库根即项目根的标准布局。 */
+export async function generateSvnPractice(
+  root: string,
+  scenarios: PracticeScenarios,
+  signal?: AbortSignal,
+  projectLayout?: boolean,
+): Promise<void> {
   const repo = path.join(root, 'repo');
   const work = path.join(root, 'work');
 
@@ -64,19 +71,31 @@ export async function generateSvnPractice(root: string, scenarios: PracticeScena
     throw new Error(t('srv.practiceStepFailed', { step: 'svnadmin create', msg: (r.stderr || r.stdout).trim() }));
   }
   const url = pathToFileURL(repo).href;
-  await svn(['mkdir', '-q', `${url}/trunk`, `${url}/branches`, `${url}/tags`, '-m', '初始化标准布局'], root, signal);
+  // 多项目布局：项目根在 projects/demo-project（版本库根下多一层）
+  const base = projectLayout ? `${url}/projects/demo-project` : url;
+  await svn(
+    ['mkdir', '--parents', '-q', `${base}/trunk`, `${base}/branches`, `${base}/tags`, '-m', projectLayout ? '初始化多项目布局' : '初始化标准布局'],
+    root,
+    signal,
+  );
 
   // 2) 检出 trunk 并做初始提交
-  await svn(['checkout', '-q', `${url}/trunk`, work], root, signal);
-  write(work, 'README.md', README);
+  await svn(['checkout', '-q', `${base}/trunk`, work], root, signal);
+  write(
+    work,
+    'README.md',
+    projectLayout
+      ? README.replace('标准布局示例版本库，工作副本在 `work/`，指向 `trunk`。', '多项目布局示例版本库（项目在 `projects/demo-project/`），工作副本在 `work/`，指向该项目的主干。')
+      : README,
+  );
   write(work, 'src/app.js', APP_V1);
   await svn(['add', '-q', 'README.md', 'src'], work, signal);
   await svn(['commit', '-qm', '初始化练习项目'], work, signal);
 
   // 3) 功能分支：先复制（分支点=trunk 初始提交），再在临时工作副本里提交
-  await svn(['copy', '-q', `${url}/trunk`, `${url}/branches/feature-a`, '-m', '创建功能分支'], root, signal);
+  await svn(['copy', '-q', `${base}/trunk`, `${base}/branches/feature-a`, '-m', '创建功能分支'], root, signal);
   const featWc = path.join(root, 'feature-work');
-  await svn(['checkout', '-q', `${url}/branches/feature-a`, featWc], root, signal);
+  await svn(['checkout', '-q', `${base}/branches/feature-a`, featWc], root, signal);
   if (scenarios.conflict) {
     // 与下面 trunk 的第二次提交改同一行 → 合并时冲突（分支点必须在 trunk 修改之前）
     write(featWc, 'src/app.js', APP_FEATURE_CONFLICT);
@@ -94,7 +113,7 @@ export async function generateSvnPractice(root: string, scenarios: PracticeScena
   await svn(['commit', '-qm', 'trunk: 主干第二次提交'], work, signal);
 
   // 5) 发布标签
-  await svn(['copy', '-q', `${url}/trunk`, `${url}/tags/v1.0`, '-m', '发布 v1.0'], root, signal);
+  await svn(['copy', '-q', `${base}/trunk`, `${base}/tags/v1.0`, '-m', '发布 v1.0'], root, signal);
 
   // 6) 工作副本更新到最新，保持干净（生成后的练习从"已同步"开始）
   await svn(['update', '-q'], work, signal);

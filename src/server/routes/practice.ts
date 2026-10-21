@@ -28,7 +28,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       if (!res.writableEnded) ac.abort();
     });
     const r = await generatePracticeRepo(
-      { type, parentDir, scenarios: { remote: Boolean(sc.remote), conflict: Boolean(sc.conflict) } },
+      {
+        type,
+        parentDir,
+        scenarios: { remote: Boolean(sc.remote), conflict: Boolean(sc.conflict) },
+        projectLayout: type === 'svn' && Boolean(body.projectLayout),
+      },
       ac.signal,
     );
     sendJson(res, 200, r);

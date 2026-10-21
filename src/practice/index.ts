@@ -21,7 +21,7 @@ export async function generatePracticeRepo(req: PracticeRequest, signal?: AbortS
 
   try {
     if (req.type === 'git') await generateGitPractice(plan.root, scenarios, signal);
-    else await generateSvnPractice(plan.root, scenarios, signal);
+    else await generateSvnPractice(plan.root, scenarios, signal, Boolean(req.projectLayout));
     return {
       ok: true,
       type: req.type,

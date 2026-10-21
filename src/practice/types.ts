@@ -15,6 +15,9 @@ export interface PracticeRequest {
   /** 用户选择的父目录（必须已存在且可写） */
   parentDir: string;
   scenarios?: PracticeScenarios;
+  /** SVN：多项目布局——版本库内 projects/demo-project/{trunk,branches,tags}，
+   *  项目根不再是版本库根，便于练习项目迁移/多项目管理 */
+  projectLayout?: boolean;
 }
 
 export interface PracticeResult {

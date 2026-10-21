@@ -20,6 +20,8 @@ export function PracticeRepoDialog(props: {
   /** 目录浏览视图（复用「打开项目」的 pick 模式：路径输入 + 网格 + 选择此目录） */
   const [picking, setPicking] = useState(false);
   const [scenarios, setScenarios] = useState<PracticeScenarios>(DEFAULT_SCENARIOS);
+  /** SVN：多项目布局（版本库内 projects/demo-project/…）——项目迁移/多项目练习用 */
+  const [projectLayout, setProjectLayout] = useState(false);
   const [probe, setProbe] = useState<{ git: boolean; svn: boolean; svnadmin: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -46,7 +48,7 @@ export function PracticeRepoDialog(props: {
     setBusy(true);
     setError('');
     try {
-      const r = await post.practiceCreate({ type, parentDir, scenarios });
+      const r = await post.practiceCreate({ type, parentDir, scenarios, projectLayout: type === 'svn' ? projectLayout : undefined });
       if (!r.ok || !r.workDir) {
         setError(r.message || t('repo.practice.failed'));
         return;
@@ -164,6 +166,15 @@ export function PracticeRepoDialog(props: {
           <span className="dim small">{t('repo.practice.remoteTip')}</span>
         </label>
       )}
+      {/* 多项目布局仅 SVN 有：版本库内 projects/demo-project/{trunk,branches,tags}，
+          项目根不再等于版本库根，才能练习「项目迁移 → 独立项目」 */}
+      {type === 'svn' && (
+        <label className="row" style={{ gap: 6, marginBottom: 4, cursor: 'pointer' }} title={t('repo.practice.projectLayoutTip')}>
+          <input type="checkbox" checked={projectLayout} onChange={(e) => setProjectLayout(e.target.checked)} />
+          <span>{t('repo.practice.projectLayout')}</span>
+          <span className="dim small">{t('repo.practice.projectLayoutTip')}</span>
+        </label>
+      )}
       <label className="row" style={{ gap: 6, marginBottom: 10, cursor: 'pointer' }} title={t('repo.practice.conflictTip')}>
         <input
           type="checkbox"
@@ -183,7 +194,9 @@ export function PracticeRepoDialog(props: {
             {'\n'}
             {type === 'git'
               ? `  remote.git/  ${t('repo.practice.previewRemote')}\n  work/        ${t('repo.practice.previewWork')}`
-              : `  repo/        ${t('repo.practice.previewRepo')}\n  work/        ${t('repo.practice.previewWork')}`}
+              : projectLayout
+                ? `  repo/        ${t('repo.practice.previewRepoMulti')}\n  work/        ${t('repo.practice.previewWork')}`
+                : `  repo/        ${t('repo.practice.previewRepo')}\n  work/        ${t('repo.practice.previewWork')}`}
           </div>
         ) : (
           <div className="dim small">{t('repo.practice.previewEmpty')}</div>
