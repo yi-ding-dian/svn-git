@@ -28,6 +28,25 @@ export function CreateBranchConfirm(props: {
   const defaultSvnBase: 'trunk' | 'current' = canCurrent && kind !== 'trunk' && kind !== 'branch' ? 'current' : canTrunk ? 'trunk' : 'current';
   const [svnBase, setSvnBase] = useState<'trunk' | 'current'>(defaultSvnBase);
 
+  /** SVN 预览：源 URL（trunk / 当前目录）→ 目标 URL（branches/新分支名）；显示 `^/` 简写 */
+  const projectRoot = (data.projectRoot ?? '').replace(/\/+$/, '');
+  const svnSourceUrl =
+    svnBase === 'current' ? (data.currentUrl ?? '') : projectRoot ? `${projectRoot}/trunk` : '';
+  const svnTargetUrl = projectRoot ? `${projectRoot}/branches/${name}` : '';
+  const shortUrl = (url: string) => {
+    if (!projectRoot || !url.startsWith(projectRoot)) return url;
+    const rel = url.slice(projectRoot.length);
+    return rel ? `^${rel}` : url;
+  };
+  const svnPreview = svnSourceUrl || svnTargetUrl ? (
+    <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 10px' }}>
+      <span className="dim">{t('ops.branch.createSource')}</span>
+      <span className="mono" style={{ minWidth: 0, wordBreak: 'break-all' }} title={svnSourceUrl}>{shortUrl(svnSourceUrl)}</span>
+      <span className="dim">{t('ops.branch.createTarget')}</span>
+      <span className="mono" style={{ minWidth: 0, wordBreak: 'break-all' }} title={svnTargetUrl}>{shortUrl(svnTargetUrl)}</span>
+    </div>
+  ) : null;
+
   return (
     <ConfirmModal
       // 新建分支
@@ -38,6 +57,8 @@ export function CreateBranchConfirm(props: {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, whiteSpace: 'normal' }}>
             {/* 确认创建新分支 {name}？ */}
             <div>{t('ops.branch.confirmCreate', { name })}</div>
+            {/* 将创建分支 {name}（基于 {base}） */}
+            <div className="dim small">{t('ops.branch.gitCreatePreview', { name, base: createBase === 'trunk' ? trunkBase! : data.current })}</div>
             <label className="row" style={{ alignItems: 'center', gap: 6, cursor: 'pointer' }}>
               <input type="radio" checked={createBase === 'trunk'} onChange={() => setCreateBase('trunk')} />
               {/* 基于主干 {base}（推荐） */}
@@ -79,6 +100,8 @@ export function CreateBranchConfirm(props: {
                 </span>
               )}
             </label>
+            {/* 源（trunk/当前目录）→ 目标（branches/新分支名）预览 */}
+            {svnPreview}
             {/* 创建后不自动切换，仍停留在 {current}。 */}
             <div className="dim small">{t('ops.branch.noAutoSwitch', { current: currentLabel })}</div>
           </div>
