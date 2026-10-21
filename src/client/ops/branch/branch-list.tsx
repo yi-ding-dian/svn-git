@@ -31,6 +31,8 @@ export function BranchList(props: {
   const mergeTarget = mergeTargetOf(repoType, data);
   const mergeTipOf = (source: string) =>
     t(mergeTarget.isWorkCopy ? 'ops.branch.mergeTipWorkCopy' : 'ops.branch.mergeTip', { source, target: mergeTarget.name });
+  // 徽标宽度：SVN 显示「版本库」（3 字）要宽一点；Git 沿用 38，保持原布局
+  const badgeWidth = repoType === 'svn' ? 44 : 38;
   return (
     <div className="vcs-list" style={{ flex: 1, minHeight: 60 }}>
       {/* 加载中… */}
@@ -50,7 +52,7 @@ export function BranchList(props: {
           title={trunkIsCurrent ? t('ops.branch.isCurrent') : undefined}
         >
           <span className="vcs-current" style={{ visibility: trunkIsCurrent ? 'visible' : 'hidden' }}>●</span>
-          <span className="badge" style={{ background: trunkIsCurrent ? 'var(--ok)' : 'var(--accent)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>
+          <span className="badge" style={{ background: trunkIsCurrent ? 'var(--ok)' : 'var(--accent)', fontSize: 9, minWidth: badgeWidth, textAlign: 'center' }}>
             {/* 当前 / 主干（和 Git 列表一致：当前项显示「当前」+ 绿点） */}
             {t(trunkIsCurrent ? 'ops.branch.badgeCurrent' : 'ops.branch.trunkBadge')}
           </span>
@@ -84,7 +86,7 @@ export function BranchList(props: {
       {repoType === 'svn' && data && (data.currentKind === 'tag' || data.currentKind === 'other') && (
         <div className="vcs-row" title={t('ops.branch.isCurrent')}>
           <span className="vcs-current" style={{ visibility: 'visible' }}>●</span>
-          <span className="badge" style={{ background: 'var(--ok)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>
+          <span className="badge" style={{ background: 'var(--ok)', fontSize: 9, minWidth: badgeWidth, textAlign: 'center' }}>
             {/* 当前 */}
             {t('ops.branch.badgeCurrent')}
           </span>
@@ -126,8 +128,25 @@ export function BranchList(props: {
             title={rowTitle}
           >
             <span className="vcs-current" style={{ visibility: isCur ? 'visible' : 'hidden' }}>●</span>
-            <span className="badge" style={{ background: b.remote ? 'var(--dim)' : 'var(--ok)', fontSize: 9, minWidth: 38, textAlign: 'center' }}>
-              {t(isCur ? 'ops.branch.badgeCurrent' : b.remote ? 'ops.branch.badgeRemote' : 'ops.branch.badgeLocal')}
+            {/* SVN 分支全部在版本库 branches/ 下（后端沿用 Git 的 remote:false，不能据此显示「本地」） */}
+            <span
+              className="badge"
+              style={{
+                background: isCur || (repoType === 'git' && !b.remote) ? 'var(--ok)' : 'var(--dim)',
+                fontSize: 9,
+                minWidth: badgeWidth,
+                textAlign: 'center',
+              }}
+            >
+              {t(
+                isCur
+                  ? 'ops.branch.badgeCurrent'
+                  : repoType === 'svn'
+                    ? 'ops.branch.badgeRepo'
+                    : b.remote
+                      ? 'ops.branch.badgeRemote'
+                      : 'ops.branch.badgeLocal',
+              )}
             </span>
             <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
             {/* 远程同步徽标：状态即入口——↓ 点击更新、↑ 点击推送、分叉点击看说明、✓ 不可点 */}

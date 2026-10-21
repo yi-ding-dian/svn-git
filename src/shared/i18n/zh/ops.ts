@@ -239,6 +239,8 @@ export const ops = {
   'ops.branch.badgeCurrent': '当前',
   'ops.branch.badgeRemote': '远程',
   'ops.branch.badgeLocal': '本地',
+  'ops.branch.badgeRepo': '版本库',
+  'ops.branch.repoNote': '列表是版本库 branches/ 下的分支，都在服务器上；切换只是让当前工作副本指向另一个分支，不会额外占磁盘。',
   'ops.branch.trunkBadge': '主干',
   'ops.branch.remoteHasLocalTip': '本地已有分支 {local} —— {name} 对应的就是它\n点此切换到 {local}',
   'ops.branch.remoteNoLocalTip': '本地还没有这个分支\n点此新建本地跟踪分支 {local} 并切换过去',

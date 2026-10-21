@@ -22,7 +22,7 @@ import { MergeSourceTarget } from './merge-source-target.js';
 
 export function BranchDialog(props: {
   repoType: 'svn' | 'git';
-  /** 当前工作副本本地根（合并到主干时作为范围目录浏览起点） */
+  /** 当前工作副本本地根：合并范围目录浏览起点、项目迁移内容预览 */
   workDir?: string;
   /** 目录选择弹窗注入：ops 域不能直接引用 repo 的目录浏览器，由 shell 提供 */
   onPickDir?: (req: PickDirRequest) => void;
@@ -490,6 +490,12 @@ export function BranchDialog(props: {
       <BranchHelp repoType={props.repoType} />
       {/* 仓库布局提示（svn 非标准布局时提醒） */}
       {props.repoType === 'svn' && data?.layout && <LayoutNote layout={data.layout} />}
+      {/* SVN 分支在版本库里：解释列表徽标，切换只换工作副本指向、不额外占磁盘 */}
+      {props.repoType === 'svn' && data && data.branches.length > 0 && (
+        <div className="small dim" style={{ margin: '6px 0' }}>
+          {t('ops.branch.repoNote')}
+        </div>
+      )}
       {/* 当前工作副本不在 branches/ 下（如 tags/定制项目）：说明列表与迁移入口 */}
       {props.repoType === 'svn' && data && data.currentKind !== 'trunk' && data.currentKind !== 'branch' && (
         <div className="small" style={{ color: 'var(--warn)', margin: '6px 0' }}>
