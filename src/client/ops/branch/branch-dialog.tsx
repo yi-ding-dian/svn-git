@@ -85,6 +85,10 @@ export function BranchDialog(props: {
     const title = t(BRANCH_TITLE_KEY[action], { name });
     const from = fromRef.current ?? undefined;
     fromRef.current = null; // 用掉即清（每次确认时重新记）
+    // 获取远程 / 更新分支：点击（或确认）当下就飞线——任务再快也能看到反馈；
+    // 3 秒后转后台时不再重复飞，只收起弹窗 + 提示。其余分支操作仍保持"转后台才飞"
+    const flyNow = action === 'fetch' || action === 'update';
+    if (flyNow && from) launchMagicFlight(from);
     startTaskDeferred({
       kind: 'branch',
       title,
@@ -123,7 +127,8 @@ export function BranchDialog(props: {
         }
         return { ok: r.ok, message: text };
       },
-      onSlow: () => background(title, from),
+      // 起飞方向已在点击/确认时飞过（flyNow），转后台这里只负责收尾，不再重复飞
+      onSlow: () => background(title, flyNow ? undefined : from),
     });
   };
 
