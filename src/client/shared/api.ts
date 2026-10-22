@@ -423,9 +423,10 @@ export const get = {
     api<{ changed: number; tracked: number; untracked: number; conflicts: string[] }>(
       `/api/switch-check?branch=${encodeURIComponent(branch)}`,
     ),
-  /** 切换前结构差异摘要（svn）：新增/删除/更新数 + 会被本地未跟踪文件挡住的路径 */
+  /** 切换前结构差异摘要（svn）：新增/删除/更新数 + 会被本地未跟踪文件挡住的路径
+   *  + 目标删除目录里存在未跟踪文件的路径（会产生树冲突） */
   switchPlan: (branch: string) =>
-    api<{ added: number; deleted: number; modified: number; obstructed: string[] } | null>(
+    api<{ added: number; deleted: number; modified: number; obstructed: string[]; untrackedInDeleted: string[] } | null>(
       `/api/switch-plan?branch=${encodeURIComponent(branch)}`,
     ),
   /** 合并预检：git 同 switchCheck + lineConflicts（提交级冲突试算）；svn 额外 outdated 标记 */

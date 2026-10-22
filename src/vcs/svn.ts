@@ -1415,8 +1415,14 @@ export class SvnVcs {
    *  - added/deleted/modified：目标分支相对当前 BASE 的新增/删除/更新条目数
    *  - obstructed：目标新增、但本地已有同名未跟踪文件的路径（switch 会报 obstructed 失败）
    *  失败时返回全 0（不阻塞切换，只是没有摘要）。 */
-  async switchPlan(branch: string): Promise<{ added: number; deleted: number; modified: number; obstructed: string[] }> {
-    const empty = { added: 0, deleted: 0, modified: 0, obstructed: [] as string[] };
+  async switchPlan(branch: string): Promise<{
+    added: number;
+    deleted: number;
+    modified: number;
+    obstructed: string[];
+    untrackedInDeleted: string[];
+  }> {
+    const empty = { added: 0, deleted: 0, modified: 0, obstructed: [] as string[], untrackedInDeleted: [] as string[] };
     const root = await this.projectRootUrl();
     const target =
       branch === 'trunk' || branch === 'root' || branch === ''
@@ -1432,6 +1438,7 @@ export class SvnVcs {
     );
     if (res.code !== 0) return empty;
     const added: string[] = [];
+    const deletedPaths: string[] = [];
     let deleted = 0;
     let modified = 0;
     for (const line of res.stdout.split(/\r?\n/)) {
@@ -1446,8 +1453,10 @@ export class SvnVcs {
         /* 非法转义：保留原样 */
       }
       if (status === 'A') added.push(rel);
-      else if (status === 'D') deleted += 1;
-      else modified += 1;
+      else if (status === 'D') {
+        deletedPaths.push(rel);
+        deleted += 1;
+      } else modified += 1;
     }
     // 本地未跟踪项（status 对未跟踪目录只列目录本身）→ 与目标新增路径做逐级前缀匹配
     const untracked = new Set((await this.status()).filter((i) => i.code === '?').map((i) => i.path));
@@ -1462,7 +1471,12 @@ export class SvnVcs {
     });
     // 父路径已列出时省略子路径（`newdir` 与 `newdir/n.txt` 同时被挡，只提示更上层那个）
     const dedup = obstructed.filter((p) => !obstructed.some((q) => q !== p && p.startsWith(q + '/')));
-    return { added: added.length, deleted, modified, obstructed: dedup.slice(0, 20) };
+    // 目标分支会删除的路径里，本地还有未跟踪文件：SVN 不删未版本化内容，切换无法干净删除，
+    // 工作副本会留下树冲突（实测：C test + ? test/v1.txt）。按具体未跟踪文件点名提示。
+    const untrackedInDeleted = [
+      ...new Set(deletedPaths.flatMap((del) => [...untracked].filter((u) => u === del || u.startsWith(del + '/')))),
+    ].slice(0, 20);
+    return { added: added.length, deleted, modified, obstructed: dedup.slice(0, 20), untrackedInDeleted };
   }
 
   /** 合并预检：本地改动统计 + outdated 检测（svn 规则：merge 前工作副本必须是最新的，否则合到旧 BASE 产生虚假冲突/重复合并。检测失败(null)不拦截） */

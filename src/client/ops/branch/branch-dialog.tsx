@@ -275,33 +275,40 @@ export function BranchDialog(props: {
     }
     const run = () => act('switch', name);
     setCfm({ title: t(isTrunk ? 'ops.branch.switchTrunkTitle' : 'ops.branch.switchTitle'), msg, action: run });
-    // 结构差异摘要（svn）：异步补进确认框——大项目可能要几秒，不能让点「切换」卡住等
-    if (props.repoType === 'svn') {
-      get
-        .switchPlan(name)
-        .then((plan) => {
-          if (!plan) return;
-          const parts: string[] = [];
-          if (plan.added || plan.deleted || plan.modified) {
-            // 目标分支与当前内容差异：新增 {added} 个、删除 {deleted} 个、更新 {modified} 个文件。
-            parts.push(t('ops.branch.switchPlan', { added: plan.added, deleted: plan.deleted, modified: plan.modified }));
-          }
-          if (plan.obstructed.length > 0) {
-            // ⚠ 这些本地未跟踪文件会挡住切换：{files}（请先移走或提交）
-            parts.push(
-              t('ops.branch.switchPlanObstructed', {
-                files: plan.obstructed.slice(0, 3).join(t('common.listSep')),
-              }),
-            );
-          }
-          if (parts.length === 0) return;
-          // 只更新同一确认框（用户可能已点取消/确认，别把新弹窗内容覆盖掉）
-          setCfm((prev) => (prev && prev.action === run ? { ...prev, msg: `${msg}\n\n${parts.join('\n')}` } : prev));
-        })
-        .catch(() => {
-          /* 摘要失败：不显示，不影响切换 */
-        });
-    }
+    // 结构差异摘要（svn/git）：异步补进确认框——大项目可能要几秒，不能让点「切换」卡住等
+    get
+      .switchPlan(name)
+      .then((plan) => {
+        if (!plan) return;
+        const parts: string[] = [];
+        if (plan.added || plan.deleted || plan.modified) {
+          // 目标分支与当前内容差异：新增 {added} 个、删除 {deleted} 个、更新 {modified} 个文件。
+          parts.push(t('ops.branch.switchPlan', { added: plan.added, deleted: plan.deleted, modified: plan.modified }));
+        }
+        if (plan.obstructed.length > 0) {
+          // ⚠ 这些本地未跟踪文件会挡住切换：{files}（请先移走或提交）
+          parts.push(
+            t('ops.branch.switchPlanObstructed', {
+              files: plan.obstructed.slice(0, 3).join(t('common.listSep')),
+            }),
+          );
+        }
+        if (plan.untrackedInDeleted.length > 0) {
+          // svn：会产生树冲突；git：保留为未跟踪内容（文案不同）
+          parts.push(
+            t(
+              props.repoType === 'git' ? 'ops.branch.switchPlanDeletedUntrackedGit' : 'ops.branch.switchPlanDeletedUntracked',
+              { files: plan.untrackedInDeleted.slice(0, 3).join(t('common.listSep')) },
+            ),
+          );
+        }
+        if (parts.length === 0) return;
+        // 只更新同一确认框（用户可能已点取消/确认，别把新弹窗内容覆盖掉）
+        setCfm((prev) => (prev && prev.action === run ? { ...prev, msg: `${msg}\n\n${parts.join('\n')}` } : prev));
+      })
+      .catch(() => {
+        /* 摘要失败：不显示，不影响切换 */
+      });
   };
   /** 合并预检（/api/merge-check）：
    *  L1 工作区级：未提交改动 ∩ 分支改动文件 → 拦截（git 对未提交改动按文件级拒绝）；

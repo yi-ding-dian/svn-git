@@ -1302,6 +1302,77 @@ export class GitVcs {
 
   /** 切换分支（git 2.20 无 switch，用 checkout）。signal：大仓库切换慢，可取消/转后台 */
   // chan 仅 svn 使用（switch 输出行 → 已处理文件数进度）；git checkout 无文件级输出
+  /** 切换前的结构差异摘要（git）：目标分支相对当前分支的新增/删除/更新数，
+   *  以及会被本地未跟踪文件挡住的路径（obstructed）、目标删除目录里的未跟踪文件。
+   *  失败返回全 0。 */
+  async switchPlan(branch: string): Promise<{
+    added: number;
+    deleted: number;
+    modified: number;
+    obstructed: string[];
+    untrackedInDeleted: string[];
+  }> {
+    const empty = { added: 0, deleted: 0, modified: 0, obstructed: [] as string[], untrackedInDeleted: [] as string[] };
+    const cur = await this.exec(['rev-parse', '--abbrev-ref', 'HEAD']);
+    if (cur.code !== 0) return empty;
+    const current = cur.stdout.trim();
+    // core.quotePath=false：保留非 ASCII 路径原样（否则中文路径会变成 \344\270... 转义）
+    const res = await this.exec(['-c', 'core.quotePath=false', 'diff', '--name-status', '-M', `${current}..${branch}`], {
+      timeoutMs: 120_000,
+    });
+    if (res.code !== 0) return empty;
+    const added: string[] = [];
+    let deleted = 0;
+    let modified = 0;
+    for (const line of res.stdout.split('\n')) {
+      if (!line.trim()) continue;
+      const [status = '', from = '', to = ''] = line.split('\t');
+      if (status.startsWith('D')) {
+        if (from) deleted += 1;
+      } else if (status.startsWith('A')) {
+        if (from) added.push(from);
+      } else if (status.startsWith('R')) {
+        // 重命名：旧路径算删除、新路径算新增（切换时同样会删旧建新）
+        if (from) deleted += 1;
+        if (to) added.push(to);
+      } else {
+        modified += 1;
+      }
+    }
+    const untrackedItems = (await this.status()).filter((i) => i.code === '?').map((i) => i.path);
+    const untracked = new Set(untrackedItems);
+    // 目标新增、但本地已有同名未跟踪项 → git checkout 会拒绝（would be overwritten）
+    const obstructed = added.filter((rel) => {
+      let p = rel;
+      for (;;) {
+        if (untracked.has(p)) return true;
+        const idx = p.lastIndexOf('/');
+        if (idx < 0) return false;
+        p = p.slice(0, idx);
+      }
+    });
+    const dedup = obstructed.filter((p) => !obstructed.some((q) => q !== p && p.startsWith(q + '/')));
+    // git 不跟踪目录：diff 只列文件，无法从 D 路径看出"整个目录消失"。
+    // 改用两边的目录集合：未跟踪文件所在目录「当前分支有、目标分支没有」→ 切换后目录消失，
+    // 文件保留为未跟踪内容（实测：test 目录仍在，git status 显示 `?? test/`）。
+    const dirSet = (r: { code: number; stdout: string }) => new Set(r.code === 0 ? r.stdout.split('\n').filter(Boolean) : []);
+    const [curDirsRes, targetDirsRes] = await Promise.all([
+      this.exec(['-c', 'core.quotePath=false', 'ls-tree', '-r', '-d', '--name-only', 'HEAD']),
+      this.exec(['-c', 'core.quotePath=false', 'ls-tree', '-r', '-d', '--name-only', branch]),
+    ]);
+    const curDirs = dirSet(curDirsRes);
+    const targetDirs = dirSet(targetDirsRes);
+    const untrackedInDeleted = untrackedItems
+      .filter((u) => {
+        const slash = u.lastIndexOf('/');
+        if (slash < 0) return false; // 仓库根下的未跟踪文件不受目录消失影响
+        const dir = u.slice(0, slash);
+        return curDirs.has(dir) && !targetDirs.has(dir);
+      })
+      .slice(0, 20);
+    return { added: added.length, deleted, modified, obstructed: dedup.slice(0, 20), untrackedInDeleted };
+  }
+
   async branchSwitch(name: string, signal?: AbortSignal, _chan?: string): Promise<VcsResult> {
     // 远程分支（origin/xxx，refs/remotes 下存在）：
     // 直接 checkout origin/xxx 会进游离 HEAD（detached），改动不在任何分支上易丢失；
