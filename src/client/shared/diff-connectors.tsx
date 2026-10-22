@@ -184,7 +184,7 @@ export function DiffConnectors(props: Props) {
           />
         ))}
       </svg>
-      {/* 还原箭头：块首行左侧、指向左栏（把原版内容「拉回来」）。
+      {/* 还原箭头：块首行左侧、指向右栏（把原版内容应用到工作区）。
           只有「工作区 vs 原版」才传 onRestore——版本间对比里右栏不是工作区，还原无意义。 */}
       {onRestore &&
         view.links.map((l) => (
@@ -201,7 +201,7 @@ export function DiffConnectors(props: Props) {
             }}
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 9H4M8.5 4.5L4 9l4.5 4.5" />
+              <path d="M3 9H14M9.5 4.5L14 9l-4.5 4.5" />
             </svg>
           </button>
         ))}

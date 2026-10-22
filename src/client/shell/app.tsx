@@ -868,7 +868,12 @@ export function App() {
 
   // 打开勾选式提交弹窗（收集当前目录变更）
   const openCommitSelect = useCallback(
-    async (dir: string, dirLabel: string) => {
+    async (
+      dir: string,
+      dirLabel: string,
+      /** 从差异视图返回时保留用户已勾选/注释；items 按最新状态重新收集（已还原的文件自动消失） */
+      preserve?: { checked?: string[]; msg?: string; stagedOnly?: string[] },
+    ) => {
       try {
         const st = await get.status();
         const prefix = dir ? dir + '/' : '';
@@ -899,8 +904,18 @@ export function App() {
           return;
         }
         // 从 index 恢复「已部分暂存」的文件：弹窗关掉再打开也认得（否则重开后会整文件 add，把未选的块也提交）
-        const stagedOnly = await get.stagedFiles().then((r) => r.files).catch(() => []);
-        setModal({ type: 'commit-select', dir, dirLabel, items, stagedOnly });
+        const stagedOnly = preserve?.stagedOnly ?? (await get.stagedFiles().then((r) => r.files).catch(() => []));
+        // 用户已勾选的路径按最新 items 过滤：已还原/已消失的文件不留在勾选集合里
+        const checked = preserve?.checked?.filter((p) => items.some((i) => i.path === p));
+        setModal({
+          type: 'commit-select',
+          dir,
+          dirLabel,
+          items,
+          stagedOnly,
+          ...(checked !== undefined ? { checked } : {}),
+          ...(preserve?.msg !== undefined ? { msg: preserve.msg } : {}),
+        });
         // 与"提交此文件"一致的提交前安全：行冲突/远程检查后台并行（用户勾选期间完成，关窗则丢弃）
         checkCommitBackground(items.map((i) => i.path), { type: 'commit-select', dir, dirLabel, items, stagedOnly });
       } catch (e) {
@@ -1161,8 +1176,18 @@ export function App() {
                     setView(diffFrom);
                     // 从「提交修改的文件」弹窗双击进入差异：返回时恢复该弹窗
                     if (diffReturnModal) {
-                      setModal(diffReturnModal);
+                      const m = diffReturnModal;
                       setDiffReturnModal(null);
+                      if (m.type === 'commit-select') {
+                        // 重新收集状态：文件可能在编辑器里被改回原样/还原过，旧的 items 快照会把 M 留在列表里
+                        void openCommitSelect(m.dir, m.dirLabel, {
+                          checked: m.checked,
+                          msg: m.msg,
+                          stagedOnly: m.stagedOnly,
+                        });
+                      } else {
+                        setModal(m);
+                      }
                     }
                   }}
                 />
