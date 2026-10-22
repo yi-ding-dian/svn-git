@@ -253,7 +253,7 @@ export const ops = {
   'ops.branch.checkoutTip': 'Check out branch {name} as an independent working copy (the current project is not switched)',
   'ops.branch.checkoutCopyTip': 'Check out another copy of the current branch {name} (the current project is not switched)',
   'ops.branch.checkoutNoUrl': 'Cannot determine the branch URL — try again later',
-  'ops.branch.worktreeBtn': 'Worktrees…',
+  'ops.branch.worktreeBtn': 'Worktrees',
   'ops.branch.worktreeTip': 'Manage Git worktrees (multiple working directories of this repository)',
   'ops.branch.mainlinePending': 'Resolving mainline source… (first time may take a while)',
   'ops.branch.pushTip': 'This branch has not been pushed yet\nClick to push {name} to the remote server (origin)',

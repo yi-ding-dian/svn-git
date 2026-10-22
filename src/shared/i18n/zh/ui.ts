@@ -36,5 +36,6 @@ export const ui = {
   'ui.cmdPreview.collapsed': '{n} 条，点击展开',
   'ui.cmdPreview.copy': '复制',
   'ui.cmdPreview.copyTip': '复制全部命令',
+  'ui.cmdPreview.copyLineTip': '复制这一行命令',
   'ui.cmdPreview.copied': '已复制',
 } as const;

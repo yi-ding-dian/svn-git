@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { BranchInfo } from '../../shared/api.js';
 import { get, post } from '../../shared/api.js';
 import { ConfirmModal } from '../../ui/prompt.js';
+import { CommandPreview } from '../../ui/command-preview.js';
 import { ModalShell } from '../../shell/modal-shell.js';
 import { useTasks } from '../../shared/tasks.js';
 import { startTaskDeferred } from '../../shell/bg-defer.js';
@@ -31,8 +32,6 @@ export function ProjectMigratePanel(props: {
   const [extras, setExtras] = useState<Set<string>>(new Set());
   const STANDARD_EXTRAS = ['doc', 'package', 'ThirdPart'];
   const [switchAfter, setSwitchAfter] = useState(true);
-  /** 命令预览默认折叠：完整命令较长，展开才占版面 */
-  const [cmdsOpen, setCmdsOpen] = useState(false);
   const [cfm, setCfm] = useState<{ cmd: string; confirmLabel: string; action: () => void } | null>(null);
   const fromRef = useRef<DOMRect | null>(null);
   const bgTasks = useTasks();
@@ -121,7 +120,7 @@ export function ProjectMigratePanel(props: {
       : currentLabelOf(data) || data.current || '';
   const shortUrl = (url: string) => (reposRoot && url.startsWith(reposRoot) ? `^${url.slice(reposRoot.length)}` : url);
   const migrateCmds = (() => {
-    if (!trimmedName || !newRoot) return { short: [], full: [] };
+    if (!trimmedName || !newRoot) return { short: [], full: [], confirm: [] };
     // 骨架顺序与后端一致：sub 非空时先建 trunk 与附加目录；sub 为空时附加目录要等 copy 之后
     const build = (urlOf: (u: string) => string) => {
       const skeleton = [`${newRoot}/branches`, `${newRoot}/tags`];
@@ -143,7 +142,8 @@ export function ProjectMigratePanel(props: {
     };
     const ordinal = (i: number) => `${'①②③④⑤⑥⑦⑧⑨'[i] ?? `${i + 1}.`} `;
     const full = build((u) => u);
-    return { short: build(shortUrl).map((c, i) => ordinal(i) + c), full: full.map((c, i) => ordinal(i) + c) };
+    // short/full 不含序号（CommandPreview 负责 ①②③）；confirm 保留序号给确认框
+    return { short: build(shortUrl), full, confirm: full.map((c, i) => ordinal(i) + c) };
   })();
 
   const runMigrate = (n: string) => {
@@ -176,7 +176,7 @@ export function ProjectMigratePanel(props: {
   /** 迁移确认：列出将执行的全部 SVN 命令（含切换） */
   const confirmMigrate = () => {
     if (!trimmedName || !newRoot) return;
-    setCfm({ cmd: migrateCmds.full.join('\n'), confirmLabel: t('ops.branch.migrateRun'), action: () => runMigrate(trimmedName) });
+    setCfm({ cmd: migrateCmds.confirm.join('\n'), confirmLabel: t('ops.branch.migrateRun'), action: () => runMigrate(trimmedName) });
   };
 
   return (
@@ -297,27 +297,12 @@ export function ProjectMigratePanel(props: {
           {t('ops.branch.migrateSwitch')}
         </label>
         {migrateCmds.short.length > 0 && (
-          <>
-            {/* 将执行以下命令（默认折叠，点击展开）：完整命令较长，避免弹窗拥挤 */}
-            <button
-              className="small"
-              style={{ background: 'none', border: 'none', padding: 0, marginTop: 8, color: 'var(--accent)', cursor: 'pointer', textAlign: 'left' }}
-              onClick={() => setCmdsOpen((v) => !v)}
-            >
-              {cmdsOpen ? '▾' : '▸'} {t('ops.branch.migrateCmdTitle')} ·{' '}
-              {t(cmdsOpen ? 'ops.branch.migrateCmdExpanded' : 'ops.branch.migrateCmdCollapsed', { n: migrateCmds.short.length })}
-            </button>
-            {cmdsOpen && (
-              <div className="mono small" style={{ margin: '2px 0', maxHeight: 180, overflow: 'auto', color: 'var(--dim)' }}>
-                {/* 每条命令单独一行：悬浮显示完整 URL（显示用 ^/ 简写） */}
-                {migrateCmds.short.map((c, i) => (
-                  <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} title={migrateCmds.full[i]}>
-                    {c}
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+          <CommandPreview
+            commands={migrateCmds.short}
+            fullCommands={migrateCmds.full}
+            marker="circled"
+            compact
+          />
         )}
       </ModalShell>
       {cfm && (

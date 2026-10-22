@@ -36,5 +36,6 @@ export const ui = {
   'ui.cmdPreview.collapsed': '{n} commands, click to expand',
   'ui.cmdPreview.copy': 'Copy',
   'ui.cmdPreview.copyTip': 'Copy all commands',
+  'ui.cmdPreview.copyLineTip': 'Copy this command',
   'ui.cmdPreview.copied': 'Copied',
 };

@@ -5,7 +5,6 @@ import { ResizableModal } from '../shell/modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { ConfirmModal, InfoModal } from '../ui/prompt.js';
 import { ClickTip } from '../ui/ui.js';
-import { CommandPreview } from '../ui/command-preview.js';
 import { autoSizeForText } from '../shared/utils.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { launchMagicFlight } from '../animations/index.js';
@@ -292,8 +291,6 @@ export function PushConfirmModal(props: {
               </button>
             </div>
           )}
-          {/* 命令预览：首次推送自动带 -u 建立上游跟踪 */}
-          <CommandPreview commands={[pushCmd]} />
         </div>
         <div className="foot">
           {/* 取消 */}
