@@ -372,7 +372,10 @@ export const get = {
   fonts: () => api<{ families: string[] }>('/api/fonts'),
   /** 系统可用打开方式（按扩展名匹配 .desktop 程序）；chooseOpen(仅 win32) 为「选择其他应用…」哨兵命令 */
   appsFor: (ext: string) =>
-    api<{ apps: { name: string; exec: string; icon: string }[]; chooseOpen?: string | null }>(`/api/apps-for?ext=${encodeURIComponent(ext)}`),
+    api<{
+      apps: { name: string; exec: string; icon: string; isDefaultBrowser?: boolean }[];
+      chooseOpen?: string | null;
+    }>(`/api/apps-for?ext=${encodeURIComponent(ext)}`),
   /** 系统应用菜单集成状态（AppImage 运行方式；installed=已安装到应用菜单） */
   appMenu: () => api<{ appImage: boolean; installed: boolean }>('/api/app-menu'),
   preflight: (signal?: AbortSignal) =>
@@ -932,6 +935,9 @@ export const post = {
   shutdown: () => api<{ ok: boolean }>('/api/shutdown', json({})),
   /** 用指定系统程序打开仓库内文件 */
   openWith: (path: string, exec: string) => api<{ ok: boolean; message: string }>('/api/open-with', json({ path, exec })),
+  /** 用系统默认浏览器打开本地文件（html/svg/txt 等） */
+  openInBrowser: (path: string) =>
+    api<{ ok: boolean; message?: string; error?: string }>('/api/open-in-browser', json({ path })),
   /** 在系统外部终端窗口里运行脚本（.bat/.cmd/.sh，右键「终端运行」） */
   runScript: (path: string) => api<{ ok: boolean; message: string }>('/api/run-script', json({ path })),
   /** 拖入上传：冲突预检（只传相对路径列表，不传文件内容；先探路再决定怎么传） */

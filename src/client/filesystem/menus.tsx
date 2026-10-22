@@ -545,36 +545,52 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
     void get
       .appsFor(ext)
       .then((r) => {
+        const appItems: CtxMenuItem[] = (r.apps ?? []).map((a) => ({
+          label: a.name,
+          icon: <AppIcon icon={a.icon} />,
+          action: () => {
+            void post
+              .openWith(row.rel, a.exec)
+              // 已打开
+              .then((x) => s.onToast(x.message ?? t('fs.menu.opened'), !x.ok))
+              // 打开失败: {msg}
+              .catch((er: Error) => s.onToast(t('fs.menu.openFailed', { msg: er.message }), true));
+          },
+        }));
+        const chooseItems: CtxMenuItem[] = r.chooseOpen
+          ? [
+              {
+                // 选择其他应用…
+                label: t('fs.menu.chooseApp'),
+                icon: <IconExternal />,
+                action: () => {
+                  void post
+                    .openWith(row.rel, r.chooseOpen!)
+                    // 已打开
+                    .then((x) => s.onToast(x.message ?? t('fs.menu.opened'), !x.ok))
+                    // 打开失败: {msg}
+                    .catch((er: Error) => s.onToast(t('fs.menu.openFailed', { msg: er.message }), true));
+                },
+              },
+            ]
+          : [];
+        // 子菜单最多列 7 个；其余收进「更多…」——点击后在同一个子菜单里展开全部
+        //（右键菜单组件只支持二级子菜单，三级悬浮不支持）
         const subs: CtxMenuItem[] = [
-          ...(r.apps ?? []).slice(0, 5).map((a) => ({
-            label: a.name,
-            icon: <AppIcon icon={a.icon} />,
-            action: () => {
-              void post
-                .openWith(row.rel, a.exec)
-                // 已打开
-                .then((x) => s.onToast(x.message ?? t('fs.menu.opened'), !x.ok))
-                // 打开失败: {msg}
-                .catch((er: Error) => s.onToast(t('fs.menu.openFailed', { msg: er.message }), true));
-            },
-          })),
-          ...(r.chooseOpen
+          ...appItems.slice(0, 7),
+          ...(appItems.length > 7
             ? [
                 {
-                  // 选择其他应用…
-                  label: t('fs.menu.chooseApp'),
                   icon: <IconExternal />,
-                  action: () => {
-                    void post
-                      .openWith(row.rel, r.chooseOpen!)
-                      // 已打开
-                      .then((x) => s.onToast(x.message ?? t('fs.menu.opened'), !x.ok))
-                      // 打开失败: {msg}
-                      .catch((er: Error) => s.onToast(t('fs.menu.openFailed', { msg: er.message }), true));
-                  },
+                  // 更多（{n} 个）…
+                  label: t('fs.menu.moreApps', { n: appItems.length - 7 }),
+                  // 点击后原地展开全部：不关闭菜单/子菜单
+                  keepOpen: true,
+                  action: () => s.menuPatchItems(owIdx, [...appItems, ...chooseItems]),
                 },
               ]
             : []),
+          ...chooseItems,
         ];
         // 菜单可能已被关闭（用户快速点走）：由组件端安全补丁
         // 无

@@ -23,6 +23,8 @@ export interface CtxMenuItem {
   action?: () => void;
   /** 二级子菜单（悬浮/点击右侧展开,如「打开方式」） */
   submenu?: CtxMenuItem[];
+  /** 在二级子菜单里执行 action 后**不关闭菜单**（用于「更多…」原地展开全部） */
+  keepOpen?: boolean;
   /** 不显示右侧 ▶ 箭头（子菜单照常展开）——给「语言」这类展开方式不言自明的项用 */
   noArrow?: boolean;
   /** 可拖拽的唯一键（按住可拖出菜单，如工具栏定制） */
@@ -167,8 +169,10 @@ function SubmenuPane(props: {
           key={si}
           className={`ctx-item ${s.danger ? 'danger' : ''}`}
           title={s.cmd ? `${s.cmd}\n${s.title ?? ''}` : s.title}
-          onClick={() => {
-            props.onAction();
+          onClick={(e) => {
+            // 「更多…」原地展开：阻止冒泡到 window 的全局 click 关闭监听
+            if (s.keepOpen) e.stopPropagation();
+            if (!s.keepOpen) props.onAction();
             s.action?.();
           }}
         >

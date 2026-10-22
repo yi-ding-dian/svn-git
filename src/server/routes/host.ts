@@ -57,6 +57,7 @@ const EXT_MIME: Record<string, string> = {
   odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet', odp: 'application/vnd.oasis.opendocument.presentation',
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', svg: 'image/svg+xml', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon',
   txt: 'text/plain', md: 'text/markdown', log: 'text/plain', rst: 'text/plain', csv: 'text/csv',
+  html: 'text/html', htm: 'text/html', xhtml: 'application/xhtml+xml', xml: 'text/xml', mhtml: 'application/x-mimearchive',
   zip: 'application/zip', rar: 'application/vnd.rar', '7z': 'application/x-7z-compressed', tar: 'application/x-tar', gz: 'application/gzip',
 };
 
@@ -234,6 +235,26 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         const r = await platform.openWithApp(abs, exec, rel);
+        sendJson(res, r.ok ? 200 : 500, r.ok ? { ok: true, message: r.message } : { ok: false, error: r.message });
+        return true;
+      }
+
+      if (p === '/api/open-in-browser' && req.method === 'POST') {
+        // 用系统默认浏览器打开仓库内文件（html/svg/txt 等；平台差异下沉到 src/platform）
+        const { repo } = vcsOf();
+        const body = await readBody(req);
+        const rel = String(body.path ?? '');
+        const abs = path.resolve(repo.root, rel);
+        if (!inRepoRoot(repo.root, abs)) {
+          sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
+          return true;
+        }
+        if (!fs.existsSync(abs)) {
+          // 文件不存在
+          sendJson(res, 404, { error: t('srv.fileNotFound') });
+          return true;
+        }
+        const r = await platform.openInBrowser(abs, rel);
         sendJson(res, r.ok ? 200 : 500, r.ok ? { ok: true, message: r.message } : { ok: false, error: r.message });
         return true;
       }

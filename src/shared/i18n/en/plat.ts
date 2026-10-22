@@ -7,6 +7,7 @@ export const plat = {
   'plat.execEmpty': 'Exec is empty',
   'plat.openedDefault': 'Opened with the system default application: {rel}',
   'plat.openedWith': 'Opened with {app}: {rel}',
+  'plat.openedInBrowser': 'Opened in the default browser: {rel}',
   'plat.openedChooser': 'Opened the system "Open with" chooser: {rel}',
   'plat.openUrlFail': '[svngit] Failed to open the browser ({cmd}): {msg}',
 

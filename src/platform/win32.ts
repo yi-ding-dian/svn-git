@@ -359,6 +359,11 @@ export const win32: Platform = {
     }
   },
 
+  async openInBrowser(abs, rel) {
+    // 默认浏览器：url.dll,FileProtocolHandler 是 Windows 打开本地文件到浏览器的标准入口
+    return launchDetached(['rundll32.exe', 'url.dll,FileProtocolHandler', abs], t('plat.openedInBrowser', { rel }));
+  },
+
   async runScript(abs, rel) {
     const ext = path.extname(abs).toLowerCase();
     // 不支持的文件类型（仅 .bat / .cmd / .sh）；前端只对这三种显示菜单项，这里是服务端兜底

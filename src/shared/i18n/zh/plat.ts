@@ -12,6 +12,7 @@ export const plat = {
   'plat.execEmpty': 'Exec 为空',
   'plat.openedDefault': '已用系统默认程序打开: {rel}',
   'plat.openedWith': '已用 {app} 打开: {rel}',
+  'plat.openedInBrowser': '已在默认浏览器中打开: {rel}',
   'plat.openedChooser': '已打开系统「打开方式」选择器: {rel}',
   'plat.openUrlFail': '[svngit] 打开浏览器失败({cmd}): {msg}',
 

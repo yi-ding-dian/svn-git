@@ -11,7 +11,7 @@ import { get, post } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
-import { IconExternal } from '../ui/icons.js';
+import { IconExternal, IconRename } from '../ui/icons.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { InlineEditor, type InlineEditorHandle } from '../shared/inline-editor.js';
 import { renderMarkdown } from '../shared/markdown.js';
@@ -103,8 +103,8 @@ export function PreviewPane(props: Props) {
       //     内容看着像正常汉字、改完保存却把原编码毁掉；真 GBK 与猜错的在探测层**无法区分**。
       //  ② 超限文件：正文是占位符不是真内容，保存会把占位符写进文件。
       // 两种都只走下面的外部程序（它们认编码更准、也不受我们的大小限制）。
-      // ✎ 直接编辑
-      ...(fileEnc || fileTruncated ? [] : [{ label: t('fs.pv.editHere'), action: startEdit }, { sep: true } as CtxMenuItem]),
+      // ✎ 直接编辑（图标放左侧，与下面各程序的图标列对齐）
+      ...(fileEnc || fileTruncated ? [] : [{ icon: <IconRename size={14} />, label: t('fs.pv.editHere'), action: startEdit }, { sep: true } as CtxMenuItem]),
       // 想用外部编辑器时再往下选。**不替用户自动选默认程序**：不少系统上 .md/.txt 默认关联的是
       // 浏览器或只读预览器，直接点下去等于什么也改不了
       {
@@ -521,8 +521,11 @@ export function PreviewPane(props: Props) {
             // 选择用哪个程序打开来编辑这个文件；改完回到这里按「刷新」即可看到变更
             title={t('fs.pv.editTitle')}
           >
-            {/* ✎ 编辑 */}
-            {t('fs.pv.edit')}
+            {/* ✎ 编辑：图标放左侧 */}
+            <span className="row" style={{ gap: 4, alignItems: 'center' }}>
+              <IconRename size={14} />
+              {t('fs.pv.edit')}
+            </span>
           </button>
         )}
           </>

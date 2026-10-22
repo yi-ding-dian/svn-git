@@ -5,6 +5,8 @@ export interface OpenWithApp {
   name: string;
   exec: string;
   icon: string;
+  /** 是系统默认浏览器（前端已有「用默认浏览器打开」固定项，列表里过滤它避免重复） */
+  isDefaultBrowser?: boolean;
 }
 
 export type InstallTool = 'svn' | 'git' | 'both';
@@ -39,6 +41,8 @@ export interface Platform {
   openDefault(abs: string, rel: string): Promise<LaunchResult>;
   /** 用指定程序打开文件：exec 为空=默认，'__CHOOSE__'=系统「打开方式」选择器(仅 Windows) */
   openWithApp(abs: string, exec: string, rel: string): Promise<LaunchResult>;
+  /** 用系统默认浏览器打开本地文件（html/svg/txt 等）；rel 仅用于生成成功文案 */
+  openInBrowser(abs: string, rel: string): Promise<LaunchResult>;
   /** 在系统终端窗口里运行脚本（.bat/.cmd → cmd 窗口；.sh → Git Bash / 终端模拟器）；rel 仅用于成功文案 */
   runScript(abs: string, rel: string): Promise<LaunchResult>;
   /** 按图标 key 返回图标图片（win 提取 .exe 嵌入图标；linux 查主题图标目录），无则 null */

@@ -17,13 +17,13 @@ function pickLocaleName(names: Record<string, string>, baseName: string): string
 }
 
 /** 扫描系统 .desktop 程序（/usr/share/applications + ~/.local/share/applications），按 MimeType 匹配返回可选择的打开方式 */
-function scanDesktopApps(): { name: string; exec: string; mimes: Set<string>; icon: string }[] {
+function scanDesktopApps(): { name: string; exec: string; mimes: Set<string>; icon: string; desktopId: string }[] {
   const dirs = [
     '/usr/share/applications',
     '/usr/local/share/applications',
     path.join(os.homedir(), '.local', 'share', 'applications'),
   ];
-  const apps: { name: string; exec: string; mimes: Set<string>; noDisplay: boolean; icon: string }[] = [];
+  const apps: { name: string; exec: string; mimes: Set<string>; noDisplay: boolean; icon: string; desktopId: string }[] = [];
   for (const dir of dirs) {
     let files: string[];
     try {
@@ -44,9 +44,16 @@ function scanDesktopApps(): { name: string; exec: string; mimes: Set<string>; ic
         let noDisplay = false;
         let type = '';
         let hidden = false;
+        /** 只解析 [Desktop Entry] 组：后面的 [Desktop Action ...] 也有 Name/Exec，
+         *  不区分会把主 Exec 覆盖成「新建窗口」之类的动作（如 Deepin Browser 被改成 --incognito） */
+        let inMain = true;
         for (const raw of text.split('\n')) {
           const line = raw.trim();
-          if (line.startsWith('[') || !line.includes('=')) continue;
+          if (line.startsWith('[')) {
+            inMain = line === '[Desktop Entry]';
+            continue;
+          }
+          if (!inMain || !line.includes('=')) continue;
           const [k, v] = [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)];
           if (k === 'Name') {
             nameCount++;
@@ -60,7 +67,14 @@ function scanDesktopApps(): { name: string; exec: string; mimes: Set<string>; ic
           else if (k === 'Hidden') hidden = v === 'true';
         }
         if (!baseName || !exec || noDisplay || hidden || (type && type !== 'Application')) continue;
-        apps.push({ name: nameCount > 1 ? baseName : pickLocaleName(names, baseName), exec, mimes, noDisplay, icon });
+        apps.push({
+          name: nameCount > 1 ? baseName : pickLocaleName(names, baseName),
+          exec,
+          mimes,
+          noDisplay,
+          icon,
+          desktopId: f.replace(/\.desktop$/i, ''),
+        });
       } catch {
         /* 单个文件损坏跳过 */
       }
@@ -68,14 +82,38 @@ function scanDesktopApps(): { name: string; exec: string; mimes: Set<string>; ic
   }
   // 去重（优先本地程序）：Exec+Name 同视为重复;本地目录优先级已由遍历顺序保证
   const seen = new Set<string>();
-  const out: { name: string; exec: string; mimes: Set<string>; icon: string }[] = [];
+  const out: { name: string; exec: string; mimes: Set<string>; icon: string; desktopId: string }[] = [];
   for (const a of apps) {
     const key = `${a.exec}|${a.name}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ name: a.name, exec: a.exec, mimes: a.mimes, icon: a.icon });
+    out.push({ name: a.name, exec: a.exec, mimes: a.mimes, icon: a.icon, desktopId: a.desktopId });
   }
   return out;
+}
+
+/** 系统默认浏览器的 .desktop id（xdg-settings 优先，回退 xdg-mime；缓存，避免每次开菜单都 spawn） */
+let defaultBrowserIdCache: string | null | undefined;
+function defaultBrowserDesktopId(): string {
+  if (defaultBrowserIdCache !== undefined) return defaultBrowserIdCache ?? '';
+  const probes: [string, string[]][] = [
+    ['xdg-settings', ['get', 'default-web-browser']],
+    ['xdg-mime', ['query', 'default', 'text/html']],
+  ];
+  for (const [cmd, args] of probes) {
+    try {
+      const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: 5000 });
+      const id = (r.stdout ?? '').trim().split('\n')[0] ?? '';
+      if (r.status === 0 && id) {
+        defaultBrowserIdCache = id;
+        return id;
+      }
+    } catch {
+      /* 换下一个探测命令 */
+    }
+  }
+  defaultBrowserIdCache = null;
+  return '';
 }
 
 /** 发行版包管理器探测（/etc/os-release）：返回安装命令**前缀**（sudo -n 免密路径用）与手动命令前缀；
@@ -206,9 +244,25 @@ export const linux: Platform = {
 
   listOpenWithApps(ext, mimes) {
     if (!mimes.size) return [];
+    // desktopId 去掉了 .desktop 后缀，默认浏览器返回值也按同样规则归一化后比较
+    const def = defaultBrowserDesktopId().replace(/\.desktop$/i, '');
     return scanDesktopApps()
       .filter((a) => [...mimes].some((m) => a.mimes.has(m)))
-      .map((a) => ({ name: a.name, exec: a.exec, icon: a.icon }));
+      .map((a) => ({
+        name: a.name,
+        exec: a.exec,
+        icon: a.icon,
+        isDefaultBrowser: Boolean(def && a.desktopId === def),
+      }));
+  },
+
+  async openInBrowser(abs, rel) {
+    try {
+      return await launchDetached(['sensible-browser', abs], t('plat.openedInBrowser', { rel }));
+    } catch {
+      // 没有 sensible-browser 时回退 xdg-open（按系统 MIME 关联打开）
+      return this.openDefault(abs, rel);
+    }
   },
 
   openDefault(abs, rel) {
