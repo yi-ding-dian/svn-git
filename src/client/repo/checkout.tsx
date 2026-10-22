@@ -15,6 +15,7 @@ import { CheckoutSizeDialog } from './checkout-size.js';
 import { CheckoutConfirmDialog } from './checkout-confirm.js';
 import { FormRow } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { joinPath, isImeComposing } from '../shared/utils.js';
 import type { CheckoutParams } from './checkout-task.js';
@@ -317,10 +318,12 @@ export function CheckoutDialog(props: {
         <div className="row" style={{ gap: 8 }}>
           <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} />
           {/* 打开文件夹浏览（可新建/重命名文件夹） */}
-          <button className="mini tool-btn" title={t('repo.browseTip')} onClick={() => setPicker(true)}>
-            {/* 📂 浏览 */}
-            {t('repo.browse')}
-          </button>
+          <Tooltip content={t('repo.browseTip')}>
+            <button className="mini tool-btn" onClick={() => setPicker(true)}>
+              {/* 📂 浏览 */}
+              {t('repo.browse')}
+            </button>
+          </Tooltip>
         </div>
       </FormRow>
       {/* 本地名称 */}
@@ -343,20 +346,22 @@ export function CheckoutDialog(props: {
           {/* 不勾选 = 完整检出；勾选后只检出这些目录（另含根目录文件），后续更新也只更新它们 */}
           <div className="dim small" style={{ flex: 1 }}>{t('repo.co.sparseHint')}</div>
           {/* 全选/全不选（开关式）：全选态（全部一级都在）再点 = 清空；否则 = 全选（并重置深层取消） */}
-          <button
-            className="mini tool-btn"
-            disabled={rootDirs.length === 0}
-            onClick={() => setCheckedDirs(allRootChecked ? new Set() : new Set(rootDirs))}
-            title={allRootChecked ? t('repo.co.unselectAllTip') : t('repo.co.selectAllTip')}
-          >
-            {allRootChecked ? t('repo.co.unselectAll') : t('repo.co.selectAll')}
-          </button>
+          <Tooltip content={allRootChecked ? t('repo.co.unselectAllTip') : t('repo.co.selectAllTip')}>
+            <button
+              className="mini tool-btn"
+              disabled={rootDirs.length === 0}
+              onClick={() => setCheckedDirs(allRootChecked ? new Set() : new Set(rootDirs))}
+            >
+              {allRootChecked ? t('repo.co.unselectAll') : t('repo.co.selectAll')}
+            </button>
+          </Tooltip>
           {/* 检出大小检测（按需点；只读，不下载文件）；一个都没勾时不可点（与检出按钮同一门槛） */}
           <button
             className="mini tool-btn"
             disabled={checkedDirs.size === 0}
-            onClick={() => setSizeOpen(true)}
+            // 禁用态原因：disabled 按钮收不到悬浮事件，保持原生 title
             title={checkedDirs.size === 0 ? t('repo.co.needPick') : t('repo.co.sizeTip')}
+            onClick={() => setSizeOpen(true)}
           >
             {t('repo.co.sizeBtn')}
           </button>

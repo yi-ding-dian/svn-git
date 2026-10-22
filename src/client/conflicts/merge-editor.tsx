@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { highlightLine } from '../shared/highlight.js';
 import { DiffConnectors } from '../shared/diff-connectors.js';
 import { IconResizeHorizontal } from '../ui/icons.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { t } from '../../shared/i18n/index.js';
 import {
@@ -306,16 +307,17 @@ export function MergeEditor(props: Props) {
           <span className="merge-pane-tag result">{t('conflict.merge.tagResult')}</span>
           {/* 编辑的是结果栏：入口/取消/完成都放在「结果」标签旁边（放「本地」旁边会让人以为改本地版本） */}
           {editText === null ? (
-            <button
-              className="mini merge-edit-btn"
-              title={t('conflict.merge.editTip')}
-              onClick={() => {
-                setEditing(null);
-                setEditText(joinResultLines(items));
-              }}
-            >
-              {t('conflict.merge.edit')}
-            </button>
+            <Tooltip content={t('conflict.merge.editTip')}>
+              <button
+                className="mini merge-edit-btn"
+                onClick={() => {
+                  setEditing(null);
+                  setEditText(joinResultLines(items));
+                }}
+              >
+                {t('conflict.merge.edit')}
+              </button>
+            </Tooltip>
           ) : (
             <>
               <button className="mini" onClick={() => setEditText(null)}>{t('conflict.merge.editCancel')}</button>

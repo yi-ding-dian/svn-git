@@ -10,6 +10,7 @@ import { ModalShell } from '../shell/modal-shell.js';
 import { get, post, type GitHubMyRepo } from '../shared/api.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { IconGitHub, IconLock, IconUnlock, IconStar, IconClock, IconExternal, IconCopy, IconDownload } from '../ui/icons.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { GetRepoDialog, type GetRepoParams } from './repo-create.js';
 import { relTime } from './github-repo.js';
 import { parseGithub } from '../../shared/github.js';
@@ -146,13 +147,23 @@ export function GitHubMyReposModal(props: {
                           单独包一层并给最小宽度——否则有无标记会把右边那几列推得参差 */}
                       <span className="github-my-repos-states">
                         {r.localPath && (
-                          <span className="github-my-repos-local" title={t('repo.githubMyRepos.localTip', { path: r.localPath })}>
-                            ⬤ {t('repo.githubMyRepos.local')}
-                          </span>
+                          <Tooltip content={t('repo.githubMyRepos.localTip', { path: r.localPath })}>
+                            <span className="github-my-repos-local">
+                              ⬤ {t('repo.githubMyRepos.local')}
+                            </span>
+                          </Tooltip>
                         )}
                         {isCurrent && <span className="github-my-repos-tag current">{t('repo.githubMyRepos.currentProject')}</span>}
-                        {r.archived && <span className="github-my-repos-tag" title={t('repo.githubMyRepos.archivedTip')}>{t('repo.github.archived')}</span>}
-                        {r.fork && <span className="github-my-repos-tag" title={t('repo.githubMyRepos.forkTip')}>Fork</span>}
+                        {r.archived && (
+                          <Tooltip content={t('repo.githubMyRepos.archivedTip')}>
+                            <span className="github-my-repos-tag">{t('repo.github.archived')}</span>
+                          </Tooltip>
+                        )}
+                        {r.fork && (
+                          <Tooltip content={t('repo.githubMyRepos.forkTip')}>
+                            <span className="github-my-repos-tag">Fork</span>
+                          </Tooltip>
+                        )}
                       </span>
                       {/* 属性列：语言 / ★ / 最近推送（右对齐、各给最小宽度 → 各行竖着能对齐） */}
                       {r.language && (

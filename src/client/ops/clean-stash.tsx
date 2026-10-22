@@ -6,6 +6,7 @@ import { get, post, type StashItem } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { IconErr, IconHelp, IconStash } from '../ui/icons.js';
 import { ConfirmModal } from '../ui/prompt.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { runAction } from '../shared/vcs-action.js';
 import { isImeComposing } from '../shared/utils.js';
@@ -289,9 +290,11 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
         {/* 当前工作区改动（{n} 项，默认全选；取消勾选 = 只储藏选中的文件） */}
         <span>{t('ops.stash.listTitle', { n: files.length })}</span>
         {/* Stash 把当前未提交的改动临时收起来（含未跟踪文件），让工作区变干净——适合"先切分支/先做别的，稍后再回来继续"。\n点「保存当前改动」收起（可写说明）；列表中「恢复」= 把改动取回工作区，「丢弃」= 放弃这份改动。 */}
-        <span style={{ display: 'inline-flex' }} title={t('ops.stash.help')}>
-          <IconHelp size={15} />
-        </span>
+        <Tooltip content={t('ops.stash.help')}>
+          <span style={{ display: 'inline-flex' }}>
+            <IconHelp size={15} />
+          </span>
+        </Tooltip>
       </div>
       {/* 主伸缩区：默认 180px（约 6 行），弹窗拉高时吃掉全部多余高度；
           矮窗口下可压到 60px（保底 2 行）——再小不如把空间让给「保存说明 + 保存按钮」，列表反正能滚 */}
@@ -304,28 +307,34 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
             <span className="dim small">{t(allOn ? 'ops.select.clear' : 'ops.select.all')}</span>
           </label>
           {codes.map((c) => (
-            <label key={c} className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.filterToggleTip')}>
-              <input type="checkbox" checked={filters.has(c)} onChange={() => toggleFilter(c)} />
-              <span className={`act ${c} small`}>{c}</span>
-            </label>
+            <Tooltip key={c} content={t('ops.filterToggleTip')}>
+              <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
+                <input type="checkbox" checked={filters.has(c)} onChange={() => toggleFilter(c)} />
+                <span className={`act ${c} small`}>{c}</span>
+              </label>
+            </Tooltip>
           ))}
           {/* 有未跟踪文件时才显示：勾上 = 显示并全选 ?，取消 = 隐藏并取消勾选（与其他状态框同一语义） */}
           {untrackedCount > 0 && (
-            <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.filterToggleTip')}>
-              <input type="checkbox" checked={showUntracked} onChange={toggleUntracked} />
-              <span className="act ? small">?</span>
-              {/* 显示未跟踪 ({n}) */}
-              <span className="dim small">{t('ops.stash.showUntracked', { n: untrackedCount })}</span>
-            </label>
+            <Tooltip content={t('ops.filterToggleTip')}>
+              <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
+                <input type="checkbox" checked={showUntracked} onChange={toggleUntracked} />
+                <span className="act ? small">?</span>
+                {/* 显示未跟踪 ({n}) */}
+                <span className="dim small">{t('ops.stash.showUntracked', { n: untrackedCount })}</span>
+              </label>
+            </Tooltip>
           )}
           {/* 已勾选 {n}/{total} */}
           <span className="dim small" style={{ marginLeft: 'auto' }}>{t('ops.checkedCount', { n: checked.size, total: files.length })}</span>
           {/* 勾了但被过滤藏起来的项（仍会被一起储藏）：醒目提示，别让人以为"没勾"或"没看到就当没有" */}
           {hiddenChecked > 0 && (
-            <span className="small" style={{ color: 'var(--warn)', flexShrink: 0 }} title={t('ops.checkedHiddenTip')}>
-              {/* · {n} 项被过滤隐藏 */}
-              {t('ops.checkedHidden', { n: hiddenChecked })}
-            </span>
+            <Tooltip content={t('ops.checkedHiddenTip')}>
+              <span className="small" style={{ color: 'var(--warn)', flexShrink: 0 }}>
+                {/* · {n} 项被过滤隐藏 */}
+                {t('ops.checkedHidden', { n: hiddenChecked })}
+              </span>
+            </Tooltip>
           )}
         </div>
       )}
@@ -381,7 +390,8 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
         {items.map((it) => (
           <React.Fragment key={it.index}>
             {/* 点行展开：看这条 Stash 里存了哪些文件（懒加载） */}
-            <div className="changed-row" style={{ cursor: 'pointer' }} onClick={() => toggleExpand(it.index)} title={t('ops.stash.expandTip')}>
+            <Tooltip content={t('ops.stash.expandTip')}>
+              <div className="changed-row" style={{ cursor: 'pointer' }} onClick={() => toggleExpand(it.index)}>
               <span style={{ color: 'var(--warn)' }}>📦</span>
               <span className="mono small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {/* 写法必须用模板串：stash@{n} 里的 {} 直接写在 JSX 文本里会被当表达式解析（花括号不显示） */}
@@ -425,6 +435,7 @@ export function StashDialog(props: { onClose: () => void; onChanged: () => void 
                 {t('ops.stash.drop')}
               </button>
             </div>
+            </Tooltip>
             {/* 展开区：这条 Stash 包含的文件（状态码 + 路径；未跟踪文件以 ? 列出） */}
             {expanded === it.index && (
               <div style={{ padding: '0 8px 6px 30px' }}>

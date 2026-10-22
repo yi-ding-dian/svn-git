@@ -3,6 +3,7 @@ import React from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { CODE_DESC } from '../shared/api.js';
 import { IconExternal } from './icons.js';
+import { Tooltip } from './tooltip.js';
 
 function CodeBadge({ code, title, onClick }: { code: string; title?: string; onClick?: (e: React.MouseEvent) => void }) {
   // ✓(无状态)不显示描边、绿色表示干净；悬浮显示状态含义
@@ -19,14 +20,15 @@ function CodeBadge({ code, title, onClick }: { code: string; title?: string; onC
     );
   }
   return (
-    <span
-      className={`code ${code}${onClick ? ' clickable' : ''}`}
-      // （点击定位到最近的该状态文件）
-      title={onClick ? `${tip || ''}\n${t('ui.badge.clickLocate')}` : tip || undefined}
-      onClick={onClick}
-    >
-      {code}
-    </span>
+    <Tooltip content={onClick ? `${tip || ''}\n${t('ui.badge.clickLocate')}` : tip || ''}>
+      <span
+        className={`code ${code}${onClick ? ' clickable' : ''}`}
+        // （点击定位到最近的该状态文件）
+        onClick={onClick}
+      >
+        {code}
+      </span>
+    </Tooltip>
   );
 }
 

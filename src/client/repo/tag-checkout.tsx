@@ -12,6 +12,7 @@ import { PickDirModal } from './pick-dir.js';
 import { FormRow } from '../ui/ui.js';
 import { CommandPreview } from '../ui/command-preview.js';
 import { ResultLine } from '../ui/result-line.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { joinPath, isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -195,10 +196,11 @@ export function TagCheckoutDialog(props: {
           <button
             className="primary"
             disabled={!dir.trim() || !name.trim() || targetBlocked}
+            // 禁用态原因：disabled 按钮收不到悬浮事件，保持原生 title
+            title={targetBlocked ? t('repo.co.targetNotEmpty') : t('repo.tagCo.modeHint')}
             onClick={() => {
               if (validate()) setModeOpen(true);
             }}
-            title={targetBlocked ? t('repo.co.targetNotEmpty') : t('repo.tagCo.modeHint')}
           >
             {/* 检出 */}
             {t('repo.co.start')}
@@ -262,10 +264,12 @@ export function TagCheckoutDialog(props: {
       <FormRow label={t('repo.parentDir')}>
         <div className="row" style={{ gap: 8 }}>
           <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} />
-          <button className="mini tool-btn" title={t('repo.browseTip')} onClick={() => setPicker(true)}>
-            {/* 📂 浏览 */}
-            {t('repo.browse')}
-          </button>
+          <Tooltip content={t('repo.browseTip')}>
+            <button className="mini tool-btn" onClick={() => setPicker(true)}>
+              {/* 📂 浏览 */}
+              {t('repo.browse')}
+            </button>
+          </Tooltip>
         </div>
       </FormRow>
       {/* 本地名称：默认标签名 */}

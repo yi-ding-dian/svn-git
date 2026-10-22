@@ -8,6 +8,7 @@ import { get, post, type BrowseResult, type RepoInfo } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { IconOk, IconErr } from '../ui/icons.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { t } from '../../shared/i18n/index.js';
 import { CreateRepoDialog, GetRepoDialog } from './repo-create.js';
 import { useGetRepoTask, GetRepoAuthModal } from './get-repo-task.js';
@@ -244,36 +245,42 @@ export function OpenBrowser(props: {
                 </span>
                 <span className="recent-path">{h.path}</span>
                 {/* 悬浮显形的移除按钮：单击即移除（stopPropagation 防止触发本行的"点击打开"） */}
-                <button
-                  className={`recent-remove${props.invalidPaths?.[h.path] ? ' always' : ''}`}
+                <Tooltip
                   // 从最近项目中移除（不影响仓库本身）
-                  title={t('repo.recent.removeTip')}
-                  // 移除 {path}
-                  aria-label={t('repo.recent.removeAria', { path: h.path })}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void post
-                      .historyRemove(h.path)
-                      .then((r) => setHistory(r.items))
-                      // 移除失败
-                      .catch(() => props.onToast?.(t('repo.recent.removeFailed'), true));
-                  }}
+                  content={t('repo.recent.removeTip')}
                 >
-                  ×
-                </button>
+                  <button
+                    className={`recent-remove${props.invalidPaths?.[h.path] ? ' always' : ''}`}
+                    // 移除 {path}
+                    aria-label={t('repo.recent.removeAria', { path: h.path })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void post
+                        .historyRemove(h.path)
+                        .then((r) => setHistory(r.items))
+                        // 移除失败
+                        .catch(() => props.onToast?.(t('repo.recent.removeFailed'), true));
+                    }}
+                  >
+                    ×
+                  </button>
+                </Tooltip>
               </div>
             ))}
             {/* 超出折叠上限：点「…」展开到 15 项（再多靠滚动；展开后本行消失） */}
             {!showAllRecent && history.length > RECENT_COLLAPSED && (
-              <div
-                className="recent-more"
+              <Tooltip
                 // 展开其余 {n} 个项目
-                title={t('repo.recent.expandTip', { n: history.length - RECENT_COLLAPSED })}
-                onClick={() => setShowAllRecent(true)}
+                content={t('repo.recent.expandTip', { n: history.length - RECENT_COLLAPSED })}
               >
-                {/* …（{n} 条） */}
-                {t('repo.recent.expandCount', { n: history.length - RECENT_COLLAPSED })}
-              </div>
+                <div
+                  className="recent-more"
+                  onClick={() => setShowAllRecent(true)}
+                >
+                  {/* …（{n} 条） */}
+                  {t('repo.recent.expandCount', { n: history.length - RECENT_COLLAPSED })}
+                </div>
+              </Tooltip>
             )}
             {/* 最近项目右键菜单：删除 / 取消 */}
             {rmMenu && (
@@ -402,7 +409,9 @@ export function OpenBrowser(props: {
               />
             ) : (
               // 在当前位置新建文件夹 / 📁 新建文件夹
-              <button className="mini primary" onClick={() => setCreating(true)} title={t('repo.picker.newTip')}>{t('repo.picker.newFolder')}</button>
+              <Tooltip content={t('repo.picker.newTip')}>
+                <button className="mini primary" onClick={() => setCreating(true)}>{t('repo.picker.newFolder')}</button>
+              </Tooltip>
             )
           ) : undefined,
           notice: pick ? (

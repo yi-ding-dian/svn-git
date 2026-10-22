@@ -15,6 +15,7 @@ import { get, post } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { ConfirmModal } from '../ui/prompt.js';
+import { Tooltip } from '../ui/tooltip.js';
 
 /** 状态码配色：与文件列表里的状态徽标同一套色（M 橙 / A 绿 / D 红 / ? 灰 …） */
 const STATUS_COLOR: Record<string, string> = {
@@ -372,16 +373,17 @@ export function TerminalModal(props: {
               · {fullPath}
             </span>
             {cwd !== '' && (
-              <button
-                className="mini"
-                style={{ marginLeft: 10, fontWeight: 400 }}
-                // 把执行目录切回仓库根（已经跑过的记录保留，只影响后面的命令）
-                title={t('term.backToRootTitle')}
-                onClick={() => setCwd('')}
-              >
-                {/* 回根目录 */}
-                {t('term.backToRoot')}
-              </button>
+              // 把执行目录切回仓库根（已经跑过的记录保留，只影响后面的命令）
+              <Tooltip content={t('term.backToRootTitle')}>
+                <button
+                  className="mini"
+                  style={{ marginLeft: 10, fontWeight: 400 }}
+                  onClick={() => setCwd('')}
+                >
+                  {/* 回根目录 */}
+                  {t('term.backToRoot')}
+                </button>
+              </Tooltip>
             )}
           </>
         }
@@ -396,21 +398,22 @@ export function TerminalModal(props: {
             </span>
             <span style={{ display: 'flex', gap: 8 }}>
               {entries.length > 0 && (
-                <button
-                  // 清掉上面这些执行记录（本次会话内的）
-                  title={t('term.clearTitle')}
-                  onClick={() => {
-                    setEntries([]);
-                    try {
-                      sessionStorage.removeItem(ENTRIES_KEY);
-                    } catch {
-                      /* ignore */
-                    }
-                  }}
-                >
-                  {/* 清空记录 */}
-                  {t('term.clear')}
-                </button>
+                // 清掉上面这些执行记录（本次会话内的）
+                <Tooltip content={t('term.clearTitle')}>
+                  <button
+                    onClick={() => {
+                      setEntries([]);
+                      try {
+                        sessionStorage.removeItem(ENTRIES_KEY);
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                  >
+                    {/* 清空记录 */}
+                    {t('term.clear')}
+                  </button>
+                </Tooltip>
               )}
               {/* 关闭 */}
               <button onClick={props.onClose}>{t('common.close')}</button>

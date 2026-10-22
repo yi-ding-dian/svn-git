@@ -4,6 +4,7 @@ import { ResizableModal } from '../shell/modal-shell.js';
 import { pathAutoWidth, useCheckedSet } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { IconOk } from '../ui/icons.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { t } from '../../shared/i18n/index.js';
 import { StageHunksModal } from './stage-hunks.js';
 import { CommitCommentBox } from './commit-comment.js';
@@ -124,10 +125,12 @@ export function CommitSelectModal(props: {
               {filterA || filterD ? t('ops.commitSelect.filtered', { n: visibleItems.length, codes: [filterA ? 'A' : '', filterD ? 'D' : ''].filter(Boolean).join('+') }) : ''}
               {/* 勾了但被过滤藏起来的项（仍会被一起提交）：醒目提示，别让人以为"没勾" */}
               {hiddenChecked > 0 && (
-                <span style={{ color: 'var(--warn)' }} title={t('ops.checkedHiddenTip')}>
-                  {/* · {n} 项被过滤隐藏 */}
-                  {t('ops.checkedHidden', { n: hiddenChecked })}
-                </span>
+                <Tooltip content={t('ops.checkedHiddenTip')}>
+                  <span style={{ color: 'var(--warn)' }}>
+                    {/* · {n} 项被过滤隐藏 */}
+                    {t('ops.checkedHidden', { n: hiddenChecked })}
+                  </span>
+                </Tooltip>
               )}
             </span>
           </div>
@@ -140,58 +143,67 @@ export function CommitSelectModal(props: {
             </label>
             {hasA && (
               // 勾上 = 只显示并全选「添加」类；取消 = 取消这些文件的勾选
-              <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.commitSelect.filterATip')}>
-                <input type="checkbox" checked={filterA} onChange={() => applyFilter('A', !filterA)} />
-                <span className="act A small">A</span>
-                {/* 添加 */}
-                <span className="dim small">{t('ops.commitSelect.filterA')}</span>
-              </label>
+              <Tooltip content={t('ops.commitSelect.filterATip')}>
+                <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
+                  <input type="checkbox" checked={filterA} onChange={() => applyFilter('A', !filterA)} />
+                  <span className="act A small">A</span>
+                  {/* 添加 */}
+                  <span className="dim small">{t('ops.commitSelect.filterA')}</span>
+                </label>
+              </Tooltip>
             )}
             {hasD && (
               // 勾上 = 只显示并全选「删除」类；取消 = 取消这些文件的勾选
-              <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }} title={t('ops.commitSelect.filterDTip')}>
-                <input type="checkbox" checked={filterD} onChange={() => applyFilter('D', !filterD)} />
-                <span className="act D small">D</span>
-                {/* 删除 */}
-                <span className="dim small">{t('ops.commitSelect.filterD')}</span>
-              </label>
+              <Tooltip content={t('ops.commitSelect.filterDTip')}>
+                <label className="row" style={{ cursor: 'pointer', gap: 6, flexShrink: 0 }}>
+                  <input type="checkbox" checked={filterD} onChange={() => applyFilter('D', !filterD)} />
+                  <span className="act D small">D</span>
+                  {/* 删除 */}
+                  <span className="dim small">{t('ops.commitSelect.filterD')}</span>
+                </label>
+              </Tooltip>
             )}
           </div>
           {/* 文件列表：弹窗高度变化时跟随伸缩，全部显示得下则不滚动；滚动条只属于这个容器（表头在它外面） */}
           <div className="changed" style={{ flex: 1, minHeight: 80, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6, marginBottom: 12 }}>
             {visibleItems.map((it) => (
-              <label
+              <Tooltip
                 key={it.path}
-                className="changed-row"
-                style={{ cursor: 'pointer' }}
-                title={props.onDiff && !it.isDir
+                content={props.onDiff && !it.isDir
                   // 双击查看差异 /  · 右键选择部分改动
                   ? `${it.path}\n${t('ops.rowTip.diff')}${isGit ? t('ops.rowTip.stagePartial') : ''}`
                   : it.path}
-                onDoubleClick={(ev) => {
-                  ev.preventDefault();
-                  if (props.onDiff && !it.isDir) props.onDiff(it.path, [...checked], stagedLocal, msg);
-                }}
-                onContextMenu={(ev) => {
-                  ev.preventDefault();
-                  // svn 下右键**完全没反应**（不弹、不提示）：这功能它根本没有，别让人点了才知道
-                  if (isGit && !it.isDir) setStagePath(it.path);
-                }}
               >
-                <input type="checkbox" checked={checked.has(it.path)} onChange={() => toggle(it.path)} style={{ flexShrink: 0 }} />
-                <span className={`act ${it.code}`}>{it.code}</span>
-                {/* minWidth:0 让超长路径省略号生效，勾选框不会被挤出 */}
-                <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {it.path}{it.isDir ? '/' : ''}
-                </span>
-                {stagedLocal.includes(it.path) && (
-                  // 已部分暂存：提交时只提交选中的改动，未选中的留在工作区
-                  <span className="small" style={{ flexShrink: 0, color: 'var(--accent)' }} title={t('ops.commitSelect.stagePartialTip')}>
-                    {/* ✂ 部分 */}
-                    {t('ops.commitSelect.stagePartial')}
+                <label
+                  className="changed-row"
+                  style={{ cursor: 'pointer' }}
+                  onDoubleClick={(ev) => {
+                    ev.preventDefault();
+                    if (props.onDiff && !it.isDir) props.onDiff(it.path, [...checked], stagedLocal, msg);
+                  }}
+                  onContextMenu={(ev) => {
+                    ev.preventDefault();
+                    // svn 下右键**完全没反应**（不弹、不提示）：这功能它根本没有，别让人点了才知道
+                    if (isGit && !it.isDir) setStagePath(it.path);
+                  }}
+                >
+                  <input type="checkbox" checked={checked.has(it.path)} onChange={() => toggle(it.path)} style={{ flexShrink: 0 }} />
+                  <span className={`act ${it.code}`}>{it.code}</span>
+                  {/* minWidth:0 让超长路径省略号生效，勾选框不会被挤出 */}
+                  <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {it.path}{it.isDir ? '/' : ''}
                   </span>
-                )}
-              </label>
+                  {stagedLocal.includes(it.path) && (
+                    // 已部分暂存：提交时只提交选中的改动，未选中的留在工作区
+                    <Tooltip content={t('ops.commitSelect.stagePartialTip')}>
+                      <span className="small" style={{ flexShrink: 0, color: 'var(--accent)' }}>
+                        {/* ✂ 部分 */}
+                        {t('ops.commitSelect.stagePartial')}
+                      </span>
+                    </Tooltip>
+                  )}
+                </label>
+              </Tooltip>
             ))}
             {/* 当前目录下没有变更文件 */}
             {props.items.length === 0 && <div className="dim" style={{ padding: '8px 4px' }}>{t('ops.commitSelect.noChanges')}</div>}

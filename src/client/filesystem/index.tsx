@@ -4,6 +4,7 @@ import { t } from '../../shared/i18n/index.js';
 import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry } from '../shared/api.js';
 import { IconDiff, IconRevert, IconClock, IconEyeClosed, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconList, IconTree, IconGrid, IconHome, IconUp, GridIcon, MiniIcon } from '../ui/icons.js';
 import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { filterEntries, type Filter, type Mode, type VisibleRow } from './utils.js';
 import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } from './menus.js';
@@ -70,14 +71,15 @@ function ActionBtn(props: {
   onClick: () => void;
 }) {
   return (
-    <button
-      className={`act-btn ${props.danger ? 'danger' : ''} ${props.primary ? 'primary' : ''}`}
-      title={props.cmd ? `${props.title ?? props.label}\n${props.cmd}` : props.title ?? props.label}
-      onClick={props.onClick}
-    >
-      {props.icon}
-      <span>{props.label}</span>
-    </button>
+    <Tooltip content={props.cmd ? `${props.title ?? props.label}\n${props.cmd}` : props.title ?? props.label}>
+      <button
+        className={`act-btn ${props.danger ? 'danger' : ''} ${props.primary ? 'primary' : ''}`}
+        onClick={props.onClick}
+      >
+        {props.icon}
+        <span>{props.label}</span>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -1241,28 +1243,31 @@ export function FsView(props: Props) {
           box="1.15em"
           fallback={<MiniIcon isDir={e.isDir} name={e.name} />}
         />
-        <span
-          className={`name ${e.isDir ? 'dir' : 'file'}`}
-          style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}
+        <Tooltip
           // 重命名标出来源：列表里只显示新名字，光看名字看不出从哪移过来的
           // 从 {path} 移动/重命名而来
-          title={e.origPath ? t('fs.movedFrom', { path: e.origPath }) : undefined}
+          content={e.origPath ? t('fs.movedFrom', { path: e.origPath }) : ''}
         >
-          {inline?.kind === 'rename' && inline.rel === rel ? inlineInput('left', e.name) : e.name}
-          {/* （{n} 项） */}
-          {e.count ? <span className="count"> {t('fs.countItems', { n: e.count })}</span> : null}
-          {descOf(rel) && (
-            <span className="dim small" style={{ marginLeft: 10, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              · {descOf(rel)}
-            </span>
-          )}
-          {e.miss && (
-            <span className="dim small" style={{ marginLeft: 10 }}>
-              {/* 已在磁盘上缺失，右键可还原 */}
-              · {t('fs.missRowHint')}
-            </span>
-          )}
-        </span>
+          <span
+            className={`name ${e.isDir ? 'dir' : 'file'}`}
+            style={{ flex: 1, color: statusColor(e.isDir ? e.codes?.[0] : e.code) }}
+          >
+            {inline?.kind === 'rename' && inline.rel === rel ? inlineInput('left', e.name) : e.name}
+            {/* （{n} 项） */}
+            {e.count ? <span className="count"> {t('fs.countItems', { n: e.count })}</span> : null}
+            {descOf(rel) && (
+              <span className="dim small" style={{ marginLeft: 10, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                · {descOf(rel)}
+              </span>
+            )}
+            {e.miss && (
+              <span className="dim small" style={{ marginLeft: 10 }}>
+                {/* 已在磁盘上缺失，右键可还原 */}
+                · {t('fs.missRowHint')}
+              </span>
+            )}
+          </span>
+        </Tooltip>
         {rowButtons({ ...e, rel })}
         {!e.isDir && <span className="dim small nowrap">{fmtSize(e.size)}</span>}
         {!e.isDir && <span className="dim small nowrap" style={{ width: 110 }}>{e.mtime}</span>}
@@ -1346,38 +1351,43 @@ export function FsView(props: Props) {
           </button>
           {/* 刷新已由顶部工具栏全局刷新覆盖（tick 机制连带重载本视图），不重复提供 */}
           {/* 显示/隐藏隐藏文件 */}
-          <button className="mini tool-btn" onClick={() => setShowHidden((s) => !s)} title={t('fs.toolbar.hiddenTitle')}>
-            {/* 隐藏 / 隐藏文件 */}
-            {/* 文字固定「隐藏文件」（用户定稿：别随状态变"隐藏"），只有眼睛切换：关=闭眼 / 开=睁眼 */}
-            {showHidden ? <IconEye /> : <IconEyeClosed />} {t('fs.toolbar.hiddenFiles')}
-          </button>
+          <Tooltip content={t('fs.toolbar.hiddenTitle')}>
+            <button className="mini tool-btn" onClick={() => setShowHidden((s) => !s)}>
+              {/* 隐藏 / 隐藏文件 */}
+              {/* 文字固定「隐藏文件」（用户定稿：别随状态变"隐藏"），只有眼睛切换：关=闭眼 / 开=睁眼 */}
+              {showHidden ? <IconEye /> : <IconEyeClosed />} {t('fs.toolbar.hiddenFiles')}
+            </button>
+          </Tooltip>
           <span className="row" style={{ gap: 4 }}>
             {(['changed', 'new', 'deleted'] as Filter[]).map((f) => (
-              <button
+              <Tooltip
                 key={f}
-                className={`mini tool-btn ${filters.has(f) ? 'primary' : ''}`}
-                onClick={() => {
-                  const willActive = !filters.has(f);
-                  const next = new Set(filters);
-                  if (next.has(f)) next.delete(f);
-                  else next.add(f);
-                  setFilters(next);
-                  if (willActive) {
-                    // 激活过滤 → 切树视图展示过滤树
-                    if (filters.size === 0) prevModeRef.current = mode;
-                    setMode('tree');
-                  } else if (next.size === 0) {
-                    // 全部取消 → 恢复原视图
-                    setMode(prevModeRef.current);
-                  }
-                }}
-                // 只看有修改的文件 / 只看未添加的新文件（树视图，双击文件跳转） / 只看已删除的文件
-                title={f === 'changed' ? t('fs.filter.changedTitle') : f === 'new' ? t('fs.filter.newTitle') : t('fs.filter.deletedTitle')}
+                content={f === 'changed' ? t('fs.filter.changedTitle') : f === 'new' ? t('fs.filter.newTitle') : t('fs.filter.deletedTitle')}
               >
-                {f === 'changed' ? <IconDiff /> : f === 'new' ? <IconPlus /> : <IconClean />}
-                {/* 仅修改 / 仅新文件 / 仅删除 */}
-                {f === 'changed' ? t('fs.filter.changed') : f === 'new' ? t('fs.filter.new') : t('fs.filter.deleted')}
-              </button>
+                <button
+                  className={`mini tool-btn ${filters.has(f) ? 'primary' : ''}`}
+                  onClick={() => {
+                    const willActive = !filters.has(f);
+                    const next = new Set(filters);
+                    if (next.has(f)) next.delete(f);
+                    else next.add(f);
+                    setFilters(next);
+                    if (willActive) {
+                      // 激活过滤 → 切树视图展示过滤树
+                      if (filters.size === 0) prevModeRef.current = mode;
+                      setMode('tree');
+                    } else if (next.size === 0) {
+                      // 全部取消 → 恢复原视图
+                      setMode(prevModeRef.current);
+                    }
+                  }}
+                  // 只看有修改的文件 / 只看未添加的新文件（树视图，双击文件跳转） / 只看已删除的文件
+                >
+                  {f === 'changed' ? <IconDiff /> : f === 'new' ? <IconPlus /> : <IconClean />}
+                  {/* 仅修改 / 仅新文件 / 仅删除 */}
+                  {f === 'changed' ? t('fs.filter.changed') : f === 'new' ? t('fs.filter.new') : t('fs.filter.deleted')}
+                </button>
+              </Tooltip>
             ))}
             {filters.size > 0 && (
               // 全部
@@ -1406,10 +1416,12 @@ export function FsView(props: Props) {
             </button>
             {props.repoType === 'svn' && (
               // 常用文件夹：指定后后台预加载缓存，进入秒开
-              <button className={`mini tool-btn ${favs.length > 0 ? 'primary' : ''}`} onClick={() => setFavModal(true)} title={t('fs.toolbar.favTitle')}>
-                {/* ⭐ 常用({n}) / ⭐ 常用 */}
-                {favs.length > 0 ? t('fs.toolbar.favN', { n: favs.length }) : t('fs.toolbar.fav')}
-              </button>
+              <Tooltip content={t('fs.toolbar.favTitle')}>
+                <button className={`mini tool-btn ${favs.length > 0 ? 'primary' : ''}`} onClick={() => setFavModal(true)}>
+                  {/* ⭐ 常用({n}) / ⭐ 常用 */}
+                  {favs.length > 0 ? t('fs.toolbar.favN', { n: favs.length }) : t('fs.toolbar.fav')}
+                </button>
+              </Tooltip>
             )}
           </span>
           {/* 上一级：浏览按钮右侧、搜索框左侧，带间隔 */}

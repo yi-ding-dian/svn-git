@@ -9,6 +9,7 @@ import { TaskDetailModal } from '../task-detail.js';
 import { CancelCheckoutConfirm } from '../../repo/checkout-task.js';
 import { AboutModal } from '../about.js';
 import { ContextMenu } from '../../ui/context-menu.js';
+import { Tooltip } from '../../ui/tooltip.js';
 import { parseGithub } from '../../../shared/github.js';
 import { type Modal } from '../modal-types.js';
 import { type View } from '../sidebar.js';
@@ -233,9 +234,11 @@ export function AppHeader(props: {
   return (
     <div className="header" style={{ display: props.view === 'diff' ? 'none' : undefined }}>
       {/* svn-git 文件版本管理 */}
-      <span className="logo" style={{ display: 'flex', alignItems: 'center' }} title={t('shell.appName')}>
-        <img src="/icon.png" width="26" height="26" alt="logo" style={{ borderRadius: 6 }} />
-      </span>
+      <Tooltip content={t('shell.appName')}>
+        <span className="logo" style={{ display: 'flex', alignItems: 'center' }}>
+          <img src="/icon.png" width="26" height="26" alt="logo" style={{ borderRadius: 6 }} />
+        </span>
+      </Tooltip>
       {repo?.type ? <span className={`badge ${repo.type}`}>{repo.type.toUpperCase()}</span> : null}
       {/* 未选择仓库 */}
       <span className="path">{repo?.root ?? t('shell.header.noRepo')}</span>
@@ -248,50 +251,55 @@ export function AppHeader(props: {
       {/* 浏览仓库（仅 SVN）：点一下直接打开仓库浏览器（与最近项目右键「浏览仓库」同功能）；
           无边框纯图标按钮（用户定稿），悬浮出淡背景 */}
       {repo?.type === 'svn' && props.onBrowseRepo && (
-        <button className="header-icon-btn" title={t('repo.browse.entryTip')} onClick={props.onBrowseRepo}>
-          <IconServer size={14} />
-        </button>
+        <Tooltip content={t('repo.browse.entryTip')}>
+          <button className="header-icon-btn" onClick={props.onBrowseRepo}>
+            <IconServer size={14} />
+          </button>
+        </Tooltip>
       )}
       {/* 我的 GitHub 仓库（仅 origin 指向 github.com 的 git 项目）：点一下打开仓库列表，选中即克隆。
           与 SVN 的「浏览仓库」图标同位同款式（入口对齐）；git 本身没有"直连浏览远程"的语义，
           这里给的是**我名下的仓库清单**——列表里再选定具体那个 */}
       {repo?.type === 'git' && githubRepo && (
-        <button className="header-icon-btn" title={t('repo.githubMyRepos.entryTip')} onClick={() => props.setModal({ type: 'github-my-repos' })}>
-          <IconGitHub size={14} />
-        </button>
+        <Tooltip content={t('repo.githubMyRepos.entryTip')}>
+          <button className="header-icon-btn" onClick={() => props.setModal({ type: 'github-my-repos' })}>
+            <IconGitHub size={14} />
+          </button>
+        </Tooltip>
       )}
       {/* 后台任务指示器：**仅运行中显示**（后台没有任务时不存在——用户定稿）：流沙动画沙漏 + 数量。
           点击展开任务面板（进行中 + 取消）。data-task-anchor：魔法飞行线的落点锚
           （锚点随按钮生灭——magic-flight 启动时轮询等它出现） */}
       {runningCount > 0 && (
-        <button
-          ref={taskBtnRef}
-          data-task-anchor
-          className="header-icon-btn"
-          title={t('shell.tasks.indicatorTip', { n: runningCount })}
-          onClick={() => (taskPop ? setTaskPop(null) : openTaskPop())}
-        >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-            <IconHourglassRun size={15} />
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>{runningCount}</span>
-          </span>
-        </button>
+        <Tooltip content={t('shell.tasks.indicatorTip', { n: runningCount })}>
+          <button
+            ref={taskBtnRef}
+            data-task-anchor
+            className="header-icon-btn"
+            onClick={() => (taskPop ? setTaskPop(null) : openTaskPop())}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              <IconHourglassRun size={15} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>{runningCount}</span>
+            </span>
+          </button>
+        </Tooltip>
       )}
       {/* 任务通知铃铛：有通知才存在（全关掉即消失）；未读红点；点开面板（打开即已读） */}
       {notices.length > 0 && (
-        <button
-          ref={bellBtnRef}
-          data-notice-anchor="true"
-          className={`header-icon-btn${bellBounce ? ' bell-bounce' : ''}`}
-          // 任务通知（点击查看）
-          title={t('shell.notify.tip')}
-          onClick={() => (noticePop ? setNoticePop(null) : openNoticePop())}
-        >
-          <span style={{ position: 'relative', display: 'inline-flex' }}>
-            <IconBell size={15} />
-            {unreadCount > 0 && <span className="bell-dot" />}
-          </span>
-        </button>
+        <Tooltip content={t('shell.notify.tip')}>
+          <button
+            ref={bellBtnRef}
+            data-notice-anchor="true"
+            className={`header-icon-btn${bellBounce ? ' bell-bounce' : ''}`}
+            onClick={() => (noticePop ? setNoticePop(null) : openNoticePop())}
+          >
+            <span style={{ position: 'relative', display: 'inline-flex' }}>
+              <IconBell size={15} />
+              {unreadCount > 0 && <span className="bell-dot" />}
+            </span>
+          </button>
+        </Tooltip>
       )}
       <span className="spacer" />
       {/* 可定制工具栏按钮 + 可拖拽分隔符（顺序 = 用户布局 shown；退出应用固定末尾不在此区） */}
@@ -335,18 +343,18 @@ export function AppHeader(props: {
         {dragKey !== null && dropBefore === null && <span className="tool-drop-line" />}
       </span>
       {/* 低频操作收进「⋯」菜单（可拖入/拖出；含恢复默认布局） */}
-      <button
-        className="mini tool-btn"
-        // 更多操作（可把常用按钮拖入此菜单，或从这里拖回工具栏）
-        title={t('shell.toolbar.moreTitle')}
-        style={moreDrop ? { boxShadow: '0 0 0 2px var(--accent) inset' } : undefined}
-        onClick={(e) => {
-          const r = e.currentTarget.getBoundingClientRect();
-          setMoreMenu({ x: Math.max(8, r.right - 180), y: r.bottom + 4 });
-        }}
-      >
-        ⋯
-      </button>
+      <Tooltip content={t('shell.toolbar.moreTitle')}>
+        <button
+          className="mini tool-btn"
+          style={moreDrop ? { boxShadow: '0 0 0 2px var(--accent) inset' } : undefined}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setMoreMenu({ x: Math.max(8, r.right - 180), y: r.bottom + 4 });
+          }}
+        >
+          ⋯
+        </button>
+      </Tooltip>
       {moreMenu && (
         <ContextMenu
           x={moreMenu.x}

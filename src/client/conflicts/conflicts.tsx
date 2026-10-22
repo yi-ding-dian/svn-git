@@ -7,6 +7,7 @@ import { t, type I18nKey } from '../../shared/i18n/index.js';
 import { IconFolder, IconOk } from '../ui/icons.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { ResizableModal } from '../shell/modal-shell.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { MergeEditor } from './merge-editor.js';
 
 interface Conflict {
@@ -300,40 +301,45 @@ export function ConflictResolverModal(props: { onClose: () => void; onResolved: 
                 <button disabled={busy} onClick={() => void resolve('theirs')} title={`${cmdOfRepo(repoType, 'resolve_theirs', { path: cur.path }) ?? ''}`}>{t('conflict.takeTheirs')}</button>
                 {/* 💾 保存并标记已解决 */}
                 {!cur.binary && (
-                  <button
-                    disabled={busy || !canSave}
-                    onClick={() => void resolve('manual')}
-                    title={`${result.unresolved > 0 ? t('conflict.merge.unresolved', { n: result.unresolved }) : cmdOfRepo(repoType, 'resolve_manual', { path: cur.path }) ?? ''}`}
+                  <Tooltip
+                    content={`${result.unresolved > 0 ? t('conflict.merge.unresolved', { n: result.unresolved }) : cmdOfRepo(repoType, 'resolve_manual', { path: cur.path }) ?? ''}`}
                   >
-                    {t('conflict.saveManual')}
-                  </button>
+                    <button
+                      disabled={busy || !canSave}
+                      onClick={() => void resolve('manual')}
+                    >
+                      {t('conflict.saveManual')}
+                    </button>
+                  </Tooltip>
                 )}
                 {repoType === 'git' && (
-                  <button
-                    className="mini"
-                    disabled={busy}
-                    onClick={() => setConfirmAbort(true)}
-                    // 放弃本次合并（git merge --abort）：丢弃合并以来所有改动，工作区回到合并前。分支本身不受影响，可稍后再合并。
-                    title={t('conflict.abortTip')}
-                  >
-                    {/* ↩ 中止合并 */}
-                    {t('conflict.abort')}
-                  </button>
+                  <Tooltip content={t('conflict.abortTip')}>
+                    <button
+                      className="mini"
+                      disabled={busy}
+                      onClick={() => setConfirmAbort(true)}
+                      // 放弃本次合并（git merge --abort）：丢弃合并以来所有改动，工作区回到合并前。分支本身不受影响，可稍后再合并。
+                    >
+                      {/* ↩ 中止合并 */}
+                      {t('conflict.abort')}
+                    </button>
+                  </Tooltip>
                 )}
-                <button
-                  className="mini tool-btn"
-                  // 打开冲突文件所在文件夹
-                  title={t('conflict.revealTip')}
-                  onClick={() => {
-                    if (!cur) return;
-                    void post
-                      .reveal(cur.path)
-                      .catch((e: Error) => setMsg((e as Error).message));
-                  }}
-                >
-                  {/* 打开文件夹 */}
-                  <IconFolder /> {t('conflict.reveal')}
-                </button>
+                <Tooltip content={t('conflict.revealTip')}>
+                  <button
+                    className="mini tool-btn"
+                    // 打开冲突文件所在文件夹
+                    onClick={() => {
+                      if (!cur) return;
+                      void post
+                        .reveal(cur.path)
+                        .catch((e: Error) => setMsg((e as Error).message));
+                    }}
+                  >
+                    {/* 打开文件夹 */}
+                    <IconFolder /> {t('conflict.reveal')}
+                  </button>
+                </Tooltip>
                 <span className="grow" />
                 {msg && (
                   <>

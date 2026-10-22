@@ -9,6 +9,7 @@ import { t } from '../../shared/i18n/index.js';
 import { get } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
 import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
+import { Tooltip } from '../ui/tooltip.js';
 // 命中高亮已提升 shared（仓库浏览搜索共用，边界规范）
 import { highlightMatch } from '../shared/highlight-match.js';
 
@@ -194,16 +195,17 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
       <ResizeCursor ghostRef={ghostRef} />
       <span style={{ position: 'relative' }} ref={wrapRef}>
         {/* 模式芯片：点击切换。stopPropagation——防冒泡出去被当"点外部"顺带收起下拉 */}
-        <span
-          className={`search-mode-chip${mode === 'content' ? ' content' : ''}`}
-          title={t('fs.search.modeSwitch')}
-          onClick={(e) => {
-            e.stopPropagation();
-            setMode(mode === 'file' ? 'content' : 'file');
-          }}
-        >
-          {mode === 'file' ? t('fs.search.mode.file') : t('fs.search.mode.content')}
-        </span>
+        <Tooltip content={t('fs.search.modeSwitch')}>
+          <span
+            className={`search-mode-chip${mode === 'content' ? ' content' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMode(mode === 'file' ? 'content' : 'file');
+            }}
+          >
+            {mode === 'file' ? t('fs.search.mode.file') : t('fs.search.mode.content')}
+          </span>
+        </Tooltip>
         <input
           type="text"
           // 🔍 搜索文件… / 🔍 搜索内容…

@@ -6,6 +6,7 @@
  */
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
+import { Tooltip } from '../ui/tooltip.js';
 
 /** 目录条目（DOM 上已按 id 挂好锚点） */
 export interface TocItem {
@@ -86,22 +87,23 @@ export function MdTocPopover(props: {
             onClick={() => props.onJump(item.id)}
           >
             {hasChild(i) ? (
-              <button
-                className="md-toc-arrow"
-                // 展开 / 折叠这一节
-                title={t('fs.pv.tocToggle')}
-                onClick={(e) => {
-                  e.stopPropagation(); // 只折叠，不跳转
-                  setCollapsed((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(i)) next.delete(i);
-                    else next.add(i);
-                    return next;
-                  });
-                }}
-              >
-                {collapsed.has(i) ? '▸' : '▾'}
-              </button>
+              // 展开 / 折叠这一节
+              <Tooltip content={t('fs.pv.tocToggle')}>
+                <button
+                  className="md-toc-arrow"
+                  onClick={(e) => {
+                    e.stopPropagation(); // 只折叠，不跳转
+                    setCollapsed((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(i)) next.delete(i);
+                      else next.add(i);
+                      return next;
+                    });
+                  }}
+                >
+                  {collapsed.has(i) ? '▸' : '▾'}
+                </button>
+              </Tooltip>
             ) : (
               <span className="md-toc-arrow" />
             )}

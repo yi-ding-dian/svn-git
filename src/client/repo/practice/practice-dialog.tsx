@@ -5,6 +5,7 @@ import { ModalShell } from '../../shell/modal-shell.js';
 import { joinPath } from '../../shared/utils.js';
 import { t } from '../../../shared/i18n/index.js';
 import { OpenBrowser } from '../open.js';
+import { Tooltip } from '../../ui/tooltip.js';
 import { DEFAULT_SCENARIOS, type PracticeScenarios, type PracticeType } from './practice-shared.js';
 
 export function PracticeRepoDialog(props: {
@@ -120,14 +121,18 @@ export function PracticeRepoDialog(props: {
       {/* 类型：缺命令的选项禁用并说明原因 */}
       <div className="row" style={{ gap: 16, marginBottom: 4 }}>
         <strong>{t('repo.practice.typeLabel')}</strong>
-        <label className="row" style={{ gap: 4, cursor: gitAvailable ? 'pointer' : 'not-allowed' }} title={gitAvailable ? undefined : t('repo.practice.gitMissing')}>
-          <input type="radio" name="practice-type" checked={type === 'git'} disabled={!gitAvailable} onChange={() => setType('git')} />
-          {t('repo.practice.typeGit')}
-        </label>
-        <label className="row" style={{ gap: 4, cursor: svnAvailable ? 'pointer' : 'not-allowed' }} title={svnAvailable ? undefined : t('repo.practice.svnMissing')}>
-          <input type="radio" name="practice-type" checked={type === 'svn'} disabled={!svnAvailable} onChange={() => setType('svn')} />
-          {t('repo.practice.typeSvn')}
-        </label>
+        <Tooltip content={gitAvailable ? '' : t('repo.practice.gitMissing')}>
+          <label className="row" style={{ gap: 4, cursor: gitAvailable ? 'pointer' : 'not-allowed' }}>
+            <input type="radio" name="practice-type" checked={type === 'git'} disabled={!gitAvailable} onChange={() => setType('git')} />
+            {t('repo.practice.typeGit')}
+          </label>
+        </Tooltip>
+        <Tooltip content={svnAvailable ? '' : t('repo.practice.svnMissing')}>
+          <label className="row" style={{ gap: 4, cursor: svnAvailable ? 'pointer' : 'not-allowed' }}>
+            <input type="radio" name="practice-type" checked={type === 'svn'} disabled={!svnAvailable} onChange={() => setType('svn')} />
+            {t('repo.practice.typeSvn')}
+          </label>
+        </Tooltip>
       </div>
       <div className="dim small" style={{ marginBottom: 12 }}>
         {type === 'git' ? t('repo.practice.typeGitTip') : t('repo.practice.typeSvnTip')}
@@ -143,7 +148,9 @@ export function PracticeRepoDialog(props: {
           value={parentDir}
           onChange={(e) => setParentDir(e.target.value)}
         />
-        <button onClick={() => setPicking(true)} title={t('repo.practice.browseTip')}>{t('repo.practice.browse')}</button>
+        <Tooltip content={t('repo.practice.browseTip')}>
+          <button onClick={() => setPicking(true)}>{t('repo.practice.browse')}</button>
+        </Tooltip>
       </div>
       <div className="dim small" style={{ marginBottom: 12 }}>{t('repo.practice.pathNote')}</div>
 
@@ -156,34 +163,40 @@ export function PracticeRepoDialog(props: {
       </label>
       {/* 远程同步只对 Git 有意义：SVN 下整行不显示（没有 fetch/upstream 概念） */}
       {type === 'git' && (
-        <label className="row" style={{ gap: 6, marginBottom: 4, cursor: 'pointer' }} title={t('repo.practice.remoteTip')}>
-          <input
-            type="checkbox"
-            checked={scenarios.remote}
-            onChange={(e) => setScenarios((s) => ({ ...s, remote: e.target.checked }))}
-          />
-          <span>{t('repo.practice.remote')}</span>
-          <span className="dim small">{t('repo.practice.remoteTip')}</span>
-        </label>
+        <Tooltip content={t('repo.practice.remoteTip')}>
+          <label className="row" style={{ gap: 6, marginBottom: 4, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={scenarios.remote}
+              onChange={(e) => setScenarios((s) => ({ ...s, remote: e.target.checked }))}
+            />
+            <span>{t('repo.practice.remote')}</span>
+            <span className="dim small">{t('repo.practice.remoteTip')}</span>
+          </label>
+        </Tooltip>
       )}
       {/* 多项目布局仅 SVN 有：版本库内 projects/demo-project/{trunk,branches,tags}，
           项目根不再等于版本库根，才能练习「项目迁移 → 独立项目」 */}
       {type === 'svn' && (
-        <label className="row" style={{ gap: 6, marginBottom: 4, cursor: 'pointer' }} title={t('repo.practice.projectLayoutTip')}>
-          <input type="checkbox" checked={projectLayout} onChange={(e) => setProjectLayout(e.target.checked)} />
-          <span>{t('repo.practice.projectLayout')}</span>
-          <span className="dim small">{t('repo.practice.projectLayoutTip')}</span>
-        </label>
+        <Tooltip content={t('repo.practice.projectLayoutTip')}>
+          <label className="row" style={{ gap: 6, marginBottom: 4, cursor: 'pointer' }}>
+            <input type="checkbox" checked={projectLayout} onChange={(e) => setProjectLayout(e.target.checked)} />
+            <span>{t('repo.practice.projectLayout')}</span>
+            <span className="dim small">{t('repo.practice.projectLayoutTip')}</span>
+          </label>
+        </Tooltip>
       )}
-      <label className="row" style={{ gap: 6, marginBottom: 10, cursor: 'pointer' }} title={t('repo.practice.conflictTip')}>
-        <input
-          type="checkbox"
-          checked={scenarios.conflict}
-          onChange={(e) => setScenarios((s) => ({ ...s, conflict: e.target.checked }))}
-        />
-        <span>{t('repo.practice.conflict')}</span>
-        <span className="dim small">{t('repo.practice.conflictTip')}</span>
-      </label>
+      <Tooltip content={t('repo.practice.conflictTip')}>
+        <label className="row" style={{ gap: 6, marginBottom: 10, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={scenarios.conflict}
+            onChange={(e) => setScenarios((s) => ({ ...s, conflict: e.target.checked }))}
+          />
+          <span>{t('repo.practice.conflict')}</span>
+          <span className="dim small">{t('repo.practice.conflictTip')}</span>
+        </label>
+      </Tooltip>
 
       {/* 生成路径预览：选完父目录后明确告诉用户会建到哪里、里面有什么 */}
       <div style={{ marginTop: 10, padding: '8px 10px', border: '1px dashed var(--border)', borderRadius: 6 }}>

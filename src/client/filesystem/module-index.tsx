@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
+import { Tooltip } from '../ui/tooltip.js';
 
 interface Entry {
   path: string;
@@ -132,21 +133,22 @@ export function ModuleIndexDialog(props: {
       <div className="dim small" style={{ lineHeight: 1.8 }}>
         {/* 作用范围 */}
         · <b>{t('fs.moduleIndex.scope')}</b>：
-        <select
-          value={scope}
-          onChange={(e) => {
-            setScope(e.target.value);
-            setErr('');
-            setEntries(null);
-          }}
-          style={{ padding: '1px 4px', margin: '0 4px' }}
-          // 说明文字按此目录内的相对路径匹配（含子目录；父目录与其他目录不受影响）
-          title={t('fs.moduleIndex.scopeTip')}
-        >
-          {scopeOptions.map((o) => (
-            <option key={o.value} value={o.value}>{o.labelKey ? t(o.labelKey) : o.label}</option>
-          ))}
-        </select>
+        <Tooltip content={t('fs.moduleIndex.scopeTip')}>
+          <select
+            value={scope}
+            onChange={(e) => {
+              setScope(e.target.value);
+              setErr('');
+              setEntries(null);
+            }}
+            style={{ padding: '1px 4px', margin: '0 4px' }}
+            // 说明文字按此目录内的相对路径匹配（含子目录；父目录与其他目录不受影响）
+          >
+            {scopeOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.labelKey ? t(o.labelKey) : o.label}</option>
+            ))}
+          </select>
+        </Tooltip>
         {/* 下的文件/文件夹（含子目录；父目录与其他目录不受影响） */}
         {t('fs.moduleIndex.scopeSuffix')}
         {/* 说明来源 / （解析「路径 ← 描述」树图 / 「 / 路径 / 描述 / 」表格；勾选后注入，重新注入可更新） */}

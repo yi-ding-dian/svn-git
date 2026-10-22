@@ -5,6 +5,7 @@ import { CODE_DESC, codeRank, type FsEntry } from '../../shared/api.js';
 import { fmtSize } from '../../shared/utils.js';
 import { CodeBadge, DirBadge, TreeConflictBadge, type TreeConflictState } from '../../ui/badges.js';
 import { GridIcon, IconLock } from '../../ui/icons.js';
+import { Tooltip } from '../../ui/tooltip.js';
 import { ThumbIcon } from './thumb.js';
 
 /** 网格卡片（图标+状态角标+名称+大小；目录状态字母最多显示 2 个） */
@@ -90,14 +91,15 @@ export function GridItem(props: {
           {props.locked && <IconLock size={13} />}
         </span>
       </span>
-      <span
-        className={`grid-name ${e.isDir ? 'dir' : ''}`}
-        // 重命名标出来源：网格里只显示新名字，光看名字看不出从哪移过来的
-        // 从 {path} 移动/重命名而来
-        title={e.origPath ? t('fs.movedFrom', { path: e.origPath }) : undefined}
-      >
-        {props.renaming ?? e.name}
-      </span>
+      <Tooltip content={e.origPath ? t('fs.movedFrom', { path: e.origPath }) : ''}>
+        <span
+          className={`grid-name ${e.isDir ? 'dir' : ''}`}
+          // 重命名标出来源：网格里只显示新名字，光看名字看不出从哪移过来的
+          // 从 {path} 移动/重命名而来
+        >
+          {props.renaming ?? e.name}
+        </span>
+      </Tooltip>
       {!e.isDir && <span className="dim small nowrap">{fmtSize(e.size)}</span>}
     </div>
   );

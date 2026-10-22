@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { ModalShell } from '../shell/modal-shell.js';
 import { IconFont } from '../ui/icons.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { get } from '../shared/api.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 
@@ -103,31 +104,34 @@ function FontSelect(props: {
           {props.options.map((o) => {
             const dis = props.unavailable(o.value);
             return (
-              <div
-                key={o.labelKey}
+              <Tooltip
                 // 系统没有「{name}」字体样式
-                title={dis ? t('look.font.unavailableTip', { name: t(o.labelKey) }) : undefined}
-                onClick={() => {
-                  if (!dis) {
-                    setOpen(false);
-                    props.onPick(o.value);
-                  }
-                }}
-                onMouseEnter={(e) => {
-                  if (!dis) (e.currentTarget as HTMLElement).style.background = 'var(--panel2)';
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background = '';
-                }}
-                style={{
-                  padding: '5px 10px',
-                  fontSize: 13,
-                  cursor: dis ? 'not-allowed' : 'pointer',
-                  color: dis ? 'var(--dim)' : undefined,
-                }}
+                key={o.labelKey}
+                content={dis ? t('look.font.unavailableTip', { name: t(o.labelKey) }) : ''}
               >
-                {t(o.labelKey)}
-              </div>
+                <div
+                  onClick={() => {
+                    if (!dis) {
+                      setOpen(false);
+                      props.onPick(o.value);
+                    }
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!dis) (e.currentTarget as HTMLElement).style.background = 'var(--panel2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.background = '';
+                  }}
+                  style={{
+                    padding: '5px 10px',
+                    fontSize: 13,
+                    cursor: dis ? 'not-allowed' : 'pointer',
+                    color: dis ? 'var(--dim)' : undefined,
+                  }}
+                >
+                  {t(o.labelKey)}
+                </div>
+              </Tooltip>
             );
           })}
         </div>

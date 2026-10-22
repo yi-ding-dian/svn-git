@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { IconClock, IconEye, IconEyeClosed, IconFolder, IconRename, IconServer } from '../ui/icons.js';
 // import { IconDiff } from '../ui/icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from '../ui/context-menu.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { RemarkModal } from '../repo/remark.js';
 import { THEMES, THEME_PINNED } from './header/index.js';
 import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js';
@@ -61,9 +62,9 @@ function probeHasSignal(st: ProjectProbe): boolean {
 function probeBadges(st: ProjectProbe, pull?: { busy: boolean; onClick: (from: { x: number; y: number }) => void }) {
   if (st.error) {
     return (
-      <span className="st-bad" title={st.error === 'unavailable' ? t('shell.recent.probeUnavailable') : st.error}>
-        ⚠
-      </span>
+      <Tooltip content={st.error === 'unavailable' ? t('shell.recent.probeUnavailable') : st.error}>
+        <span className="st-bad">⚠</span>
+      </Tooltip>
     );
   }
   return (
@@ -73,18 +74,19 @@ function probeBadges(st: ProjectProbe, pull?: { busy: boolean; onClick: (from: {
       {(st.behind ?? 0) > 0 &&
         (pull ? (
           // 点击就地更新（拉取远程新提交）；stopPropagation：别触发行点击（切项目）
-          <button
-            className="st-behind st-pull"
-            title={t('shell.recent.pullTip')}
-            disabled={pull.busy}
-            onClick={(e) => {
-              e.stopPropagation();
-              // 飞行线起点 = ⬇ 按钮位置（同推送/检出/更新入口）
-              pull.onClick(e.currentTarget.getBoundingClientRect());
-            }}
-          >
-            {pull.busy ? '⏳' : `⬇${fmtCount(st.behind!)}`}
-          </button>
+          <Tooltip content={t('shell.recent.pullTip')}>
+            <button
+              className="st-behind st-pull"
+              disabled={pull.busy}
+              onClick={(e) => {
+                e.stopPropagation();
+                // 飞行线起点 = ⬇ 按钮位置（同推送/检出/更新入口）
+                pull.onClick(e.currentTarget.getBoundingClientRect());
+              }}
+            >
+              {pull.busy ? '⏳' : `⬇${fmtCount(st.behind!)}`}
+            </button>
+          </Tooltip>
         ) : (
           <span className="st-behind">⬇{fmtCount(st.behind!)}</span>
         ))}
@@ -368,17 +370,18 @@ export function Sidebar(props: {
             onClick={() => props.setTheme(th.key)}
           />
         ))}
-        <button
-          className={`theme-more ${props.themePopOpen ? 'active' : ''}`}
-          // 更多主题 · 自定义配色
-          title={t('shell.theme.more')}
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            props.onOpenThemePop(r.left, r.bottom + 6);
-          }}
-        >
-          ⋯
-        </button>
+        <Tooltip content={t('shell.theme.more')}>
+          <button
+            className={`theme-more ${props.themePopOpen ? 'active' : ''}`}
+            // 更多主题 · 自定义配色
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              props.onOpenThemePop(r.left, r.bottom + 6);
+            }}
+          >
+            ⋯
+          </button>
+        </Tooltip>
       </div>
       {/* 最近项目：底部区域（版本号上方） */}
       {props.history.length > 0 && (
@@ -448,23 +451,27 @@ export function Sidebar(props: {
                       （用户实报「左边那么多空位」，备注"git仓库"因此被压成 "g…"） */}
                   <span className="history-path">{baseName(h.path)}</span>
                   {/* 常用项目（启动时优先打开） */}
-                  {h.fav && <span className="fav-star" title={t('shell.recent.favStar')}>★</span>}
+                  {h.fav && (
+                    <Tooltip content={t('shell.recent.favStar')}>
+                      <span className="fav-star">★</span>
+                    </Tooltip>
+                  )}
                   {/* 点开过但打不开：常驻 × 直接移除（不必再右键或悬浮）。
                       必须排在第二行**之前**——第二行 flex-basis:100% 会换行，× 写在它后面会被挤到第二行 */}
                   {invalid && (
-                    <button
-                      className="history-remove"
-                      // 该项目已打不开，点击从最近项目中移除
-                      title={t('shell.recent.removeInvalid')}
-                      // 移除 {path}
-                      aria-label={t('shell.recent.removeAria', { path: h.path })}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        props.onRemoveHistory(h.path);
-                      }}
-                    >
-                      ×
-                    </button>
+                    <Tooltip content={t('shell.recent.removeInvalid')}>
+                      <button
+                        className="history-remove"
+                        // 移除 {path}
+                        aria-label={t('shell.recent.removeAria', { path: h.path })}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onRemoveHistory(h.path);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </Tooltip>
                   )}
                   {/* 仪表盘状态行（名字行与备注行之间）：只显示"有事"的项目（有 ⬆/●/⚠ 任一才出行——
                       用户定稿：干净项目整行隐藏，分支/未跟踪等细节都在悬浮明细里）。
@@ -573,15 +580,19 @@ export function Sidebar(props: {
       {/* 打开项目 / 创建练习仓库：常驻在最近项目下方（没有历史记录时更要有这个入口） */}
       <div className="row" style={{ gap: 6, margin: '6px 10px 0 20px' }}>
         {/* 打开其它项目（选择目录） */}
-        <button className="history-open" style={{ flex: 1, minWidth: 0, margin: 0 }} onClick={props.onOpenProject} title={t('shell.recent.openOther')}>
-          {/* ＋ 打开项目 */}
-          {t('shell.recent.open')}
-        </button>
+        <Tooltip content={t('shell.recent.openOther')}>
+          <button className="history-open" style={{ flex: 1, minWidth: 0, margin: 0 }} onClick={props.onOpenProject}>
+            {/* ＋ 打开项目 */}
+            {t('shell.recent.open')}
+          </button>
+        </Tooltip>
         {/* 创建练习仓库（不影响当前项目） */}
-        <button className="history-open" style={{ flexShrink: 0, margin: 0 }} onClick={props.onOpenPractice} title={t('repo.practice.entryTip')}>
-          {/* 🧪 练习 */}
-          {t('repo.practice.entryShort')}
-        </button>
+        <Tooltip content={t('repo.practice.entryTip')}>
+          <button className="history-open" style={{ flexShrink: 0, margin: 0 }} onClick={props.onOpenPractice}>
+            {/* 🧪 练习 */}
+            {t('repo.practice.entryShort')}
+          </button>
+        </Tooltip>
       </div>
     </div>
   );

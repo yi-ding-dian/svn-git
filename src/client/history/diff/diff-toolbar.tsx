@@ -230,10 +230,12 @@ export function DiffPaneHeaders(props: {
             )}
             {isMd && !previewL && (
               // Markdown 渲染预览（原版）
-              <button className="mini" onClick={() => setPreviewL((v) => !v)} title={t('hist.mdPreviewLeft')}>
-                {/* 预览 */}
-                👁 {t('common.preview')}
-              </button>
+              <Tooltip content={t('hist.mdPreviewLeft')}>
+                <button className="mini" onClick={() => setPreviewL((v) => !v)}>
+                  {/* 预览 */}
+                  👁 {t('common.preview')}
+                </button>
+              </Tooltip>
             )}
           </div>
         </div>
@@ -301,10 +303,12 @@ export function DiffPaneHeaders(props: {
             )}
             {isMd && (
               // 返回差异行视图 / Markdown 渲染预览（当前）
-              <button className="mini" onClick={() => setPreviewR((v) => !v)} title={previewR ? t('hist.backToDiff') : t('hist.mdPreviewRight')}>
-                {/* 返回对比 / 预览 */}
-                {previewR ? t('hist.backToCompare') : `👁 ${t('common.preview')}`}
-              </button>
+              <Tooltip content={previewR ? t('hist.backToDiff') : t('hist.mdPreviewRight')}>
+                <button className="mini" onClick={() => setPreviewR((v) => !v)}>
+                  {/* 返回对比 / 预览 */}
+                  {previewR ? t('hist.backToCompare') : `👁 ${t('common.preview')}`}
+                </button>
+              </Tooltip>
             )}
             </>
             )}

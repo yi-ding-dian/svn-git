@@ -6,6 +6,7 @@ import { get } from '../shared/api.js';
 import { t } from '../../shared/i18n/index.js';
 import { DiffRender } from '../ui/diff-render.js';
 import { ResizableModal } from '../shell/modal-shell.js';
+import { Tooltip } from '../ui/tooltip.js';
 
 export function RemoteConflictModal(props: { riskFiles: { path: string; lines: number[] }[]; onClose: () => void }) {
   const [sel, setSel] = useState(0);
@@ -65,10 +66,12 @@ export function RemoteConflictModal(props: { riskFiles: { path: string; lines: n
                   {p.path.split('/').pop()}
                 </span>
                 {/* 双方都改到的行：{lines} */}
-                <span className="dim small nowrap" title={t('conflict.remote.linesTip', { lines: p.lines.join(t('common.listSep')) })}>
-                  {/* {n} 处 */}
-                  {t('conflict.remote.count', { n: p.lines.length })}
-                </span>
+                <Tooltip content={t('conflict.remote.linesTip', { lines: p.lines.join(t('common.listSep')) })}>
+                  <span className="dim small nowrap">
+                    {/* {n} 处 */}
+                    {t('conflict.remote.count', { n: p.lines.length })}
+                  </span>
+                </Tooltip>
               </div>
             ))}
           </div>

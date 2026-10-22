@@ -11,6 +11,7 @@
  *  长命令单行省略，窗口变宽自动显示更多；悬浮命令行显示完整内容。 */
 import React, { useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
+import { Tooltip } from './tooltip.js';
 
 const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
 const circledOf = (i: number) => CIRCLED[i] ?? `${i + 1}.`;
@@ -69,22 +70,23 @@ export function CommandPreview(props: {
   return (
     <div className="small" style={{ marginTop: 10 }}>
       <div className="row" style={{ alignItems: 'center', gap: 8 }}>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          title={t('ui.cmdPreview.toggle')}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            padding: 0,
-            cursor: 'pointer',
-            color: props.danger ? 'var(--err)' : 'var(--dim)',
-            fontSize: '0.9em',
-          }}
-        >
-          {open ? '▾' : '▸'} {props.title ?? t('ui.cmdPreview.title')} ·{' '}
-          {t(open ? 'ui.cmdPreview.expanded' : 'ui.cmdPreview.collapsed', { n: props.commands.length })}
-        </button>
+        <Tooltip content={t('ui.cmdPreview.toggle')}>
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              color: props.danger ? 'var(--err)' : 'var(--dim)',
+              fontSize: '0.9em',
+            }}
+          >
+            {open ? '▾' : '▸'} {props.title ?? t('ui.cmdPreview.title')} ·{' '}
+            {t(open ? 'ui.cmdPreview.expanded' : 'ui.cmdPreview.collapsed', { n: props.commands.length })}
+          </button>
+        </Tooltip>
         {/* 复制全部：折叠/展开都显示 */}
         <button
           className="mini"

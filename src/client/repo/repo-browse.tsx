@@ -20,6 +20,7 @@ import { PickDirModal } from './pick-dir.js';
 import { CheckoutDialog } from './checkout.js';
 import { useCheckoutTask, CheckoutAuthModal } from './checkout-task.js';
 import { ResultLine } from '../ui/result-line.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { t } from '../../shared/i18n/index.js';
 
 interface RepoEntry {
@@ -471,24 +472,25 @@ export function RepoBrowseModal(props: {
             <IconServer size={15} /> {t('repo.browse.title')} <span className="dim small mono">{host}</span>
             {/* 定位到该项目：逐级展开树并高亮工作副本所在目录（只在从项目右键进入时有 wcRel） */}
             {!!props.wcRel && (
-              <button
-                className="mini"
-                style={{ marginLeft: 8 }}
-                disabled={locating}
-                title={t('repo.browse.locateTip')}
-                onClick={() => void locate()}
-              >
-                {locating ? (
-                  // 定位中…
-                  t('repo.browse.locating')
-                ) : (
-                  // 定位到该项目（彩色图钉，与树里的钉子同款）
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <IconPin size={12} />
-                    {t('repo.browse.locate')}
-                  </span>
-                )}
-              </button>
+              <Tooltip content={t('repo.browse.locateTip')}>
+                <button
+                  className="mini"
+                  style={{ marginLeft: 8 }}
+                  disabled={locating}
+                  onClick={() => void locate()}
+                >
+                  {locating ? (
+                    // 定位中…
+                    t('repo.browse.locating')
+                  ) : (
+                    // 定位到该项目（彩色图钉，与树里的钉子同款）
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <IconPin size={12} />
+                      {t('repo.browse.locate')}
+                    </span>
+                  )}
+                </button>
+              </Tooltip>
             )}
           </span>
           <button className="mini" onClick={() => setMaxed((m) => !m)}>

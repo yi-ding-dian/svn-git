@@ -5,6 +5,7 @@ import { ResizableModal } from '../shell/modal-shell.js';
 import { pathAutoWidth } from '../shared/utils.js';
 import { IconOk, IconWarn } from '../ui/icons.js';
 import { ConfirmModal } from '../ui/prompt.js';
+import { Tooltip } from '../ui/tooltip.js';
 
 /** 还原清单弹窗（目录还原）：列出可还原文件（默认全选、可勾选），确认后只还原选中的——破坏性操作前置清单 */
 export function RevertModal(props: {
@@ -81,9 +82,11 @@ export function RevertModal(props: {
                 {/* 树冲突项标一个中性 ⚠：弹窗里拿不到服务器状态（那要另查），只说"这项是冲突" */}
                 {it.treeConflicted && (
                   // 树冲突：本地与服务器对同一路径的操作冲突
-                  <span className="code tc unknown" style={{ width: 18, height: 15, fontSize: 10 }} title={t('fs.revert.tcBadgeTitle')}>
-                    ⚠
-                  </span>
+                  <Tooltip content={t('fs.revert.tcBadgeTitle')}>
+                    <span className="code tc unknown" style={{ width: 18, height: 15, fontSize: 10 }}>
+                      ⚠
+                    </span>
+                  </Tooltip>
                 )}
                 <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {it.path}

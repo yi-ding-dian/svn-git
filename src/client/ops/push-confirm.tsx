@@ -285,20 +285,23 @@ export function PushConfirmModal(props: {
                     {l.changed.map((c) => {
                       const text = isTextFile(c.path);
                       return (
-                        <div
+                        <Tooltip
                           key={c.path}
-                          className="small mono"
-                          style={{ padding: '1px 0', cursor: props.onDiff && text ? 'pointer' : 'default' }}
                           // 双击查看差异 / （图片/二进制文件不支持查看差异）
-                          title={text ? `${c.path}\n${t('ops.rowTip.diff')}` : `${c.path}\n${t('ops.push.binaryTip')}`}
-                          onDoubleClick={(ev) => {
-                            ev.preventDefault();
-                            if (props.onDiff && text) props.onDiff(c.path, l.rev);
-                          }}
+                          content={text ? `${c.path}\n${t('ops.rowTip.diff')}` : `${c.path}\n${t('ops.push.binaryTip')}`}
                         >
-                          <span className={`act ${c.action}`} style={{ marginRight: 6 }}>{c.action}</span>
-                          <span className="dim">{c.path}</span>
-                        </div>
+                          <div
+                            className="small mono"
+                            style={{ padding: '1px 0', cursor: props.onDiff && text ? 'pointer' : 'default' }}
+                            onDoubleClick={(ev) => {
+                              ev.preventDefault();
+                              if (props.onDiff && text) props.onDiff(c.path, l.rev);
+                            }}
+                          >
+                            <span className={`act ${c.action}`} style={{ marginRight: 6 }}>{c.action}</span>
+                            <span className="dim">{c.path}</span>
+                          </div>
+                        </Tooltip>
                       );
                     })}
                   </div>
@@ -412,16 +415,16 @@ export function PushConfirmModal(props: {
                   dangerouslySetInnerHTML={{ __html: renderMarkdown(amendMsg, { breaks: true }) }}
                 />
               ) : (
-                <textarea
-                  className="mono"
-                  rows={autoSizeForText(amendMsg).rows}
-                  // 完整提交说明（第一行为标题，空行后为正文），可直接编辑
-                  title={t('ops.push.amendTextTip')}
-                  style={{ width: '100%', flex: 1, minHeight: 120 }}
-                  value={amendMsg}
-                  onChange={(e) => setAmendMsg(e.target.value)}
-                  autoFocus
-                />
+                <Tooltip content={t('ops.push.amendTextTip')}>
+                  <textarea
+                    className="mono"
+                    rows={autoSizeForText(amendMsg).rows}
+                    style={{ width: '100%', flex: 1, minHeight: 120 }}
+                    value={amendMsg}
+                    onChange={(e) => setAmendMsg(e.target.value)}
+                    autoFocus
+                  />
+                </Tooltip>
               )}
               {amendNotice && (
                 <div className="error small" style={{ marginTop: 6, wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>

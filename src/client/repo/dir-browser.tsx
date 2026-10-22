@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import { get, type BrowseResult } from '../shared/api.js';
 import { GridIcon } from '../ui/icons.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { joinPath, parentPath, pathFromFile, isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -140,7 +141,9 @@ export function DirBrowser(props: {
             />
             {props.pathInput.pickDir && (
               // 打开系统目录选择框
-              <button onClick={() => void pickDir()} title={t('repo.open.pickDirTip')}>{t('repo.open.pickDirBtn')}</button>
+              <Tooltip content={t('repo.open.pickDirTip')}>
+                <button onClick={() => void pickDir()}>{t('repo.open.pickDirBtn')}</button>
+              </Tooltip>
             )}
             {props.pathInput.extra}
           </div>
@@ -184,17 +187,20 @@ export function DirBrowser(props: {
             if (!it.isDir) {
               const selected = props.fileSelect?.selected === it.name;
               return (
-                <div
+                <Tooltip
                   key={it.name}
-                  className={`open-grid-item${selected ? ' selected' : ''}`}
-                  title={props.fileSelect ? t('repo.picker.fileTip', { name: it.name }) : tipOf(it)}
-                  // 文件级合并：单击选中/取消，双击也选中（不自动确认，仍走底部按钮）
-                  onClick={props.fileSelect ? () => props.fileSelect!.onSelect(selected ? null : it.name) : undefined}
-                  onDoubleClick={props.fileSelect ? () => props.fileSelect!.onSelect(it.name) : undefined}
+                  content={props.fileSelect ? t('repo.picker.fileTip', { name: it.name }) : tipOf(it)}
                 >
-                  <GridIcon isDir={false} name={it.name} size={38} />
-                  <span className="open-grid-name">{it.name}</span>
-                </div>
+                  <div
+                    className={`open-grid-item${selected ? ' selected' : ''}`}
+                    // 文件级合并：单击选中/取消，双击也选中（不自动确认，仍走底部按钮）
+                    onClick={props.fileSelect ? () => props.fileSelect!.onSelect(selected ? null : it.name) : undefined}
+                    onDoubleClick={props.fileSelect ? () => props.fileSelect!.onSelect(it.name) : undefined}
+                  >
+                    <GridIcon isDir={false} name={it.name} size={38} />
+                    <span className="open-grid-name">{it.name}</span>
+                  </div>
+                </Tooltip>
               );
             }
             if (props.rename && props.rename.name === it.name) {

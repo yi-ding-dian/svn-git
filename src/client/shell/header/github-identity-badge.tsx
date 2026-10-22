@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { get, type GitHubIdentityResult, type RepoInfo } from '../../shared/api.js';
 import { parseGithub } from '../../../shared/github.js';
 import { t, type I18nKey } from '../../../shared/i18n/index.js';
+import { Tooltip } from '../../ui/tooltip.js';
 
 /** 顶栏 GitHub 身份徽标：/api/github-identity 的结果 → 显示什么（null = 不显示徽标）。
  *  **只返回 key，文案渲染时才 t()**（模块顶层求值会冻在首次语言，见 i18n/index.ts 头部）。
@@ -57,13 +58,14 @@ export function GithubIdentityBadge({ repo, onOpen }: { repo: RepoInfo | null; o
   const badge = githubBadgeOf(githubIdentity);
   if (!badge) return null;
   return (
-    <button
-      className={`github-identity ${badge.kind}`}
-      title={`${t(badge.tipKey, { login: githubIdentity?.login ?? '' })}${githubIdentity?.private ? t('shell.header.githubPrivateNote') : ''}${t('shell.header.githubTipClick')}`}
-      onClick={onOpen}
-    >
-      {githubIdentity?.private ? '🔒' : ''}
-      {t(badge.textKey)}
-    </button>
+    <Tooltip content={`${t(badge.tipKey, { login: githubIdentity?.login ?? '' })}${githubIdentity?.private ? t('shell.header.githubPrivateNote') : ''}${t('shell.header.githubTipClick')}`}>
+      <button
+        className={`github-identity ${badge.kind}`}
+        onClick={onOpen}
+      >
+        {githubIdentity?.private ? '🔒' : ''}
+        {t(badge.textKey)}
+      </button>
+    </Tooltip>
   );
 }

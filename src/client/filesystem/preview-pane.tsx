@@ -10,6 +10,7 @@ import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { AppIcon } from '../ui/ui.js';
 import { IconExternal, IconRename } from '../ui/icons.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
@@ -412,10 +413,12 @@ export function PreviewPane(props: Props) {
         {note && <span className="small" style={{ color: 'var(--accent)' }}>ℹ {note}</span>}
         {fileEnc && (
           // 该文件不是 UTF-8 编码，预览按此编码解码显示；保存时会按原编码写回
-          <span className="small dim" title={t('fs.pv.encTip')}>
-            {/* 🈚 按 {enc} 解码 */}
-            {t('fs.pv.decodedAs', { enc: fileEnc.toUpperCase() })}
-          </span>
+          <Tooltip content={t('fs.pv.encTip')}>
+            <span className="small dim">
+              {/* 🈚 按 {enc} 解码 */}
+              {t('fs.pv.decodedAs', { enc: fileEnc.toUpperCase() })}
+            </span>
+          </Tooltip>
         )}
         {searchActive ? (
           <span className="row" style={{ gap: 6 }}>
@@ -465,68 +468,74 @@ export function PreviewPane(props: Props) {
           {t('fs.pv.blame')}
         </button>
         {isMd && (
-          <button
-            className={`mini ${mdTheme !== 'follow' ? 'primary' : ''}`}
-            // md 阅读主题：只改文档区配色，界面主题不受影响
-            title={t('fs.pv.mdThemeTitle')}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              setMdThemePop({ x: r.left, y: r.bottom + 4 });
-            }}
-          >
-            {/* 🎨 主题 / 🎨 主题 · {name} */}
-            {mdTheme === 'follow' ? t('fs.pv.themeBtn') : t('fs.pv.themeBtnNamed', { name: mdThemeName(mdTheme) })}
-          </button>
+          // md 阅读主题：只改文档区配色，界面主题不受影响
+          <Tooltip content={t('fs.pv.mdThemeTitle')}>
+            <button
+              className={`mini ${mdTheme !== 'follow' ? 'primary' : ''}`}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setMdThemePop({ x: r.left, y: r.bottom + 4 });
+              }}
+            >
+              {/* 🎨 主题 / 🎨 主题 · {name} */}
+              {mdTheme === 'follow' ? t('fs.pv.themeBtn') : t('fs.pv.themeBtnNamed', { name: mdThemeName(mdTheme) })}
+            </button>
+          </Tooltip>
         )}
         <span className="grow" />
-        <button
-          className={`mini ${full ? 'primary' : ''}`}
-          onClick={() => setFull((v) => !v)}
-          // 退出全屏（Esc） / 铺满窗口阅读长文，Esc 退出
-          title={full ? t('fs.pv.exitFullTitle') : t('fs.pv.fullTitle')}
-        >
-          {/* 退出全屏 / 全屏浏览 */}
-          ⛶ {full ? t('fs.pv.exitFull') : t('fs.pv.full')}
-        </button>
+        <Tooltip content={full ? t('fs.pv.exitFullTitle') : t('fs.pv.fullTitle')}>
+          <button
+            className={`mini ${full ? 'primary' : ''}`}
+            onClick={() => setFull((v) => !v)}
+            // 退出全屏（Esc） / 铺满窗口阅读长文，Esc 退出
+          >
+            {/* 退出全屏 / 全屏浏览 */}
+            ⛶ {full ? t('fs.pv.exitFull') : t('fs.pv.full')}
+          </button>
+        </Tooltip>
         {isMd && (
           // Markdown 渲染预览
-          <button className="mini" onClick={() => setMdPreview((v) => !v)} title={t('fs.pv.mdPreviewTitle')}>
-            {/* 📄 查看原文 / 👁 预览 */}
-            {mdPreview ? t('fs.pv.viewRaw') : t('fs.pv.previewToggle')}
-          </button>
+          <Tooltip content={t('fs.pv.mdPreviewTitle')}>
+            <button className="mini" onClick={() => setMdPreview((v) => !v)}>
+              {/* 📄 查看原文 / 👁 预览 */}
+              {mdPreview ? t('fs.pv.viewRaw') : t('fs.pv.previewToggle')}
+            </button>
+          </Tooltip>
         )}
         {isMd && mdPreview && tocItems.length > 0 && (
-          <button
-            className={`mini ${tocPop ? 'primary' : ''}`}
-            // 文档目录（点击展开 / 收起）
-            title={t('fs.pv.tocTitle')}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              // 按钮底边 + 左边缘：浮层贴按钮正下方、左缘对齐向右展开（用户定稿：尽量靠右、不偏离按钮）
-              setTocPop((v) => (v ? null : { y: r.bottom + 4, x: r.left }));
-            }}
-          >
-            {/* ☰ 目录 ({n}) */}
-            ☰ {t('fs.pv.tocCount', { n: tocItems.length })}
-          </button>
+          // 文档目录（点击展开 / 收起）
+          <Tooltip content={t('fs.pv.tocTitle')}>
+            <button
+              className={`mini ${tocPop ? 'primary' : ''}`}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                // 按钮底边 + 左边缘：浮层贴按钮正下方、左缘对齐向右展开（用户定稿：尽量靠右、不偏离按钮）
+                setTocPop((v) => (v ? null : { y: r.bottom + 4, x: r.left }));
+              }}
+            >
+              {/* ☰ 目录 ({n}) */}
+              ☰ {t('fs.pv.tocCount', { n: tocItems.length })}
+            </button>
+          </Tooltip>
         )}
         {/* 编辑：用系统默认程序打开（openWith 传空 exec = 默认程序）。
             **只给文本**：图片这类没有"文本编辑"的意义（二进制文档更进不到预览——双击时就被拦下了）。
             改完不回读内容：文件在别的程序手里、什么时候保存我们不知道；用户自己按「刷新」即可。
             **预览态不显示**（用户要求）：目录按钮占这个位置，且看渲染稿时想编辑本就该先切回原文。 */}
         {!target.img && !mdPreview && (
-          <button
-            className="mini"
-            onClick={(ev) => void openEditMenu(ev)}
-            // 选择用哪个程序打开来编辑这个文件；改完回到这里按「刷新」即可看到变更
-            title={t('fs.pv.editTitle')}
-          >
-            {/* ✎ 编辑：图标放左侧 */}
-            <span className="row" style={{ gap: 4, alignItems: 'center' }}>
-              <IconRename size={14} />
-              {t('fs.pv.edit')}
-            </span>
-          </button>
+          // 选择用哪个程序打开来编辑这个文件；改完回到这里按「刷新」即可看到变更
+          <Tooltip content={t('fs.pv.editTitle')}>
+            <button
+              className="mini"
+              onClick={(ev) => void openEditMenu(ev)}
+            >
+              {/* ✎ 编辑：图标放左侧 */}
+              <span className="row" style={{ gap: 4, alignItems: 'center' }}>
+                <IconRename size={14} />
+                {t('fs.pv.edit')}
+              </span>
+            </button>
+          </Tooltip>
         )}
           </>
         )}
@@ -678,26 +687,27 @@ export function PreviewPane(props: Props) {
       )}
       {/* 图片放大查看：全屏深色遮罩 + 原图自适应，点击遮罩 / ESC 关闭 */}
       {imgViewer && (
-        <div
-          className="modal-mask"
-          style={{
-            background: 'rgba(0,0,0,.78)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'zoom-out',
-            zIndex: 500,
-          }}
-          onClick={() => setImgViewer(null)}
-          // 点击关闭（ESC）
-          title={t('fs.pv.clickClose')}
-        >
-          <img
-            src={imgViewer}
-            style={{ maxWidth: '92vw', maxHeight: '92vh', objectFit: 'contain', borderRadius: 8, boxShadow: '0 12px 48px rgba(0,0,0,.55)' }}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
+        <Tooltip content={t('fs.pv.clickClose')}>
+          <div
+            className="modal-mask"
+            style={{
+              background: 'rgba(0,0,0,.78)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'zoom-out',
+              zIndex: 500,
+            }}
+            onClick={() => setImgViewer(null)}
+            // 点击关闭（ESC）
+          >
+            <img
+              src={imgViewer}
+              style={{ maxWidth: '92vw', maxHeight: '92vh', objectFit: 'contain', borderRadius: 8, boxShadow: '0 12px 48px rgba(0,0,0,.55)' }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </Tooltip>
       )}
     </div>
   );

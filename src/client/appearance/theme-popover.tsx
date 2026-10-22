@@ -12,6 +12,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { THEMES, type ThemeDef } from '../shell/header/index.js';
 import { IconPalette } from '../ui/icons.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { type MyTheme, toHex } from '../shared/theme.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 
@@ -123,21 +124,24 @@ export function ThemePopover(props: Props) {
             <div className="theme-pop-group">{t('look.myThemes')}</div>
             <div className="theme-pop-grid">
               {props.myThemes.map((th) => (
-                <button
-                  key={th.key}
-                  className={`theme-chip ${props.theme === th.key ? 'active' : ''}`}
+                <Tooltip
                   // {name}（右键删除）
-                  title={t('look.myThemes.deleteHint', { name: th.name })}
-                  onClick={() => props.onPick(th.key)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    props.onDelete(th.key);
-                  }}
+                  key={th.key}
+                  content={t('look.myThemes.deleteHint', { name: th.name })}
                 >
-                  <span className="theme-dot" style={{ background: th.panel, borderColor: th.accent }} />
-                  <span className="theme-chip-name">{th.name}</span>
-                </button>
+                  <button
+                    className={`theme-chip ${props.theme === th.key ? 'active' : ''}`}
+                    onClick={() => props.onPick(th.key)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      props.onDelete(th.key);
+                    }}
+                  >
+                    <span className="theme-dot" style={{ background: th.panel, borderColor: th.accent }} />
+                    <span className="theme-chip-name">{th.name}</span>
+                  </button>
+                </Tooltip>
               ))}
             </div>
           </>

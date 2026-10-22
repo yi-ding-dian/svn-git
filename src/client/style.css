@@ -1732,20 +1732,16 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
   font-size: 12px; line-height: 1.55;
   animation: tip-in .12s ease-out;
 }
-/* 小三角：与浮层同底色，只留朝外的两条边（另一侧被浮层盖住） */
-.tip-arrow {
-  position: absolute; width: 8px; height: 8px;
-  background: var(--panel);
-  transform: translateX(-50%) rotate(45deg);
-}
-.tip-top .tip-arrow { bottom: -5px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-.tip-bottom .tip-arrow { top: -5px; border-left: 1px solid var(--border); border-top: 1px solid var(--border); }
 .tip-title { font-weight: 600; }
+/* 纯字符串内容：保留 \n 换行（命令预览等） */
+.tip-text { white-space: pre-wrap; word-break: break-word; }
 /* 正文：分隔线 + 保留提交信息里的换行；超出高度截断（提交正文可能很长） */
 .tip-body {
   margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border2);
   white-space: pre-wrap; word-break: break-word;
-  max-height: 180px; overflow: hidden;
+  /* 上限跟随视口：固定 180px 会把折行后的提交正文从中间切断（用户实报「显示不全」）。
+     50vh 保证浮层能放进小窗口；正文超长时仍截断，但常规提交说明能完整显示 */
+  max-height: min(50vh, 360px); overflow: hidden;
 }
 /* md 渲染的正文：不能用 pre-wrap（marked 输出里标签之间的换行会被原样显示成空行），
    并把 .md-render 的文档级间距压到浮层尺寸 */

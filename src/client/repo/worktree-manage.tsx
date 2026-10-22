@@ -152,8 +152,9 @@ export function WorktreeManageDialog(props: {
                 <button
                   className="mini danger"
                   disabled={busy || Boolean(wt.locked) || wt.current}
-                  onClick={() => setRemoveFor(wt)}
+                  // 禁用态原因：disabled 按钮收不到悬浮事件，保持原生 title
                   title={wt.current ? t('repo.worktree.currentHint') : wt.locked ? t('repo.worktree.lockedHint') : undefined}
+                  onClick={() => setRemoveFor(wt)}
                 >
                   {t('repo.worktree.remove')}
                 </button>

@@ -1,6 +1,7 @@
 /** 关于弹窗：应用图标 + 名称 + 版本号 + 构建日期/提交（数据来自 /api/info，构建信息由 build-web.mjs 写入） */
 import React from 'react';
 import { ModalShell } from './modal-shell.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { t } from '../../shared/i18n/index.js';
 
 export function AboutModal(props: { version: string; buildDate: string; commit?: string; dirty?: boolean; onClose: () => void }) {
@@ -32,10 +33,12 @@ export function AboutModal(props: { version: string; buildDate: string; commit?:
           <span className="dim">{t('shell.about.version')}</span>v{props.version || t('shell.about.versionFailed')}
           {/* 构建提交（括号里那个）：这个包打自哪次代码；带 * = 构建时工作区有未提交改动 */}
           {props.commit ? (
-            <span className="dim" title={props.dirty ? t('shell.about.dirty') : undefined}>
-              （{props.commit}
-              {props.dirty ? '*' : ''}）
-            </span>
+            <Tooltip content={props.dirty ? t('shell.about.dirty') : ''}>
+              <span className="dim">
+                （{props.commit}
+                {props.dirty ? '*' : ''}）
+              </span>
+            </Tooltip>
           ) : null}
         </div>
         <div>

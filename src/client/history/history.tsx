@@ -7,6 +7,7 @@ import { ContextMenu } from '../ui/context-menu.js';
 import { ConfirmModal, InfoModal } from '../ui/prompt.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { ClickTip } from '../ui/ui.js';
+import { Tooltip, TipMarkdown } from '../ui/tooltip.js';
 import { IconOk, IconErr, IconResizeHorizontal } from '../ui/icons.js';
 import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
@@ -401,49 +402,53 @@ export function HistoryView(props: Props) {
                   // 只有第一条未推送（HEAD）可右键操作：amend/reset 只作用于最近一次提交
                   const opable = isUnpushed && logs.indexOf(l) === headIdx;
                   return (
-                    <div
-                      key={l.rev}
-                      className="list-item"
-                      title={fullMsgs[l.rev] ?? l.msg}
-                      style={{
-                        background: sel === l ? 'var(--panel2)' : undefined,
-                        position: 'absolute',
-                        top: i * ROW_H,
-                        left: 0,
-                        right: 0,
-                        height: ROW_H - 2,
-                        boxSizing: 'border-box',
-                        marginBottom: 2,
-                      }}
-                      onClick={() => {
-                        setSel(l);
-                        setDiffOf(null);
-                      }}
-                      onContextMenu={
-                        isUnpushed || props.path
-                          ? (e) => {
-                              e.preventDefault();
-                              setMenu({ x: e.clientX, y: e.clientY, index: logs.indexOf(l) });
-                            }
-                          : undefined
-                      }
-                    >
-                      <span className="rev">{l.rev}</span>
-                      <span className="date">{l.date.slice(0, 16)}</span>
-                      <span className="author">{l.author}</span>
-                      <span className="msg">{l.msg}</span>
-                      {/* 合并提交：⇄ + 相对第一父的文件数（后端 log 已带 --diff-merges=first-parent） */}
-                      <span className="stat" title={l.isMerge ? t('hist.mergeStatTip') : undefined}>
-                        {l.isMerge ? `⇄ ${l.changed.length}` : l.changed.length}
-                      </span>
-                      {isUnpushed && (
-                        // 未推送：本地领先远程 {n} 个提交
-                        <span className="unpushed" title={t('hist.unpushedTip', { n: unpushed.length })}>
-                          <span className="unpushed-dot" />
-                          {opable && <span className="unpushed-n">{unpushed.length}</span>}
-                        </span>
-                      )}
-                    </div>
+                    <Tooltip key={l.rev} content={<TipMarkdown text={fullMsgs[l.rev] ?? l.msg} />}>
+                      <div
+                        className="list-item"
+                        style={{
+                          background: sel === l ? 'var(--panel2)' : undefined,
+                          position: 'absolute',
+                          top: i * ROW_H,
+                          left: 0,
+                          right: 0,
+                          height: ROW_H - 2,
+                          boxSizing: 'border-box',
+                          marginBottom: 2,
+                        }}
+                        onClick={() => {
+                          setSel(l);
+                          setDiffOf(null);
+                        }}
+                        onContextMenu={
+                          isUnpushed || props.path
+                            ? (e) => {
+                                e.preventDefault();
+                                setMenu({ x: e.clientX, y: e.clientY, index: logs.indexOf(l) });
+                              }
+                            : undefined
+                        }
+                      >
+                        <span className="rev">{l.rev}</span>
+                        <span className="date">{l.date.slice(0, 16)}</span>
+                        <span className="author">{l.author}</span>
+                        <span className="msg">{l.msg}</span>
+                        {/* 合并提交：⇄ + 相对第一父的文件数（后端 log 已带 --diff-merges=first-parent） */}
+                        <Tooltip content={l.isMerge ? t('hist.mergeStatTip') : ''}>
+                          <span className="stat">
+                            {l.isMerge ? `⇄ ${l.changed.length}` : l.changed.length}
+                          </span>
+                        </Tooltip>
+                        {isUnpushed && (
+                          // 未推送：本地领先远程 {n} 个提交
+                          <Tooltip content={t('hist.unpushedTip', { n: unpushed.length })}>
+                            <span className="unpushed">
+                              <span className="unpushed-dot" />
+                              {opable && <span className="unpushed-n">{unpushed.length}</span>}
+                            </span>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </Tooltip>
                   );
                 });
               })()}
@@ -493,24 +498,24 @@ export function HistoryView(props: Props) {
                 flexShrink: 0, // 空间不够时只让下面的变更文件列表收缩，说明块保持自己的封顶高度
               }}
             >
-              <div
-                className="md-render commit-msg-md dim"
-                onClick={() => detailMsgLong && !detailMsgOpen && setMsgExpanded(true)}
-                // 点击展开全文
-                title={detailMsgLong && !detailMsgOpen ? t('hist.clickExpand') : undefined}
-                style={{
-                  // 折叠态只露一行：高度按 .md-render 的行高（1.75）算，首段的 margin 由 CSS 去掉
-                  maxHeight: detailMsgOpen ? undefined : '1.75em',
-                  // 展开：超出封顶高度时本区内部滚动；折叠：裁掉一行以外的内容
-                  overflow: detailMsgOpen ? 'auto' : 'hidden',
-                  minHeight: 0, // 允许在 flex 栏里收缩到内容高度以下，滚动条才出得来
-                  cursor: detailMsgLong && !detailMsgOpen ? 'pointer' : undefined,
-                }}
-                // 提交信息按 md 渲染（breaks: 单换行也换行，纯文本写的注释不会粘成一段）。
-                // 与 reword 弹窗的「预览」用同一套渲染 —— 所见即所得；老提交里那些 ** 也就地变成粗体，
-                // 不用改写历史（用户报的正是"历史里星号原样露出"）
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(detailMsg, { breaks: true }) }}
-              />
+              <Tooltip content={detailMsgLong && !detailMsgOpen ? t('hist.clickExpand') : ''}>
+                <div
+                  className="md-render commit-msg-md dim"
+                  onClick={() => detailMsgLong && !detailMsgOpen && setMsgExpanded(true)}
+                  style={{
+                    // 折叠态只露一行：高度按 .md-render 的行高（1.75）算，首段的 margin 由 CSS 去掉
+                    maxHeight: detailMsgOpen ? undefined : '1.75em',
+                    // 展开：超出封顶高度时本区内部滚动；折叠：裁掉一行以外的内容
+                    overflow: detailMsgOpen ? 'auto' : 'hidden',
+                    minHeight: 0, // 允许在 flex 栏里收缩到内容高度以下，滚动条才出得来
+                    cursor: detailMsgLong && !detailMsgOpen ? 'pointer' : undefined,
+                  }}
+                  // 提交信息按 md 渲染（breaks: 单换行也换行，纯文本写的注释不会粘成一段）。
+                  // 与 reword 弹窗的「预览」用同一套渲染 —— 所见即所得；老提交里那些 ** 也就地变成粗体，
+                  // 不用改写历史（用户报的正是"历史里星号原样露出"）
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(detailMsg, { breaks: true }) }}
+                />
+              </Tooltip>
               {detailMsgLong && (
                 // alignSelf: flex-start —— 外层是 flex 栏，默认 stretch 会把按钮拉成通栏宽（应是内容宽的小按钮）
                 <button
@@ -737,16 +742,16 @@ export function HistoryView(props: Props) {
                   dangerouslySetInnerHTML={{ __html: renderMarkdown(amendMsg, { breaks: true }) }}
                 />
               ) : (
-                <textarea
-                  className="mono"
-                  rows={autoSizeForText(amendMsg).rows}
-                  // 完整提交说明（第一行为标题，空行后为正文），可直接编辑
-                  title={t('hist.amendInputTip')}
-                  style={{ width: '100%', flex: 1, minHeight: 120 }}
-                  value={amendMsg}
-                  onChange={(e) => setAmendMsg(e.target.value)}
-                  autoFocus
-                />
+                <Tooltip content={t('hist.amendInputTip')}>
+                  <textarea
+                    className="mono"
+                    rows={autoSizeForText(amendMsg).rows}
+                    style={{ width: '100%', flex: 1, minHeight: 120 }}
+                    value={amendMsg}
+                    onChange={(e) => setAmendMsg(e.target.value)}
+                    autoFocus
+                  />
+                </Tooltip>
               )}
               {amendNotice && (
                 <div className="error small" style={{ marginTop: 6, wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: 6 }}>

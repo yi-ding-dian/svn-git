@@ -10,6 +10,7 @@ import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { runAction } from '../shared/vcs-action.js';
 import { ResultLine } from '../ui/result-line.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { joinPath, isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 import { useGitHubCred, GitHubCredBox } from './github-cred.js';
@@ -137,10 +138,12 @@ export function CreateRepoDialog(props: {
       {props.onOpenPractice && (
         <div className="row" style={{ marginTop: 10, gap: 8 }}>
           <span className="dim small">{t('repo.practice.createHint')}</span>
-          <button className="mini" onClick={props.onOpenPractice} title={t('repo.practice.createEntryTip')}>
-            {/* 🧪 练习仓库… */}
-            {t('repo.practice.createEntry')}
-          </button>
+          <Tooltip content={t('repo.practice.createEntryTip')}>
+            <button className="mini" onClick={props.onOpenPractice}>
+              {/* 🧪 练习仓库… */}
+              {t('repo.practice.createEntry')}
+            </button>
+          </Tooltip>
         </div>
       )}
       <div style={{ marginTop: 12 }} />
@@ -165,10 +168,12 @@ export function CreateRepoDialog(props: {
         <div className="row" style={{ gap: 8 }}>
           <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} />
           {/* 打开文件夹浏览（可新建/重命名文件夹） */}
-          <button className="mini tool-btn" title={t('repo.browseTip')} onClick={() => setPicker(true)}>
-            {/* 📂 浏览 */}
-            {t('repo.browse')}
-          </button>
+          <Tooltip content={t('repo.browseTip')}>
+            <button className="mini tool-btn" onClick={() => setPicker(true)}>
+              {/* 📂 浏览 */}
+              {t('repo.browse')}
+            </button>
+          </Tooltip>
         </div>
       </FormRow>
       {/* 仓库名称 */}
@@ -446,10 +451,12 @@ export function GetRepoDialog(props: {
         <div className="row" style={{ gap: 8 }}>
           <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} />
           {/* 打开文件夹浏览（可新建/重命名文件夹） */}
-          <button className="mini tool-btn" title={t('repo.browseTip')} onClick={() => setPicker(true)}>
-            {/* 📂 浏览 */}
-            {t('repo.browse')}
-          </button>
+          <Tooltip content={t('repo.browseTip')}>
+            <button className="mini tool-btn" onClick={() => setPicker(true)}>
+              {/* 📂 浏览 */}
+              {t('repo.browse')}
+            </button>
+          </Tooltip>
         </div>
       </FormRow>
       {/* 本地名称（工作副本名） */}
