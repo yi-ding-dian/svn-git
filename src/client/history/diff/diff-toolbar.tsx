@@ -7,6 +7,7 @@ import type { DiffLabels, DiffTarget } from './diff-types.js';
 import type { DiffBlock, DiffVersions } from './use-diff-rows.js';
 import type { DiffEditApi } from './use-diff-edit.js';
 import type { DiffSearchApi } from './use-diff-search.js';
+import { Tooltip } from '../../ui/tooltip.js';
 
 /** 文件被外部改动时的提示条：更新文件（重拉两侧版本与 diff）/ 忽略 */
 export function DiffStaleTip(props: { onReload: () => void; onDismiss: () => void }) {
@@ -69,15 +70,15 @@ export function DiffTopBar(props: {
           {/* 下一个 ↓ */}
           <button className="mini" onClick={goNextBlock}>{t('hist.nextBlock')}</button>
           {showAll && (
-            <button
-              className={`mini${syncMode ? ' primary' : ''}`}
-              onClick={() => setSyncMode((v) => !v)}
-              // 开启后滚动任一栏，另一栏自动跟随（预览模式下为按比例跟随，无行对齐）
-              title={t('hist.syncTip')}
-            >
-              {/* ↔ 同步滚动 */}
-              {t('hist.syncScroll')}
-            </button>
+            <Tooltip content={t('hist.syncTip')}>
+              <button
+                className={`mini${syncMode ? ' primary' : ''}`}
+                onClick={() => setSyncMode((v) => !v)}
+              >
+                {/* ↔ 同步滚动 */}
+                {t('hist.syncScroll')}
+              </button>
+            </Tooltip>
           )}
         </>
       )}
@@ -132,15 +133,16 @@ export function DiffPaneHeaders(props: {
       <button className="mini" style={{ padding: '0 6px', height: 20, lineHeight: '18px' }} title={t('hist.prevBlock')} onClick={goPrevBlock}>↑</button>
       <button className="mini" style={{ padding: '0 6px', height: 20, lineHeight: '18px' }} title={t('hist.nextBlock')} onClick={goNextBlock}>↓</button>
       {showAll && (
-        <button
-          className={`mini${syncMode ? ' primary' : ''}`}
-          style={{ padding: '0 6px', height: 20, lineHeight: '18px' }}
-          onClick={() => setSyncMode((v) => !v)}
-          title={t('hist.syncTip')}
-        >
-          {/* ↔ 同步滚动 */}
-          {t('hist.syncScroll')}
-        </button>
+        <Tooltip content={t('hist.syncTip')}>
+          <button
+            className={`mini${syncMode ? ' primary' : ''}`}
+            style={{ padding: '0 6px', height: 20, lineHeight: '18px' }}
+            onClick={() => setSyncMode((v) => !v)}
+          >
+            {/* ↔ 同步滚动 */}
+            {t('hist.syncScroll')}
+          </button>
+        </Tooltip>
       )}
     </div>
   );
@@ -210,15 +212,15 @@ export function DiffPaneHeaders(props: {
             )}
             {/* 显示全部：左栏从差异片段展开为完整原版（开启后顶栏出现「同步滚动」；关掉时联动关同步。
                 放左栏头部：它管的就是左栏，与「预览」等左栏查看方式并列） */}
-            <button
-              className={`mini${showAll ? ' primary' : ''}`}
-              onClick={onToggleShowAll}
-              // 左栏展开为完整文件内容（未改动行平铺显示，差异行照旧标记）
-              title={t('hist.showAllTip')}
-            >
-              {/* 显示全部 */}
-              {t('hist.showAll')}
-            </button>
+            <Tooltip content={t('hist.showAllTip')}>
+              <button
+                className={`mini${showAll ? ' primary' : ''}`}
+                onClick={onToggleShowAll}
+              >
+                {/* 显示全部 */}
+                {t('hist.showAll')}
+              </button>
+            </Tooltip>
             {isMd && previewL && (
               // 返回差异行视图
               <button className="mini" onClick={() => setPreviewL((v) => !v)} title={t('hist.backToDiff')}>
@@ -293,7 +295,9 @@ export function DiffPaneHeaders(props: {
             {/* ✎ 编辑：右栏就地编辑（定位到当前差异处；非 UTF-8/超限文件点击时提示）。
                 历史版本只读：不提供编辑入口 */}
             {!readOnly && (
-              <button className="mini" onClick={edit.startEdit} title={t('hist.editInPlaceTip')}>{t('fs.pv.edit')}</button>
+              <Tooltip content={t('hist.editInPlaceTip')}>
+                <button className="mini" onClick={edit.startEdit}>{t('fs.pv.edit')}</button>
+              </Tooltip>
             )}
             {isMd && (
               // 返回差异行视图 / Markdown 渲染预览（当前）

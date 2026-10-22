@@ -8,6 +8,7 @@
  *  滚动/尺寸变化时用 rAF 合批重绘。 */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
+import { Tooltip } from '../ui/tooltip.js';
 
 /** 连接带宽度（px）：左右两栏之间的固定窄带，不参与左右比例拖拽 */
 export const CONNECT_WIDTH = 44;
@@ -192,23 +193,28 @@ export function DiffConnectors(props: Props) {
         view.links.map((l) => {
           const disabled = Boolean(props.restoreDisabledReason);
           return (
-            <button
+            <Tooltip
               key={`restore-${l.id}`}
-              className={`sb-restore-btn${disabled ? ' disabled' : ''}`}
-              disabled={disabled}
-              // 块首行贴视口顶/底时，按钮（24px、translateY(-50%)）会有一半被 overflow 裁掉；
-              // 内缩半个按钮高度，保证任何滚动位置都完整可见
-              style={{ top: Math.min(Math.max(l.top, 12), Math.max(12, view.h - 12)) }}
-              title={disabled ? props.restoreDisabledReason : t('hist.restoreBlockTip')}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!disabled) onRestore(l.id, l.index);
-              }}
+              content={disabled ? props.restoreDisabledReason : t('hist.restoreBlockTip')}
             >
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9H14M9.5 4.5L14 9l-4.5 4.5" />
-              </svg>
-            </button>
+              <button
+                className={`sb-restore-btn${disabled ? ' disabled' : ''}`}
+                // 用 aria-disabled 而不是 disabled：disabled 按钮不派发鼠标事件，悬浮提示就弹不出来；
+                // 点击仍由 onClick 里的 !disabled 拦住
+                aria-disabled={disabled}
+                // 块首行贴视口顶/底时，按钮（24px、translateY(-50%)）会有一半被 overflow 裁掉；
+                // 内缩半个按钮高度，保证任何滚动位置都完整可见
+                style={{ top: Math.min(Math.max(l.top, 12), Math.max(12, view.h - 12)) }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!disabled) onRestore(l.id, l.index);
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 9H14M9.5 4.5L14 9l-4.5 4.5" />
+                </svg>
+              </button>
+            </Tooltip>
           );
         })}
     </div>

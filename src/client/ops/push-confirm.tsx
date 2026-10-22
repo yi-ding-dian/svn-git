@@ -5,6 +5,7 @@ import { ResizableModal } from '../shell/modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { ConfirmModal, InfoModal } from '../ui/prompt.js';
 import { ClickTip } from '../ui/ui.js';
+import { Tooltip, TipTitle, TipMarkdown, TipHint } from '../ui/tooltip.js';
 import { autoSizeForText } from '../shared/utils.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { launchMagicFlight } from '../animations/index.js';
@@ -23,6 +24,18 @@ const BINARY_EXT = new Set([
 function isTextFile(p: string): boolean {
   const ext = p.split('.').pop()?.toLowerCase() ?? '';
   return ext ? !BINARY_EXT.has(ext) : true; // 无扩展名视为文本
+}
+
+/** 悬浮提示里正文最多显示的行数：提交说明可能很长，超出加省略号（浮层另有 max-height 兜底） */
+const TIP_BODY_LINES = 12;
+
+/** 完整提交信息剥掉首行标题后的正文（列表接口只带标题，正文按需拉取） */
+function commitBody(full: string | undefined): string {
+  if (!full) return '';
+  const i = full.indexOf('\n');
+  if (i < 0) return '';
+  const lines = full.slice(i + 1).trim().split('\n');
+  return lines.length > TIP_BODY_LINES ? `${lines.slice(0, TIP_BODY_LINES).join('\n')}\n…` : lines.join('\n');
 }
 
 export function PushConfirmModal(props: {
@@ -225,18 +238,28 @@ export function PushConfirmModal(props: {
           {/* 没有未推送的提交 */}
           {unpushed.length === 0 && !loading && <div className="dim" style={{ padding: 8 }}>{t('ops.push.noUnpushed')}</div>}
           <div className="vcs-list" style={{ border: '1px solid var(--border)', borderRadius: 8 }}>
-            {unpushed.map((l, i) => (
+            {unpushed.map((l, i) => {
+              const body = commitBody(fullMsgs[l.rev]);
+              return (
               <div key={l.rev}>
-                <div
-                  className="vcs-row"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setExpanded(expanded === l.rev ? null : l.rev)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setMenu({ x: e.clientX, y: e.clientY, index: i });
-                  }}
-                  title={`${fullMsgs[l.rev] ?? l.msg}\n${t(i === 0 ? 'ops.push.tipHead' : 'ops.push.tipOther')}`}
+                <Tooltip
+                  content={
+                    <>
+                      <TipTitle>{l.msg}</TipTitle>
+                      {body && <TipMarkdown text={body} />}
+                      <TipHint>{t(i === 0 ? 'ops.push.tipHead' : 'ops.push.tipOther')}</TipHint>
+                    </>
+                  }
                 >
+                  <div
+                    className="vcs-row"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setExpanded(expanded === l.rev ? null : l.rev)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setMenu({ x: e.clientX, y: e.clientY, index: i });
+                    }}
+                  >
                   <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.6)', flexShrink: 0 }} />
                   <span className="mono small" style={{ flexShrink: 0 }}>{l.rev}</span>
                   <span className="small dim" style={{ flexShrink: 0 }}>{l.date.slice(0, 16)}</span>
@@ -251,7 +274,8 @@ export function PushConfirmModal(props: {
                   <span className="small dim" style={{ flexShrink: 0 }}>
                     {l.isMerge ? t('ops.push.mergeTag') : t('ops.push.filesCount', { n: l.changed.length })} {expanded === l.rev ? '▾' : '▸'}
                   </span>
-                </div>
+                  </div>
+                </Tooltip>
                 {expanded === l.rev && (
                   <div style={{ padding: '2px 10px 8px 44px', background: 'var(--panel2)' }}>
                     {/* 合并提交说明 / 无文件变更 */}
@@ -280,7 +304,8 @@ export function PushConfirmModal(props: {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
           {notice && (
             <div className={noticeErr ? 'error' : 'small'} style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>

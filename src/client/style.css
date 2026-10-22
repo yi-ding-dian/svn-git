@@ -1716,3 +1716,49 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 @keyframes hg-sand-bot { 0%, 22% { transform: scaleY(0); } 100% { transform: scaleY(1); } }
 .hg-sand-top { transform-origin: 12px 4.4px; animation: hg-sand-top 2.4s ease-in infinite; }
 .hg-sand-bot { transform-origin: 12px 19.6px; animation: hg-sand-bot 2.4s ease-in infinite; }
+
+/* ---------- 通用悬浮提示（ui/tooltip.tsx）：替代原生 title ----------
+ * 层级高于弹窗（弹窗最高 320）：浮层可能贴着弹窗边缘/按钮出现。
+ * 颜色全走主题变量，深浅主题自动适配；pointer-events:none 不挡鼠标。 */
+.tip-layer {
+  position: fixed; z-index: 1000; pointer-events: none;
+  max-width: min(420px, calc(100vw - 16px));
+  padding: 9px 11px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .16), 0 2px 6px rgba(0, 0, 0, .08);
+  font-size: 12px; line-height: 1.55;
+  animation: tip-in .12s ease-out;
+}
+/* 小三角：与浮层同底色，只留朝外的两条边（另一侧被浮层盖住） */
+.tip-arrow {
+  position: absolute; width: 8px; height: 8px;
+  background: var(--panel);
+  transform: translateX(-50%) rotate(45deg);
+}
+.tip-top .tip-arrow { bottom: -5px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.tip-bottom .tip-arrow { top: -5px; border-left: 1px solid var(--border); border-top: 1px solid var(--border); }
+.tip-title { font-weight: 600; }
+/* 正文：分隔线 + 保留提交信息里的换行；超出高度截断（提交正文可能很长） */
+.tip-body {
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border2);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 180px; overflow: hidden;
+}
+/* md 渲染的正文：不能用 pre-wrap（marked 输出里标签之间的换行会被原样显示成空行），
+   并把 .md-render 的文档级间距压到浮层尺寸 */
+.tip-md { white-space: normal; line-height: 1.55; }
+.tip-md p { margin: 4px 0; }
+.tip-md ul, .tip-md ol { margin: 4px 0; padding-left: 20px; }
+.tip-md h1, .tip-md h2, .tip-md h3, .tip-md h4, .tip-md h5, .tip-md h6 {
+  font-size: 1em; margin: 6px 0 2px; padding-bottom: 0; border-bottom: 0;
+}
+.tip-md pre { margin: 4px 0; padding: 6px 8px; }
+.tip-md blockquote { margin: 4px 0; padding: 4px 8px; }
+.tip-md > :first-child { margin-top: 0; }
+.tip-md > :last-child { margin-bottom: 0; }
+.tip-hint { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border2); font-size: 11px; color: var(--dim); }
+@keyframes tip-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+

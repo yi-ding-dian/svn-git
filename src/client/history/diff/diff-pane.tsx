@@ -12,6 +12,7 @@ import type { DiffEditApi } from './use-diff-edit.js';
 import type { DiffNavigationApi } from './use-diff-navigation.js';
 import type { DiffSearchApi } from './use-diff-search.js';
 import type { DiffBlock, DiffVersions, LeftRow, RightRow } from './use-diff-rows.js';
+import { Tooltip } from '../../ui/tooltip.js';
 
 export function DiffPane(props: {
   isMd: boolean;
@@ -142,7 +143,8 @@ export function DiffPane(props: {
       </div>
       {/* 滚动条预览标记：绿=新增/修改，红=删除；点击两侧联动定位（与右栏刻度同行为） */}
       {navigation.leftScrollMarkers.length > 0 && (
-        <div className="sb-scrollbar" title={t('hist.markerTip')}>
+        <Tooltip content={t('hist.markerTip')}>
+        <div className="sb-scrollbar">
           {navigation.leftScrollMarkers.map((m) => (
             <div
               key={m.block}
@@ -158,13 +160,16 @@ export function DiffPane(props: {
             />
           ))}
         </div>
+        </Tooltip>
       )}
       </div>
       {/* 拖拽手柄 */}
       {/* 拖动调整左右栏宽度 */}
-      <div className="sb-resizer" onMouseDown={navigation.startDrag} title={t('hist.dragResizer')}>
-        <span className="sb-resizer-grip"><IconResizeHorizontal size={14} /></span>
-      </div>
+      <Tooltip content={t('hist.dragResizer')}>
+        <div className="sb-resizer" onMouseDown={navigation.startDrag}>
+          <span className="sb-resizer-grip"><IconResizeHorizontal size={14} /></span>
+        </div>
+      </Tooltip>
       {/* 中间连接带：曲线连接左右对应的差异块（行元素缺失时自然留空，如 Markdown 预览/就地编辑） */}
       <DiffConnectors
         leftPane={leftPane}
@@ -262,7 +267,8 @@ export function DiffPane(props: {
       {/* 滚动条预览标记：绿=新增/修改，红=删除 */}
       {navigation.scrollMarkers.length > 0 && (
         // 修改位置（点击跳转）
-        <div className="sb-scrollbar" title={t('hist.markerTip')}>
+        <Tooltip content={t('hist.markerTip')}>
+        <div className="sb-scrollbar">
           {navigation.scrollMarkers.map((m) => (
             <div
               key={m.block}
@@ -277,6 +283,7 @@ export function DiffPane(props: {
             />
           ))}
         </div>
+        </Tooltip>
       )}
       </div>
       )}
