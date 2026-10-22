@@ -15,7 +15,7 @@ import { CommitSelectModal } from '../ops/commit-select.js';
 import { BranchDialog } from '../ops/branch/index.js';
 import type { PickDirRequest } from '../ops/branch/branch-shared.js';
 import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
-import { TagDialog, GitInfoModal } from '../ops/tag-git-info.js';
+import { TagDialog, GitInfoModal, type TagEntry } from '../ops/tag-git-info.js';
 import { GitHubCreateModal } from '../repo/github-create-repo.js';
 import { GitHubDeleteModal } from '../repo/github-delete-repo.js';
 import { GitHubForkModal } from '../repo/github-fork.js';
@@ -27,6 +27,8 @@ import { LoginModal } from '../repo/login.js';
 import { PracticeRepoDialog } from '../repo/practice/index.js';
 import { EnvInstallModal } from '../repo/env-install.js';
 import { RepoBrowseModal } from '../repo/repo-browse.js';
+import { CheckoutDialog } from '../repo/checkout.js';
+import { CheckoutAuthModal, useCheckoutTask } from '../repo/checkout-task.js';
 import { PickDirModal } from '../repo/pick-dir.js';
 import { CreateRepoDialog, GetRepoDialog, type GitHubSetupOpts } from '../repo/repo-create.js';
 import { RevertModal } from '../filesystem/revert.js';
@@ -141,6 +143,8 @@ export function ModalHost(props: ModalHostProps) {
    *  GitHub 新建仓库成功后顶栏不显示仓库地址） */
   /** 目录选择弹窗（业务域借用）：ops 不能直接引用 repo 的目录浏览器，由 shell 统一渲染 */
   const [pickDir, setPickDir] = useState<PickDirRequest | null>(null);
+  /** 标签检出的目标（标签管理弹窗点「检出」后由 shell 统一渲染检出弹窗，避免 ops → repo 跨域引用） */
+  const [tagCheckout, setTagCheckout] = useState<TagEntry | null>(null);
 
   const refreshInfo = () => {
     // remote=true：分支切换/合并会改变"相对上游的 behind"，侧栏 ⬇ 角标必须跟着重探
@@ -197,6 +201,19 @@ export function ModalHost(props: ModalHostProps) {
   /** 获取仓库：后台任务发起器 + 认证失败引导框（实现在 repo/get-repo-task，三个入口共用一套） */
   const { start: startGetRepoTask, auth: getAuth, closeAuth: closeGetAuth } = useGetRepoTask({
     onCreated: openClonedRepo,
+    onToast: showToast,
+  });
+
+  /** 标签检出：后台任务 + 认证失败引导框。完成后不切换当前项目（与仓库浏览检出同一定稿），只收录「最近项目」 */
+  const { start: startTagCheckout, auth: tagCheckoutAuth, closeAuth: closeTagCheckoutAuth } = useCheckoutTask({
+    onCreated: (dir) => {
+      void post
+        .history(dir, 'svn')
+        .then(() => loadHistory())
+        .catch(() => {
+          /* 收录失败不打扰（工作副本本身已检出成功） */
+        });
+    },
     onToast: showToast,
   });
 
@@ -294,6 +311,11 @@ export function ModalHost(props: ModalHostProps) {
           repoType={repo.type}
           onClose={() => setModal(null)}
           onChanged={refreshInfo}
+          onCheckout={(tg) => {
+            // 先关标签弹窗，再开检出弹窗（避免两个 ModalShell 叠加）
+            setModal(null);
+            setTagCheckout(tg);
+          }}
         />
       )}
       {modal?.type === 'stash' && <StashDialog onClose={() => setModal(null)} onChanged={() => refresh()} />}
@@ -636,6 +658,16 @@ export function ModalHost(props: ModalHostProps) {
           }
         />
       )}
+      {/* 标签检出：详情卡 + 选择性检出 + 目录预览（复用仓库浏览的检出弹窗） */}
+      {tagCheckout && (
+        <CheckoutDialog
+          url={tagCheckout.url}
+          detail={tagCheckout}
+          onClose={() => setTagCheckout(null)}
+          onStart={startTagCheckout}
+        />
+      )}
+      {tagCheckoutAuth && <CheckoutAuthModal auth={tagCheckoutAuth} onClose={closeTagCheckoutAuth} onToast={showToast} />}
       {/* 目录选择：后渲染 → 叠在业务弹窗之上（合并范围「浏览…」等） */}
       {pickDir && (
         <PickDirModal

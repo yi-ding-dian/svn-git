@@ -159,9 +159,15 @@ export function startServer(): Promise<ServerHandle> {
         const target = path.join(dir, name);
         let exists = false;
         let existsNonEmpty = false;
+        let onlySvn = false;
         try {
           exists = fs.existsSync(target);
-          if (exists) existsNonEmpty = fs.readdirSync(target).length > 0;
+          if (exists) {
+            const entries = fs.readdirSync(target);
+            existsNonEmpty = entries.length > 0;
+            // 只有 .svn = 上次检出中断的残骸：检出时会自动清理重来，前端不应按"非空"拦截
+            onlySvn = entries.length === 1 && entries[0] === '.svn';
+          }
         } catch {
           /* 目标不可读时按不存在处理，不阻断 */
         }
@@ -171,6 +177,7 @@ export function startServer(): Promise<ServerHandle> {
           target,
           exists,
           existsNonEmpty,
+          onlySvn,
           inRepo: inRepo ? { type: inRepo.type, root: inRepo.root } : null,
         });
         return;

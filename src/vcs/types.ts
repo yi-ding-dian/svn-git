@@ -236,6 +236,8 @@ export interface Vcs {
   /** 删除远程分支（git push --delete，name 为 origin/xxx 形式；最终仅在 reflog/push 后可恢复）。svn 无本地/远程之分，不实现 */
   branchRemoteDelete?(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }>;
   tagList(): Promise<string[]>;
+  /** SVN：tags/ 目录的完整 URL（标签检出用）；无法确定时 undefined。git 不实现 */
+  tagsBaseUrl?(): Promise<string | undefined>;
   tagCreate(name: string, message?: string, rev?: string): Promise<VcsResult>;
   tagDelete(name: string): Promise<VcsResult>;
   blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]>;

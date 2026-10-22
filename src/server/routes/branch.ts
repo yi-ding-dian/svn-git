@@ -396,7 +396,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const tags = await vcs.tagList();
         // svn 附带仓库布局探测（git 无 layout 方法，?. 跳过）
         const layout = await vcs.layout?.().catch(() => undefined);
-        sendJson(res, 200, layout ? { tags, layout } : { tags });
+        // svn 附带 tags/ 目录 URL：前端据此拉标签详情并检出（git 不实现，?. 跳过）
+        const baseUrl = await vcs.tagsBaseUrl?.().catch(() => undefined);
+        sendJson(res, 200, { tags, ...(layout ? { layout } : {}), ...(baseUrl ? { baseUrl } : {}) });
         return true;
       }
 

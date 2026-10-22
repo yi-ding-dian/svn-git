@@ -6,7 +6,7 @@
  *
  *  入口：repo-browse.tsx 树里右键（目录行 + 空白 = 仓库根）。 */
 import React, { useEffect, useRef, useState } from 'react';
-import { get } from '../shared/api.js';
+import { get, post, type RepoCheck } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { launchMagicFlight } from '../animations/index.js';
 import { PickDirModal } from './pick-dir.js';
@@ -29,9 +29,27 @@ function defaultName(url: string): string {
   }
 }
 
+/** 标签检出时展示的附加详情（来自标签列表；rev/author/date 为标签目录自身的最后修改） */
+export interface CheckoutDetail {
+  name: string;
+  url: string;
+  rev?: string;
+  author?: string;
+  date?: string;
+}
+
+/** ISO 时间 → 本地可读（解析失败原样返回） */
+function formatDate(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
 export function CheckoutDialog(props: {
   /** 要检出的远程目录 URL（树行 = 行 URL；空白右键 = 仓库根） */
   url: string;
+  /** 标签检出：顶部附加标签详情卡（名称/版本/作者/时间 + 只读提示） */
+  detail?: CheckoutDetail;
   onClose: () => void;
   /** 点「检出」：把参数交给调用方发起后台任务（本弹窗随即关闭） */
   onStart: (p: CheckoutParams) => void;
@@ -65,6 +83,9 @@ export function CheckoutDialog(props: {
   const [sizeOpen, setSizeOpen] = useState(false);
   /** 检出二次确认弹窗（列范围树与落地信息，确认后才真正发起） */
   const [confirmOpen, setConfirmOpen] = useState(false);
+  /** 检出目录预览的轻量预检（目标是否存在/非空、是否位于工作副本内）：输入防抖 400ms */
+  const [precheck, setPrecheck] = useState<RepoCheck | null>(null);
+  const [precheckState, setPrecheckState] = useState<'idle' | 'loading' | 'fail'>('idle');
 
   // 默认所在目录 = home（与「打开项目」默认一致）；顺带查 SVN 身份（标题显示用：
   // 工具配置 + 系统凭据缓存——裸跑时 svn 实际用的就是缓存身份）
@@ -86,6 +107,43 @@ export function CheckoutDialog(props: {
       });
   }, [props.url]);
 
+  // 目录预览预检：目录/名称变化后防抖查询（后端只读检查，不创建任何东西）。
+  // 目标非空且不是 .svn 残留时提前禁用检出——否则用户要等到二次确认后才被后端拒绝。
+  useEffect(() => {
+    const d = dir.trim();
+    const n = name.trim();
+    if (!d || !n) {
+      setPrecheck(null);
+      setPrecheckState('idle');
+      return;
+    }
+    let alive = true;
+    setPrecheckState('loading');
+    const timer = setTimeout(() => {
+      post
+        .repoCheck('svn', d, n, props.url)
+        .then((r) => {
+          if (!alive) return;
+          setPrecheck(r);
+          setPrecheckState('idle');
+        })
+        .catch(() => {
+          if (!alive) return;
+          setPrecheck(null);
+          setPrecheckState('fail');
+        });
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [dir, name, props.url]);
+
+  /** 落地路径（所在目录 + 本地名称）：目录预览用 */
+  const target = dir.trim() && name.trim() ? joinPath(dir.trim(), name.trim()) : '';
+  /** 目标非空且不是「只有 .svn 残留」：检出必然失败，提前拦（后端同样会拒绝） */
+  const targetBlocked = Boolean(precheck?.existsNonEmpty && !precheck.onlySvn);
+
   /** 表单校验（「检出」按钮与回车都先过这里）：通过则进入二次确认 */
   const validate = (): boolean => {
     if (checkedDirs.size === 0) {
@@ -97,6 +155,12 @@ export function CheckoutDialog(props: {
     if (!dir.trim() || !name.trim()) {
       // 请填写目标和名称
       setMsg(t('repo.get.needTargetName'));
+      setMsgErr(true);
+      return false;
+    }
+    if (targetBlocked) {
+      // 目标已存在且非空：检出必然失败，提前拦
+      setMsg(t('repo.co.targetNotEmpty'));
       setMsgErr(true);
       return false;
     }
@@ -113,6 +177,33 @@ export function CheckoutDialog(props: {
   // 标题右侧「当前检出账号」：工具配置 > 系统凭据缓存 > 匿名（本次临时凭据在失败后才输入）
   const who = cfgUser || cacheUser;
   const whoTip = cfgUser ? t('repo.co.whoTipSaved') : cacheUser ? t('repo.co.whoTipCache') : t('repo.co.whoTipAnon');
+
+  /** 目录预览的状态提示（文案 + 颜色）：预检结果决定，检测失败不阻断检出 */
+  let hint = '';
+  let hintTone: 'ok' | 'warn' | 'err' | 'dim' = 'dim';
+  if (!target) {
+    hint = t('repo.co.targetEmptyInput');
+  } else if (precheckState === 'loading') {
+    hint = t('repo.co.checking');
+  } else if (precheckState === 'fail') {
+    hint = t('repo.co.checkFailed');
+    hintTone = 'warn';
+  } else if (targetBlocked) {
+    hint = t('repo.co.targetNotEmpty');
+    hintTone = 'err';
+  } else if (precheck?.existsNonEmpty && precheck.onlySvn) {
+    hint = t('repo.co.targetResidue');
+    hintTone = 'warn';
+  } else if (precheck?.exists) {
+    hint = t('repo.co.targetEmptyDir');
+  } else if (precheck?.inRepo) {
+    hint = t('repo.co.targetInRepo', { root: precheck.inRepo.root });
+    hintTone = 'warn';
+  } else if (precheck) {
+    hint = t('repo.co.targetNew');
+    hintTone = 'ok';
+  }
+  const hintColor = hintTone === 'err' ? 'var(--err)' : hintTone === 'warn' ? 'var(--warn)' : hintTone === 'ok' ? 'var(--ok)' : 'var(--dim)';
 
   return (
     <ModalShell
@@ -136,13 +227,19 @@ export function CheckoutDialog(props: {
           <button onClick={props.onClose}>{t('common.close')}</button>
           <button
             className="primary"
-            disabled={!dir.trim() || !name.trim() || checkedDirs.size === 0}
+            disabled={!dir.trim() || !name.trim() || checkedDirs.size === 0 || targetBlocked}
             onClick={() => {
               // 先过校验，再进二次确认（核对范围树与落地信息后才真正发起——防误操作）
               if (validate()) setConfirmOpen(true);
             }}
             // 一个都没勾：提示先勾选（默认全选后"全取消"= 明确什么都不检出——别走旧"空=完整检出"兜底）
-            title={checkedDirs.size === 0 ? t('repo.co.needPick') : (cmdOfRepo('svn', 'checkout', { url: props.url, dir: joinPath(dir, name.trim() || '…') }) ?? '')}
+            title={
+              targetBlocked
+                ? t('repo.co.targetNotEmpty')
+                : checkedDirs.size === 0
+                  ? t('repo.co.needPick')
+                  : (cmdOfRepo('svn', 'checkout', { url: props.url, dir: joinPath(dir, name.trim() || '…') }) ?? '')
+            }
           >
             {/* 检出 */}
             {t('repo.co.start')}
@@ -150,6 +247,35 @@ export function CheckoutDialog(props: {
         </>
       }
     >
+      {/* 标签详情（仅标签检出）：版本/作者/时间 + 只读提示 */}
+      {props.detail && (
+        <div
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            padding: '8px 10px',
+            marginBottom: 12,
+            background: 'var(--panel)',
+          }}
+        >
+          <div className="row" style={{ alignItems: 'baseline', gap: 8 }}>
+            <span style={{ color: 'var(--accent)' }}>🏷</span>
+            <span className="mono" style={{ flex: 1, wordBreak: 'break-all' }}>{props.detail.name}</span>
+            {props.detail.rev && <span className="mono small dim">r{props.detail.rev}</span>}
+          </div>
+          {(props.detail.author || props.detail.date) && (
+            <div className="dim small" style={{ marginTop: 4 }}>
+              {/* 最后修改 */}
+              {t('repo.co.lastChanged')}: {props.detail.author || '—'}
+              {props.detail.date ? ` · ${formatDate(props.detail.date)}` : ''}
+            </div>
+          )}
+          <div className="small" style={{ marginTop: 6, color: 'var(--warn)' }}>
+            ⓘ {/* SVN 标签是只读快照，请勿在检出副本中直接提交（会修改标签内容） */}
+            {t('repo.co.tagReadonlyHint')}
+          </div>
+        </div>
+      )}
       {/* 远程路径：只读展示（"上方显示要获取的仓库远程路径"） */}
       <FormRow label={t('repo.co.remote')}>
         <div className="mono small" style={{ wordBreak: 'break-all', lineHeight: 1.5 }}>{props.url}</div>
@@ -204,6 +330,19 @@ export function CheckoutDialog(props: {
           </button>
         </div>
         <CheckoutTree rootUrl={props.url} value={checkedDirs} onChange={setCheckedDirs} onRootDirs={onRootDirs} />
+      </FormRow>
+      {/* 检出目录预览：完整落地路径 + 轻量预检（放在选择性检出之后：先定范围，再看落地位置） */}
+      <FormRow label={t('repo.co.targetPreview')}>
+        <div>
+          <div className="mono small" style={{ wordBreak: 'break-all', lineHeight: 1.5 }} title={target || undefined}>
+            {target || '—'}
+          </div>
+          {hint && (
+            <div className="small" style={{ marginTop: 4, color: hintColor }}>
+              {hint}
+            </div>
+          )}
+        </div>
       </FormRow>
       <ResultLine msg={msg} err={msgErr} />
       {/* 检出二次确认（范围树 + 远程/落地路径；确认后才真正发起） */}

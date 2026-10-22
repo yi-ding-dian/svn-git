@@ -127,6 +127,9 @@ export const ops = {
   'ops.tag.none': 'No tags',
   'ops.tag.delTitle': 'Delete Tag',
   'ops.tag.delMsg': 'Delete tag {name}?',
+  'ops.tag.checkout': 'Check Out',
+  'ops.tag.checkoutTip': 'Check out tag {name} to local',
+  'ops.tag.checkoutNoUrl': 'Cannot determine the tags directory URL — try again later',
   'ops.tag.remotes': 'Remotes:',
 
   // ---- Git 信息与配置（gitInfo）----

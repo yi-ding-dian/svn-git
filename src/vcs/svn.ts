@@ -1587,6 +1587,15 @@ export class SvnVcs {
     return { ok: true, message: base };
   }
 
+  /** tags/ 目录 URL（标签检出用）：与 tagList/tagCreate 共用项目根；无法确定时 undefined */
+  async tagsBaseUrl(): Promise<string | undefined> {
+    try {
+      return `${await this.projectRootUrl()}/tags`;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** 标签列表（svn list <root>/tags） */
   async tagList(): Promise<string[]> {
     const root = await this.projectRootUrl();

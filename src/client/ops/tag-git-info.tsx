@@ -13,8 +13,25 @@ import { t } from '../../shared/i18n/index.js';
 import { LayoutNote } from './layout-note.js';
 // ==================== 标签管理 ====================
 
-export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void; onChanged: () => void }) {
-  const [data, setData] = useState<{ tags: string[]; layout?: SvnLayout } | null>(null);
+/** 标签行数据：点「检出」时交给 shell 层（url 由 tags 目录 URL + 标签名拼出） */
+export interface TagEntry {
+  name: string;
+  url: string;
+  rev?: string;
+  author?: string;
+  date?: string;
+}
+
+export function TagDialog(props: {
+  repoType: 'svn' | 'git';
+  onClose: () => void;
+  onChanged: () => void;
+  /** SVN：某行点「检出」→ 交给 shell 层打开检出界面（ops 域不能直接引用 repo 域的检出弹窗） */
+  onCheckout?: (tag: TagEntry) => void;
+}) {
+  const [data, setData] = useState<{ tags: string[]; layout?: SvnLayout; baseUrl?: string } | null>(null);
+  /** 标签详情（版本/作者/时间）：由 tags 目录的 repo-list 补全；失败时缺席，不阻断检出 */
+  const [details, setDetails] = useState<Record<string, { rev?: string; author?: string; date?: string }>>({});
   const [newName, setNewName] = useState('');
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
@@ -25,13 +42,32 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
   const load = () => {
     get
       .tags()
-      .then((r) => setData(r))
+      .then((r) => {
+        setData(r);
+        // 标签详情（版本/作者/时间）复用仓库浏览的列目录接口；失败静默降级（检出界面仍可用）
+        const base = r.baseUrl?.replace(/\/+$/, '');
+        if (!base || props.repoType !== 'svn') return;
+        get
+          .repoList(base)
+          .then((lr) => {
+            if (!lr.ok || !lr.entries) return;
+            const next: Record<string, { rev?: string; author?: string; date?: string }> = {};
+            for (const e of lr.entries) {
+              if (!e.isDir) continue;
+              next[e.name.replace(/\/+$/, '')] = { rev: e.rev, author: e.author, date: e.date };
+            }
+            setDetails(next);
+          })
+          .catch(() => {
+            /* 详情失败只影响展示，不影响列表与检出 */
+          });
+      })
       .catch((e: Error) => {
         setMsg(e.message);
         setMsgErr(true);
       });
   };
-  useEffect(load, []);
+  useEffect(load, [props.repoType]);
 
   const act = (action: 'create' | 'delete', name: string) => {
     setBusy(true);
@@ -89,6 +125,27 @@ export function TagDialog(props: { repoType: 'svn' | 'git'; onClose: () => void;
           <div key={tag} className="changed-row">
             <span style={{ color: 'var(--accent)' }}>🏷</span>
             <span className="mono" style={{ flex: 1 }}>{tag}</span>
+            {/* 检出（仅 SVN）：交给 shell 层打开检出界面 */}
+            {props.repoType === 'svn' && props.onCheckout && (
+              <button
+                className="mini"
+                disabled={busy}
+                onClick={() => {
+                  const base = data?.baseUrl?.replace(/\/+$/, '');
+                  if (!base) {
+                    setMsg(t('ops.tag.checkoutNoUrl'));
+                    setMsgErr(true);
+                    return;
+                  }
+                  // 标签名按 URL 段编码（中文/特殊字符标签也能检出）
+                  props.onCheckout?.({ name: tag, url: `${base}/${encodeURIComponent(tag)}`, ...details[tag] });
+                }}
+                title={t('ops.tag.checkoutTip', { name: tag })}
+              >
+                {/* 检出 */}
+                {t('ops.tag.checkout')}
+              </button>
+            )}
             <button
               className="mini danger"
               disabled={busy}

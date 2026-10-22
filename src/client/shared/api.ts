@@ -15,6 +15,8 @@ export interface RepoCheck {
   exists: boolean;
   /** 目标目录已存在且非空（克隆/检出到非空目录会失败或产生嵌套） */
   existsNonEmpty: boolean;
+  /** 目标非空但只有 .svn（上次检出中断的残骸；检出时会自动清理） */
+  onlySvn: boolean;
   /** 目标位于已有仓库/工作副本内（向上查找 .git/.svn 命中） */
   inRepo: { type: 'git' | 'svn'; root: string } | null;
 }
@@ -429,7 +431,7 @@ export const get = {
     api<{ changed: number; tracked: number; untracked: number; conflicts: string[]; lineConflicts?: string[]; outdated?: { wcRev: string; headRev: string } | null }>(
       `/api/merge-check?branch=${encodeURIComponent(branch)}${pathRel ? `&path=${encodeURIComponent(pathRel)}` : ''}`,
     ),
-  tags: () => api<{ tags: string[]; layout?: SvnLayout }>('/api/tags'),
+  tags: () => api<{ tags: string[]; layout?: SvnLayout; baseUrl?: string }>('/api/tags'),
   /** 练习仓库：能力探测（缺命令的类型由前端禁用） */
   practiceProbe: () => api<{ git: boolean; svn: boolean; svnadmin: boolean }>('/api/practice/probe'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),

@@ -128,6 +128,9 @@ export const ops = {
   'ops.tag.none': '暂无标签',
   'ops.tag.delTitle': '删除标签',
   'ops.tag.delMsg': '确认删除标签 {name}？',
+  'ops.tag.checkout': '检出',
+  'ops.tag.checkoutTip': '检出标签 {name} 到本地',
+  'ops.tag.checkoutNoUrl': '无法确定标签目录地址，请稍后重试',
   'ops.tag.remotes': '远程仓库：',
 
   // ---- Git 信息与配置（gitInfo）----
