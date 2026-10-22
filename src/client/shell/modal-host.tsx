@@ -29,6 +29,7 @@ import { EnvInstallModal } from '../repo/env-install.js';
 import { RepoBrowseModal } from '../repo/repo-browse.js';
 import { CheckoutDialog } from '../repo/checkout.js';
 import { CheckoutAuthModal, useCheckoutTask } from '../repo/checkout-task.js';
+import { TagCheckoutDialog, type GitTagCheckoutParams } from '../repo/tag-checkout.js';
 import { PickDirModal } from '../repo/pick-dir.js';
 import { CreateRepoDialog, GetRepoDialog, type GitHubSetupOpts } from '../repo/repo-create.js';
 import { RevertModal } from '../filesystem/revert.js';
@@ -212,6 +213,19 @@ export function ModalHost(props: ModalHostProps) {
         .then(() => loadHistory())
         .catch(() => {
           /* 收录失败不打扰（工作副本本身已检出成功） */
+        });
+    },
+    onToast: showToast,
+  });
+
+  /** Git 标签检出：复用「获取仓库」任务（认证/进度/取消），完成后同样不切换项目、只收录「最近项目」 */
+  const { start: startGitTagCheckout, auth: gitTagAuth, closeAuth: closeGitTagAuth } = useGetRepoTask({
+    onCreated: (dir) => {
+      void post
+        .history(dir, 'git')
+        .then(() => loadHistory())
+        .catch(() => {
+          /* 收录失败不打扰（仓库本身已克隆成功） */
         });
     },
     onToast: showToast,
@@ -658,8 +672,8 @@ export function ModalHost(props: ModalHostProps) {
           }
         />
       )}
-      {/* 标签检出：详情卡 + 选择性检出 + 目录预览（复用仓库浏览的检出弹窗） */}
-      {tagCheckout && (
+      {/* 标签检出：SVN 用检出弹窗（选择性检出），Git 用克隆弹窗（完整/浅克隆） */}
+      {tagCheckout?.repoType === 'svn' && (
         <CheckoutDialog
           url={tagCheckout.url}
           detail={tagCheckout}
@@ -667,7 +681,35 @@ export function ModalHost(props: ModalHostProps) {
           onStart={startTagCheckout}
         />
       )}
+      {tagCheckout?.repoType === 'git' && (
+        <TagCheckoutDialog
+          detail={{
+            name: tagCheckout.name,
+            source: tagCheckout.url,
+            hash: tagCheckout.rev,
+            subject: tagCheckout.subject,
+            author: tagCheckout.author,
+            date: tagCheckout.date,
+            tagAuthor: tagCheckout.tagAuthor,
+            tagDate: tagCheckout.tagDate,
+            localSource: tagCheckout.localSource,
+          }}
+          onClose={() => setTagCheckout(null)}
+          onStart={(p: GitTagCheckoutParams) =>
+            startGitTagCheckout({
+              type: 'git',
+              dir: p.dir,
+              name: p.name,
+              url: p.source,
+              ref: `refs/tags/${p.tag}`,
+              depth: p.depth,
+              title: t('repo.tagCo.taskTitle', { tag: p.tag }),
+            })
+          }
+        />
+      )}
       {tagCheckoutAuth && <CheckoutAuthModal auth={tagCheckoutAuth} onClose={closeTagCheckoutAuth} onToast={showToast} />}
+      {gitTagAuth && <GetRepoAuthModal auth={gitTagAuth} onClose={closeGitTagAuth} onToast={showToast} />}
       {/* 目录选择：后渲染 → 叠在业务弹窗之上（合并范围「浏览…」等） */}
       {pickDir && (
         <PickDirModal

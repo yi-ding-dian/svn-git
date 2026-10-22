@@ -37,13 +37,13 @@ export function startGetRepoTask(
   let stopPoll: (() => void) | null = null;
   const taskId = startTask({
     kind: 'get',
-    // 任务标题：获取仓库 · {name}（同检出「检出到本地 · name」的拼接先例）
-    title: `${t('repo.get.title')} · ${p.name}`,
+    // 任务标题：获取仓库 · {name}（标签检出时由调用方覆盖为「检出标签 · 标签名」）
+    title: `${p.title ?? t('repo.get.title')} · ${p.name}`,
     // 进度通道 = 落地目录（任务详情弹窗据此展示实时进度）
     chan: target,
     run: async (signal) => {
       try {
-        const r = await post.repoCreate(p.type, p.dir, p.name, p.url, true, signal);
+        const r = await post.repoCreate(p.type, p.dir, p.name, p.url, true, signal, p.ref, p.depth);
         // 认证失败：不在这里报错了事——弹认证框（存的是 git 账号/Token），保存后自动重试
         if (!r.ok && r.authError && r.authType) {
           hooks.onAuthNeeded({ type: r.authType, error: r.message, retry: () => startGetRepoTask(p, hooks) });

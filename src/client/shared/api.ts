@@ -17,6 +17,8 @@ export interface RepoCheck {
   existsNonEmpty: boolean;
   /** 目标非空但只有 .svn（上次检出中断的残骸；检出时会自动清理） */
   onlySvn: boolean;
+  /** 目标非空但只有 .git（上次克隆中断的残骸；克隆时会自动清理） */
+  onlyGit: boolean;
   /** 目标位于已有仓库/工作副本内（向上查找 .git/.svn 命中） */
   inRepo: { type: 'git' | 'svn'; root: string } | null;
 }
@@ -431,7 +433,29 @@ export const get = {
     api<{ changed: number; tracked: number; untracked: number; conflicts: string[]; lineConflicts?: string[]; outdated?: { wcRev: string; headRev: string } | null }>(
       `/api/merge-check?branch=${encodeURIComponent(branch)}${pathRel ? `&path=${encodeURIComponent(pathRel)}` : ''}`,
     ),
-  tags: () => api<{ tags: string[]; layout?: SvnLayout; baseUrl?: string }>('/api/tags'),
+  tags: () =>
+    api<{
+      tags: string[];
+      layout?: SvnLayout;
+      baseUrl?: string;
+      /** git：标签详情（最后提交 + 附注标签创建信息 + 克隆来源） */
+      details?: {
+        name: string;
+        hash: string;
+        subject?: string;
+        author?: string;
+        date?: string;
+        tagAuthor?: string;
+        tagDate?: string;
+        source: string;
+        localSource: boolean;
+      }[];
+    }>('/api/tags'),
+  /** SVN 标签详情：远程 URL 的最后一次提交（提交信息第一行） */
+  tagLog: (url: string) =>
+    api<{ ok: boolean; rev?: string; subject?: string; author?: string; date?: string }>(
+      `/api/tag-log?url=${encodeURIComponent(url)}`,
+    ),
   /** 练习仓库：能力探测（缺命令的类型由前端禁用） */
   practiceProbe: () => api<{ git: boolean; svn: boolean; svnadmin: boolean }>('/api/practice/probe'),
   stash: () => api<{ items: StashItem[] }>('/api/stash'),
@@ -809,10 +833,10 @@ export const post = {
       fileTotal?: number;
       warnings?: string[];
     }>('/api/repo-checkout', json({ url, dir, name, username: cred?.username, password: cred?.password, include }, signal)),
-  repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true, signal?: AbortSignal) =>
+  repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true, signal?: AbortSignal, ref = '', depth = 0) =>
     api<VcsResult & { repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' }>(
       '/api/repo-create',
-      json({ type, dir, name, url, standard }, signal),
+      json({ type, dir, name, url, standard, ref, depth }, signal),
     ),
   /** 创建/获取前置风险检测（目标已存在、位于仓库内等），供二次确认展示 */
   repoCheck: (type: 'git' | 'svn', dir: string, name: string, url = '') =>

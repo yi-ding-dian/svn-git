@@ -13,25 +13,66 @@ import { t } from '../../shared/i18n/index.js';
 import { LayoutNote } from './layout-note.js';
 // ==================== 标签管理 ====================
 
-/** 标签行数据：点「检出」时交给 shell 层（url 由 tags 目录 URL + 标签名拼出） */
+/** 标签行数据：点「检出」时交给 shell 层（SVN 用标签目录 URL；Git 用克隆来源 + ref） */
 export interface TagEntry {
+  repoType: 'svn' | 'git';
   name: string;
+  /** svn：标签目录 URL；git：克隆来源（origin；无 origin 时本地仓库路径） */
   url: string;
+  /** svn：版本号；git：标签指向的提交短哈希 */
   rev?: string;
+  /** git：最后提交的第一行信息 */
+  subject?: string;
   author?: string;
   date?: string;
+  /** git 附注标签的创建者/创建时间（轻量标签为空） */
+  tagAuthor?: string;
+  tagDate?: string;
+  /** git：来源是本地路径（仓库没有 origin） */
+  localSource?: boolean;
 }
 
 export function TagDialog(props: {
   repoType: 'svn' | 'git';
   onClose: () => void;
   onChanged: () => void;
-  /** SVN：某行点「检出」→ 交给 shell 层打开检出界面（ops 域不能直接引用 repo 域的检出弹窗） */
+  /** 某行点「检出」→ 交给 shell 层打开检出界面（ops 域不能直接引用 repo 域的检出弹窗） */
   onCheckout?: (tag: TagEntry) => void;
 }) {
-  const [data, setData] = useState<{ tags: string[]; layout?: SvnLayout; baseUrl?: string } | null>(null);
+  const [data, setData] = useState<{
+    tags: string[];
+    layout?: SvnLayout;
+    baseUrl?: string;
+    details?: {
+      name: string;
+      hash: string;
+      subject?: string;
+      author?: string;
+      date?: string;
+      tagAuthor?: string;
+      tagDate?: string;
+      source: string;
+      localSource: boolean;
+    }[];
+  } | null>(null);
   /** 标签详情（版本/作者/时间）：由 tags 目录的 repo-list 补全；失败时缺席，不阻断检出 */
   const [details, setDetails] = useState<Record<string, { rev?: string; author?: string; date?: string }>>({});
+  /** Git 标签详情（最后提交 + 附注标签创建信息 + 克隆来源） */
+  const [gitDetails, setGitDetails] = useState<
+    Record<
+      string,
+      {
+        hash: string;
+        subject?: string;
+        author?: string;
+        date?: string;
+        tagAuthor?: string;
+        tagDate?: string;
+        source: string;
+        localSource: boolean;
+      }
+    >
+  >({});
   const [newName, setNewName] = useState('');
   const [msg, setMsg] = useState('');
   const [msgErr, setMsgErr] = useState(false);
@@ -44,7 +85,24 @@ export function TagDialog(props: {
       .tags()
       .then((r) => {
         setData(r);
-        // 标签详情（版本/作者/时间）复用仓库浏览的列目录接口；失败静默降级（检出界面仍可用）
+        // Git 标签详情（最后提交 + 附注标签创建信息 + 来源）：后端 for-each-ref 一次返回
+        if (r.details) {
+          const next: typeof gitDetails = {};
+          for (const d of r.details) {
+            next[d.name] = {
+              hash: d.hash,
+              subject: d.subject,
+              author: d.author,
+              date: d.date,
+              tagAuthor: d.tagAuthor,
+              tagDate: d.tagDate,
+              source: d.source,
+              localSource: d.localSource,
+            };
+          }
+          setGitDetails(next);
+        }
+        // SVN 标签详情（版本/作者/时间）复用仓库浏览的列目录接口；失败静默降级（检出界面仍可用）
         const base = r.baseUrl?.replace(/\/+$/, '');
         if (!base || props.repoType !== 'svn') return;
         get
@@ -82,6 +140,39 @@ export function TagDialog(props: {
         props.onChanged();
       }
     ).finally(() => setBusy(false));
+  };
+
+  /** 点「检出」：SVN 用 tags 目录 URL；Git 用标签详情里的来源地址 + ref（由 shell 层渲染检出界面） */
+  const checkoutTag = (tag: string) => {
+    if (props.repoType === 'svn') {
+      const base = data?.baseUrl?.replace(/\/+$/, '');
+      if (!base) {
+        setMsg(t('ops.tag.checkoutNoUrl'));
+        setMsgErr(true);
+        return;
+      }
+      // 标签名按 URL 段编码（中文/特殊字符标签也能检出）
+      props.onCheckout?.({ repoType: 'svn', name: tag, url: `${base}/${encodeURIComponent(tag)}`, ...details[tag] });
+      return;
+    }
+    const d = gitDetails[tag];
+    if (!d) {
+      setMsg(t('ops.tag.checkoutNoSource'));
+      setMsgErr(true);
+      return;
+    }
+    props.onCheckout?.({
+      repoType: 'git',
+      name: tag,
+      url: d.source,
+      rev: d.hash,
+      subject: d.subject,
+      author: d.author,
+      date: d.date,
+      tagAuthor: d.tagAuthor,
+      tagDate: d.tagDate,
+      localSource: d.localSource,
+    });
   };
 
   return (
@@ -125,21 +216,12 @@ export function TagDialog(props: {
           <div key={tag} className="changed-row">
             <span style={{ color: 'var(--accent)' }}>🏷</span>
             <span className="mono" style={{ flex: 1 }}>{tag}</span>
-            {/* 检出（仅 SVN）：交给 shell 层打开检出界面 */}
-            {props.repoType === 'svn' && props.onCheckout && (
+            {/* 检出：交给 shell 层打开检出界面（SVN / Git 各一套） */}
+            {props.onCheckout && (
               <button
                 className="mini"
                 disabled={busy}
-                onClick={() => {
-                  const base = data?.baseUrl?.replace(/\/+$/, '');
-                  if (!base) {
-                    setMsg(t('ops.tag.checkoutNoUrl'));
-                    setMsgErr(true);
-                    return;
-                  }
-                  // 标签名按 URL 段编码（中文/特殊字符标签也能检出）
-                  props.onCheckout?.({ name: tag, url: `${base}/${encodeURIComponent(tag)}`, ...details[tag] });
-                }}
+                onClick={() => checkoutTag(tag)}
                 title={t('ops.tag.checkoutTip', { name: tag })}
               >
                 {/* 检出 */}

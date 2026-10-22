@@ -131,6 +131,7 @@ export const ops = {
   'ops.tag.checkout': '检出',
   'ops.tag.checkoutTip': '检出标签 {name} 到本地',
   'ops.tag.checkoutNoUrl': '无法确定标签目录地址，请稍后重试',
+  'ops.tag.checkoutNoSource': '无法获取标签的克隆来源（仓库没有 origin，也读不到本地路径）',
   'ops.tag.remotes': '远程仓库：',
 
   // ---- Git 信息与配置（gitInfo）----

@@ -7,7 +7,7 @@ import { invalidateSvnIgnoreMap } from './ignore.js';
 import { t } from '../shared/i18n/index.js';
 import { progressDone, progressReport, progressStart, progressStepsStart, progressStepsAdvance } from '../transfer-progress.js';
 import { platform } from '../platform/index.js';
-import type { BranchDeleteCheck, BranchListResult, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, SvnLayout, VcsResult } from './types.js';
+import type { BranchDeleteCheck, BranchListResult, CommitSummary, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
 /** svn 可执行文件解析：PATH 优先；找不到时试平台常见安装路径（Windows 上装完 svn 系统 PATH
  *  不会刷新到已运行的进程——兜底路径让「装完刷新页面即用」成立）。
@@ -1585,6 +1585,24 @@ export class SvnVcs {
       return { ok: true, message: t('vcs.mergeConflict', { msg: base }) };
     }
     return { ok: true, message: base };
+  }
+
+  /** 远程 URL 的最后一次提交（标签详情补提交信息用）；失败/无权限返回 null */
+  async remoteLogOne(url: string): Promise<CommitSummary | null> {
+    try {
+      const res = await this.exec(['log', '--xml', '-l', '1', url], { timeoutMs: 30_000 });
+      if (res.code !== 0) return null;
+      const [e] = this.parseLogXml(res.stdout);
+      if (!e) return null;
+      return {
+        rev: e.rev,
+        subject: e.msg.split('\n')[0] ?? '',
+        author: e.author || undefined,
+        date: e.date || undefined,
+      };
+    } catch {
+      return null;
+    }
   }
 
   /** tags/ 目录 URL（标签检出用）：与 tagList/tagCreate 共用项目根；无法确定时 undefined */

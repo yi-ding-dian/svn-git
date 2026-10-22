@@ -10,7 +10,7 @@ import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.
 import { loadConfig } from '../config.js';
 import { progressStart, progressDone, progressFromStderr } from '../transfer-progress.js';
 import { t, getLang } from '../shared/i18n/index.js';
-import type { FileStatus, LogEntry, RepoInfo, VcsResult } from './types.js';
+import type { FileStatus, LogEntry, RepoInfo, TagDetail, VcsResult } from './types.js';
 
 /** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限）
  *  export 给 server.ts 的「获取仓库」用：clone 走的是那边（GitVcs.clone 目前无人调用） */
@@ -1452,6 +1452,51 @@ export class GitVcs {
     // git tag 失败: {err}
     if (res.code !== 0) throw new Error(t('vcs.gitTagFailed', { err: res.stderr.trim() }));
     return res.stdout.split('\n').filter(Boolean);
+  }
+
+  /** 标签详情：for-each-ref 一次拿全。
+   *  - hash/subject/author/date 取**标签指向的提交**（annotated 用 peeled 字段，轻量标签用自身字段）
+   *  - tagAuthor/tagDate 取附注标签的 tagger（轻量标签为空）
+   *  - source：origin 优先；没有 origin 时用本地仓库路径（同机复制）
+   *  字段用 %1f（US）分隔：提交信息第一行可能含 `|`，用竖线会错位。 */
+  async tagListDetailed(): Promise<TagDetail[]> {
+    const fmt = [
+      '%(refname:short)',
+      '%(objectname:short)',
+      '%(*objectname:short)',
+      '%(subject)',
+      '%(*subject)',
+      '%(authorname)',
+      '%(*authorname)',
+      '%(authordate:iso-strict)',
+      '%(*authordate:iso-strict)',
+      '%(taggername)',
+      '%(taggerdate:iso-strict)',
+    ].join('%1f');
+    const res = await this.exec(['for-each-ref', `--format=${fmt}`, 'refs/tags']);
+    if (res.code !== 0) return [];
+    const remote = await this.exec(['remote', 'get-url', 'origin']);
+    const origin = remote.code === 0 ? remote.stdout.trim() : '';
+    const source = origin || this.repo.root;
+    const out: TagDetail[] = [];
+    for (const line of res.stdout.split('\n')) {
+      if (!line.trim()) continue;
+      const [name, objHash, peeledHash, refSubject, peeledSubject, refAuthor, peeledAuthor, refDate, peeledDate, tagger, tagDate] =
+        line.split('\x1f');
+      if (!name) continue;
+      out.push({
+        name,
+        hash: peeledHash || objHash || '',
+        subject: peeledSubject || refSubject || undefined,
+        author: peeledAuthor || refAuthor || undefined,
+        date: peeledDate || refDate || undefined,
+        tagAuthor: tagger || undefined,
+        tagDate: tagDate || undefined,
+        source,
+        localSource: !origin,
+      });
+    }
+    return out;
   }
 
   /** 创建标签（annotated，附当前/指定提交） */

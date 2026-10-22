@@ -307,6 +307,12 @@ export interface GetRepoParams {
   dir: string;
   name: string;
   url: string;
+  /** 标签检出（git）：完整引用（如 refs/tags/v1），避免与同名分支混淆 */
+  ref?: string;
+  /** 浅克隆深度（1 = 仅该标签版本，不拉历史） */
+  depth?: number;
+  /** 任务标题覆盖（标签检出显示「检出标签 · v1」） */
+  title?: string;
 }
 
 export function GetRepoDialog(props: {

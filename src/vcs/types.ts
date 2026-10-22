@@ -166,6 +166,37 @@ export interface BranchDeleteCheck {
   error?: string;
 }
 
+/** 单条提交摘要（远程 URL 的最后一次提交；SVN 标签详情补提交信息用） */
+export interface CommitSummary {
+  rev: string;
+  /** 提交信息第一行 */
+  subject: string;
+  author?: string;
+  date?: string;
+}
+
+/** Git 标签详情（tagListDetailed）：
+ *  hash/subject/author/date 描述**标签指向的提交**（最后提交）；
+ *  tagAuthor/tagDate 描述附注标签自身的创建者/创建时间（轻量标签为空）；
+ *  source = 克隆来源（origin；无 origin 时本地仓库路径）。 */
+export interface TagDetail {
+  name: string;
+  hash: string;
+  /** 提交信息第一行 */
+  subject?: string;
+  /** 提交作者 */
+  author?: string;
+  /** 提交时间（author date，与 git log 默认显示一致） */
+  date?: string;
+  /** 附注标签：打标签的人 */
+  tagAuthor?: string;
+  /** 附注标签：打标签的时间 */
+  tagDate?: string;
+  source: string;
+  /** 来源是本地路径（仓库没有 origin） */
+  localSource: boolean;
+}
+
 /** 统一 VCS 操作接口：公共方法两实现均实现（必选），平台独有能力可选——server 层按 repo.type 分支或 ?. 调用。 */
 export interface Vcs {
   status(pathRel?: string): Promise<FileStatus[]>;
@@ -236,8 +267,12 @@ export interface Vcs {
   /** 删除远程分支（git push --delete，name 为 origin/xxx 形式；最终仅在 reflog/push 后可恢复）。svn 无本地/远程之分，不实现 */
   branchRemoteDelete?(name: string, signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }>;
   tagList(): Promise<string[]>;
+  /** git：标签详情（短哈希/创建者/时间/克隆来源）；svn 不实现（详情由 /api/repo-list 补） */
+  tagListDetailed?(): Promise<TagDetail[]>;
   /** SVN：tags/ 目录的完整 URL（标签检出用）；无法确定时 undefined。git 不实现 */
   tagsBaseUrl?(): Promise<string | undefined>;
+  /** SVN：远程 URL 的最后一次提交（标签详情补提交信息用）；失败返回 null。git 不实现 */
+  remoteLogOne?(url: string): Promise<CommitSummary | null>;
   tagCreate(name: string, message?: string, rev?: string): Promise<VcsResult>;
   tagDelete(name: string): Promise<VcsResult>;
   blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]>;

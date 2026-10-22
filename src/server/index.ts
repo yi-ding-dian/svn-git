@@ -2,11 +2,12 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { detectRepo } from '../vcs/detect.js';
 import { createAskPass, authTypeOf } from '../vcs/git.js';
 import { loadConfig } from '../config.js';
-import { run } from '../vcs/exec.js';
+import { run, type RunResult } from '../vcs/exec.js';
 import { markInflight, clearInflight } from '../inflight.js';
 import { progressStart, progressSetTotal, progressDone, progressFromStderr, progressGet } from '../transfer-progress.js';
 import { githubRepoBytes } from './routes/github.js';
@@ -160,6 +161,7 @@ export function startServer(): Promise<ServerHandle> {
         let exists = false;
         let existsNonEmpty = false;
         let onlySvn = false;
+        let onlyGit = false;
         try {
           exists = fs.existsSync(target);
           if (exists) {
@@ -167,6 +169,7 @@ export function startServer(): Promise<ServerHandle> {
             existsNonEmpty = entries.length > 0;
             // 只有 .svn = 上次检出中断的残骸：检出时会自动清理重来，前端不应按"非空"拦截
             onlySvn = entries.length === 1 && entries[0] === '.svn';
+            onlyGit = entries.length === 1 && entries[0] === '.git';
           }
         } catch {
           /* 目标不可读时按不存在处理，不阻断 */
@@ -178,6 +181,7 @@ export function startServer(): Promise<ServerHandle> {
           exists,
           existsNonEmpty,
           onlySvn,
+          onlyGit,
           inRepo: inRepo ? { type: inRepo.type, root: inRepo.root } : null,
         });
         return;
@@ -197,6 +201,14 @@ export function startServer(): Promise<ServerHandle> {
         const dir = String(body.dir ?? '').trim();
         const url = String(body.url ?? '').trim();
         const name = String(body.name ?? '').trim();
+        // 标签检出（git）：ref = 完整引用（如 refs/tags/v1），depth = 1 表示浅克隆
+        const ref = String(body.ref ?? '').trim();
+        const depth = Number(body.depth ?? 0) > 0 ? Math.floor(Number(body.depth)) : 0;
+        // ref 只接受 refs/tags/ 下的合法引用：它会被拼进 fetch refspec，禁止空白与 ref 特殊字符
+        if (ref && (!ref.startsWith('refs/tags/') || ref.includes('..') || /[\s:~^?*[\]\\]/.test(ref.slice('refs/tags/'.length)))) {
+          sendJson(res, 400, { error: t('srv.badRepoUrl') });
+          return;
+        }
         if (!dir) {
           // 请填写目录路径
           sendJson(res, 400, { error: t('srv.fillDirPath') });
@@ -258,29 +270,94 @@ export function startServer(): Promise<ServerHandle> {
             };
             // 登记"正在克隆到哪儿"：app 被强杀时靠它在下一次启动收尾（见 inflight.ts）
             markInflight(target);
+            // 标签检出（ref = refs/tags/x）：
+            //  - Git 2.20 的 `clone --branch` 不接受完整 refs/tags/ 前缀，且同名分支会优先于标签；
+            //    所以**不用 --branch**：先完整克隆/抓取，再显式 checkout 标签。
+            //  - 浅克隆不能直接 `clone --depth`（只按分支浅），改为
+            //    init + fetch --depth 1 refs/tags/x:refs/tags/x + checkout，只拉该标签的提交。
+            // 本地路径 + 浅克隆必须走 file://——git 对本地 clone 会忽略 --depth。
+            let cloneUrl = url;
+            if (depth > 0 && (path.isAbsolute(url) || /^[A-Za-z]:[\\/]/.test(url))) cloneUrl = pathToFileURL(url).href;
             // 进度：登记 + 并行查总大小（分母；查不到就 0，界面只显示已下载与速度），
-            // `--progress` 是必需的——stderr 不是终端时 git 默认不吐进度
+            // `--progress` 是必需的——stderr 不是终端时 git 默认不吐进度。
+            // 浅克隆的"总大小"是远端仓库全量，不能当分母（会永远到不了 100%），跳过。
             progressStart(target);
-            void githubRepoBytes(url).then((n) => progressSetTotal(target, n));
+            if (!depth) void githubRepoBytes(cloneUrl).then((n) => progressSetTotal(target, n));
             const onStderrLine = (line: string) => progressFromStderr(target, line);
-            let r = await run('git', ['clone', '--progress', url, target], { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal, onStderrLine });
-            let authFail = isAuthFail(r);
             const gitCred = loadConfig().git;
-            // 已 abort（用户关闭/超时）就不再重试；失败时先清半截目录再带凭据重试
-            if (r.code !== 0 && !r.aborted && authFail && gitCred?.username && gitCred?.password) {
-              cleanupTarget();
-              const ask = createAskPass(gitCred);
-              progressStart(target); // 重试从零开始：进度重置（总大小已查到的话接着用）
-              r = await run('git', ['clone', '--progress', url, target], { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal, env: { GIT_ASKPASS: ask.path }, onStderrLine });
-              ask.cleanup();
-              authFail = isAuthFail(r);
+            const runGit = (args: string[], extra?: { cwd?: string; env?: Record<string, string> }) =>
+              run('git', args, { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal, cwd: extra?.cwd, env: extra?.env, onStderrLine });
+            /** 浅克隆走 init：它不像 clone 那样拒绝非空目录，必须自己拦 */
+            let blocked = '';
+            let r: RunResult;
+            if (ref && depth > 0) {
+              if (fs.existsSync(target)) {
+                try {
+                  if (fs.readdirSync(target).length > 0) blocked = t('srv.coTargetExists', { path: target });
+                } catch {
+                  /* 读不到就交给 git 报错 */
+                }
+              }
+              if (blocked) {
+                r = { code: 1, stdout: '', stderr: blocked };
+              } else {
+                const init = await runGit(['init', '-q', target]);
+                const remote = init.code === 0 ? await runGit(['remote', 'add', 'origin', cloneUrl], { cwd: target }) : init;
+                if (init.code !== 0 || remote.code !== 0) {
+                  r = init.code !== 0 ? init : remote;
+                } else {
+                  // 只取该标签指向的提交（depth 1）；refspec 同时建立本地标签
+                  const fetchArgs = ['fetch', '--progress', '--depth', String(depth), 'origin', `${ref}:${ref}`];
+                  r = await runGit(fetchArgs, { cwd: target });
+                  if (r.code !== 0 && !r.aborted && isAuthFail(r) && gitCred?.username && gitCred?.password) {
+                    const ask = createAskPass(gitCred);
+                    progressStart(target); // 重试从零开始：进度重置
+                    r = await runGit(fetchArgs, { cwd: target, env: { GIT_ASKPASS: ask.path } });
+                    ask.cleanup();
+                  }
+                  if (r.code === 0) {
+                    const co = await runGit(['checkout', '-q', '--detach', ref], { cwd: target });
+                    if (co.code !== 0) r = co;
+                  }
+                }
+              }
+            } else if (ref) {
+              // 完整克隆到标签：拉全历史/分支，成功后显式 checkout 标签
+              const cloneArgs = ['clone', '--progress', cloneUrl, target];
+              r = await runGit(cloneArgs);
+              if (r.code !== 0 && !r.aborted && isAuthFail(r) && gitCred?.username && gitCred?.password) {
+                cleanupTarget();
+                const ask = createAskPass(gitCred);
+                progressStart(target);
+                r = await runGit(cloneArgs, { env: { GIT_ASKPASS: ask.path } });
+                ask.cleanup();
+              }
+              if (r.code === 0) {
+                const co = await runGit(['checkout', '-q', '--detach', ref], { cwd: target });
+                if (co.code !== 0) r = co;
+              }
+            } else {
+              // 普通获取仓库（原行为）
+              const cloneArgs = ['clone', '--progress', cloneUrl, target];
+              r = await runGit(cloneArgs);
+              if (r.code !== 0 && !r.aborted && isAuthFail(r) && gitCred?.username && gitCred?.password) {
+                cleanupTarget();
+                const ask = createAskPass(gitCred);
+                progressStart(target);
+                r = await runGit(cloneArgs, { env: { GIT_ASKPASS: ask.path } });
+                ask.cleanup();
+              }
             }
+            const authFail = isAuthFail(r);
             res.off('close', onClose);
             clearInflight(target); // 克隆跑完了（成功/失败/取消都算）：撤掉登记
             progressDone(target); // 进度同上：跑完就撤
             // ⚠ aborted（用户取消/断开）与 timedOut（自己到 30 分钟上限）是两个字段，都要判 ——
             // 只判 aborted 的话，超时会被当成"克隆失败"、把 git 的半截 stderr（"正克隆到…"）当错误抛给用户
-            if (r.aborted || r.timedOut) {
+            if (blocked) {
+              cleanupTarget();
+              result = { ok: false, message: blocked };
+            } else if (r.aborted || r.timedOut) {
               cleanupTarget(); // 收拾可能留下的半截目录
               result = {
                 ok: false,

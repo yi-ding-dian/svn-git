@@ -398,7 +398,28 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const layout = await vcs.layout?.().catch(() => undefined);
         // svn 附带 tags/ 目录 URL：前端据此拉标签详情并检出（git 不实现，?. 跳过）
         const baseUrl = await vcs.tagsBaseUrl?.().catch(() => undefined);
-        sendJson(res, 200, { tags, ...(layout ? { layout } : {}), ...(baseUrl ? { baseUrl } : {}) });
+        // git 附带标签详情（短哈希/创建者/时间/克隆来源，供标签检出）
+        const details = await vcs.tagListDetailed?.().catch(() => undefined);
+        sendJson(res, 200, {
+          tags,
+          ...(layout ? { layout } : {}),
+          ...(baseUrl ? { baseUrl } : {}),
+          ...(details ? { details } : {}),
+        });
+        return true;
+      }
+
+      if (p === '/api/tag-log' && req.method === 'GET') {
+        // SVN 标签详情：查标签目录的最后一次提交（补提交信息第一行）
+        const { vcs } = vcsOf();
+        const targetUrl = String(url.searchParams.get('url') ?? '').trim();
+        if (!targetUrl) {
+          // 仓库地址无效
+          sendJson(res, 400, { error: t('srv.badRepoUrl') });
+          return true;
+        }
+        const r = await vcs.remoteLogOne?.(targetUrl).catch(() => null);
+        sendJson(res, 200, r ? { ok: true, ...r } : { ok: false });
         return true;
       }
 

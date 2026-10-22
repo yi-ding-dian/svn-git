@@ -86,6 +86,8 @@ export function CheckoutDialog(props: {
   /** 检出目录预览的轻量预检（目标是否存在/非空、是否位于工作副本内）：输入防抖 400ms */
   const [precheck, setPrecheck] = useState<RepoCheck | null>(null);
   const [precheckState, setPrecheckState] = useState<'idle' | 'loading' | 'fail'>('idle');
+  /** SVN 标签的最后一次提交（补提交信息第一行；失败保持已有版本/作者/时间） */
+  const [commit, setCommit] = useState<{ rev?: string; subject?: string; author?: string; date?: string } | null>(null);
 
   // 默认所在目录 = home（与「打开项目」默认一致）；顺带查 SVN 身份（标题显示用：
   // 工具配置 + 系统凭据缓存——裸跑时 svn 实际用的就是缓存身份）
@@ -138,6 +140,23 @@ export function CheckoutDialog(props: {
       clearTimeout(timer);
     };
   }, [dir, name, props.url]);
+
+  // 标签的最后一次提交：异步补提交信息第一行（失败静默——详情卡仍显示版本/作者/时间）
+  useEffect(() => {
+    if (!props.detail) return;
+    let alive = true;
+    get
+      .tagLog(props.url)
+      .then((r) => {
+        if (alive && r.ok) setCommit(r);
+      })
+      .catch(() => {
+        /* 失败静默 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [props.url, props.detail]);
 
   /** 落地路径（所在目录 + 本地名称）：目录预览用 */
   const target = dir.trim() && name.trim() ? joinPath(dir.trim(), name.trim()) : '';
@@ -247,7 +266,7 @@ export function CheckoutDialog(props: {
         </>
       }
     >
-      {/* 标签详情（仅标签检出）：版本/作者/时间 + 只读提示 */}
+      {/* 标签详情（仅标签检出）：最后提交 + 版本/作者/时间 + 只读提示 */}
       {props.detail && (
         <div
           style={{
@@ -261,13 +280,22 @@ export function CheckoutDialog(props: {
           <div className="row" style={{ alignItems: 'baseline', gap: 8 }}>
             <span style={{ color: 'var(--accent)' }}>🏷</span>
             <span className="mono" style={{ flex: 1, wordBreak: 'break-all' }}>{props.detail.name}</span>
-            {props.detail.rev && <span className="mono small dim">r{props.detail.rev}</span>}
+            {(commit?.rev || props.detail.rev) && (
+              <span className="mono small dim">r{commit?.rev || props.detail.rev}</span>
+            )}
           </div>
-          {(props.detail.author || props.detail.date) && (
-            <div className="dim small" style={{ marginTop: 4 }}>
-              {/* 最后修改 */}
-              {t('repo.co.lastChanged')}: {props.detail.author || '—'}
-              {props.detail.date ? ` · ${formatDate(props.detail.date)}` : ''}
+          {(commit?.subject || commit?.author || commit?.date || props.detail.author || props.detail.date) && (
+            <div style={{ marginTop: 6 }}>
+              {commit?.subject && (
+                <div className="small" style={{ lineHeight: 1.5 }}>
+                  {/* 最后提交 */}
+                  {t('repo.tagCo.lastCommit')}: {commit.subject}
+                </div>
+              )}
+              <div className="dim small" style={{ marginTop: 2 }}>
+                {commit?.author || props.detail.author || '—'}
+                {commit?.date || props.detail.date ? ` · ${formatDate(commit?.date || props.detail.date)}` : ''}
+              </div>
             </div>
           )}
           <div className="small" style={{ marginTop: 6, color: 'var(--warn)' }}>

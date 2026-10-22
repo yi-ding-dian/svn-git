@@ -130,6 +130,7 @@ export const ops = {
   'ops.tag.checkout': 'Check Out',
   'ops.tag.checkoutTip': 'Check out tag {name} to local',
   'ops.tag.checkoutNoUrl': 'Cannot determine the tags directory URL — try again later',
+  'ops.tag.checkoutNoSource': 'Cannot determine the clone source for this tag (no origin, and the local path is unavailable)',
   'ops.tag.remotes': 'Remotes:',
 
   // ---- Git 信息与配置（gitInfo）----
