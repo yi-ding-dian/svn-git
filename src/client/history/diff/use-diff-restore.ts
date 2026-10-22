@@ -1,6 +1,6 @@
 /** 块级还原：把工作区的某一块改回原版，其余修改保留。
  *  写回工作区 + 扫光/收起动画；只对「工作区 vs 原版」可用（版本间对比没有还原语义）。 */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { get, post } from '../../shared/api.js';
 import { t } from '../../../shared/i18n/index.js';
@@ -43,6 +43,9 @@ export function useDiffRestore(args: {
 
   /** 块级还原确认：左栏差异块旁的箭头点击后要还原的块（确认前不动文件） */
   const [restoreTarget, setRestoreTarget] = useState<{ blockId: number; kind: 'mod' | 'del' | 'add' } | null>(null);
+  /** 还原写入中：防止快速连点/多个块并发写同一文件 */
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   /** 块的变更类型：有删有加=修改、只有加=新增、只有删=删除（与连接带配色同一口径） */
   const blockKindOf = useCallback(
@@ -138,7 +141,10 @@ export function useDiffRestore(args: {
    *  新增块=删掉工作区对应行；纯删除块=按占位落点插回原版行；修改块=整块替换。 */
   const doRestoreBlock = useCallback(
     async (target0: { blockId: number; kind: 'mod' | 'del' | 'add' }) => {
-      if (!target?.path || !versions) return;
+      if (!target?.path || !versions || busyRef.current) return;
+      busyRef.current = true;
+      setBusy(true);
+      try {
       // 外部改动检测：mtime/size 变了说明行号可能已失效，先让用户更新对比（避免改错位置）
       try {
         const m = await get.fileMtime(target.path);
@@ -151,8 +157,10 @@ export function useDiffRestore(args: {
       } catch {
         /* 检测失败不阻塞：写回接口自己会报错 */
       }
-      const adds = diffLines.filter((l) => l.type === 'add' && l.block === target0.blockId).map((l) => l.rightNo);
-      const dels = diffLines.filter((l) => l.type === 'del' && l.block === target0.blockId).map((l) => l.text);
+      const addRows = diffLines.filter((l) => l.type === 'add' && l.block === target0.blockId);
+      const delRows = diffLines.filter((l) => l.type === 'del' && l.block === target0.blockId);
+      const adds = addRows.map((l) => l.rightNo);
+      const dels = delRows.map((l) => l.text);
       if (adds.length === 0 && dels.length === 0) return;
       // 工作区按行拆分：保留原 EOL（CRLF 文件每行末尾的 \r 原样不动；git diff 解析出的
       // 新增/删除文本不带 \r，插回时按工作区风格补齐）
@@ -160,10 +168,24 @@ export function useDiffRestore(args: {
       const crlf = versions.right.includes('\r\n');
       const delTexts = dels.map((x) => (crlf && !x.endsWith('\r') ? x + '\r' : x));
       let next: string[];
-      if (adds.length > 0) {
-        const start = Math.min(...adds);
-        const end = Math.max(...adds);
-        next = [...lines.slice(0, start - 1), ...delTexts, ...lines.slice(end)];
+      if (adds.length > 0 && delRows.length > 0) {
+        // 修改块：用 BASE 对应行区间整体替换工作区区间。
+        // 同一 block 可能被空白上下文行合并（adds/dels 行号不连续），
+        // 不能只看 min/max 再拼 delTexts——那会把中间的空行一起删掉。
+        const rightStart = Math.min(...adds);
+        const rightEnd = Math.max(...adds);
+        const leftStart = Math.min(...delRows.map((l) => l.leftNo));
+        const leftEnd = Math.max(...delRows.map((l) => l.leftNo));
+        const baseLines = versions.left.split('\n');
+        next = [
+          ...lines.slice(0, rightStart - 1),
+          ...baseLines.slice(leftStart - 1, leftEnd),
+          ...lines.slice(rightEnd),
+        ];
+      } else if (adds.length > 0) {
+        // 纯新增块：逐行删除新增行，中间上下文行保留
+        const drop = new Set(adds);
+        next = lines.filter((_, idx) => !drop.has(idx + 1));
       } else {
         // 纯删除块：右栏没有对应行，按占位行落点插回（after=删除段位于文件末尾）
         const anchor = delAnchorRight.get(target0.blockId);
@@ -171,8 +193,19 @@ export function useDiffRestore(args: {
         const at = anchor.after ? anchor.rightNo : anchor.rightNo - 1;
         next = [...lines.slice(0, at), ...delTexts, ...lines.slice(at)];
       }
+      // 还原块触及文件末尾时，末尾换行要跟原版（BASE）一致：
+      // 否则「仅差一个末尾换行」的差异还原后会原样保留（用户实报：点了还原没反应）
+      let content = next.join('\n');
+      const touchesEnd =
+        (adds.length > 0 && Math.max(...adds) >= lines.length) ||
+        (adds.length === 0 && delAnchorRight.get(target0.blockId)?.after === true);
+      if (touchesEnd) {
+        const stripEol = (s: string) => (s.endsWith('\r\n') ? s.slice(0, -2) : s.endsWith('\n') ? s.slice(0, -1) : s);
+        if (versions.left.endsWith('\n') && !content.endsWith('\n')) content += crlf ? '\r\n' : '\n';
+        else if (!versions.left.endsWith('\n') && content.endsWith('\n')) content = stripEol(content);
+      }
       const anim = playRestoreAnim(target0.blockId, target0.kind);
-      const res = await post.writeFile(target.path, next.join('\n'));
+      const res = await post.writeFile(target.path, content);
       if (!res.ok) {
         // 写失败：重载一次清掉折叠动画留下的视觉状态，并报错
         setError(res.message ?? t('fs.pv.saveFailed'));
@@ -182,6 +215,10 @@ export function useDiffRestore(args: {
       await anim;
       onToast?.(t('hist.restoreDone'));
       setReloadKey((k) => k + 1);
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- playRestoreAnim/versions/diffLines 每次渲染重建，无需进依赖（闭包取当前值）
     [target, diffLines, versions, delAnchorRight],
@@ -200,7 +237,7 @@ export function useDiffRestore(args: {
   /** 换文件时清掉待还原目标（确认框不该跟着到新文件） */
   const resetRestore = () => setRestoreTarget(null);
 
-  return { restoreTarget, setRestoreTarget, resetRestore, blockKindOf, doRestoreBlock, restoreMsg };
+  return { restoreTarget, setRestoreTarget, resetRestore, blockKindOf, doRestoreBlock, restoreMsg, busy };
 }
 
 export type DiffRestoreApi = ReturnType<typeof useDiffRestore>;
