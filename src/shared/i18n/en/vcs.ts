@@ -246,6 +246,7 @@ export const vcs = {
   'vcs.worktreeRemoved': 'Removed worktree {path}',
   'vcs.worktreePruneFailed': 'Failed to clean stale worktree records',
   'vcs.worktreePruned': 'Cleaned stale worktree records',
+  'vcs.parentNotVersioned': 'Parent directory {path} is not under version control; add it to the repository first.',
   'vcs.commitMsg.branchDelete': 'Delete branch {name}',
   'vcs.commitMsg.tagCreate': 'Create tag {name}',
   'vcs.commitMsg.tagDelete': 'Delete tag {name}',

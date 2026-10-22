@@ -444,6 +444,33 @@ export class SvnVcs {
       // 失败不阻断：这些路径可能本来就不在版本库里（未跟踪），那种不需要 delete
       await this.exec(['delete', '--force', ...missing], { timeoutMs: 60_000 });
     }
+    // 「添加了子项、但父目录没进提交目标」会让 svn 报 E200009：
+    //   已 add 未提交的祖先目录(A)必须一起提交；未版本化的祖先(?)则要先添加。
+    // 这里补全 A 祖先；遇到 ? 给出可操作的提示，而不是把 svn 的原始报错甩给用户。
+    if (relPaths.length) {
+      const st = await this.status();
+      const codeOf = new Map(st.map((s) => [s.path.replace(/\/+$/, ''), s.code]));
+      const extra: string[] = [];
+      for (const p of relPaths) {
+        const segs = p.replace(/\/+$/, '').split('/').filter(Boolean);
+        for (let i = 1; i < segs.length; i++) {
+          const anc = segs.slice(0, i).join('/');
+          const code = codeOf.get(anc);
+          if (code === 'A') extra.push(anc);
+          else if (code === '?') {
+            // 父目录未纳入版本库
+            return { ok: false, message: t('vcs.parentNotVersioned', { path: anc }) };
+          }
+        }
+      }
+      if (extra.length) {
+        const seen = new Set(relPaths);
+        for (const e of extra) if (!seen.has(e)) {
+          seen.add(e);
+          relPaths.push(e);
+        }
+      }
+    }
     const args = relPaths.length ? ['commit', ...relPaths, '-m', msg] : ['commit', '-m', msg];
     const res = await this.exec(args, { timeoutMs: 300_000 });
     if (res.code !== 0) {

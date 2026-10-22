@@ -250,6 +250,7 @@ export const vcs = {
   'vcs.commitMsg.mergeMainline': '合并 {source} 的改动到 {target}',
   'vcs.worktreeRemoveFailed': '移除工作树失败',
   'vcs.worktreeRemoved': '已移除工作树 {path}',
+  'vcs.parentNotVersioned': '父目录 {path} 尚未加入版本库，请先把它「添加到版本库」后再提交',
   'vcs.worktreePruneFailed': '清理失效记录失败',
   'vcs.worktreePruned': '已清理失效的工作树记录',
   'vcs.commitMsg.branchDelete': '删除分支 {name}',
