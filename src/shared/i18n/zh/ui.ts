@@ -28,4 +28,13 @@ export const ui = {
   // ---- 通用弹窗（InfoModal / ConfirmModal）----
   'ui.modal.gotIt': '知道了',
   'ui.modal.confirm': '确认',
+
+  // ---- 命令预览（CommandPreview）----
+  'ui.cmdPreview.title': '将执行以下命令',
+  'ui.cmdPreview.toggle': '展开/收起命令预览',
+  'ui.cmdPreview.expanded': '点击收起',
+  'ui.cmdPreview.collapsed': '{n} 条，点击展开',
+  'ui.cmdPreview.copy': '复制',
+  'ui.cmdPreview.copyTip': '复制全部命令',
+  'ui.cmdPreview.copied': '已复制',
 } as const;

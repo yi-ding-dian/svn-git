@@ -2,6 +2,7 @@
 import React from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { ResizableModal } from '../shell/modal-shell.js';
+import { CommandPreview } from './command-preview.js';
 
 /** 信息提示弹窗（单按钮，用于"不可操作"类说明提示） */
 export function InfoModal(props: { title: string; message: React.ReactNode; onClose: () => void; zIndex?: number }) {
@@ -38,6 +39,8 @@ export function ConfirmModal(props: {
   /** 命令预览：鼠标悬浮按钮时显示将执行的命令 */
   confirmCmd?: string;
   secondaryCmd?: string;
+  /** 命令预览面板（多条命令）：默认折叠，danger 时展开 */
+  commands?: string[];
   /** 弹窗宽度（默认 440） */
   width?: number;
   /** 确认回调（带点击事件——个别调用方需要起点坐标做飞行动画；无参函数同样兼容） */
@@ -53,6 +56,9 @@ export function ConfirmModal(props: {
           {/* 内层文本流容器：body 是 flex column，message 若是裸片段（无外层元素）会被拆成一行一个段，
               包一层 div 让文本自然内联（行宽不足才换行），所有调用方一致 */}
           <div style={{ lineHeight: 1.7 }}>{props.message}</div>
+          {props.commands && props.commands.length > 0 && (
+            <CommandPreview commands={props.commands} defaultOpen={props.danger} danger={props.danger} />
+          )}
         </div>
         <div className="foot">
           {/* 取消 */}

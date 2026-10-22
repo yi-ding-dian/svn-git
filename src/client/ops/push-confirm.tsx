@@ -1,11 +1,11 @@
 /** 推送确认弹窗：未推送提交列表（含变更文件）+ 推送条件（远程落后/冲突风险）；未推送提交可右键修改注释/撤销 */
 import React, { useEffect, useState } from 'react';
 import { get, post, type LogEntry } from '../shared/api.js';
-import { cmdOf } from '../shared/cmd-preview.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { ConfirmModal, InfoModal } from '../ui/prompt.js';
 import { ClickTip } from '../ui/ui.js';
+import { CommandPreview } from '../ui/command-preview.js';
 import { autoSizeForText } from '../shared/utils.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { launchMagicFlight } from '../animations/index.js';
@@ -36,6 +36,8 @@ export function PushConfirmModal(props: {
 }) {
   const [loading, setLoading] = useState(true);
   const [unpushed, setUnpushed] = useState<LogEntry[]>([]);
+  /** 实际推送命令：首次推送（分支没有 upstream）会自动带 -u 建立跟踪 */
+  const [pushCmd, setPushCmd] = useState('git push');
   const [pf, setPf] = useState<Awaited<ReturnType<typeof get.preflight>> | null>(null);
   /** 展开查看变更文件的提交 rev */
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -84,6 +86,24 @@ export function PushConfirmModal(props: {
       cancelled = true;
     };
   }, [unpushed]);
+
+  // 推送命令预览：当前分支没有 upstream 时，实际执行的是 git push -u origin <分支>
+  useEffect(() => {
+    let cancelled = false;
+    get
+      .branches()
+      .then((r) => {
+        if (cancelled) return;
+        const cur = r.branches.find((b) => !b.remote && b.name === r.current);
+        setPushCmd(cur?.upstream ? 'git push' : `git push -u origin ${r.current}`);
+      })
+      .catch(() => {
+        /* 查不到分支信息：保持 git push（失败/认证引导会如实提示） */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** 修改注释确认（HEAD 用 amend；其余未推送提交用 reword 重写注释，代码内容不变） */
   const doAmend = async (x: number, y: number) => {
@@ -272,6 +292,8 @@ export function PushConfirmModal(props: {
               </button>
             </div>
           )}
+          {/* 命令预览：首次推送自动带 -u 建立上游跟踪 */}
+          <CommandPreview commands={[pushCmd]} />
         </div>
         <div className="foot">
           {/* 取消 */}
@@ -284,7 +306,7 @@ export function PushConfirmModal(props: {
               launchMagicFlight(e.currentTarget.getBoundingClientRect());
               props.onConfirm();
             }}
-            title={`${cmdOf('git push')}`}
+            title={pushCmd}
           >
             {/* 确认推送（{n}） */}
             {t('ops.push.confirm', { n: unpushed.length })}

@@ -10,6 +10,7 @@ import { get, post, type RepoCheck } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { PickDirModal } from './pick-dir.js';
 import { FormRow } from '../ui/ui.js';
+import { CommandPreview } from '../ui/command-preview.js';
 import { ResultLine } from '../ui/result-line.js';
 import { joinPath, isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
@@ -139,6 +140,19 @@ export function TagCheckoutDialog(props: {
     hintTone = 'ok';
   }
   const hintColor = hintTone === 'err' ? 'var(--err)' : hintTone === 'warn' ? 'var(--warn)' : hintTone === 'ok' ? 'var(--ok)' : 'var(--dim)';
+
+  /** 克隆方式选择里的命令预览（与实际后端执行一致：
+   *  完整克隆后 checkout 标签；浅克隆只 fetch 该标签的 1 个提交。
+   *  本地路径的浅克隆后端会自动转 file://，预览仍显示原路径（教学用）。 */
+  const tagRef = `refs/tags/${props.detail.name}`;
+  const cloneCmds = shallow
+    ? [
+        `git init ${target || '<target>'}`,
+        `git remote add origin ${props.detail.source}`,
+        `git fetch --depth 1 origin ${tagRef}:${tagRef}`,
+        `git checkout --detach ${tagRef}`,
+      ]
+    : [`git clone ${props.detail.source} ${target || '<target>'}`, `git checkout --detach ${tagRef}`];
 
   const validate = (): boolean => {
     if (!dir.trim() || !name.trim()) {
@@ -318,6 +332,8 @@ export function TagCheckoutDialog(props: {
               <div className="dim small" style={{ marginTop: 2 }}>{t('repo.tagCo.shallowHint')}</div>
             </span>
           </label>
+          {/* 命令预览：随所选模式变化 */}
+          <CommandPreview commands={cloneCmds} defaultOpen />
         </ModalShell>
       )}
       {/* 目录选择（与「打开项目」共用的目录浏览器） */}

@@ -28,4 +28,13 @@ export const ui = {
   // ---- 通用弹窗（InfoModal / ConfirmModal）----
   'ui.modal.gotIt': 'Got it',
   'ui.modal.confirm': 'Confirm',
+
+  // ---- Command preview (CommandPreview) ----
+  'ui.cmdPreview.title': 'Commands to run',
+  'ui.cmdPreview.toggle': 'Expand/collapse command preview',
+  'ui.cmdPreview.expanded': 'click to collapse',
+  'ui.cmdPreview.collapsed': '{n} commands, click to expand',
+  'ui.cmdPreview.copy': 'Copy',
+  'ui.cmdPreview.copyTip': 'Copy all commands',
+  'ui.cmdPreview.copied': 'Copied',
 };

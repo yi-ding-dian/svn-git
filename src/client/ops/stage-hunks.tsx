@@ -11,6 +11,7 @@ import { get, post, type ParsedDiff } from '../shared/api.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { hunkSummaryLabel } from '../shared/utils.js';
 import { highlightLine, langOf } from '../shared/highlight.js';
+import { CommandPreview } from '../ui/command-preview.js';
 import { t } from '../../shared/i18n/index.js';
 
 export function StageHunksModal(props: {
@@ -156,6 +157,10 @@ export function StageHunksModal(props: {
               ))}
             </div>
           </>
+        )}
+        {parsed && total > 0 && (
+          // 命令预览：选中的块生成补丁经 stdin 写入暂存区（未选中的块留在工作区）
+          <CommandPreview commands={['git apply --cached --whitespace=nowarn -']} />
         )}
       </div>
       <div className="foot">

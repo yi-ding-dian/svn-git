@@ -78,7 +78,7 @@ export function TagDialog(props: {
   const [msgErr, setMsgErr] = useState(false);
   const [busy, setBusy] = useState(false);
   // 工具风格二次确认
-  const [cfm, setCfm] = useState<{ title: string; msg: string; action: () => void } | null>(null);
+  const [cfm, setCfm] = useState<{ title: string; msg: string; commands?: string[]; action: () => void } | null>(null);
 
   const load = () => {
     get
@@ -237,6 +237,7 @@ export function TagDialog(props: {
                   title: t('ops.tag.delTitle'),
                   // 确认删除标签 {name}？
                   msg: t('ops.tag.delMsg', { name: tag }),
+                  commands: [cmdOfRepo(props.repoType, 'tag_delete', { name: tag }) ?? ''],
                   action: () => act('delete', tag),
                 })
               }
@@ -256,6 +257,7 @@ export function TagDialog(props: {
         <ConfirmModal
           title={cfm.title}
           message={cfm.msg}
+          commands={cfm.commands}
           // 确认
           confirmLabel={t('ui.modal.confirm')}
           onConfirm={() => {

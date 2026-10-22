@@ -47,7 +47,7 @@ export function BranchDialog(props: {
   // 是否配置了远程：没有 origin 的本地孤仓库不显示「推送到远程」（推了也会失败）
   const [hasRemote, setHasRemote] = useState(false);
   // 工具风格二次确认
-  const [cfm, setCfm] = useState<{ title: string; msg: React.ReactNode; action: () => void; confirmLabel?: string; hideCancel?: boolean; confirmCmd?: string; danger?: boolean } | null>(null);
+  const [cfm, setCfm] = useState<{ title: string; msg: React.ReactNode; action: () => void; confirmLabel?: string; hideCancel?: boolean; confirmCmd?: string; commands?: string[]; danger?: boolean } | null>(null);
   /** 新建分支确认：name=目标名；trunkBase=git 找到的主干基点 */
   const [createCfm, setCreateCfm] = useState<{ name: string; trunkBase?: string } | null>(null);
   /** 删除分支确认弹窗（SVN：输入分支名 + 可选密码）；值为要删除的分支名 */
@@ -140,6 +140,7 @@ export function BranchDialog(props: {
             danger: true,
             // 强制删除
             confirmLabel: t('ops.branch.forceDelete'),
+            commands: [`git branch -D ${name}`],
             action: () => act('delete', name, true),
           });
           return { ok: false, message: r.message };
@@ -536,6 +537,7 @@ export function BranchDialog(props: {
       // 确认删除远程分支 {name}？\n远程服务器上该分支将不再存在（本地分支不受影响），此操作不可恢复。
       msg: t('ops.branch.remoteDeleteMsg', { name }),
       confirmCmd: cmdOfRepo(props.repoType, 'branch_remote_delete', { name: name.split('/').slice(1).join('/') }),
+      commands: [`git push origin --delete ${name.split('/').slice(1).join('/')}`],
       action: () => act('remote-delete', name),
     });
   };
@@ -553,6 +555,7 @@ export function BranchDialog(props: {
       title: t('ops.branch.deleteTitle'),
       // 确认删除分支 {name}？未合并的分支会被 git 拒绝，届时可选择强制删除。
       msg: t('ops.branch.deleteMsg', { name }),
+      commands: [cmdOfRepo(props.repoType, 'branch_delete', { name }) ?? `git branch -d ${name}`],
       action: () => act('delete', name, false),
     });
   };
@@ -631,7 +634,7 @@ export function BranchDialog(props: {
               fromRef.current = e.currentTarget.getBoundingClientRect();
               act('fetch', '');
             }}
-            title={t('ops.branch.fetchTip')}
+            title={`${t('ops.branch.fetchTip')}\n\ngit fetch --all --prune`}
           >
             {/* ⟳ 获取远程 */}
             {t('ops.branch.fetchBtn')}
@@ -712,6 +715,7 @@ export function BranchDialog(props: {
           confirmLabel={cfm.confirmLabel ?? t('ui.modal.confirm')}
           hideCancel={cfm.hideCancel}
           confirmCmd={cfm.confirmCmd}
+          commands={cfm.commands}
           onConfirm={(e) => {
             // 飞线起点：记下确认按钮位置（3 秒转后台时从这里起飞）
             fromRef.current = e.currentTarget.getBoundingClientRect();
