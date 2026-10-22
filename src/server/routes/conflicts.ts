@@ -274,9 +274,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         // 打开文件所在文件夹（Linux: xdg-open 目录；Windows: explorer 定位文件）
         const { repo } = vcsOf();
         const body = await readBody(req);
-        const rel = String(body.path ?? '');
-        const abs = path.join(repo.root, rel);
-        if (!inRepoRoot(repo.root, abs)) {
+        const raw = String(body.path ?? '');
+        // 绝对路径（如工作树副本，可能不在当前仓库内）直接打开；相对路径仍按仓库根解析并校验
+        const abs = path.isAbsolute(raw) ? raw : path.join(repo.root, raw);
+        if (!path.isAbsolute(raw) && !inRepoRoot(repo.root, abs)) {
           sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
           return true;
         }

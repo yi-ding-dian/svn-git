@@ -10,7 +10,7 @@ import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.
 import { loadConfig } from '../config.js';
 import { progressStart, progressDone, progressFromStderr } from '../transfer-progress.js';
 import { t, getLang } from '../shared/i18n/index.js';
-import type { CommitSummary, FileStatus, LogEntry, RepoInfo, TagDetail, VcsResult } from './types.js';
+import type { CommitSummary, FileStatus, LogEntry, RepoInfo, TagDetail, VcsResult, WorktreeInfo } from './types.js';
 
 /** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限）
  *  export 给 server.ts 的「获取仓库」用：clone 走的是那边（GitVcs.clone 目前无人调用） */
@@ -1523,6 +1523,54 @@ export class GitVcs {
     // git tag 失败: {err}
     if (res.code !== 0) throw new Error(t('vcs.gitTagFailed', { err: res.stderr.trim() }));
     return res.stdout.split('\n').filter(Boolean);
+  }
+
+  /** 工作树列表（git worktree list --porcelain） */
+  async worktreeList(): Promise<WorktreeInfo[]> {
+    const res = await this.exec(['worktree', 'list', '--porcelain']);
+    if (res.code !== 0) return [];
+    const out: WorktreeInfo[] = [];
+    for (const block of res.stdout.split(/\n\s*\n/)) {
+      const lines = block.split('\n').filter(Boolean);
+      if (lines.length === 0) continue;
+      const wt: WorktreeInfo = { path: '', head: '', detached: false, bare: false, main: false, current: false, prunable: false };
+      for (const line of lines) {
+        const idx = line.indexOf(' ');
+        const key = idx < 0 ? line : line.slice(0, idx);
+        const val = idx < 0 ? '' : line.slice(idx + 1);
+        if (key === 'worktree') wt.path = val;
+        else if (key === 'HEAD') wt.head = val;
+        else if (key === 'branch') wt.branch = val.replace(/^refs\/heads\//, '');
+        else if (key === 'detached') wt.detached = true;
+        else if (key === 'bare') wt.bare = true;
+        else if (key === 'prunable') wt.prunable = true;
+        else if (key === 'locked') wt.locked = val || 'locked';
+      }
+      if (wt.path) out.push(wt);
+    }
+    // git worktree list 的第一项永远是主工作树（共享 .git 的原仓库），
+    // 不能用「当前打开的工作副本」判断——从 worktree 打开时会把副本误当成主工作树。
+    // 旧版 Git（2.20）的 porcelain 不输出 prunable：目录不存在即视为失效记录。
+    for (let i = 0; i < out.length; i++) {
+      out[i]!.main = i === 0;
+      out[i]!.current = path.resolve(out[i]!.path) === path.resolve(this.repo.root);
+      if (!out[i]!.main && !fs.existsSync(out[i]!.path)) out[i]!.prunable = true;
+    }
+    return out;
+  }
+
+  /** 移除工作树（目录与记录一起删） */
+  async worktreeRemove(wtPath: string, force = false): Promise<VcsResult> {
+    const res = await this.exec(['worktree', 'remove', ...(force ? ['--force'] : []), wtPath], { timeoutMs: 120_000 });
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.worktreeRemoveFailed') };
+    return { ok: true, message: t('vcs.worktreeRemoved', { path: wtPath }) };
+  }
+
+  /** 清理已失效的工作树记录（目录被手动删除后） */
+  async worktreePrune(): Promise<VcsResult> {
+    const res = await this.exec(['worktree', 'prune'], { timeoutMs: 60_000 });
+    if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.worktreePruneFailed') };
+    return { ok: true, message: t('vcs.worktreePruned') };
   }
 
   /** 某分支的最后一次提交（分支检出详情用）；失败返回 null */

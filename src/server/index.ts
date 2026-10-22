@@ -16,6 +16,7 @@ import { t } from '../shared/i18n/index.js';
 import { isSafeOrigin, sendJson, readBody, isAuthError, type Ctx } from './routes/util.js';
 import { handle as handleConflicts } from './routes/conflicts.js';
 import { handle as handleBranch } from './routes/branch.js';
+import { handle as handleWorktree } from './routes/worktree.js';
 import { handle as handleOps } from './routes/ops/index.js';
 import { handle as handleStage } from './routes/stage.js';
 import { handle as handleBrowse } from './routes/browse/index.js';
@@ -124,11 +125,12 @@ export function startServer(): Promise<ServerHandle> {
         sendJson(res, 403, { error: t('srv.crossSiteRejected') });
         return;
       }
-      // 端点域模块（冲突防护 / 分支标签 / 操作类 / 浏览 / 宿主环境 / 历史 / 最近项目 / 配置 / 上传 / 工作副本 / 终端），按序尝试分发
+      // 端点域模块（冲突防护 / 分支标签 / 工作树 / 操作类 / 浏览 / 宿主环境 / 历史 / 最近项目 / 配置 / 上传 / 工作副本 / 终端），按序尝试分发
       {
         const ctx: Ctx = { req, res, url, p };
         if (await handleConflicts(ctx)) return;
         if (await handleBranch(ctx)) return;
+        if (await handleWorktree(ctx)) return;
         if (await handleOps(ctx)) return;
         if (await handleStage(ctx)) return;
         if (await handleBrowse(ctx)) return;

@@ -1124,6 +1124,7 @@ export function App() {
               onToast={showToast}
               onRefresh={refresh}
               onBrowseRepo={openRepoBrowse}
+              onManageWorktrees={() => setModal({ type: 'worktrees' })}
               onNav={(v) => {
                 // 点「历史」带上当前浏览目录（'' = 仓库根 → 传 undefined 看全仓库）
                 if (v === 'log') showLog(browseDirRef.current || undefined);

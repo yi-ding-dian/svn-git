@@ -171,12 +171,25 @@ function readGitIgnoreRules(file: string): string[] {
   }
 }
 
+/** git 忽略文件 exclude 的真实路径：worktree 的 `.git` 是文件，不能直接拼 `.git/info/exclude`。
+ *  用 git 自己算（worktree 下会返回主仓库的 .git/info/exclude）；失败回退传统路径。 */
+export async function gitExcludePath(repoRoot: string): Promise<string> {
+  try {
+    const r = await run('git', ['rev-parse', '--git-path', 'info/exclude'], { cwd: repoRoot, timeoutMs: 15_000 });
+    const p = r.code === 0 ? r.stdout.trim().split('\n')[0] : '';
+    if (p) return path.isAbsolute(p) ? p : path.resolve(repoRoot, p);
+  } catch {
+    /* 回退传统路径 */
+  }
+  return path.join(repoRoot, '.git', 'info', 'exclude');
+}
+
 /** git 三来源忽略规则（渲染侧 /api/fs、filtered-tree? 的展开用）：
  * .gitignore(随仓库分发) / global(excludesFile,仅本机全部仓库) / .git/info/exclude(仅本机本仓库)。
  * global 未配置 core.excludesFile 时自动不含（git 本就不读该档）。 */
 export async function gitIgnoreSources(repoRoot: string): Promise<{ file: string; rules: string[] }[]> {
   const gitignore = path.join(repoRoot, '.gitignore');
-  const exclude = path.join(repoRoot, '.git', 'info', 'exclude');
+  const exclude = await gitExcludePath(repoRoot);
   const sources: { file: string; rules: string[] }[] = [
     { file: gitignore, rules: readGitIgnoreRules(gitignore) },
   ];

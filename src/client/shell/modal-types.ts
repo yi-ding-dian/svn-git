@@ -10,6 +10,7 @@ export type Modal =
   | { type: 'practice' }
   | { type: 'branches' }
   | { type: 'tags' }
+  | { type: 'worktrees' }
   | { type: 'stash' }
   | { type: 'create-repo' }
   /** url/name 有值 = 预填（「我的 GitHub 仓库」列表选中一个仓库后走克隆） */

@@ -29,6 +29,7 @@ import { EnvInstallModal } from '../repo/env-install.js';
 import { RepoBrowseModal } from '../repo/repo-browse.js';
 import { CheckoutDialog } from '../repo/checkout.js';
 import { BranchCheckoutDialog } from '../repo/branch-checkout.js';
+import { WorktreeManageDialog } from '../repo/worktree-manage.js';
 import { CheckoutAuthModal, useCheckoutTask } from '../repo/checkout-task.js';
 import { TagCheckoutDialog, type GitTagCheckoutParams } from '../repo/tag-checkout.js';
 import { PickDirModal } from '../repo/pick-dir.js';
@@ -325,6 +326,7 @@ export function ModalHost(props: ModalHostProps) {
             showToast(m, Boolean(err));
           }}
           onChanged={refreshInfo}
+          onManageWorktrees={() => setModal({ type: 'worktrees' })}
           onCheckoutBranch={(b) => {
             // 先关分支弹窗，再开检出弹窗（避免两个 ModalShell 叠加）
             setModal(null);
@@ -338,11 +340,20 @@ export function ModalHost(props: ModalHostProps) {
           }}
         />
       )}
+      {modal?.type === 'worktrees' && repo?.type === 'git' && (
+        <WorktreeManageDialog
+          onClose={() => setModal(null)}
+          onOpen={(dir) => {
+            setModal(null);
+            state.openHistoryItem({ path: dir });
+          }}
+          onNew={() => setModal({ type: 'branches' })}
+        />
+      )}
       {modal?.type === 'tags' && repo?.type && (
         <TagDialog
           repoType={repo.type}
-          onClose={() => setModal(null)}
-          onChanged={refreshInfo}
+          onClose={() => setModal(null)}          onChanged={refreshInfo}
           onCheckout={(tg) => {
             // 先关标签弹窗，再开检出弹窗（避免两个 ModalShell 叠加）
             setModal(null);

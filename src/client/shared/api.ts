@@ -457,6 +457,8 @@ export const get = {
     api<{ ok: boolean; rev?: string; subject?: string; author?: string; date?: string }>(
       `/api/branch-log?name=${encodeURIComponent(name)}`,
     ),
+  /** Git 工作树列表 */
+  worktrees: () => api<{ worktrees: WorktreeEntry[] }>('/api/worktrees'),
   /** SVN 标签详情：远程 URL 的最后一次提交（提交信息第一行） */
   tagLog: (url: string) =>
     api<{ ok: boolean; rev?: string; subject?: string; author?: string; date?: string }>(
@@ -616,6 +618,23 @@ export interface MainlinePlan {
   error?: string;
 }
 
+export interface WorktreeEntry {
+  path: string;
+  head: string;
+  /** 分支短名（detached 时为空） */
+  branch?: string;
+  detached: boolean;
+  bare: boolean;
+  /** 主工作树（当前仓库根） */
+  main: boolean;
+  /** 当前打开的工作副本（不能移除自己） */
+  current: boolean;
+  /** 目录已不存在，只剩记录 */
+  prunable: boolean;
+  /** 锁定原因 */
+  locked?: string;
+}
+
 export interface BranchInfo {
   current: string;
   /** svn：当前位置类型（trunk/branches/tags/其他） */
@@ -689,6 +708,9 @@ export interface ProjectProbe {
 }
 
 export const post = {
+  /** 移除工作树 / 清理失效记录 */
+  worktreeAction: (action: 'remove' | 'prune', path = '', force = false) =>
+    api<VcsResult>('/api/worktree', json({ action, path, force })),
   open: (dir: string) => api<{ ok: boolean; repo?: { root: string; type: 'svn' | 'git' } }>('/api/open', json({ path: dir })),
   /** 安装到系统应用菜单（POST）；卸载走 DELETE */
   appMenuInstall: () => api<{ ok: boolean; message: string }>('/api/app-menu', json({})),

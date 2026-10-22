@@ -160,6 +160,8 @@ export function Sidebar(props: {
   onBrowseRepo: (path: string) => void;
   /** 点开过但打不开的项目：路径 → 错误消息（这些项上常驻 ×，悬浮时显示同一条消息） */
   invalidPaths: Record<string, string>;
+  /** 打开 Git 工作树管理（仅当前 Git 项目） */
+  onManageWorktrees?: () => void;
   /** 悬浮失效项时显示提示（复用点击后那套浮层） */
   onShowTip: (msg: string) => void;
   /** 最近项目下方的「＋ 打开项目」：打开项目选择弹窗（与顶栏 ⋯ 菜单里那个同一入口） */
@@ -517,6 +519,19 @@ export function Sidebar(props: {
                             });
                           },
                         },
+                        // 工作树管理（仅当前 Git 项目：worktree 命令作用于当前仓库）
+                        ...(rmMenu.path === props.currentRoot && rmMenu.type === 'git' && props.onManageWorktrees
+                          ? [
+                              {
+                                icon: '🌿',
+                                label: t('repo.worktree.title'),
+                                action: () => {
+                                  setRmMenu(null);
+                                  props.onManageWorktrees?.();
+                                },
+                              },
+                            ]
+                          : []),
                         // 浏览仓库（仅 SVN：SVN 有"仓库地址"可直连浏览；git 没有等价语义——要 clone 才看得到）
                         ...(rmMenu.type === 'svn'
                           ? [

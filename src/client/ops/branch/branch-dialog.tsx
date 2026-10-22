@@ -27,6 +27,8 @@ export function BranchDialog(props: {
   workDir?: string;
   /** 目录选择弹窗注入：ops 域不能直接引用 repo 的目录浏览器，由 shell 提供 */
   onPickDir?: (req: PickDirRequest) => void;
+  /** 打开 Git 工作树管理（宿主渲染，避免 ops 引用 repo 域） */
+  onManageWorktrees?: () => void;
   /** 检出该分支为独立工作副本（宿主渲染检出弹窗并执行） */
   onCheckoutBranch?: (b: BranchCheckoutPayload) => void;
   onClose: () => void;
@@ -665,6 +667,18 @@ export function BranchDialog(props: {
           >
             {/* ⟳ 获取远程 */}
             {t('ops.branch.fetchBtn')}
+          </button>
+        )}
+        {/* 工作树管理：Git 专有（worktree 共享 .git） */}
+        {props.repoType === 'git' && props.onManageWorktrees && (
+          <button
+            className="mini"
+            disabled={busy}
+            onClick={props.onManageWorktrees}
+            title={t('ops.branch.worktreeTip')}
+          >
+            {/* 工作树… */}
+            {t('ops.branch.worktreeBtn')}
           </button>
         )}
       </div>

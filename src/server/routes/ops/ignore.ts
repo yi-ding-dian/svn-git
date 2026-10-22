@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { run } from '../../../vcs/exec.js';
 import { sendJson, readBody, vcsOf, inRepoRoot, invalidateStatusCache, runVcs, MSG_PATH_OUT_OF_BOUNDS } from '../util.js';
-import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile, invalidateSvnIgnoreMap } from '../../../vcs/ignore.js';
+import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile, gitExcludePath, invalidateSvnIgnoreMap } from '../../../vcs/ignore.js';
 import type { Ctx } from '../util.js';
 import { t } from '../../../shared/i18n/index.js';
 import { detectTextEncoding, decodeText, encodeText, type TextEncoding } from '../../../shared/text.js';
@@ -30,7 +30,7 @@ async function gitIgnoreFiles(repoRoot: string, forWriteGlobal = false): Promise
     { where: 'gitignore', file: path.join(repoRoot, '.gitignore') },
   ];
   if (global) out.push({ where: 'global', file: path.resolve(global) });
-  out.push({ where: 'exclude', file: path.join(repoRoot, '.git', 'info', 'exclude') });
+  out.push({ where: 'exclude', file: await gitExcludePath(repoRoot) });
   return out;
 }
 /** 追加忽略规则到文件（去重：已含同 pattern 行返回 false；末尾补一行）。

@@ -79,8 +79,8 @@ export function BranchList(props: {
                   onClick={() => props.onCheckout?.({ name: 'trunk', remote: false })}
                   title={t(trunkIsCurrent ? 'ops.branch.checkoutCopyTip' : 'ops.branch.checkoutTip', { name: trunkName })}
                 >
-                  {/* 检出 / 检出副本 */}
-                  {t(trunkIsCurrent ? 'ops.branch.checkoutCopyBtn' : 'ops.branch.checkoutBtn')}
+                  {/* 检出（当前分支的悬浮提示说明是「检出副本」；按钮文案统一以对齐徽标列） */}
+                  {t('ops.branch.checkoutBtn')}
                 </button>
               )}
               {!trunkIsCurrent && (
@@ -200,6 +200,12 @@ export function BranchList(props: {
                 与其它行的 ✓/↑N 列错开（用户实报）。 */}
             {(isCur === false || (repoType === 'git' && hasRemote && !b.remote && !isPushed) || Boolean(props.onCheckout)) ? (
               <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                {isCur && (
+                  // 当前分支没有「切换」：用等宽隐藏占位，避免名字列把同步徽标顶到行尾（✓/↑N 列错开）
+                  <button className="mini primary" style={{ visibility: 'hidden' }} aria-hidden="true">
+                    {t('ops.branch.switchBtn')}
+                  </button>
+                )}
                 {!isCur && !remoteIsCurrent && (
                   <button
                     className="mini primary"
@@ -226,8 +232,8 @@ export function BranchList(props: {
                     onClick={() => props.onCheckout?.({ name: b.name, remote: b.remote })}
                     title={t(isCur ? 'ops.branch.checkoutCopyTip' : 'ops.branch.checkoutTip', { name: b.name })}
                   >
-                    {/* 检出 / 检出副本 */}
-                    {t(isCur ? 'ops.branch.checkoutCopyBtn' : 'ops.branch.checkoutBtn')}
+                    {/* 检出（当前分支的悬浮提示说明是「检出副本」；按钮文案统一以对齐徽标列） */}
+                    {t('ops.branch.checkoutBtn')}
                   </button>
                 )}
                 {repoType === 'git' && hasRemote && !b.remote && !isPushed && (
@@ -253,24 +259,32 @@ export function BranchList(props: {
                     </button>
                   );
                 })()}
-                {!b.remote && !isCur && (
-                  <>
-                    {/* 把该分支的改动合并到当前分支（先确保已切到目标分支） / 🔀 合并 */}
-                    <button className="mini btn-accent" disabled={busy} onClick={() => props.onMerge(b.name)} title={`${cmdOfRepo(repoType, 'branch_merge', { name: b.name })}\n\n${mergeTipOf(b.name)}`}>{t('ops.branch.mergeBtn')}</button>
-                    <button
-                      className="mini danger"
-                      disabled={busy || isTrunkName(b.name)}
-                      title={isTrunkName(b.name)
-                        // 主干分支不能删除（团队稳定版本，防止误删）
-                        ? t('ops.branch.trunkNoDelete')
-                        // 删除分支（已合并的分支才能删）
-                        : `${cmdOfRepo(repoType, 'branch_delete', { name: b.name })}\n\n${t('ops.branch.deleteTip')}`}
-                      onClick={() => props.onDelete(b.name)}
-                    >
-                      {/* 删除 */}
-                      {t('common.delete')}
-                    </button>
-                  </>
+                {!b.remote && (
+                  isCur ? (
+                    <>
+                      {/* 当前分支：隐藏占位，保持与普通本地行同宽（否则同步徽标列错开） */}
+                      <button className="mini btn-accent" style={{ visibility: 'hidden' }} aria-hidden="true">{t('ops.branch.mergeBtn')}</button>
+                      <button className="mini danger" style={{ visibility: 'hidden' }} aria-hidden="true">{t('common.delete')}</button>
+                    </>
+                  ) : (
+                    <>
+                      {/* 把该分支的改动合并到当前分支（先确保已切到目标分支） / 🔀 合并 */}
+                      <button className="mini btn-accent" disabled={busy} onClick={() => props.onMerge(b.name)} title={`${cmdOfRepo(repoType, 'branch_merge', { name: b.name })}\n\n${mergeTipOf(b.name)}`}>{t('ops.branch.mergeBtn')}</button>
+                      <button
+                        className="mini danger"
+                        disabled={busy || isTrunkName(b.name)}
+                        title={isTrunkName(b.name)
+                          // 主干分支不能删除（团队稳定版本，防止误删）
+                          ? t('ops.branch.trunkNoDelete')
+                          // 删除分支（已合并的分支才能删）
+                          : `${cmdOfRepo(repoType, 'branch_delete', { name: b.name })}\n\n${t('ops.branch.deleteTip')}`}
+                        onClick={() => props.onDelete(b.name)}
+                      >
+                        {/* 删除 */}
+                        {t('common.delete')}
+                      </button>
+                    </>
+                  )
                 )}
               </span>
             ) : tr ? (

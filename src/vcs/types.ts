@@ -175,6 +175,24 @@ export interface CommitSummary {
   date?: string;
 }
 
+/** Git 工作树（git worktree list --porcelain） */
+export interface WorktreeInfo {
+  path: string;
+  head: string;
+  /** 分支短名（detached 时为空） */
+  branch?: string;
+  detached: boolean;
+  bare: boolean;
+  /** 主工作树（当前仓库根） */
+  main: boolean;
+  /** 当前打开的工作副本（可能本身就是一个 worktree；不能移除自己） */
+  current: boolean;
+  /** 目录已不存在，只剩记录 */
+  prunable: boolean;
+  /** 锁定原因（git worktree lock） */
+  locked?: string;
+}
+
 /** Git 标签详情（tagListDetailed）：
  *  hash/subject/author/date 描述**标签指向的提交**（最后提交）；
  *  tagAuthor/tagDate 描述附注标签自身的创建者/创建时间（轻量标签为空）；
@@ -283,6 +301,12 @@ export interface Vcs {
   remoteLogOne?(url: string): Promise<CommitSummary | null>;
   /** 某分支的最后一次提交（分支检出详情用）；失败返回 null。svn/git 都实现 */
   branchLogOne?(name: string): Promise<CommitSummary | null>;
+  /** git：工作树列表（worktree list --porcelain）；svn 不实现 */
+  worktreeList?(): Promise<WorktreeInfo[]>;
+  /** git：移除工作树（目录与记录一起删）；force 跳过未提交改动检查 */
+  worktreeRemove?(path: string, force?: boolean): Promise<VcsResult>;
+  /** git：清理已失效的工作树记录（目录已被手动删除） */
+  worktreePrune?(): Promise<VcsResult>;
   tagCreate(name: string, message?: string, rev?: string): Promise<VcsResult>;
   tagDelete(name: string): Promise<VcsResult>;
   blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]>;
