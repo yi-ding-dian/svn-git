@@ -256,6 +256,7 @@ export const ops = {
   'ops.branch.checkoutNoUrl': '无法确定分支地址，请稍后重试',
   'ops.branch.worktreeBtn': '工作树…',
   'ops.branch.worktreeTip': '管理 Git 工作树（同一仓库的多个工作目录）',
+  'ops.branch.mainlinePending': '正在解析主干来源…（首次可能较慢）',
   'ops.branch.pushTip': '该分支尚未推送到远程\n点此将 {name} 推送到远程服务器（origin）',
   'ops.branch.pushBtn': '⬆ 推送到远程',
   'ops.branch.fetchBtn': '⟳ 获取远程',

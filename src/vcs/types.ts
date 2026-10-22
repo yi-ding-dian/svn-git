@@ -134,6 +134,8 @@ export interface BranchListResult {
   /** svn：由 copyfrom 推断出的主干对应 URL（如 tags/SCA_HB → trunk/src）与相对路径 */
   mainlineUrl?: string;
   mainlineRelative?: string;
+  /** svn：主干来源仍在后台追溯（列表已返回；查到后前端重拉补齐 trunk 行） */
+  mainlinePending?: boolean;
   branches: {
     name: string;
     remote: boolean;

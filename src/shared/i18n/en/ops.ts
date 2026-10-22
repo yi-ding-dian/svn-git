@@ -255,6 +255,7 @@ export const ops = {
   'ops.branch.checkoutNoUrl': 'Cannot determine the branch URL — try again later',
   'ops.branch.worktreeBtn': 'Worktrees…',
   'ops.branch.worktreeTip': 'Manage Git worktrees (multiple working directories of this repository)',
+  'ops.branch.mainlinePending': 'Resolving mainline source… (first time may take a while)',
   'ops.branch.pushTip': 'This branch has not been pushed yet\nClick to push {name} to the remote server (origin)',
   'ops.branch.pushBtn': '⬆ Push to Remote',
   'ops.branch.fetchBtn': '⟳ Fetch Remote',

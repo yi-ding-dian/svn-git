@@ -7,6 +7,7 @@ import { invalidateSvnIgnoreMap } from './ignore.js';
 import { t } from '../shared/i18n/index.js';
 import { progressDone, progressReport, progressStart, progressStepsStart, progressStepsAdvance } from '../transfer-progress.js';
 import { platform } from '../platform/index.js';
+import { CONFIG_DIR } from '../config.js';
 import type { BranchDeleteCheck, BranchListResult, CommitSummary, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, SvnLayout, VcsResult } from './types.js';
 
 /** svn 可执行文件解析：PATH 优先；找不到时试平台常见安装路径（Windows 上装完 svn 系统 PATH
@@ -70,6 +71,35 @@ const HUGE_WCS = new Set<string>();
 /** 工作副本 URL → 主干对应 URL 的缓存（copyfrom 历史不会变；switch 后 URL 变了自然换 key）。
  *  null 表示已查过但没有 copy 历史（避免每次弹窗都跑一遍 svn log）。 */
 const MAINLINE_CACHE = new Map<string, string | null>();
+const MAINLINE_CACHE_FILE = path.join(CONFIG_DIR, 'mainline-cache.json');
+let mainlineCacheLoaded = false;
+
+/** 载入持久化的主干来源缓存：copy 历史不可变，跨重启复用（首次仍需查一次） */
+function loadMainlineCache(): void {
+  if (mainlineCacheLoaded) return;
+  mainlineCacheLoaded = true;
+  try {
+    const data = JSON.parse(fs.readFileSync(MAINLINE_CACHE_FILE, 'utf8')) as Record<string, string | null>;
+    for (const [k, v] of Object.entries(data)) MAINLINE_CACHE.set(k, typeof v === 'string' ? v : null);
+  } catch {
+    /* 无缓存/损坏：按未缓存处理 */
+  }
+}
+
+/** 写回缓存（超过 500 条时只保留最近部分，避免无限增长） */
+function saveMainlineCache(): void {
+  try {
+    if (MAINLINE_CACHE.size > 500) {
+      const keep = [...MAINLINE_CACHE.entries()].slice(-500);
+      MAINLINE_CACHE.clear();
+      for (const [k, v] of keep) MAINLINE_CACHE.set(k, v);
+    }
+    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    fs.writeFileSync(MAINLINE_CACHE_FILE, JSON.stringify(Object.fromEntries(MAINLINE_CACHE)), { mode: 0o600 });
+  } catch {
+    /* 缓存写失败不影响功能 */
+  }
+}
 
 /** 按行切开 svn 的**文本**输出，剥掉行尾 \r。
  *  **为什么必须有**：Windows 上 svn 的输出行尾是 CRLF，而 JS 正则里的 `.` 不吃 \r——
@@ -769,34 +799,49 @@ export class SvnVcs {
   /** 仓库布局探测（server 层 /api/tags 等使用,经 Vcs 接口暴露） */
   async layout(): Promise<SvnLayout> {
     const root = await this.projectRootUrl();
-    return {
-      trunk: await this.existsUrl(`${root}/trunk`),
-      branches: await this.existsUrl(`${root}/branches`),
-      tags: await this.existsUrl(`${root}/tags`),
-    };
+    return this.layoutFor(root);
   }
 
-  /** 分支列表（svn list <项目根>/branches），附带仓库布局探测结果 */
+  /** 布局探测（已知项目根时复用；三个目录并行查询） */
+  private async layoutFor(root: string): Promise<SvnLayout> {
+    const [trunk, branches, tags] = await Promise.all([
+      this.existsUrl(`${root}/trunk`),
+      this.existsUrl(`${root}/branches`),
+      this.existsUrl(`${root}/tags`),
+    ]);
+    return { trunk, branches, tags };
+  }
+
+  /** 分支列表（svn list <项目根>/branches），附带仓库布局探测结果。
+   *  主干来源（copyfrom 追溯）可能很慢（标签目录实测 ~10s），**不阻塞列表**：
+   *  有缓存就直接带，没有则返回 pending 并在后台预热。 */
   async branchList(): Promise<BranchListResult> {
+    loadMainlineCache();
     const root = await this.projectRootUrl();
-    let names: { name: string; isDir: boolean }[] = [];
-    try {
-      names = await this.ls(`${root}/branches/`);
-    } catch {
-      names = [];
+    const url = (await this.info()).url ?? '';
+    // 列表、布局、当前位置、版本库根并行（布局内部三个 ls 也并行）
+    const [names, layout, loc, reposRoot] = await Promise.all([
+      this.ls(`${root}/branches/`).catch(() => [] as { name: string; isDir: boolean }[]),
+      this.layoutFor(root),
+      this.currentLocation(),
+      this.repoRootUrl(),
+    ]);
+    const cached = this.mainlineCacheGet(root, url);
+    if (!cached.known) {
+      // 后台预热；前端拿到 pending=false 后会重拉补齐 trunk 行
+      void this.mainlineUrl().catch(() => null);
     }
-    const loc = await this.currentLocation();
-    const mainline = await this.mainlineUrl();
     return {
       current: loc.name,
       currentKind: loc.kind,
       currentUrl: loc.url,
       projectRoot: root,
-      reposRootUrl: await this.repoRootUrl(),
-      mainlineUrl: mainline ?? undefined,
-      mainlineRelative: mainline ? this.relOf(mainline, root) : undefined,
+      reposRootUrl: reposRoot,
+      mainlineUrl: cached.value ?? undefined,
+      mainlineRelative: cached.value ? this.relOf(cached.value, root) : undefined,
+      mainlinePending: !cached.known,
       branches: names.filter((n) => n.isDir).map((n) => ({ name: n.name.replace(/\/$/, ''), remote: false })),
-      layout: await this.layout(),
+      layout,
     };
   }
 
@@ -941,7 +986,17 @@ export class SvnVcs {
    *  - 无 copy 历史 → null（调用方回退 `trunk`）。
    *  结果按 URL 缓存（copy 历史不可变）。
    */
+  /** 同步查主干来源缓存：known=false 表示还没查过（调用方可后台预热） */
+  private mainlineCacheGet(root: string, url: string): { known: boolean; value: string | null } {
+    if (!url) return { known: true, value: null };
+    if (url === `${root}/trunk` || url.startsWith(`${root}/trunk/`)) return { known: true, value: url };
+    loadMainlineCache();
+    if (MAINLINE_CACHE.has(url)) return { known: true, value: MAINLINE_CACHE.get(url)! };
+    return { known: false, value: null };
+  }
+
   private async mainlineUrl(): Promise<string | null> {
+    loadMainlineCache();
     const root = await this.projectRootUrl();
     const url = await this.currentUrl();
     if (!url) return null;
@@ -967,6 +1022,7 @@ export class SvnVcs {
       break;
     }
     MAINLINE_CACHE.set(url, found);
+    saveMainlineCache();
     return found;
   }
 

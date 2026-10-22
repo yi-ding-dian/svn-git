@@ -86,6 +86,35 @@ export function BranchDialog(props: {
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // SVN：主干来源可能在后台追溯（标签目录首次实测 ~10s）。列表先显示，查到后自动补 trunk 行。
+  useEffect(() => {
+    if (props.repoType !== 'svn' || !data?.mainlinePending) return;
+    let alive = true;
+    let tries = 0;
+    const timer = setInterval(() => {
+      if (!alive) return;
+      tries += 1;
+      get
+        .branches()
+        .then((r) => {
+          if (!alive) return;
+          if (!r.mainlinePending) {
+            setData(r);
+            clearInterval(timer);
+          } else if (tries >= 6) {
+            clearInterval(timer);
+          }
+        })
+        .catch(() => {
+          if (tries >= 6) clearInterval(timer);
+        });
+    }, 2500);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [props.repoType, data?.mainlinePending]);
+
   /** 3 秒转后台的统一收尾：收起弹窗 + 飞线 + 轻提示（子面板共用）
    *  提示 2 秒后自动消失（用户定稿：转后台的确认提示不用停留太久） */
   const background = (title: string, from?: { x: number; y: number }) => {
@@ -714,6 +743,10 @@ export function BranchDialog(props: {
         onTrackClick={onTrackClick}
         onCheckout={checkoutBranch}
       />
+      {/* SVN 主干来源后台追溯中：列表已可用，trunk 行稍后自动出现 */}
+      {props.repoType === 'svn' && data?.mainlinePending && (
+        <div className="dim small" style={{ padding: '4px 6px' }}>{t('ops.branch.mainlinePending')}</div>
+      )}
       <ResultLine msg={msg} err={msgErr} />
       {/* SVN 合并范围（目录/文件级）；留空回车 = 整个分支 */}
       {mergeScopeFor && (

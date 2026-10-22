@@ -647,6 +647,8 @@ export interface BranchInfo {
   /** svn：由 copyfrom 推断出的主干对应 URL/相对路径（tags/SCA_HB → trunk/src） */
   mainlineUrl?: string;
   mainlineRelative?: string;
+  /** svn：主干来源仍在后台追溯（列表已返回，查到后重拉补齐） */
+  mainlinePending?: boolean;
   branches: {
     name: string;
     remote: boolean;
