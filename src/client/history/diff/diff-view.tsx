@@ -1,6 +1,7 @@
 /** 差异视图：并排双栏对比（左原版/右当前，修改行 M 标识，语法高亮，点击联动）/ 版本间文本 diff */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { get } from '../../shared/api.js';
+import { isBinaryFile } from '../../shared/utils.js';
 import { DiffRender } from '../../ui/diff-render.js';
 import { langOf } from '../../shared/highlight.js';
 import { IconCopy } from '../../ui/icons.js';
@@ -62,6 +63,8 @@ export function DiffView(props: Props) {
   const [showAll, setShowAll] = useState(false);
   // 文件更新检测
   const [staleTip, setStaleTip] = useState(false);
+  /** 工作区文件已被删除：块级还原写不回去，箭头禁用并说明原因 */
+  const [fileMissing, setFileMissing] = useState(false);
   /** 已展开的大块：默认折叠超过 COLLAPSE_THRESHOLD 行的差异块，点击折叠行展开（换文件重置） */
   const [expandedBlocks, setExpandedBlocks] = useState<Set<number>>(new Set());
   const mtimeRef = useRef<{ mtime: number; size: number } | null>(null);
@@ -79,6 +82,18 @@ export function DiffView(props: Props) {
    *  写回工作区会张冠李戴 */
   // 块级还原会写工作区：只读模式（历史版本）一律不给
   const canRestoreBlock = sideMode && !props.target?.b && !props.readOnly;
+  /** 文件过大：块级还原会整文件写回，禁用 */
+  const tooLarge = Boolean(versions && Math.max(versions.left.length, versions.right.length) > 5 * 1024 * 1024);
+  /** 禁用还原箭头的原因（空 = 可还原）：箭头仍显示，但打斜杠 + 悬浮说明 */
+  const restoreDisabledReason = !canRestoreBlock
+    ? undefined
+    : fileMissing
+      ? t('hist.restoreDisabledDeleted')
+      : props.target?.path && isBinaryFile(props.target.path)
+        ? t('hist.restoreDisabledBinary')
+        : tooLarge
+          ? t('hist.restoreDisabledTooLarge')
+          : undefined;
   // md 文件：左右栏预览（renderMarkdown 复用文件预览同款渲染；baseDir 供相对图片路径）
   const isMd = Boolean(props.target?.path?.toLowerCase().endsWith('.md'));
   const mdBaseDir = props.target?.path?.includes('/') ? props.target.path.slice(0, props.target.path.lastIndexOf('/')) : '';
@@ -191,6 +206,7 @@ export function DiffView(props: Props) {
     edit.resetEdit();
     restore.resetRestore();
     setExpandedBlocks(new Set());
+    setFileMissing(false);
     // 只在换文件时重置：resetEdit/resetRestore 每次渲染重建，不能进依赖
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.target]);
@@ -216,7 +232,18 @@ export function DiffView(props: Props) {
           setCurBlock(0);
           // 记录文件指纹，开始外部更新检测（只读历史版本不做 stale 检测，也不必读工作区文件——
           // 历史文件可能已在当前工作区删除/改名，请求会 404）
-          if (!props.readOnly) get.fileMtime(tgt.path!).then((m) => { mtimeRef.current = m; }).catch(() => {});
+          if (!props.readOnly) {
+            get
+              .fileMtime(tgt.path!)
+              .then((m) => {
+                mtimeRef.current = m;
+                setFileMissing(false);
+              })
+              .catch(() => {
+                mtimeRef.current = null;
+                setFileMissing(true);
+              });
+          }
           setStaleTip(false);
         })
         .catch((e: Error) => {
@@ -409,6 +436,7 @@ export function DiffView(props: Props) {
             selRef={selRef}
             setExpandedBlocks={setExpandedBlocks}
             onRestore={onRestore}
+            restoreDisabledReason={restoreDisabledReason}
           />
         </>
       )}

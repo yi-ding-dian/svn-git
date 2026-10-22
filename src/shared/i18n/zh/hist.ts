@@ -113,6 +113,9 @@ export const hist = {
 
   // ---- 块级还原（左栏差异块旁的箭头：把工作区这一块改回原版）----
   'hist.restoreBlockTip': '还原此块（工作区这部分改回原版）',
+  'hist.restoreDisabledDeleted': '文件已被删除，请在文件列表右键「还原缺失文件」',
+  'hist.restoreDisabledBinary': '二进制文件不支持块级还原',
+  'hist.restoreDisabledTooLarge': '文件过大，不支持块级还原',
   'hist.restoreBlockTitle': '还原差异块',
   'hist.restoreBlockMsgAdd': '工作区这 {n} 行新增将被删除，其他修改不受影响。确定还原吗？',
   'hist.restoreBlockMsgDel': '原版删除的 {n} 行将写回工作区，其他修改不受影响。确定还原吗？',

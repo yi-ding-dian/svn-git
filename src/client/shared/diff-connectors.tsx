@@ -39,6 +39,8 @@ interface Props {
   onJump?: (index: number) => void;
   /** 块级还原：传入时每块显示还原箭头（只对「工作区 vs 原版」有意义） */
   onRestore?: (blockId: number, index: number) => void;
+  /** 非空 = 禁用还原（箭头打斜杠，悬浮显示原因） */
+  restoreDisabledReason?: string;
 }
 
 type LinkKind = 'mod' | 'del' | 'add';
@@ -187,24 +189,28 @@ export function DiffConnectors(props: Props) {
       {/* 还原箭头：块首行左侧、指向右栏（把原版内容应用到工作区）。
           只有「工作区 vs 原版」才传 onRestore——版本间对比里右栏不是工作区，还原无意义。 */}
       {onRestore &&
-        view.links.map((l) => (
-          <button
-            key={`restore-${l.id}`}
-            className="sb-restore-btn"
-            // 块首行贴视口顶/底时，按钮（24px、translateY(-50%)）会有一半被 overflow 裁掉；
-            // 内缩半个按钮高度，保证任何滚动位置都完整可见
-            style={{ top: Math.min(Math.max(l.top, 12), Math.max(12, view.h - 12)) }}
-            title={t('hist.restoreBlockTip')}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRestore(l.id, l.index);
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9H14M9.5 4.5L14 9l-4.5 4.5" />
-            </svg>
-          </button>
-        ))}
+        view.links.map((l) => {
+          const disabled = Boolean(props.restoreDisabledReason);
+          return (
+            <button
+              key={`restore-${l.id}`}
+              className={`sb-restore-btn${disabled ? ' disabled' : ''}`}
+              disabled={disabled}
+              // 块首行贴视口顶/底时，按钮（24px、translateY(-50%)）会有一半被 overflow 裁掉；
+              // 内缩半个按钮高度，保证任何滚动位置都完整可见
+              style={{ top: Math.min(Math.max(l.top, 12), Math.max(12, view.h - 12)) }}
+              title={disabled ? props.restoreDisabledReason : t('hist.restoreBlockTip')}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!disabled) onRestore(l.id, l.index);
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9H14M9.5 4.5L14 9l-4.5 4.5" />
+              </svg>
+            </button>
+          );
+        })}
     </div>
   );
 }

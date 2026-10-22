@@ -977,6 +977,15 @@ body.drag-trash-hot .drag-src {
 }
 .sb-restore-btn:hover { opacity: 1; background: var(--panel2); }
 .sb-restore-btn:active { transform: translateY(-50%) scale(.92); }
+/* 不可用：斜杠划掉 + 悬浮提示原因（鼠标悬停不恢复亮度） */
+.sb-restore-btn.disabled { opacity: .3; cursor: not-allowed; }
+.sb-restore-btn.disabled:hover { background: transparent; }
+.sb-restore-btn.disabled::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 22px; height: 2px; background: var(--err);
+  transform: translate(-50%, -50%) rotate(-45deg);
+  border-radius: 1px;
+}
 .sb-scrollbar {
   width: 12px; position: relative; background: var(--border2); flex-shrink: 0; cursor: pointer;
   border-left: 1px solid var(--border);

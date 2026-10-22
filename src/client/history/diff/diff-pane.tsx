@@ -39,6 +39,8 @@ export function DiffPane(props: {
   selRef: React.MutableRefObject<string>;
   setExpandedBlocks: React.Dispatch<React.SetStateAction<Set<number>>>;
   onRestore?: (blockId: number) => void;
+  /** 禁用还原箭头的原因（非空时箭头打斜杠 + 悬浮说明） */
+  restoreDisabledReason?: string;
 }) {
   const {
     isMd,
@@ -175,6 +177,7 @@ export function DiffPane(props: {
         currentBlockId={blocks[curBlock]?.id}
         onJump={navigation.goBlock}
         onRestore={onRestore}
+        restoreDisabledReason={props.restoreDisabledReason}
       />
       {/* 右栏：当前 + 滚动条预览标记；「就地编辑」时整栏换成编辑器（左栏保持原版对照） */}
       {edit.editing && edit.editData ? (

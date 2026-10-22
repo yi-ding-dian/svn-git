@@ -115,6 +115,9 @@ export const hist = {
 
   // ---- Per-block restore (arrow next to a diff block: revert this block in the working tree) ----
   'hist.restoreBlockTip': 'Restore this block (revert this part of the working tree to the original)',
+  'hist.restoreDisabledDeleted': 'The file has been deleted; use "Restore Missing File" from the file list',
+  'hist.restoreDisabledBinary': 'Binary files do not support block restore',
+  'hist.restoreDisabledTooLarge': 'File is too large for block restore',
   'hist.restoreBlockTitle': 'Restore Block',
   'hist.restoreBlockMsgAdd': 'The {n} added line(s) in the working tree will be removed. Other changes are unaffected. Restore?',
   'hist.restoreBlockMsgDel': 'The {n} line(s) deleted from the original will be written back to the working tree. Other changes are unaffected. Restore?',
