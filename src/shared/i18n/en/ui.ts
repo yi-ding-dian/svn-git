@@ -38,4 +38,10 @@ export const ui = {
   'ui.cmdPreview.copyTip': 'Copy all commands',
   'ui.cmdPreview.copyLineTip': 'Copy this command',
   'ui.cmdPreview.copied': 'Copied',
+  // ---- Diff file headers (DiffRender) ----
+  'ui.diffFileHead.add': 'Added',
+  'ui.diffFileHead.del': 'Deleted',
+  'ui.diffFileHead.mod': 'Modified',
+  'ui.diffFileHead.rename': 'Renamed',
+  'ui.diffFileHead.binary': 'Binary',
 };

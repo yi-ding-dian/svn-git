@@ -38,4 +38,10 @@ export const ui = {
   'ui.cmdPreview.copyTip': '复制全部命令',
   'ui.cmdPreview.copyLineTip': '复制这一行命令',
   'ui.cmdPreview.copied': '已复制',
+  // ---- 差异文件头（DiffRender）----
+  'ui.diffFileHead.add': '新增',
+  'ui.diffFileHead.del': '删除',
+  'ui.diffFileHead.mod': '修改',
+  'ui.diffFileHead.rename': '重命名',
+  'ui.diffFileHead.binary': '二进制',
 } as const;
