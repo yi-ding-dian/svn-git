@@ -43,7 +43,11 @@ export function startGetRepoTask(
     chan: target,
     run: async (signal) => {
       try {
-        const r = await post.repoCreate(p.type, p.dir, p.name, p.url, true, signal, p.ref, p.depth);
+        const r = await post.repoCreate(p.type, p.dir, p.name, p.url, true, signal, p.ref, p.depth, {
+          checkout: p.checkout,
+          mode: p.mode,
+          repoRoot: p.repoRoot,
+        });
         // 认证失败：不在这里报错了事——弹认证框（存的是 git 账号/Token），保存后自动重试
         if (!r.ok && r.authError && r.authType) {
           hooks.onAuthNeeded({ type: r.authType, error: r.message, retry: () => startGetRepoTask(p, hooks) });

@@ -409,6 +409,20 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         return true;
       }
 
+      if (p === '/api/branch-log' && req.method === 'GET') {
+        // 分支详情：查该分支的最后一次提交（检出分支时展示）
+        const { vcs } = vcsOf();
+        const name = String(url.searchParams.get('name') ?? '').trim();
+        if (!name) {
+          // 缺少分支名
+          sendJson(res, 400, { error: t('srv.missingBranch') });
+          return true;
+        }
+        const r = await vcs.branchLogOne?.(name).catch(() => null);
+        sendJson(res, 200, r ? { ok: true, ...r } : { ok: false });
+        return true;
+      }
+
       if (p === '/api/tag-log' && req.method === 'GET') {
         // SVN 标签详情：查标签目录的最后一次提交（补提交信息第一行）
         const { vcs } = vcsOf();

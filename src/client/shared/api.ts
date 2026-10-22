@@ -452,6 +452,11 @@ export const get = {
         localSource: boolean;
       }[];
     }>('/api/tags'),
+  /** 分支详情：该分支的最后一次提交（检出分支时展示） */
+  branchLog: (name: string) =>
+    api<{ ok: boolean; rev?: string; subject?: string; author?: string; date?: string }>(
+      `/api/branch-log?name=${encodeURIComponent(name)}`,
+    ),
   /** SVN 标签详情：远程 URL 的最后一次提交（提交信息第一行） */
   tagLog: (url: string) =>
     api<{ ok: boolean; rev?: string; subject?: string; author?: string; date?: string }>(
@@ -834,10 +839,20 @@ export const post = {
       fileTotal?: number;
       warnings?: string[];
     }>('/api/repo-checkout', json({ url, dir, name, username: cred?.username, password: cred?.password, include }, signal)),
-  repoCreate: (type: 'git' | 'svn', dir: string, name: string, url = '', standard = true, signal?: AbortSignal, ref = '', depth = 0) =>
+  repoCreate: (
+    type: 'git' | 'svn',
+    dir: string,
+    name: string,
+    url = '',
+    standard = true,
+    signal?: AbortSignal,
+    ref = '',
+    depth = 0,
+    opts?: { checkout?: 'detach' | 'branch'; mode?: 'clone' | 'worktree'; repoRoot?: string },
+  ) =>
     api<VcsResult & { repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' }>(
       '/api/repo-create',
-      json({ type, dir, name, url, standard, ref, depth }, signal),
+      json({ type, dir, name, url, standard, ref, depth, ...opts }, signal),
     ),
   /** 创建/获取前置风险检测（目标已存在、位于仓库内等），供二次确认展示 */
   repoCheck: (type: 'git' | 'svn', dir: string, name: string, url = '') =>

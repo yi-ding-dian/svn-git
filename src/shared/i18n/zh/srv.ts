@@ -28,6 +28,7 @@ export const srv = {
   'srv.repoSaveExists': '目标已存在：{path}（未覆盖）',
   // 仓库浏览右键检出：目标目录挡住检出（已有别人的东西，不能动）
   'srv.coTargetExists': '目标目录已存在且非空：{path}',
+  'srv.worktreeNoRepo': '无法确定当前工作副本路径，不能创建 worktree',
   'srv.pathEmpty': '路径为空',
   'srv.samePath': '新旧路径相同',
   'srv.notGitRepo': '非 Git 仓库',

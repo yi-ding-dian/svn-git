@@ -281,6 +281,8 @@ export interface Vcs {
   tagsBaseUrl?(): Promise<string | undefined>;
   /** SVN：远程 URL 的最后一次提交（标签详情补提交信息用）；失败返回 null。git 不实现 */
   remoteLogOne?(url: string): Promise<CommitSummary | null>;
+  /** 某分支的最后一次提交（分支检出详情用）；失败返回 null。svn/git 都实现 */
+  branchLogOne?(name: string): Promise<CommitSummary | null>;
   tagCreate(name: string, message?: string, rev?: string): Promise<VcsResult>;
   tagDelete(name: string): Promise<VcsResult>;
   blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]>;

@@ -20,6 +20,8 @@ export function BranchList(props: {
   onRemoteDelete: (name: string) => void;
   /** 点击本地分支的 ↑N/↓N 徽标（dialog 据 ahead/behind 决定更新/推送/分叉说明） */
   onTrackClick: (b: { name: string; ahead: number; behind: number }) => void;
+  /** 检出为独立工作副本（本地 / 远程 / 当前分支都可用） */
+  onCheckout?: (b: { name: string; remote: boolean }) => void;
 }) {
   const { repoType, data, sel, busy, hasRemote } = props;
   // SVN 主干：不在 branches/ 下，单独合成一行（像 Git 列表里的 main/master）。
@@ -57,26 +59,41 @@ export function BranchList(props: {
             {t(trunkIsCurrent ? 'ops.branch.badgeCurrent' : 'ops.branch.trunkBadge')}
           </span>
           <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trunkName}</span>
-          {!trunkIsCurrent && (
+          {(!trunkIsCurrent || props.onCheckout) && (
             <span className="row" style={{ gap: 4 }}>
-              <button
-                className="mini primary"
-                disabled={busy}
-                onClick={() => props.onSwitch('trunk')}
-                title={cmdOfRepo(repoType, 'branch_switch_target', { target: trunkName })}
-              >
-                {/* 切换 */}
-                {t('ops.branch.switchBtn')}
-              </button>
-              <button
-                className="mini btn-accent"
-                disabled={busy}
-                onClick={() => props.onMerge('trunk')}
-                title={`${cmdOfRepo(repoType, 'branch_merge_from', { source: trunkUrl })}\n\n${mergeTipOf(trunkName)}`}
-              >
-                {/* 🔀 合并 */}
-                {t('ops.branch.mergeBtn')}
-              </button>
+              {!trunkIsCurrent && (
+                <button
+                  className="mini primary"
+                  disabled={busy}
+                  onClick={() => props.onSwitch('trunk')}
+                  title={cmdOfRepo(repoType, 'branch_switch_target', { target: trunkName })}
+                >
+                  {/* 切换 */}
+                  {t('ops.branch.switchBtn')}
+                </button>
+              )}
+              {props.onCheckout && (
+                <button
+                  className="mini"
+                  disabled={busy}
+                  onClick={() => props.onCheckout?.({ name: 'trunk', remote: false })}
+                  title={t(trunkIsCurrent ? 'ops.branch.checkoutCopyTip' : 'ops.branch.checkoutTip', { name: trunkName })}
+                >
+                  {/* 检出 / 检出副本 */}
+                  {t(trunkIsCurrent ? 'ops.branch.checkoutCopyBtn' : 'ops.branch.checkoutBtn')}
+                </button>
+              )}
+              {!trunkIsCurrent && (
+                <button
+                  className="mini btn-accent"
+                  disabled={busy}
+                  onClick={() => props.onMerge('trunk')}
+                  title={`${cmdOfRepo(repoType, 'branch_merge_from', { source: trunkUrl })}\n\n${mergeTipOf(trunkName)}`}
+                >
+                  {/* 🔀 合并 */}
+                  {t('ops.branch.mergeBtn')}
+                </button>
+              )}
             </span>
           )}
         </div>
@@ -181,7 +198,7 @@ export function BranchList(props: {
             {/* 非当前分支的常规操作；当前分支若未推送也显示「推送到远程」（仅仓库配了远程时）。
                 当前分支没有任何操作按钮时补一组同宽的隐藏占位：否则名字列会把同步徽标顶到行尾，
                 与其它行的 ✓/↑N 列错开（用户实报）。 */}
-            {(isCur === false || (repoType === 'git' && hasRemote && !b.remote && !isPushed)) ? (
+            {(isCur === false || (repoType === 'git' && hasRemote && !b.remote && !isPushed) || Boolean(props.onCheckout)) ? (
               <span className="row" style={{ gap: 4 }} onClick={(e) => e.stopPropagation()}>
                 {!isCur && !remoteIsCurrent && (
                   <button
@@ -200,6 +217,17 @@ export function BranchList(props: {
                   >
                     {/* 切到本地 {local} / 切换 */}
                     {b.remote && remoteHasLocal ? t('ops.branch.switchToLocal', { local: remoteLocal }) : t('ops.branch.switchBtn')}
+                  </button>
+                )}
+                {props.onCheckout && (
+                  <button
+                    className="mini"
+                    disabled={busy}
+                    onClick={() => props.onCheckout?.({ name: b.name, remote: b.remote })}
+                    title={t(isCur ? 'ops.branch.checkoutCopyTip' : 'ops.branch.checkoutTip', { name: b.name })}
+                  >
+                    {/* 检出 / 检出副本 */}
+                    {t(isCur ? 'ops.branch.checkoutCopyBtn' : 'ops.branch.checkoutBtn')}
                   </button>
                 )}
                 {repoType === 'git' && hasRemote && !b.remote && !isPushed && (

@@ -31,6 +31,8 @@ function defaultName(url: string): string {
 
 /** 标签检出时展示的附加详情（来自标签列表；rev/author/date 为标签目录自身的最后修改） */
 export interface CheckoutDetail {
+  /** tag = 只读快照（显示提示）；branch = 可提交的普通分支副本 */
+  kind?: 'tag' | 'branch';
   name: string;
   url: string;
   rev?: string;
@@ -298,10 +300,12 @@ export function CheckoutDialog(props: {
               </div>
             </div>
           )}
-          <div className="small" style={{ marginTop: 6, color: 'var(--warn)' }}>
-            ⓘ {/* SVN 标签是只读快照，请勿在检出副本中直接提交（会修改标签内容） */}
-            {t('repo.co.tagReadonlyHint')}
-          </div>
+          {props.detail.kind !== 'branch' && (
+            <div className="small" style={{ marginTop: 6, color: 'var(--warn)' }}>
+              ⓘ {/* SVN 标签是只读快照，请勿在检出副本中直接提交（会修改标签内容） */}
+              {t('repo.co.tagReadonlyHint')}
+            </div>
+          )}
         </div>
       )}
       {/* 远程路径：只读展示（"上方显示要获取的仓库远程路径"） */}

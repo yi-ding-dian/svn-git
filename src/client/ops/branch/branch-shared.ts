@@ -37,6 +37,19 @@ export interface PickDirRequest {
   onPick: (path: string) => void;
 }
 
+/** 分支检出请求：ops 域只描述分支，Git 的克隆来源由 shell 从当前仓库信息补齐 */
+export interface BranchCheckoutPayload {
+  repoType: 'svn' | 'git';
+  /** 显示名（远程分支形如 origin/feature；SVN trunk 行传 trunk） */
+  name: string;
+  /** 本地分支名（远程分支去掉 origin/ 前缀） */
+  localName: string;
+  /** 是否按远程分支检出（Git 本地已有同名分支时为 false） */
+  remote: boolean;
+  /** SVN：分支 URL；Git 留空（宿主补 origin / 本地路径） */
+  url?: string;
+}
+
 /** 当前项是否就是分支列表里的某项（tag/other 不在 branches 列表，不能高亮同名项） */
 export function isCurrentBranchOf(data: BranchInfo | null, name: string): boolean {
   return name === data?.current && data?.currentKind !== 'tag' && data?.currentKind !== 'other';

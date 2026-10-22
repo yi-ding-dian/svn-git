@@ -12,7 +12,7 @@ import { launchMagicFlight } from '../../animations/index.js';
 import { ResultLine } from '../../ui/result-line.js';
 import { t } from '../../../shared/i18n/index.js';
 import { LayoutNote } from '../layout-note.js';
-import { BRANCH_TITLE_KEY, currentLabelOf, isTrunkName, mergeSourceNoteOf, mergeTargetOf, type BranchAction, type PickDirRequest } from './branch-shared.js';
+import { BRANCH_TITLE_KEY, currentLabelOf, isTrunkName, mergeSourceNoteOf, mergeTargetOf, type BranchAction, type BranchCheckoutPayload, type PickDirRequest } from './branch-shared.js';
 import { BranchHelp } from './branch-help.js';
 import { BranchList } from './branch-list.js';
 import { CreateBranchConfirm } from './create-branch-confirm.js';
@@ -27,6 +27,8 @@ export function BranchDialog(props: {
   workDir?: string;
   /** 目录选择弹窗注入：ops 域不能直接引用 repo 的目录浏览器，由 shell 提供 */
   onPickDir?: (req: PickDirRequest) => void;
+  /** 检出该分支为独立工作副本（宿主渲染检出弹窗并执行） */
+  onCheckoutBranch?: (b: BranchCheckoutPayload) => void;
   onClose: () => void;
   onChanged: () => void;
   /** 鼠标附近弹的全局提示（err=true 时按错误态显示、停留更久）：操作结果在弹窗里只有底部一行小字，
@@ -560,6 +562,31 @@ export function BranchDialog(props: {
     });
   };
 
+  /** 检出分支为独立工作副本：SVN 直接拼分支 URL；Git 交给宿主补来源（origin / 本地路径） */
+  const checkoutBranch = (b: { name: string; remote: boolean }) => {
+    if (!props.onCheckoutBranch) return;
+    const localName = b.remote ? b.name.split('/').slice(1).join('/') : b.name;
+    if (props.repoType === 'svn') {
+      const root = (data?.projectRoot ?? '').replace(/\/+$/, '');
+      const url =
+        b.name === 'trunk'
+          ? (data?.mainlineUrl ?? (root ? `${root}/trunk` : ''))
+          : root
+            ? `${root}/branches/${encodeURIComponent(localName)}`
+            : '';
+      if (!url) {
+        setMsg(t('ops.branch.checkoutNoUrl'));
+        setMsgErr(true);
+        return;
+      }
+      props.onCheckoutBranch({ repoType: 'svn', name: b.name, localName, remote: false, url });
+      return;
+    }
+    // 远程行且本地已有同名分支：按本地分支检出（worktree 不能重复建同名分支）
+    const hasLocal = data?.branches.some((x) => !x.remote && x.name === localName) ?? false;
+    props.onCheckoutBranch({ repoType: 'git', name: b.name, localName, remote: b.remote && !hasLocal });
+  };
+
   return (
     // 分支管理
     <ModalShell
@@ -671,6 +698,7 @@ export function BranchDialog(props: {
         onPush={confirmPush}
         onRemoteDelete={confirmRemoteDelete}
         onTrackClick={onTrackClick}
+        onCheckout={checkoutBranch}
       />
       <ResultLine msg={msg} err={msgErr} />
       {/* SVN 合并范围（目录/文件级）；留空回车 = 整个分支 */}

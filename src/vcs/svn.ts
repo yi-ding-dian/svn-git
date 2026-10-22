@@ -1601,6 +1601,16 @@ export class SvnVcs {
     return { ok: true, message: base };
   }
 
+  /** 某分支的最后一次提交（分支检出详情用）；失败/无权限返回 null */
+  async branchLogOne(name: string): Promise<CommitSummary | null> {
+    try {
+      const root = await this.projectRootUrl();
+      return await this.remoteLogOne(`${root}/branches/${name}`);
+    } catch {
+      return null;
+    }
+  }
+
   /** 远程 URL 的最后一次提交（标签详情补提交信息用）；失败/无权限返回 null */
   async remoteLogOne(url: string): Promise<CommitSummary | null> {
     try {

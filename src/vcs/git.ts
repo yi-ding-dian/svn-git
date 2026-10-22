@@ -10,7 +10,7 @@ import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.
 import { loadConfig } from '../config.js';
 import { progressStart, progressDone, progressFromStderr } from '../transfer-progress.js';
 import { t, getLang } from '../shared/i18n/index.js';
-import type { FileStatus, LogEntry, RepoInfo, TagDetail, VcsResult } from './types.js';
+import type { CommitSummary, FileStatus, LogEntry, RepoInfo, TagDetail, VcsResult } from './types.js';
 
 /** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限）
  *  export 给 server.ts 的「获取仓库」用：clone 走的是那边（GitVcs.clone 目前无人调用） */
@@ -1523,6 +1523,25 @@ export class GitVcs {
     // git tag 失败: {err}
     if (res.code !== 0) throw new Error(t('vcs.gitTagFailed', { err: res.stderr.trim() }));
     return res.stdout.split('\n').filter(Boolean);
+  }
+
+  /** 某分支的最后一次提交（分支检出详情用）；失败返回 null */
+  async branchLogOne(name: string): Promise<CommitSummary | null> {
+    try {
+      // %x1f（US）分隔：提交信息第一行可能含竖线等字符
+      const res = await this.exec(['log', '-1', '--format=%H%x1f%s%x1f%an%x1f%aI', name]);
+      if (res.code !== 0) return null;
+      const [hash, subject, author, date] = res.stdout.trim().split('\x1f');
+      if (!hash) return null;
+      return {
+        rev: hash.slice(0, 7),
+        subject: subject ?? '',
+        author: author || undefined,
+        date: date || undefined,
+      };
+    } catch {
+      return null;
+    }
   }
 
   /** 标签详情：for-each-ref 一次拿全。

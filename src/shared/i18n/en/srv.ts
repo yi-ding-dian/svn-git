@@ -13,6 +13,7 @@ export const srv = {
   'srv.repoFileTooBig': 'File too large (> 2MB) — use "Download to…" instead',
   'srv.repoSaveExists': 'Target already exists: {path} (not overwritten)',
   'srv.coTargetExists': 'Target directory already exists and is not empty: {path}',
+  'srv.worktreeNoRepo': 'Cannot determine the current working copy path; cannot create a worktree',
   'srv.pathEmpty': 'Path is empty',
   'srv.samePath': 'Source and destination paths are the same',
   'srv.notGitRepo': 'Not a Git repository',

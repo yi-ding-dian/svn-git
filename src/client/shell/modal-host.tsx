@@ -13,7 +13,7 @@ import { launchMagicFlight } from '../animations/index.js';
 import { CommitModal } from '../ops/commit.js';
 import { CommitSelectModal } from '../ops/commit-select.js';
 import { BranchDialog } from '../ops/branch/index.js';
-import type { PickDirRequest } from '../ops/branch/branch-shared.js';
+import type { BranchCheckoutPayload, PickDirRequest } from '../ops/branch/branch-shared.js';
 import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
 import { TagDialog, GitInfoModal, type TagEntry } from '../ops/tag-git-info.js';
 import { GitHubCreateModal } from '../repo/github-create-repo.js';
@@ -28,6 +28,7 @@ import { PracticeRepoDialog } from '../repo/practice/index.js';
 import { EnvInstallModal } from '../repo/env-install.js';
 import { RepoBrowseModal } from '../repo/repo-browse.js';
 import { CheckoutDialog } from '../repo/checkout.js';
+import { BranchCheckoutDialog } from '../repo/branch-checkout.js';
 import { CheckoutAuthModal, useCheckoutTask } from '../repo/checkout-task.js';
 import { TagCheckoutDialog, type GitTagCheckoutParams } from '../repo/tag-checkout.js';
 import { PickDirModal } from '../repo/pick-dir.js';
@@ -146,6 +147,12 @@ export function ModalHost(props: ModalHostProps) {
   const [pickDir, setPickDir] = useState<PickDirRequest | null>(null);
   /** 标签检出的目标（标签管理弹窗点「检出」后由 shell 统一渲染检出弹窗，避免 ops → repo 跨域引用） */
   const [tagCheckout, setTagCheckout] = useState<TagEntry | null>(null);
+  /** 分支检出的目标（分支管理弹窗点「检出」后由 shell 渲染检出弹窗） */
+  const [branchCheckout, setBranchCheckout] = useState<{
+    payload: BranchCheckoutPayload;
+    source: string;
+    repoRoot: string;
+  } | null>(null);
 
   const refreshInfo = () => {
     // remote=true：分支切换/合并会改变"相对上游的 behind"，侧栏 ⬇ 角标必须跟着重探
@@ -206,7 +213,7 @@ export function ModalHost(props: ModalHostProps) {
   });
 
   /** 标签检出：后台任务 + 认证失败引导框。完成后不切换当前项目（与仓库浏览检出同一定稿），只收录「最近项目」 */
-  const { start: startTagCheckout, auth: tagCheckoutAuth, closeAuth: closeTagCheckoutAuth } = useCheckoutTask({
+  const { start: startSvnCheckout, auth: tagCheckoutAuth, closeAuth: closeTagCheckoutAuth } = useCheckoutTask({
     onCreated: (dir) => {
       void post
         .history(dir, 'svn')
@@ -219,7 +226,7 @@ export function ModalHost(props: ModalHostProps) {
   });
 
   /** Git 标签检出：复用「获取仓库」任务（认证/进度/取消），完成后同样不切换项目、只收录「最近项目」 */
-  const { start: startGitTagCheckout, auth: gitTagAuth, closeAuth: closeGitTagAuth } = useGetRepoTask({
+  const { start: startGitCheckout, auth: gitTagAuth, closeAuth: closeGitTagAuth } = useGetRepoTask({
     onCreated: (dir) => {
       void post
         .history(dir, 'git')
@@ -318,6 +325,17 @@ export function ModalHost(props: ModalHostProps) {
             showToast(m, Boolean(err));
           }}
           onChanged={refreshInfo}
+          onCheckoutBranch={(b) => {
+            // 先关分支弹窗，再开检出弹窗（避免两个 ModalShell 叠加）
+            setModal(null);
+            // Git：origin 优先；无 origin 时用当前工作副本路径作为克隆源
+            const source = b.repoType === 'svn' ? (b.url ?? '') : (repo?.url || repo?.root || '');
+            if (!source) {
+              showToast(t('ops.branch.checkoutNoUrl'), true);
+              return;
+            }
+            setBranchCheckout({ payload: b, source, repoRoot: repo?.root ?? '' });
+          }}
         />
       )}
       {modal?.type === 'tags' && repo?.type && (
@@ -676,9 +694,9 @@ export function ModalHost(props: ModalHostProps) {
       {tagCheckout?.repoType === 'svn' && (
         <CheckoutDialog
           url={tagCheckout.url}
-          detail={tagCheckout}
+          detail={{ ...tagCheckout, kind: 'tag' }}
           onClose={() => setTagCheckout(null)}
-          onStart={startTagCheckout}
+          onStart={startSvnCheckout}
         />
       )}
       {tagCheckout?.repoType === 'git' && (
@@ -696,7 +714,7 @@ export function ModalHost(props: ModalHostProps) {
           }}
           onClose={() => setTagCheckout(null)}
           onStart={(p: GitTagCheckoutParams) =>
-            startGitTagCheckout({
+            startGitCheckout({
               type: 'git',
               dir: p.dir,
               name: p.name,
@@ -710,6 +728,40 @@ export function ModalHost(props: ModalHostProps) {
       )}
       {tagCheckoutAuth && <CheckoutAuthModal auth={tagCheckoutAuth} onClose={closeTagCheckoutAuth} onToast={showToast} />}
       {gitTagAuth && <GetRepoAuthModal auth={gitTagAuth} onClose={closeGitTagAuth} onToast={showToast} />}
+      {/* 分支检出：SVN 复用检出弹窗；Git 用分支检出弹窗（独立克隆 / worktree） */}
+      {branchCheckout?.payload.repoType === 'svn' && (
+        <CheckoutDialog
+          url={branchCheckout.source}
+          detail={{ name: branchCheckout.payload.name, url: branchCheckout.source, kind: 'branch' }}
+          onClose={() => setBranchCheckout(null)}
+          onStart={startSvnCheckout}
+        />
+      )}
+      {branchCheckout?.payload.repoType === 'git' && (
+        <BranchCheckoutDialog
+          request={{
+            name: branchCheckout.payload.name,
+            localName: branchCheckout.payload.localName,
+            remote: branchCheckout.payload.remote,
+            source: branchCheckout.source,
+            repoRoot: branchCheckout.repoRoot,
+          }}
+          onClose={() => setBranchCheckout(null)}
+          onStart={(p) =>
+            startGitCheckout({
+              type: 'git',
+              dir: p.dir,
+              name: p.name,
+              url: p.source,
+              ref: p.ref,
+              checkout: 'branch',
+              mode: p.mode,
+              repoRoot: p.repoRoot,
+              title: t('repo.branchCo.taskTitle', { name: branchCheckout.payload.localName }),
+            })
+          }
+        />
+      )}
       {/* 目录选择：后渲染 → 叠在业务弹窗之上（合并范围「浏览…」等） */}
       {pickDir && (
         <PickDirModal

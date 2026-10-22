@@ -201,14 +201,23 @@ export function startServer(): Promise<ServerHandle> {
         const dir = String(body.dir ?? '').trim();
         const url = String(body.url ?? '').trim();
         const name = String(body.name ?? '').trim();
-        // 标签检出（git）：ref = 完整引用（如 refs/tags/v1），depth = 1 表示浅克隆
+        // 标签/分支检出（git）：ref = 完整引用（refs/tags/x）或分支名（feature / origin/feature）
         const ref = String(body.ref ?? '').trim();
         const depth = Number(body.depth ?? 0) > 0 ? Math.floor(Number(body.depth)) : 0;
-        // ref 只接受 refs/tags/ 下的合法引用：它会被拼进 fetch refspec，禁止空白与 ref 特殊字符
-        if (ref && (!ref.startsWith('refs/tags/') || ref.includes('..') || /[\s:~^?*[\]\\]/.test(ref.slice('refs/tags/'.length)))) {
+        const mode = body.mode === 'worktree' ? 'worktree' : 'clone';
+        const repoRoot = String(body.repoRoot ?? '').trim();
+        // ref 会被拼进 checkout/fetch refspec：禁止空白与 ref 特殊字符
+        if (ref && (ref.includes('..') || /[\s:~^?*[\]\\]/.test(ref) || !/^(refs\/(tags|heads|remotes)\/)?[^\s]+$/.test(ref))) {
           sendJson(res, 400, { error: t('srv.badRepoUrl') });
           return;
         }
+        // 检出方式：标签默认 detach；分支默认 checkout 本地分支
+        const checkout =
+          body.checkout === 'detach' || body.checkout === 'branch'
+            ? body.checkout
+            : ref.startsWith('refs/tags/')
+              ? 'detach'
+              : 'branch';
         if (!dir) {
           // 请填写目录路径
           sendJson(res, 400, { error: t('srv.fillDirPath') });
@@ -235,7 +244,26 @@ export function startServer(): Promise<ServerHandle> {
         // authError/authType：克隆因认证失败时带给前端，由它引导用户去设置里填 git 凭据
         let result: { ok: boolean; message: string; repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' };
         if (type === 'git') {
-          if (url) {
+          if (mode === 'worktree' && ref) {
+            // worktree 检出：在当前工作副本里创建共享 .git 的第二工作树（省磁盘）。
+            // 目标必须不存在（git worktree add 不会写入已有目录）。
+            if (!repoRoot || !fs.existsSync(repoRoot)) {
+              result = { ok: false, message: t('srv.worktreeNoRepo') };
+            } else if (fs.existsSync(target)) {
+              result = { ok: false, message: t('srv.coTargetExists', { path: target }) };
+            } else {
+              const args = ref.startsWith('origin/')
+                ? ['worktree', 'add', '-b', ref.slice('origin/'.length), target, ref]
+                : ['worktree', 'add', target, ref];
+              const r = await run('git', args, { cwd: repoRoot, timeoutMs: 30 * 60_000 });
+              if (r.code === 0) {
+                result = { ok: true, message: t('srv.clonedTo', { path: target }), repoDir: target };
+              } else {
+                removeLeftoverTarget(target);
+                result = { ok: false, message: r.stderr.trim() || t('srv.cloneFailed') };
+              }
+            }
+          } else if (url) {
             // 克隆（私有仓库要认证）：先**裸试**一次 —— 公开仓库无需凭据，也避免把凭据白白送出去；
             // 认证失败且**存了凭据**时带 GIT_ASKPASS 重试（与 push 同一套机制）；仍失败则带上
             // authType 交给前端，引导用户去设置里填 git 凭据。
@@ -290,7 +318,7 @@ export function startServer(): Promise<ServerHandle> {
             /** 浅克隆走 init：它不像 clone 那样拒绝非空目录，必须自己拦 */
             let blocked = '';
             let r: RunResult;
-            if (ref && depth > 0) {
+            if (ref && depth > 0 && checkout === 'detach') {
               if (fs.existsSync(target)) {
                 try {
                   if (fs.readdirSync(target).length > 0) blocked = t('srv.coTargetExists', { path: target });
@@ -322,7 +350,7 @@ export function startServer(): Promise<ServerHandle> {
                 }
               }
             } else if (ref) {
-              // 完整克隆到标签：拉全历史/分支，成功后显式 checkout 标签
+              // 完整克隆到标签/分支：拉全历史/分支，成功后显式 checkout 目标
               const cloneArgs = ['clone', '--progress', cloneUrl, target];
               r = await runGit(cloneArgs);
               if (r.code !== 0 && !r.aborted && isAuthFail(r) && gitCred?.username && gitCred?.password) {
@@ -333,7 +361,15 @@ export function startServer(): Promise<ServerHandle> {
                 ask.cleanup();
               }
               if (r.code === 0) {
-                const co = await runGit(['checkout', '-q', '--detach', ref], { cwd: target });
+                // 标签 → detached；分支 → checkout 本地分支（远程分支建同名跟踪分支）
+                const co = await runGit(
+                  checkout === 'detach'
+                    ? ['checkout', '-q', '--detach', ref]
+                    : ref.startsWith('origin/')
+                      ? ['checkout', '-q', '-b', ref.slice('origin/'.length), ref]
+                      : ['checkout', '-q', ref.replace(/^refs\/heads\//, '')],
+                  { cwd: target },
+                );
                 if (co.code !== 0) r = co;
               }
             } else {

@@ -311,6 +311,12 @@ export interface GetRepoParams {
   ref?: string;
   /** 浅克隆深度（1 = 仅该标签版本，不拉历史） */
   depth?: number;
+  /** ref 的检出方式：tag 用 detach，分支用 branch（默认按 ref 判断） */
+  checkout?: 'detach' | 'branch';
+  /** 检出模式：clone（默认）/ worktree（Git 共享当前仓库 .git） */
+  mode?: 'clone' | 'worktree';
+  /** worktree 模式：在哪个工作副本里执行（当前仓库根） */
+  repoRoot?: string;
   /** 任务标题覆盖（标签检出显示「检出标签 · v1」） */
   title?: string;
 }
