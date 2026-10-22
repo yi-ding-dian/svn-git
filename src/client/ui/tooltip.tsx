@@ -26,8 +26,14 @@ const CURSOR_Y = 18;
 /** 浮层与视口边缘的留白 */
 const EDGE = 8;
 
+/** 全局单例：同一时刻只显示一个浮层。
+ *  鼠标从列表行移到行内按钮时，行的浮层已经显示，只靠「最近锚点」判断拦不住——
+ *  按钮的浮层打开前先把旧的关掉，避免两层叠在一起（用户实报「提示叠加」）。 */
+let closeActiveTooltip: (() => void) | null = null;
+
 type AnchorProps = {
   ref?: React.Ref<HTMLElement>;
+  'data-tooltip-anchor'?: string;
   onMouseEnter?: React.MouseEventHandler;
   onMouseLeave?: React.MouseEventHandler;
   onMouseMove?: React.MouseEventHandler;
@@ -54,8 +60,12 @@ export function Tooltip(props: {
   const timerRef = useRef<number | null>(null);
   /** 最近一次光标坐标（mousemove 只写这里，不触发渲染） */
   const pointRef = useRef<{ x: number; y: number } | null>(null);
+  /** 本次显示是否由鼠标触发：键盘 focus 不做「内层优先」判断（没有真实光标位置） */
+  const viaPointerRef = useRef(false);
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
   const [open, setOpen] = useState(false);
+  /** 本实例是否正在占用全局单例（hide 时据此释放） */
+  const activeRef = useRef(false);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current != null) {
@@ -63,23 +73,45 @@ export function Tooltip(props: {
       timerRef.current = null;
     }
   }, []);
-  const show = useCallback(() => {
-    clearTimer();
-    timerRef.current = window.setTimeout(() => {
-      timerRef.current = null;
-      // 锚点已不在文档里（列表刷新/换文件）就不弹
-      if (anchorRef.current?.isConnected) {
-        setPoint(pointRef.current);
-        setOpen(true);
-      }
-    }, props.delay ?? SHOW_DELAY);
-  }, [clearTimer, props.delay]);
   const hide = useCallback(() => {
     clearTimer();
+    if (activeRef.current) {
+      activeRef.current = false;
+      closeActiveTooltip = null;
+    }
     setOpen(false);
   }, [clearTimer]);
+  /** show 的定时器里要调用稳定的 hide（show 依赖里不放 hide，避免每次渲染重建定时器） */
+  const hideRef = useRef(hide);
+  hideRef.current = hide;
+  const show = useCallback((viaPointer: boolean) => {
+    clearTimer();
+    viaPointerRef.current = viaPointer;
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      const anchor = anchorRef.current;
+      // 锚点已不在文档里（列表刷新/换文件）就不弹
+      if (!anchor?.isConnected) return;
+      const p = pointRef.current;
+      // 嵌套提示：行内按钮自己也是 Tooltip 锚点时，只弹按钮的提示。
+      // 否则鼠标停在 ⬇ 上会同时弹「整行项目信息」大浮层，把按钮的短提示盖住（用户实报）。
+      if (viaPointer && p) {
+        const nearest = document.elementFromPoint(p.x, p.y)?.closest('[data-tooltip-anchor]');
+        if (nearest && nearest !== anchor) return;
+      }
+      // 旧浮层（可能是外层行提示）先收起：同一时刻只留一个
+      closeActiveTooltip?.();
+      activeRef.current = true;
+      closeActiveTooltip = hideRef.current;
+      setPoint(p);
+      setOpen(true);
+    }, props.delay ?? SHOW_DELAY);
+  }, [clearTimer, props.delay]);
 
-  useEffect(() => () => clearTimer(), [clearTimer]);
+  useEffect(() => () => {
+    clearTimer();
+    if (activeRef.current) closeActiveTooltip = null;
+  }, [clearTimer]);
 
   // 打开期间滚动/缩放：直接收起。长列表滚动时逐帧测量浮层位置会掉帧，
   // 收起后鼠标移出再移入即可重新显示，体验上更稳。
@@ -96,18 +128,23 @@ export function Tooltip(props: {
   const hasContent = props.content != null && props.content !== false && props.content !== '';
   const child = props.children;
   const cp = child.props as AnchorProps;
+  // 子元素原有的 ref 必须保留：cloneElement 注入 ref 会覆盖它。
+  // React 18 的 ref 在 element.ref 上、不在 props（React 19 才挪到 props.ref），两处都取。
+  const childRef = (child as unknown as { ref?: React.Ref<HTMLElement> }).ref ?? cp.ref;
   // 条件提示：无内容/禁用时原样返回，零开销（hooks 已全部调用，数量保持稳定）
   if (props.disabled || !hasContent) return child;
 
   const anchor = React.cloneElement(child, {
     ref: (node: HTMLElement | null) => {
       anchorRef.current = node;
-      setRef(cp.ref, node);
+      setRef(childRef, node);
     },
+    // 标记锚点：嵌套 Tooltip 靠它判断鼠标下方最近的是哪一层
+    'data-tooltip-anchor': '',
     onMouseEnter: (e: React.MouseEvent) => {
       cp.onMouseEnter?.(e);
       pointRef.current = { x: e.clientX, y: e.clientY };
-      show();
+      show(true);
     },
     onMouseMove: (e: React.MouseEvent) => {
       cp.onMouseMove?.(e);
@@ -122,7 +159,7 @@ export function Tooltip(props: {
       // 键盘聚焦没有光标坐标：回退到元素右下角（元素中心的正下方）
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
       pointRef.current = { x: r.left + r.width / 2, y: r.bottom };
-      show();
+      show(false);
     },
     onBlur: (e: React.FocusEvent) => {
       cp.onBlur?.(e);

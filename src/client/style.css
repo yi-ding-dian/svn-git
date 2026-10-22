@@ -1250,6 +1250,11 @@ body.drag-trash-hot .drag-src {
 .ctx-icon { width: 20px; text-align: center; flex-shrink: 0; }
 .ctx-item.danger { color: var(--err); }
 .ctx-item.danger:hover { background: var(--err); color: #ffffff; }
+/* 禁用项：用淡色而不是整体降透明——整项 opacity 会把文字压到看不清（用户实报）。
+   保留可读性，同时明显区别于可用项；悬浮不高亮。 */
+.ctx-item.disabled, .ctx-item.disabled.danger { color: var(--dim); cursor: not-allowed; }
+.ctx-item.disabled .ctx-icon { opacity: .65; }
+.ctx-item.disabled:hover { background: transparent; }
 .ctx-sep { height: 1px; background: var(--border); margin: 5px 10px; }
 
 /* ---------- 主题色块按钮 ---------- */

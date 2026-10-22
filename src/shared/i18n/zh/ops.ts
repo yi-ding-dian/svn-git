@@ -384,7 +384,8 @@ export const ops = {
   'ops.push.unpushedList': '未推送提交（点击展开变更文件）：',
   'ops.push.noUnpushed': '没有未推送的提交',
   'ops.push.tipHead': '（未推送的最新提交，右键可修改注释/撤销）',
-  'ops.push.tipOther': '（右键菜单仅对最近一次提交生效）',
+  'ops.push.tipOther': '（右键可修改注释；撤销仅对最近一次提交生效）',
+  'ops.push.undoHeadOnly': '仅最近一次提交可撤销',
   'ops.push.filesCount': '{n} 文件',
   'ops.push.noFileChanges': '无文件变更',
   'ops.push.mergeTag': '合并',
@@ -393,7 +394,6 @@ export const ops = {
   'ops.push.confirm': '确认推送（{n}）',
   'ops.push.editMsg': '修改注释',
   'ops.push.undoCommit': '撤销提交',
-  'ops.push.onlyHead': '仅支持撤销最近一次提交。此项之前还有 {n} 个更新提交，需先逐一撤销前面的提交后，此项才可操作',
   'ops.push.amendTitle': '✏️ 修改提交注释',
   'ops.push.commitRev': '提交 {rev}',
   'ops.push.previewHint': '渲染效果（与历史里显示的一致）',
@@ -403,5 +403,4 @@ export const ops = {
   'ops.push.resetTitle': '↩ 撤销最近一次提交',
   'ops.push.resetMsg': '将撤销最近一次提交 {rev}。这次提交的改动会回到暂存区（提交之后新改的内容不受影响），可以重新勾选文件再次提交。确认撤销?',
   'ops.push.undo': '撤销',
-  'ops.push.cannotTitle': '⚠ 无法操作此项',
 } as const;

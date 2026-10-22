@@ -384,7 +384,8 @@ export const ops = {
   'ops.push.unpushedList': 'Unpushed commits (click to expand the changed files):',
   'ops.push.noUnpushed': 'No unpushed commits',
   'ops.push.tipHead': '(the latest unpushed commit; right-click to edit the message or undo it)',
-  'ops.push.tipOther': '(the context menu only applies to the most recent commit)',
+  'ops.push.tipOther': '(right-click to edit the message; only the most recent commit can be undone)',
+  'ops.push.undoHeadOnly': 'Only the most recent commit can be undone',
   'ops.push.filesCount': '{n} file|{n} files',
   'ops.push.noFileChanges': 'No file changes',
   'ops.push.mergeTag': 'Merge',
@@ -393,7 +394,6 @@ export const ops = {
   'ops.push.confirm': 'Push ({n})',
   'ops.push.editMsg': 'Edit Message',
   'ops.push.undoCommit': 'Undo Commit',
-  'ops.push.onlyHead': 'Only the most recent commit can be undone. There are {n} later commit still ahead of this one; undo those first.|Only the most recent commit can be undone. There are {n} later commits still ahead of this one; undo those first.',
   'ops.push.amendTitle': '✏️ Edit Commit Message',
   'ops.push.commitRev': 'Commit {rev}',
   'ops.push.previewHint': 'Rendered (same as shown in History)',
@@ -403,5 +403,4 @@ export const ops = {
   'ops.push.resetTitle': '↩ Undo the Most Recent Commit',
   'ops.push.resetMsg': 'This undoes the most recent commit {rev}. Its changes return to the staging area (content changed after that commit is unaffected), and you can re-select files and commit again. Undo it?',
   'ops.push.undo': 'Undo',
-  'ops.push.cannotTitle': '⚠ Action Not Available',
 } as const;

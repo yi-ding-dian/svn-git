@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { IconClock, IconEye, IconEyeClosed, IconFolder, IconRename, IconServer } from '../ui/icons.js';
 // import { IconDiff } from '../ui/icons.js'; // 差异入口隐藏，恢复时连同 NAV 项一起打开
 import { ContextMenu } from '../ui/context-menu.js';
-import { Tooltip } from '../ui/tooltip.js';
+import { Tooltip, TipHint } from '../ui/tooltip.js';
 import { RemarkModal } from '../repo/remark.js';
 import { THEMES, THEME_PINNED } from './header/index.js';
 import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js';
@@ -421,18 +421,29 @@ export function Sidebar(props: {
                 : undefined;
               // 实时措辞：顶部条或刚远程检查过的项目 = "远程检查"；其余本地的标"基于上次获取"
               const behindLive = (h.path === props.currentRoot && (props.remoteBehind ?? 0) > 0) || (rb?.behind ?? 0) > 0;
+              // 整行提示：迁到自定义 Tooltip 后，行内 ⬇ 按钮的短提示才不会被原生大弹窗盖住
+              const rowTip = invalidMsg
+                // {path}（打不开，目录已删除或不是工作副本）
+                ? t('shell.recent.invalid', { path: h.path })
+                // 备注：{remark} / （当前操作的项目） / （常用项目）
+                : `${h.path}${h.remark ? `\n${t('shell.recent.tipRemark', { remark: h.remark })}` : ''}${h.path === props.currentRoot ? `\n${t('shell.recent.tipCurrent')}` : ''}${h.fav ? `\n${t('shell.recent.tipFav')}` : ''}${stView ? `\n${probeTip(stView, behindLive, Boolean(rb?.failed))}` : ''}`;
+              // 操作提示单独一行：与上方项目信息用分隔线 + 淡色小字区分
+              const rowHint = invalidMsg ? '' : t('shell.recent.tipClick');
               return (
-                <div
+                <Tooltip
                   key={h.path}
+                  content={
+                    rowHint ? (
+                      <>
+                        <div className="tip-text">{rowTip}</div>
+                        <TipHint>{rowHint}</TipHint>
+                      </>
+                    ) : rowTip
+                  }
+                >
+                <div
                   data-path={h.path}
                   className={`history-item ${h.path === props.currentRoot ? 'active' : ''}${invalid ? ' invalid' : ''}`}
-                  title={
-                    invalidMsg
-                      // {path}（打不开，目录已删除或不是工作副本）
-                      ? t('shell.recent.invalid', { path: h.path })
-                      // 备注：{remark} / （当前操作的项目） / （常用项目） / 点击打开 · 右键设常用/备注/删除
-                      : `${h.path}${h.remark ? `\n${t('shell.recent.tipRemark', { remark: h.remark })}` : ''}${h.path === props.currentRoot ? `\n${t('shell.recent.tipCurrent')}` : ''}${h.fav ? `\n${t('shell.recent.tipFav')}` : ''}${stView ? `\n${probeTip(stView, behindLive, Boolean(rb?.failed))}` : ''}\n${t('shell.recent.tipClick')}`
-                  }
                   onClick={() => props.onOpenHistory(h)}
                   onMouseEnter={() => {
                     if (invalidMsg) props.onShowTip(invalidMsg); // 悬浮失效项：提示和点击后完全一致
@@ -489,6 +500,7 @@ export function Sidebar(props: {
                     <span className="history-time-text">{relTime(h.lastOpened)}</span>
                   </span>
                 </div>
+                </Tooltip>
               );
             })}
             {/* 超出部分靠列表滚动查看（用户定稿：不再折叠成「…」行） */}

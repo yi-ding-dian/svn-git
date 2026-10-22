@@ -9,6 +9,7 @@
  * （fixed + 视口坐标,非估算行高）,菜单项高度/分隔线如何变化都能精确对齐。
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Tooltip } from './tooltip.js';
 
 export interface CtxMenuItem {
   icon?: React.ReactNode;
@@ -20,6 +21,8 @@ export interface CtxMenuItem {
   cmd?: string;
   /** 悬浮提示（原生 tooltip，如危险操作的后果说明） */
   title?: string;
+  /** 禁用（灰显、不响应点击）；配合 title 时用自定义浮层显示原因 */
+  disabled?: boolean;
   action?: () => void;
   /** 二级子菜单（悬浮/点击右侧展开,如「打开方式」） */
   submenu?: CtxMenuItem[];
@@ -95,22 +98,23 @@ export function ContextMenu(props: {
         onMouseEnter={props.onMouseEnter}
         onMouseLeave={props.onMouseLeave}
       >
-        {items.map((it, i) =>
-          it.sep ? (
-            <div key={i} className="ctx-sep" />
-          ) : (
+        {items.map((it, i) => {
+          if (it.sep) return <div key={i} className="ctx-sep" />;
+          const node = (
             <div
               key={i}
               ref={(el) => {
                 itemRefs.current[i] = el;
               }}
-              className={`ctx-item ${it.danger ? 'danger' : ''} ${it.submenu && hoverIdx === i ? 'submenu-open' : ''}`}
+              className={`ctx-item ${it.danger ? 'danger' : ''}${it.disabled ? ' disabled' : ''} ${it.submenu && hoverIdx === i ? 'submenu-open' : ''}`}
               data-menu-key={it.dndKey}
+              aria-disabled={it.disabled || undefined}
               style={it.dropTop ? { boxShadow: 'inset 0 2.5px 0 var(--accent)' } : undefined}
-              title={it.cmd ? `${it.title ?? ''}\n${it.cmd}` : it.title}
-              onMouseDown={it.onMouseDown}
-              onMouseUp={it.onDragEnd}
+              title={it.disabled ? undefined : it.cmd ? `${it.title ?? ''}\n${it.cmd}` : it.title}
+              onMouseDown={it.disabled ? undefined : it.onMouseDown}
+              onMouseUp={it.disabled ? undefined : it.onDragEnd}
               onClick={() => {
+                if (it.disabled) return;
                 if (it.submenu) {
                   setHoverIdx(i);
                   setPinIdx(i);
@@ -126,8 +130,16 @@ export function ContextMenu(props: {
               <span>{it.label}</span>
               {it.submenu && !it.noArrow && <span className="ctx-arrow">▶</span>}
             </div>
-          )
-        )}
+          );
+          // 禁用项的原因用自定义浮层（div 不是原生 disabled，悬浮事件照常触发）
+          return it.disabled && it.title ? (
+            <Tooltip key={i} content={it.title}>
+              {node}
+            </Tooltip>
+          ) : (
+            node
+          );
+        })}
         {/* 二级子菜单面板：贴住对应项右侧；右侧空间不足（子菜单宽 > 右缘余量）时向左展开（真实 DOM 定位,详见文件头注释） */}
         {openSub && subRect && (
           <SubmenuPane openSub={openSub} subRect={subRect} onEnter={() => setHoverIdx(openSub.i)} onLeave={() => { setHoverIdx(null); setPinIdx(null); }} onAction={() => props.onClose()} />

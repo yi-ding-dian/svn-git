@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { get, post, type LogEntry } from '../shared/api.js';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
-import { ConfirmModal, InfoModal } from '../ui/prompt.js';
+import { ConfirmModal } from '../ui/prompt.js';
 import { ClickTip } from '../ui/ui.js';
 import { Tooltip, TipTitle, TipMarkdown, TipHint } from '../ui/tooltip.js';
 import { autoSizeForText } from '../shared/utils.js';
@@ -70,8 +70,6 @@ export function PushConfirmModal(props: {
   /** 数据驱动的警告条各自可关闭（远程落后 / 冲突风险；重新打开弹窗即重置） */
   const [hideBehind, setHideBehind] = useState(false);
   const [hideRisk, setHideRisk] = useState(false);
-  /** 非 HEAD 提交右键操作的说明弹窗 */
-  const [infoTip, setInfoTip] = useState('');
   /** 跟随鼠标提示（修改注释成功显示在点击处） */
   const [clickTip, setClickTip] = useState<{ x: number; y: number; msg: string } | null>(null);
 
@@ -368,11 +366,10 @@ export function PushConfirmModal(props: {
               // 撤销提交
               label: t('ops.push.undoCommit'),
               danger: true,
-              action: () => {
-                if (menu.index === 0) setResetCfm(true);
-                // 仅支持撤销最近一次提交。此项之前还有 {n} 个更新提交，需先逐一撤销前面的提交后，此项才可操作
-                else setInfoTip(t('ops.push.onlyHead', { n: menu.index }));
-              },
+              // 只有最近一次提交能撤销；其余禁用，悬浮说明原因
+              disabled: menu.index !== 0,
+              title: menu.index !== 0 ? t('ops.push.undoHeadOnly') : undefined,
+              action: () => setResetCfm(true),
             },
           ]}
           onClose={() => setMenu(null)}
@@ -465,11 +462,6 @@ export function PushConfirmModal(props: {
           onConfirm={() => void doReset()}
           onCancel={() => setResetCfm(false)}
         />
-      )}
-      {/* 非 HEAD 提交操作说明弹窗 */}
-      {infoTip && (
-        // ⚠ 无法操作此项
-        <InfoModal title={t('ops.push.cannotTitle')} message={infoTip} onClose={() => setInfoTip('')} />
       )}
       {/* 修改注释成功提示：跟随鼠标点击处 */}
       {clickTip && <ClickTip x={clickTip.x} y={clickTip.y} msg={clickTip.msg} onHide={() => setClickTip(null)} />}
