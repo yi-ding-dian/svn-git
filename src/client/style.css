@@ -1344,12 +1344,12 @@ body.resizing .sb-resizer-grip { opacity: 0; }
   display: flex; align-items: center; justify-content: center;
 }
 .changed-row .act { font-weight: 700; width: 20px; flex-shrink: 0; }
-.changed-row .act.M { color: var(--warn); }
-.changed-row .act.A { color: var(--ok); }
-.changed-row .act.D { color: var(--err); }
-.changed-row .act.R { color: var(--ok); }
-.changed-row .act.C { color: var(--err); }
-.changed-row .act.U { color: var(--accent); }
+.act.M { color: var(--warn); }
+.act.A { color: var(--ok); }
+.act.D { color: var(--err); }
+.act.R { color: var(--ok); }
+.act.C { color: var(--err); }
+.act.U { color: var(--accent); }
 /* ---------- SVN 仓库浏览（远程树） ---------- */
 .repo-arrow { flex: 0 0 14px; text-align: center; color: var(--dim); font-size: 11px; }
 .repo-row.active { background: var(--panel2); outline: 1px solid var(--accent); border-radius: 6px; }
