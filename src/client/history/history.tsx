@@ -219,14 +219,31 @@ export function HistoryView(props: Props) {
   const unpushedSet = new Set(unpushed.map((h) => h.slice(0, 7)));
   const headIdx = logs ? logs.findIndex((l) => unpushedSet.has(l.rev)) : -1;
 
-  // 详情面板的提交说明：长说明默认折叠（超过 6 行），点击展开/收起。切到别的提交时回到折叠态
+  // 详情面板的提交说明：长说明默认折叠（超过 6 行），点击展开/收起
   const detailMsg = sel ? (fullMsgs[sel.rev] ?? sel.msg) : '';
   const detailMsgLines = detailMsg ? detailMsg.split('\n').length : 0;
   const detailMsgLong = detailMsgLines > 6;
   const detailMsgOpen = msgExpanded || !detailMsgLong;
+  /** 当前详情对应的提交 / 本提交是否已做过「自动展开」判断（用户手动收起后不再自动展开） */
+  const shownRevRef = useRef<string | null>(null);
+  const autoDecidedRevRef = useRef<string | null>(null);
   useEffect(() => {
-    setMsgExpanded(false);
-  }, [sel?.rev]);
+    if (!sel) return;
+    // 换提交：先回到折叠态，清掉上次的判断结果
+    if (shownRevRef.current !== sel.rev) {
+      shownRevRef.current = sel.rev;
+      autoDecidedRevRef.current = null;
+      setMsgExpanded(false);
+    }
+    if (autoDecidedRevRef.current === sel.rev) return;
+    // git 的完整说明是异步拉的：等它到位再判断，避免按标题误判
+    const full = fullMsgs[sel.rev];
+    if (props.repoType === 'git' && !full) return;
+    autoDecidedRevRef.current = sel.rev;
+    const lines = (full ?? sel.msg).split('\n').length;
+    // 变更文件很少（<10 个）时下方列表很短、面板大片留白 → 长说明自动展开
+    setMsgExpanded(lines > 6 && sel.changed.length < 10);
+  }, [sel, fullMsgs, props.repoType]);
 
   /** 修改注释确认（HEAD 用 amend；其余未推送提交用 reword 重写注释，代码内容不变） */
   const doAmend = async (x: number, y: number) => {
