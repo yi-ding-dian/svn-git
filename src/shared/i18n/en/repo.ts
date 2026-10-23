@@ -500,7 +500,6 @@ export const repo = {
   'repo.practice.gitMissing': 'git was not found; cannot create a Git practice repository',
   'repo.practice.svnMissing': 'svn / svnadmin was not found; cannot create an SVN practice repository',
   'repo.practice.entry': '🧪 Practice Repo',
-  'repo.practice.entryShort': '🧪',
   'repo.practice.entryTip': 'Create a Git/SVN practice repository for branches, merges and conflicts',
   'repo.practice.createHint': 'Rather not start from an empty repository?',
   'repo.practice.createEntry': '🧪 Practice repo…',

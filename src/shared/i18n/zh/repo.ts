@@ -502,7 +502,6 @@ export const repo = {
   'repo.practice.gitMissing': '未检测到 git，无法创建 Git 练习仓库',
   'repo.practice.svnMissing': '未检测到 svn / svnadmin，无法创建 SVN 练习仓库',
   'repo.practice.entry': '🧪 练习仓库',
-  'repo.practice.entryShort': '🧪',
   'repo.practice.entryTip': '生成 Git/SVN 练习仓库，用于熟悉分支、合并和冲突',
   'repo.practice.createHint': '不想从空仓库开始？',
   'repo.practice.createEntry': '🧪 练习仓库…',

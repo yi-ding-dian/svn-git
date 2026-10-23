@@ -1782,3 +1782,23 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
   color: var(--accent); border: 1px solid var(--accent); background: var(--panel2);
   white-space: nowrap;
 }
+
+/* ---------- 侧栏折叠：拖到阈值以下吸附隐藏，左侧留窄边 + 展开把手 ---------- */
+.sidebar.collapsed { padding: 0; cursor: default; }
+.sidebar-expand {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 12px; height: 52px; padding: 0;
+  border: 1px solid var(--border); border-left: 0; border-radius: 0 6px 6px 0;
+  background: var(--panel2); color: var(--dim);
+  font-size: 9px; line-height: 1; cursor: pointer;
+}
+.sidebar-expand:hover { color: var(--accent); background: var(--panel); }
+/* 「松开隐藏侧栏」提示：跟随光标，不挡鼠标 */
+.sidebar-hide-hint {
+  position: fixed; z-index: 1001; pointer-events: none;
+  padding: 4px 8px; border-radius: 6px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .16);
+  font-size: 12px; white-space: nowrap;
+}

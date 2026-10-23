@@ -124,6 +124,14 @@ const SIDEBAR_W_KEY = 'sidebar.width';
 const SIDEBAR_W_DEFAULT = 160;
 const SIDEBAR_W_MIN = 140;
 const SIDEBAR_W_MAX = 400;
+/** 折叠状态持久化（1 = 已折叠） */
+const SIDEBAR_COLLAPSED_KEY = 'sidebar.collapsed';
+/** 折叠后点击把手展开时的宽度（用户确认 175） */
+const SIDEBAR_EXPAND_W = 175;
+/** 折叠后保留的窄边宽度：左侧始终留一条可点击的展开把手 */
+const SIDEBAR_COLLAPSED_W = 12;
+/** 拖到该宽度以下进入「松开隐藏」吸附（用户确认 80px） */
+const SIDEBAR_HIDE_THRESHOLD = 80;
 
 export function Sidebar(props: {
   view: View;
@@ -168,8 +176,6 @@ export function Sidebar(props: {
   onShowTip: (msg: string) => void;
   /** 最近项目下方的「＋ 打开项目」：打开项目选择弹窗（与顶栏 ⋯ 菜单里那个同一入口） */
   onOpenProject: () => void;
-  /** 最近项目下方的「🧪 练习仓库」：打开创建练习仓库弹窗 */
-  onOpenPractice: () => void;
 }) {
   // 最近项目右键菜单（设常用 / 备注 / 浏览仓库 / 删除 / 取消）。remark/type 一并带出：
   // 菜单项要用它预填备注弹窗、决定是否显示「浏览仓库」（仅 SVN）
@@ -301,36 +307,79 @@ export function Sidebar(props: {
   });
   /** 最新宽度（mouseup 落盘用）——事件闭包拿不到最新 state，走 ref */
   const barWidthRef = useRef(barWidth);
+  /** 折叠：拖到阈值以下松手后收起，只留左侧窄边把手；状态持久化 */
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1');
+  const collapsedRef = useRef(collapsed);
+  collapsedRef.current = collapsed;
+  /** 拖拽中禁用宽度过渡（否则宽度会滞后于鼠标） */
+  const [dragging, setDragging] = useState(false);
+  /** 「松开隐藏侧栏」提示：跟随光标 */
+  const [hideHint, setHideHint] = useState<{ x: number; y: number } | null>(null);
   /** 统一的分隔条拖拽光标：所有可调整尺寸的分隔条共用 */
   const { ghostRef, start: startResizeCursor, move: moveResizeCursor, stop: stopResizeCursor } = useResizeCursor();
   /** 拖拽右边缘：左右移动调宽。拖动期间隐藏系统光标、由应用内图标跟随 */
   const onBarResizeDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const start = { x: e.clientX, w: barWidthRef.current };
+    const start = {
+      x: e.clientX,
+      w: collapsedRef.current ? SIDEBAR_COLLAPSED_W : barWidthRef.current,
+    };
+    /** 本次拖拽是否会以「隐藏」收尾：宽度进入阈值后置 true，拖回阈值外取消 */
+    let willHide = collapsedRef.current;
+    setDragging(true);
     startResizeCursor(e.clientX, e.clientY);
     const onMove = (ev: MouseEvent) => {
       moveResizeCursor(ev.clientX, ev.clientY);
       // 上限取 min(400, 40% 视口)：小窗口下别把内容区挤没
       const max = Math.min(SIDEBAR_W_MAX, Math.round(window.innerWidth * 0.4));
-      const w = Math.min(max, Math.max(SIDEBAR_W_MIN, start.w + (ev.clientX - start.x)));
-      barWidthRef.current = w;
+      const raw = start.w + (ev.clientX - start.x);
+      if (raw < SIDEBAR_HIDE_THRESHOLD) {
+        // 吸附：进入阈值后直接收到折叠窄边，并提示「松开隐藏侧栏」
+        willHide = true;
+        setCollapsed(true);
+        setHideHint({ x: ev.clientX + 14, y: ev.clientY + 18 });
+        return;
+      }
+      // 拖回阈值外：取消隐藏，按正常范围调整
+      willHide = false;
+      setCollapsed(false);
+      setHideHint(null);
+      // 80~140 之间允许继续收缩（视觉连续），但不覆盖「折叠前宽度」——
+      // 否则展开后回不到原来的宽度（只会停在最小宽度 140）
+      const w = Math.min(max, Math.max(SIDEBAR_HIDE_THRESHOLD, raw));
       setBarWidth(w);
+      if (raw >= SIDEBAR_W_MIN) barWidthRef.current = w;
     };
     const onUp = () => {
       stopResizeCursor();
-      localStorage.setItem(SIDEBAR_W_KEY, String(barWidthRef.current));
+      setDragging(false);
+      setHideHint(null);
+      setCollapsed(willHide);
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, willHide ? '1' : '0');
+      // 折叠时保留折叠前的宽度，展开后回到原宽度
+      if (!willHide) localStorage.setItem(SIDEBAR_W_KEY, String(barWidthRef.current));
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
-  /** 双击手柄：恢复默认宽度 */
+  /** 双击手柄：恢复默认宽度并展开 */
   const resetBarWidth = () => {
     barWidthRef.current = SIDEBAR_W_DEFAULT;
     setBarWidth(SIDEBAR_W_DEFAULT);
+    setCollapsed(false);
     localStorage.setItem(SIDEBAR_W_KEY, String(SIDEBAR_W_DEFAULT));
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '0');
+  };
+  /** 点击左侧把手：展开到固定宽度 175（用户指定） */
+  const expandSidebar = () => {
+    barWidthRef.current = SIDEBAR_EXPAND_W;
+    setBarWidth(SIDEBAR_EXPAND_W);
+    setCollapsed(false);
+    localStorage.setItem(SIDEBAR_W_KEY, String(SIDEBAR_EXPAND_W));
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '0');
   };
 
   const NAV = [
@@ -343,7 +392,22 @@ export function Sidebar(props: {
   ];
 
   return (
-    <div className="sidebar" style={{ width: barWidth, display: props.view === 'diff' ? 'none' : undefined }}>
+    <div
+      className={`sidebar${collapsed ? ' collapsed' : ''}`}
+      style={{
+        width: collapsed ? SIDEBAR_COLLAPSED_W : barWidth,
+        display: props.view === 'diff' ? 'none' : undefined,
+        // 拖拽中禁用过渡：宽度必须跟手；折叠/展开时才做动画
+        transition: dragging ? 'none' : 'width .15s ease',
+      }}
+    >
+      {collapsed ? (
+        // 折叠态：只留左侧窄边把手，点击展开
+        <button className="sidebar-expand" title={t('shell.sidebarExpand')} onClick={expandSidebar}>
+          ▶
+        </button>
+      ) : (
+        <>
       <ResizeCursor ghostRef={ghostRef} />
       {/* 右边缘拖拽手柄：左右拖调整侧栏宽度（双击恢复默认），与文件搜索框手柄同款交互 */}
       <span className="sidebar-resize" onMouseDown={onBarResizeDown} onDoubleClick={resetBarWidth} title={t('shell.sidebarResize')} />
@@ -589,7 +653,7 @@ export function Sidebar(props: {
           </div>
         </>
       )}
-      {/* 打开项目 / 创建练习仓库：常驻在最近项目下方（没有历史记录时更要有这个入口） */}
+      {/* 打开项目：常驻在最近项目下方（没有历史记录时更要有这个入口） */}
       <div className="row" style={{ gap: 6, margin: '6px 10px 0 20px' }}>
         {/* 打开其它项目（选择目录） */}
         <Tooltip content={t('shell.recent.openOther')}>
@@ -598,14 +662,14 @@ export function Sidebar(props: {
             {t('shell.recent.open')}
           </button>
         </Tooltip>
-        {/* 创建练习仓库（不影响当前项目） */}
-        <Tooltip content={t('repo.practice.entryTip')}>
-          <button className="history-open" style={{ flexShrink: 0, margin: 0 }} onClick={props.onOpenPractice}>
-            {/* 🧪 练习 */}
-            {t('repo.practice.entryShort')}
-          </button>
-        </Tooltip>
       </div>
+        </>
+      )}
+      {hideHint && (
+        <div className="sidebar-hide-hint" style={{ left: hideHint.x, top: hideHint.y }}>
+          {t('shell.sidebarHideHint')}
+        </div>
+      )}
     </div>
   );
 }
