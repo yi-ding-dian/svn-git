@@ -15,7 +15,7 @@ import { type Modal } from '../modal-types.js';
 import { type View } from '../sidebar.js';
 import { useLang } from '../../shared/use-lang.js';
 import { t, LANGS } from '../../../shared/i18n/index.js';
-import { IconServer, IconGitHub, IconHourglassRun, IconBell, IconFolder, IconOk, IconErr, IconGlobe, IconInfo } from '../../ui/icons.js';
+import { IconServer, IconGitHub, IconHourglassRun, IconBell, IconFolder, IconOk, IconErr, IconGlobe, IconShare, IconInfo } from '../../ui/icons.js';
 import { GithubIdentityBadge } from './github-identity-badge.js';
 import { NetLight } from './net-light.js';
 import { TaskPopover } from './task-popover.js';
@@ -395,16 +395,18 @@ export function AppHeader(props: {
                 },
               } as const;
             }),
-            // 局域网共享配置：固定项（不参与拖拽定制）
-            {
-              icon: <IconServer size={14} />,
-              label: t('share.title'),
-              title: t('share.title'),
-              action: () => {
-                setMoreMenu(null);
-                props.setModal({ type: 'share' });
-              },
-            },
+            // 局域网共享配置：仅本机显示（远程访问只读，且配置接口只允许本机调用）
+            ...(shareLocal
+              ? [{
+                  icon: <IconShare size={14} />,
+                  label: t('share.title'),
+                  title: t('share.title'),
+                  action: () => {
+                    setMoreMenu(null);
+                    props.setModal({ type: 'share' });
+                  },
+                }]
+              : []),
             { sep: true } as const,
             // 系统应用菜单集成：固定项（分隔符上方，不参与拖拽定制；仅 AppImage 显示）
             ...(appMenuState.appImage

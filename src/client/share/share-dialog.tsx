@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
-import { IconServer } from '../ui/icons.js';
+import { IconShare } from '../ui/icons.js';
 import { t } from '../../shared/i18n/index.js';
 import { DEFAULT_SHARE, type ShareMode, type ShareSettings } from '../../shared/share.js';
 
@@ -91,7 +91,7 @@ export function ShareDialog(props: { onClose: () => void }) {
   return (
     <ModalShell
       title={t('share.title')}
-      icon={<IconServer size={16} />}
+      icon={<IconShare size={16} />}
       width={620}
       onClose={props.onClose}
       closeIcon

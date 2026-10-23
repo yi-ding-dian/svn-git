@@ -724,6 +724,18 @@ export function IconGlobe({ size = 16 }: IconProps) {
   );
 }
 
+/** 共享图标：三个节点 + 连线（局域网共享；与「语言」的地球区分开） */
+export function IconShare({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="6" r="2.5" />
+      <circle cx="18" cy="18" r="2.5" />
+      <path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6" />
+    </svg>
+  );
+}
+
 /** 提示图标：线条勾（操作成功；颜色取 currentColor（=var(--ok)），无底填充随文字色，纯 SVG 跨平台一致） */
 export function IconOk({ size = 14 }: IconProps) {
   return (

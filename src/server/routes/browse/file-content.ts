@@ -4,6 +4,7 @@ import path from 'node:path';
 import { detectTextEncoding } from '../../../shared/text.js';
 import { isBinaryFile, inRepoRoot, sendJson, readTextFileChecked, MAX_READ_BYTES, TOO_LARGE_PLACEHOLDER, vcsOf, MSG_PATH_OUT_OF_BOUNDS, type Ctx } from '../util.js';
 import { t } from '../../../shared/i18n/index.js';
+import { streamZip } from './zip.js';
 
 /** /api/raw 的 Content-Type：按扩展名交给浏览器渲染（未列出的按二进制下载） */
 const RAW_MIME: Record<string, string> = {
@@ -197,11 +198,55 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     return true;
   }
 
-  // 原始文件（远程「在新标签页打开」用）：把文件字节原样交给访客自己的浏览器，
-  // 由浏览器按 Content-Type 渲染 HTML/图片/PDF 等。仅 GET，路径限制在仓库根内。
-  if (p === '/api/raw' && ctx.req.method === 'GET') {
+  // 下载：文件按附件返回；目录边遍历边打包 ZIP（远程右键「下载」用，本机也可访问）
+  if (p === '/api/download' && ctx.req.method === 'GET') {
     const { repo } = vcsOf();
     const rel = url.searchParams.get('path') || '';
+    const abs = path.resolve(repo.root, rel);
+    if (!rel || !inRepoRoot(repo.root, abs)) {
+      sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
+      return true;
+    }
+    let st: fs.Stats;
+    try {
+      st = fs.statSync(abs);
+    } catch {
+      sendJson(res, 404, { error: t('srv.fileNotFound') });
+      return true;
+    }
+    const base = path.basename(abs);
+    if (st.isDirectory()) {
+      try {
+        await streamZip(res, abs, `${base}.zip`);
+      } catch {
+        // 客户端中断下载：连接已不可写，直接销毁即可
+        if (!res.writableEnded) res.destroy();
+      }
+      return true;
+    }
+    if (!st.isFile()) {
+      sendJson(res, 404, { error: t('srv.fileNotFound') });
+      return true;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': st.size,
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(base)}`,
+      'Cache-Control': 'no-store',
+    });
+    fs.createReadStream(abs).pipe(res);
+    return true;
+  }
+
+  // 原始文件（远程「在新标签页打开」用）：把文件字节原样交给访客自己的浏览器，
+  // 由浏览器按 Content-Type 渲染 HTML/图片/PDF 等。仅 GET，路径限制在仓库根内。
+  // 同时支持路径式 `/api/raw/<rel>`：HTML 里的同目录相对链接会按该 URL 解析
+  // （查询式 `/api/raw?path=` 打开时，相对链接会被解析成 `/api/xxx`，必然 404）。
+  if ((p === '/api/raw' || p.startsWith('/api/raw/')) && ctx.req.method === 'GET') {
+    const { repo } = vcsOf();
+    const rel = p.startsWith('/api/raw/')
+      ? decodeURIComponent(p.slice('/api/raw/'.length))
+      : (url.searchParams.get('path') || '');
     const abs = path.resolve(repo.root, rel);
     if (!rel || !inRepoRoot(repo.root, abs)) {
       sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });

@@ -443,6 +443,17 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
         }
       }
     }
+    // 远程访问：下载整个目录（服务端边遍历边打包 ZIP）——所有目录状态都提供
+    if (s.remote) {
+      items.push({ sep: true });
+      items.push({
+        icon: <IconDownload />,
+        label: t('fs.act.downloadDir'),
+        action: () => {
+          window.location.href = `/api/download?path=${encodeURIComponent(row.rel)}`;
+        },
+      });
+    }
   } else {
     // 文件
     if (row.code === 'I') {
@@ -531,12 +542,23 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
   if (!row.isDir && row.code !== '!') {
     items.push({ sep: true });
     if (s.remote) {
-      // 远程访问：不能在本机启动外部程序（/api/open-with 属于本机专属），
-      // 改为用访客自己的浏览器新标签打开原始文件（HTML/图片/PDF 可直接渲染）
+      // 远程访问：不能在本机启动外部程序（/api/open-with 属于本机专属）。
+      // 「在新标签页打开」用访客自己的浏览器预览；「下载」取附件。
       items.push({
         icon: <IconExternal />,
         label: t('fs.act.openInNewTab'),
-        action: () => window.open(`/api/raw?path=${encodeURIComponent(row.rel)}`, '_blank', 'noopener'),
+        // 路径式 URL：HTML 内的相对链接会按同目录解析，不会跑到 /api/ 下
+        action: () => {
+          const raw = `/api/raw/${row.rel.split('/').map(encodeURIComponent).join('/')}`;
+          window.open(raw, '_blank', 'noopener');
+        },
+      });
+      items.push({
+        icon: <IconDownload />,
+        label: t('fs.act.download'),
+        action: () => {
+          window.location.href = `/api/download?path=${encodeURIComponent(row.rel)}`;
+        },
       });
     } else {
     // 终端运行只对脚本文件（.bat/.cmd/.sh）显示，与「打开方式」同组
