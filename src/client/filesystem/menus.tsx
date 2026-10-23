@@ -14,6 +14,8 @@ import { multiRevertName, removableFromRepo, renameableCode, renameItem, joinPat
 /** 菜单需要的组件侧服务（index.tsx 组装传入；菜单项动作绕过 UI 状态直接回组件回调） */
 export interface MenuServices {
   repoType: 'svn' | 'git';
+  /** 是否远程（局域网共享）访问：隐藏在本机启动外部程序的项，换成浏览器新标签打开 */
+  remote: boolean;
   dir: string;
   /** 当前视图模式：树模式不提供新建（就地生成的条目没处安放，树视图本来也是看全貌用的） */
   mode: Mode;
@@ -528,6 +530,15 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
   //   缺失条目（'!'）磁盘上根本没文件，打开必然失败
   if (!row.isDir && row.code !== '!') {
     items.push({ sep: true });
+    if (s.remote) {
+      // 远程访问：不能在本机启动外部程序（/api/open-with 属于本机专属），
+      // 改为用访客自己的浏览器新标签打开原始文件（HTML/图片/PDF 可直接渲染）
+      items.push({
+        icon: <IconExternal />,
+        label: t('fs.act.openInNewTab'),
+        action: () => window.open(`/api/raw?path=${encodeURIComponent(row.rel)}`, '_blank', 'noopener'),
+      });
+    } else {
     // 终端运行只对脚本文件（.bat/.cmd/.sh）显示，与「打开方式」同组
     if (isRunnableScript(row.name)) items.push(runScriptItem(row, s));
     const ext = row.name.split('.').pop()!.toLowerCase();
@@ -601,6 +612,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
         // 无
         s.menuPatchItems(owIdx, [{ label: t('fs.menu.none'), action: () => {} }]);
       });
+    }
   }
   // 剪贴板搬运（所有条目都有，含树冲突/缺失行——复制走的是磁盘路径，与版本库状态无关）；
   // 目录额外能当粘贴落点。放在尾部分组，与「复制完整路径」这类路径工具在一起

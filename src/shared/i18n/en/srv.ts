@@ -135,6 +135,7 @@ export const srv = {
   'srv.readFailedDetail': 'Read failed: {msg}',
   'srv.imageOnly': 'Only image files are supported',
   'srv.imageTooLarge': 'Image too large (over 50MB); cannot preview',
+  'srv.fileTooLarge': 'File too large (over 50MB); cannot open',
 
   // ---- 文本写入守卫（util.ts）----
   'srv.refuseReplacementChar': 'Content contains undecodable replacement characters (�) — saving would persist the garbled text. Please revert the file and retry',

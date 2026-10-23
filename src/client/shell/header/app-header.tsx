@@ -22,6 +22,7 @@ import { TaskPopover } from './task-popover.js';
 import { NoticePopover } from './notice-popover.js';
 import { ToolBtn, TOOLS, isSepItem, newSepId, type ToolCtx } from './toolbar-tools.js';
 import { useToolbarLayout } from './use-toolbar-layout.js';
+import { useShareStatus } from '../../share/share-context.js';
 
 export function AppHeader(props: {
   view: View;
@@ -58,6 +59,9 @@ export function AppHeader(props: {
 
   // 系统应用菜单集成状态（AppImage 方式下有「安装/卸载」入口；源码/浏览器运行不显示）
   const [appMenuState, setAppMenuState] = useState<{ appImage: boolean; installed: boolean }>({ appImage: false, installed: false });
+  /** 共享访问状态：远程只读/可写标记；本机才请求系统菜单等本机专属能力 */
+  const share = useShareStatus();
+  const shareLocal = share?.local ?? true;
   // 关于弹窗（版本 + 构建日期 + 构建提交；打开时拉取 /api/info）
   const [aboutOpen, setAboutOpen] = useState(false);
   const [aboutInfo, setAboutInfo] = useState<{ version: string; buildDate: string; commit: string; dirty: boolean }>({
@@ -76,11 +80,13 @@ export function AppHeader(props: {
     setAboutOpen(true);
   };
   useEffect(() => {
+    // 系统应用菜单只在本机有意义；远程请求会被门禁 403
+    if (!shareLocal) return;
     get
       .appMenu()
       .then((r) => setAppMenuState({ appImage: r.appImage, installed: r.installed }))
       .catch(() => {});
-  }, []);
+  }, [shareLocal]);
   // 后台任务：指示器 + 面板（进行中列表 + 取消；完成结果归铃铛——见下方 notices）
   const bgTasks = useTasks();
   const runningCount = bgTasks.filter((tk) => tk.status === 'running').length;
@@ -302,6 +308,16 @@ export function AppHeader(props: {
         </Tooltip>
       )}
       <span className="spacer" />
+      {/* 远程访问标记：局域网访问一律只读 */}
+      {share && !share.local && (
+        <span
+          className="share-badge"
+          title={share.readOnly ? t('share.readOnlyNote') : t('share.readWriteWarn')}
+        >
+          {share.readOnly ? t('share.readOnlyBadge') : t('share.sharedBadge')}
+          {share.max > 0 ? ` · ${t('share.online', { n: share.viewers, max: share.max })}` : ''}
+        </span>
+      )}
       {/* 可定制工具栏按钮 + 可拖拽分隔符（顺序 = 用户布局 shown；退出应用固定末尾不在此区） */}
       <span
         data-tool-bar
@@ -379,6 +395,16 @@ export function AppHeader(props: {
                 },
               } as const;
             }),
+            // 局域网共享配置：固定项（不参与拖拽定制）
+            {
+              icon: <IconServer size={14} />,
+              label: t('share.title'),
+              title: t('share.title'),
+              action: () => {
+                setMoreMenu(null);
+                props.setModal({ type: 'share' });
+              },
+            },
             { sep: true } as const,
             // 系统应用菜单集成：固定项（分隔符上方，不参与拖拽定制；仅 AppImage 显示）
             ...(appMenuState.appImage

@@ -37,6 +37,7 @@ import { CreateRepoDialog, GetRepoDialog, type GitHubSetupOpts } from '../repo/r
 import { RevertModal } from '../filesystem/revert.js';
 import { RenameModal } from '../filesystem/rename.js';
 import { ConfirmModal } from '../ui/prompt.js';
+import { ShareDialog } from '../share/share-dialog.js';
 import type { Modal } from './modal-types.js';
 import { PushConfirmModal } from '../ops/push-confirm.js';
 import { ConflictResolverModal } from '../conflicts/conflicts.js';
@@ -291,6 +292,7 @@ export function ModalHost(props: ModalHostProps) {
           onClose={() => setModal(null)}
         />
       )}
+      {modal?.type === 'share' && <ShareDialog onClose={() => setModal(null)} />}
       {modal?.type === 'terminal' && (
         <TerminalModal
           initialDir={browseDir}

@@ -15,6 +15,7 @@ import { plat } from './plat.js';
 import { repo } from './repo.js';
 import { shell } from './shell.js';
 import { srv } from './srv.js';
+import { share } from './share.js';
 import { term } from './term.js';
 import { ui } from './ui.js';
 import { vcs } from './vcs.js';
@@ -31,6 +32,7 @@ export const en: Record<I18nKey, string> = {
   ...conflict,
   ...term,
   ...srv,
+  ...share,
   ...vcs,
   ...plat,
   ...main,

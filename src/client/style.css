@@ -1763,3 +1763,22 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 .tip-hint { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border2); font-size: 11px; color: var(--dim); }
 @keyframes tip-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
 
+
+/* ---------- 局域网共享：访问等待页与顶栏只读标记 ---------- */
+.share-gate {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--bg); padding: 24px;
+}
+.share-gate-card {
+  max-width: 460px; text-align: center; padding: 32px 28px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .12);
+}
+.share-gate-icon { font-size: 34px; line-height: 1; margin-bottom: 12px; }
+.share-gate-title { margin: 0 0 8px; font-size: 18px; }
+.share-gate-msg { margin: 0 0 12px; font-size: 14px; }
+.share-badge {
+  flex-shrink: 0; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  color: var(--accent); border: 1px solid var(--accent); background: var(--panel2);
+  white-space: nowrap;
+}

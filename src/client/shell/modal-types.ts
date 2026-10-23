@@ -35,6 +35,8 @@ export type Modal =
   | { type: 'revert-confirm'; dir: string; dirLabel: string; items: { path: string; code: string }[] }
   | { type: 'rename'; from: string; fsMode: boolean }
   | { type: 'terminal' }
+  /** 局域网共享配置（⋯ 菜单） */
+  | { type: 'share' }
   | {
       type: 'confirm';
       title: React.ReactNode;

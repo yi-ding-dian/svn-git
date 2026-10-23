@@ -115,6 +115,7 @@ export const fs = {
   'fs.act.copyPath': 'Copy Full Path',
   'fs.act.copyName': 'Copy File Name',
   'fs.act.openWith': 'Open With…',
+  'fs.act.openInNewTab': 'Open in New Tab',
   'fs.act.runInTerminal': 'Run in Terminal',
   'fs.act.commitThisDir': 'Commit Changes in This Folder…',
   'fs.act.commitThisFile': 'Commit This File',

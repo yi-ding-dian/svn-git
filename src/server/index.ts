@@ -14,6 +14,7 @@ import { githubRepoBytes } from './routes/github.js';
 import { platform } from '../platform/index.js';
 import { t } from '../shared/i18n/index.js';
 import { isSafeOrigin, sendJson, readBody, isAuthError, type Ctx } from './routes/util.js';
+import { checkAccess } from './access-control.js';
 import { handle as handleConflicts } from './routes/conflicts.js';
 import { handle as handleBranch } from './routes/branch.js';
 import { handle as handleWorktree } from './routes/worktree.js';
@@ -32,6 +33,7 @@ import { handle as handleModuleIndex } from './routes/module-index.js';
 import { handle as handleUpload } from './routes/upload.js';
 import { handle as handleWc } from './routes/wc.js';
 import { handle as handleTerminal } from './routes/terminal.js';
+import { handle as handleShare } from './routes/share.js';
 
 /** 前端静态目录：开发 = 项目根/dist/client；打包 = asar 内 dist/client。
  *  编译产物在 dist/server/index.js，所以要**先回一级**再进 client（dirname 是 dist/server/） */
@@ -125,6 +127,14 @@ export function startServer(): Promise<ServerHandle> {
         sendJson(res, 403, { error: t('srv.crossSiteRejected') });
         return;
       }
+      // 局域网共享门禁：来源 IP / 白名单 / 已加入会话 / 远程只读（所有 API 统一拦截）
+      if (p.startsWith('/api/')) {
+        const access = checkAccess(req, p);
+        if (!access.ok) {
+          sendJson(res, access.status ?? 403, { error: access.error, shareDenied: true });
+          return;
+        }
+      }
       // 端点域模块（冲突防护 / 分支标签 / 工作树 / 操作类 / 浏览 / 宿主环境 / 历史 / 最近项目 / 配置 / 上传 / 工作副本 / 终端），按序尝试分发
       {
         const ctx: Ctx = { req, res, url, p };
@@ -146,6 +156,7 @@ export function startServer(): Promise<ServerHandle> {
         if (await handleUpload(ctx)) return;
         if (await handleWc(ctx)) return;
         if (await handleTerminal(ctx)) return;
+        if (await handleShare(ctx)) return;
       }
 
       // ---------- 版本管理扩展 API ----------
@@ -535,6 +546,8 @@ export function startServer(): Promise<ServerHandle> {
     // 固定端口(可预期、便于收藏)：被**本工具的旧实例**占着就关掉它继续用 23456；
     // 换了别的程序占用则退回随机端口（原行为）
     const DEFAULT_PORT = 23456;
+    // 共享配置：local 只监听回环，其余监听所有网卡（IP 白名单在 access-control 里校验）
+    const HOST = loadConfig().share.mode === 'local' ? '127.0.0.1' : '0.0.0.0';
     const onListen = () => {
       const port = (server.address() as AddressInfo).port;
       resolve({
@@ -547,10 +560,10 @@ export function startServer(): Promise<ServerHandle> {
      *  测试只要"随便一个能用的端口"，接管对它们毫无价值、只剩副作用 */
     if (process.env.SVNGIT_NO_PORT_TAKEOVER === '1') {
       server.once('error', (err: NodeJS.ErrnoException) => {
-        if (err.code === 'EADDRINUSE') server.listen(0, '127.0.0.1', onListen);
+        if (err.code === 'EADDRINUSE') server.listen(0, HOST, onListen);
         else throw err;
       });
-      server.listen(DEFAULT_PORT, '127.0.0.1', onListen);
+      server.listen(DEFAULT_PORT, HOST, onListen);
       return;
     }
     /** 只处理第一次 EADDRINUSE（接管成功后再失败说明另有问题，照旧抛出） */
@@ -562,14 +575,14 @@ export function startServer(): Promise<ServerHandle> {
         if (await takeOverPort(DEFAULT_PORT)) {
           // 端口 {port} 被本工具的旧实例占用——已关掉旧实例并接管
           console.warn(t('srv.portTakenOver', { port: DEFAULT_PORT }));
-          server.listen(DEFAULT_PORT, '127.0.0.1', onListen);
+          server.listen(DEFAULT_PORT, HOST, onListen);
           return;
         }
         // 端口 {port} 被占用，改用随机端口
         console.warn(t('srv.portInUse', { port: DEFAULT_PORT }));
-        server.listen(0, '127.0.0.1', onListen);
+        server.listen(0, HOST, onListen);
       })();
     });
-    server.listen(DEFAULT_PORT, '127.0.0.1', onListen);
+    server.listen(DEFAULT_PORT, HOST, onListen);
   });
 }

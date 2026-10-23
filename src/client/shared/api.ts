@@ -6,6 +6,7 @@ import type { ParsedDiff } from '../../shared/types.js';
 import type { TransferPhase } from '../../transfer-progress.js';
 import { t } from '../../shared/i18n/index.js';
 import type { Lang } from '../../shared/i18n/index.js';
+import type { ShareAccess, ShareConfig, ShareEvent, ShareSettings } from '../../shared/share.js';
 export type { ParsedDiff };
 
 export interface RepoCheck {
@@ -259,10 +260,13 @@ export class ApiError extends Error {
   authError: boolean;
   /** 用户主动中止（AbortError）。调用方判断「取消 vs 真失败」用这个标志，**不要比较 message 文本**（随界面语言变）。 */
   cancelled: boolean;
-  constructor(msg: string, authError = false, cancelled = false) {
+  /** 被局域网共享门禁拒绝（白名单/只读/不允许切换项目）：不是业务失败，调用方不要据此标记数据失效 */
+  shareDenied: boolean;
+  constructor(msg: string, authError = false, cancelled = false, shareDenied = false) {
     super(msg);
     this.authError = authError;
     this.cancelled = cancelled;
+    this.shareDenied = shareDenied;
   }
 }
 
@@ -278,7 +282,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(t('common.serviceDown'), false);
   }
   // 后端约定的错误体形状；成功时就是 T 的 JSON（下面 `as T` 交还调用方）
-  let data: { error?: string; authError?: boolean } | null = null;
+  let data: { error?: string; authError?: boolean; shareDenied?: boolean } | null = null;
   try {
     data = await res.json();
   } catch {
@@ -286,7 +290,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok || data?.error) {
     const msg = data?.error || `HTTP ${res.status}`;
-    throw new ApiError(msg, Boolean(data?.authError));
+    throw new ApiError(msg, Boolean(data?.authError), false, Boolean(data?.shareDenied));
   }
   return data as T;
 }
@@ -306,6 +310,13 @@ export interface RepoSizeTick {
 
 export const get = {
   info: () => api<RepoInfo>('/api/info'),
+  /** 共享配置（仅本机调用） */
+  share: () => api<ShareSettings>('/api/share'),
+  /** 当前访问者状态（本机/远程、只读、在线人数） */
+  shareAccess: () => api<ShareAccess>('/api/share/access'),
+  /** 本机：远程加入事件（共享通知） */
+  shareEvents: (since: number) =>
+    api<{ events: ShareEvent[]; lastId: number }>(`/api/share/events?since=${since}`),
   status: () => api<{ items: FileStatus[] }>('/api/status'),
   filteredTree: (dir?: string, codes: string[] = []) =>
     api<{ tree: FilterTreeNode[] }>(`/api/filtered-tree?dir=${encodeURIComponent(dir ?? '')}&codes=${encodeURIComponent(codes.join(','))}`),
@@ -713,6 +724,15 @@ export interface ProjectProbe {
 }
 
 export const post = {
+  /** 保存共享配置（仅本机） */
+  shareSave: (config: ShareConfig) => api<{ ok: boolean; config: ShareConfig }>('/api/share', json(config)),
+  /** 保存后重启服务（仅本机） */
+  shareRestart: () => api<{ ok: boolean }>('/api/share/restart', json({})),
+  /** 加入共享会话：满员时 ok=false / full=true（不是 HTTP 错误） */
+  shareJoin: (signal?: AbortSignal) =>
+    api<{ ok: boolean; full?: boolean } & ShareAccess>('/api/share/join', json({}, signal)),
+  /** 心跳：会话过期时服务端会尝试重新加入，返回 ok=false 表示已满 */
+  shareHeartbeat: () => api<{ ok: boolean; full?: boolean } & ShareAccess>('/api/share/heartbeat', json({})),
   /** 移除工作树 / 清理失效记录 */
   worktreeAction: (action: 'remove' | 'prune', path = '', force = false) =>
     api<VcsResult>('/api/worktree', json({ action, path, force })),

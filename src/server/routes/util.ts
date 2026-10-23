@@ -83,7 +83,15 @@ export function  isSafeOrigin(req: http.IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (!origin) return true;
   // 127.0.0.1 / localhost / [::1] 均视为本机来源（用户手输 localhost 地址打开页面时同源请求也带 Origin）
-  return /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(origin);
+  if (/^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(origin)) return true;
+  // 局域网共享：允许与本请求 Host 完全同源的页面（远程同事用 http://192.168.x.x:23456 打开）。
+  // 跨站网页的 Origin 是自己的域名，不会等于目标 Host，因此 CSRF 防护仍然成立。
+  try {
+    if (req.headers.host && new URL(origin).host === req.headers.host) return true;
+  } catch {
+    /* 非法 Origin 按跨站处理 */
+  }
+  return false;
 }
 
 export function  sendJson(res: http.ServerResponse, code: number, data: unknown) {

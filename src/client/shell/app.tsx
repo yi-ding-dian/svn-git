@@ -17,6 +17,7 @@ import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError, baseN
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { useTasks, startTask, hasRunningTask, pollTransferProgress } from '../shared/tasks.js';
 import { addNotice } from '../shared/notices.js';
+import { useShareStatus } from '../share/share-context.js';
 import { clearCommittedRows, flyRowsToTrash, launchMagicFlight, settleUpdatedRows, shakeEl, stampAddedRows, sweepRevertedRows } from '../animations/index.js';
 import { useLang } from '../shared/use-lang.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
@@ -159,6 +160,49 @@ export function App() {
   // 后台任务完成通知：统一走「铃铛气泡」（header：气泡弹出 3.5 秒 + 铃铛留档，见 notices）。
   // 取消不通知（用户自己点的）；结果任何时候都在铃铛里可翻
   const bgTasks = useTasks();
+  /** 共享访问状态：本机在开启局域网共享时轮询远程加入/离开事件 */
+  const shareStatus = useShareStatus();
+  const shareLocal = shareStatus?.local ?? true;
+  const shareMode = shareStatus?.mode ?? 'local';
+  useEffect(() => {
+    // 只有本机需要接收远程加入/离开通知
+    if (!shareLocal || shareMode === 'local') return;
+    // since=-1 表示首次调用：只记录游标，不补发历史事件（避免每次刷新都弹一堆旧通知）
+    let since = -1;
+    let alive = true;
+    const poll = async () => {
+      if (!alive) return;
+      try {
+        const r = await get.shareEvents(since < 0 ? Number.MAX_SAFE_INTEGER : since);
+        if (!alive) return;
+        if (since < 0) {
+          since = r.lastId;
+          return;
+        }
+        if (r.events.length === 0) return;
+        since = r.lastId;
+        for (const e of r.events) {
+          addNotice({
+            title: t('share.noticeTitle'),
+            message: t(e.type === 'join' ? 'share.noticeJoin' : 'share.noticeLeave', {
+              ip: e.ip,
+              n: e.viewers,
+              max: e.max > 0 ? e.max : '∞',
+            }),
+            err: false,
+          });
+        }
+      } catch {
+        /* 服务重启/网络抖动：下一轮再试 */
+      }
+    };
+    const timer = window.setInterval(() => void poll(), 3000);
+    void poll();
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [shareLocal, shareMode]);
   const notifiedTaskIdsRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     for (const tk of bgTasks) {
@@ -276,8 +320,11 @@ export function App() {
         }
       } catch (e) {
         showToast((e as Error).message, true);
-        // 打不开（目录已删 / 不是工作副本）：标为失效 → 该项上常驻一个 ×，悬浮时也用这条消息提示
-        setInvalidPaths((prev) => ({ ...prev, [h.path]: (e as Error).message }));
+        // 共享门禁拒绝（如远程不允许切换项目）不是"项目失效"：只提示，不要打 × 标记
+        if (!(e as { shareDenied?: boolean }).shareDenied) {
+          // 打不开（目录已删 / 不是工作副本）：标为失效 → 该项上常驻一个 ×，悬浮时也用这条消息提示
+          setInvalidPaths((prev) => ({ ...prev, [h.path]: (e as Error).message }));
+        }
       }
     },
     [refresh, loadHistory, showToast, setOnboard] // setOnboard 是 useState 的 setter，引用稳定

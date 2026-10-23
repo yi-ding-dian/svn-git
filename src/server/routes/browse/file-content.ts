@@ -5,6 +5,35 @@ import { detectTextEncoding } from '../../../shared/text.js';
 import { isBinaryFile, inRepoRoot, sendJson, readTextFileChecked, MAX_READ_BYTES, TOO_LARGE_PLACEHOLDER, vcsOf, MSG_PATH_OUT_OF_BOUNDS, type Ctx } from '../util.js';
 import { t } from '../../../shared/i18n/index.js';
 
+/** /api/raw 的 Content-Type：按扩展名交给浏览器渲染（未列出的按二进制下载） */
+const RAW_MIME: Record<string, string> = {
+  html: 'text/html; charset=utf-8',
+  htm: 'text/html; charset=utf-8',
+  css: 'text/css; charset=utf-8',
+  js: 'text/javascript; charset=utf-8',
+  mjs: 'text/javascript; charset=utf-8',
+  json: 'application/json; charset=utf-8',
+  xml: 'application/xml; charset=utf-8',
+  txt: 'text/plain; charset=utf-8',
+  md: 'text/plain; charset=utf-8',
+  log: 'text/plain; charset=utf-8',
+  csv: 'text/csv; charset=utf-8',
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  zip: 'application/zip',
+};
+
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { res, url } = ctx;
   const p = url.pathname;
@@ -165,6 +194,42 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     // 按工作区文件大小判会误报（工作区 6MB、HEAD 版本很小的情况）。
     const truncated = out.output === TOO_LARGE_PLACEHOLDER;
     sendJson(res, 200, { ...out, ...(encoding ? { encoding } : {}), ...(truncated ? { truncated: true } : {}) });
+    return true;
+  }
+
+  // 原始文件（远程「在新标签页打开」用）：把文件字节原样交给访客自己的浏览器，
+  // 由浏览器按 Content-Type 渲染 HTML/图片/PDF 等。仅 GET，路径限制在仓库根内。
+  if (p === '/api/raw' && ctx.req.method === 'GET') {
+    const { repo } = vcsOf();
+    const rel = url.searchParams.get('path') || '';
+    const abs = path.resolve(repo.root, rel);
+    if (!rel || !inRepoRoot(repo.root, abs)) {
+      sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
+      return true;
+    }
+    let st: fs.Stats;
+    try {
+      st = fs.statSync(abs);
+    } catch {
+      sendJson(res, 404, { error: t('srv.fileNotFound') });
+      return true;
+    }
+    if (!st.isFile()) {
+      sendJson(res, 404, { error: t('srv.fileNotFound') });
+      return true;
+    }
+    if (st.size > 50 * 1024 * 1024) {
+      sendJson(res, 400, { error: t('srv.fileTooLarge') });
+      return true;
+    }
+    const ext = abs.split('.').pop()!.toLowerCase();
+    res.writeHead(200, {
+      'Content-Type': RAW_MIME[ext] ?? 'application/octet-stream',
+      'Content-Length': st.size,
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(path.basename(abs))}`,
+      'Cache-Control': 'no-store',
+    });
+    res.end(fs.readFileSync(abs));
     return true;
   }
 

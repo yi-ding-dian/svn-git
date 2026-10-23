@@ -6,6 +6,7 @@ import { IconDiff, IconRevert, IconClock, IconEyeClosed, IconEye, IconLock, Icon
 import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
+import { useShareStatus } from '../share/share-context.js';
 import { filterEntries, type Filter, type Mode, type VisibleRow } from './utils.js';
 import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } from './menus.js';
 import { useFileSearch, FsSearchBox } from './search.js';
@@ -84,6 +85,8 @@ function ActionBtn(props: {
 }
 
 export function FsView(props: Props) {
+  /** 共享访问状态：远程时右键菜单不提供「在本机启动外部程序」 */
+  const share = useShareStatus();
   const [dir, setDir] = useState(props.startRel ?? ''); // 列表模式当前目录(初始 = 操作范围,大仓库子项目)
   const [data, setData] = useState<FsData | null>(null); // 列表模式数据
   const [error, setError] = useState('');
@@ -742,6 +745,8 @@ export function FsView(props: Props) {
   // 右键菜单服务：菜单项动作所需数据/回调（menus.tsx 纯构建 items,不直接碰组件状态）
   const menuSvc = (): MenuServices => ({
     repoType: props.repoType,
+    // 远程访问：隐藏在本机启动外部程序的项，换浏览器新标签打开
+    remote: Boolean(share && !share.local),
     dir: data?.dir ?? '',
     root: data?.root,
     favs,

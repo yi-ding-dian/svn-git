@@ -115,6 +115,7 @@ export const fs = {
   'fs.act.copyPath': '复制完整路径',
   'fs.act.copyName': '复制文件名',
   'fs.act.openWith': '打开方式…',
+  'fs.act.openInNewTab': '在新标签页打开',
   'fs.act.runInTerminal': '终端运行',
   'fs.act.commitThisDir': '提交此目录修改…',
   'fs.act.commitThisFile': '提交此文件',

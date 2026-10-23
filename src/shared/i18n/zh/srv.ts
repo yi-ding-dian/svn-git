@@ -149,6 +149,7 @@ export const srv = {
   'srv.readFailedDetail': '读取失败：{msg}',
   'srv.imageOnly': '仅支持图片文件',
   'srv.imageTooLarge': '图片过大（超过 50MB），无法预览',
+  'srv.fileTooLarge': '文件过大（超过 50MB），无法打开',
 
   // ---- 文本写入守卫（util.ts）----
   'srv.refuseReplacementChar': '内容含无法解码的替换字符（�）——写入会把乱码固化进文件，已拒绝保存。请先「还原」该文件再重试',
