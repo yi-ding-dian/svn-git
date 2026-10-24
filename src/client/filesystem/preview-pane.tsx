@@ -15,6 +15,7 @@ import { AppIcon } from '../ui/ui.js';
 import { IconExternal, IconRename } from '../ui/icons.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { InlineEditor, type InlineEditorHandle } from '../shared/inline-editor.js';
+import { useContentCopyMenu } from '../shared/content-copy.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { MdThemePopover, loadMdTheme, saveMdTheme, mdThemeVars, mdThemeName } from '../shared/md-theme.js';
 import { MdTocPopover, type TocItem } from './md-toc.js';
@@ -45,6 +46,8 @@ interface Props {
   onOpenError: (msg: string) => void;
   /** 内联编辑保存成功：父级据此刷新列表（文件状态会从干净变成 M）并提示 */
   onSaved?: (msg: string) => void;
+  /** 复制结果提示（内容区右键菜单 / Ctrl+A 后的复制走全局 toast） */
+  onToast?: (msg: string, err?: boolean) => void;
 }
 
 export function PreviewPane(props: Props) {
@@ -70,6 +73,8 @@ export function PreviewPane(props: Props) {
   /** 编辑器的命令式句柄（保存按钮触发）+ 脏状态（保存按钮点亮） */
   const editorRef = useRef<InlineEditorHandle>(null);
   const [editDirty, setEditDirty] = useState(false);
+  /** 内容区右键菜单：无选区只有「复制全部内容」，有选区再加「复制所选内容」（复制全文用原文，不含行号） */
+  const copyMenu = useContentCopyMenu(() => text ?? '', props.onToast);
   /** 原文的行尾风格：**textarea 会把 CRLF 规范化成 LF**（浏览器行为），保存前得按这个还原，
    *  否则 CRLF 文件存一次就变成整文件 diff —— 用户会以为工具把他的文件改乱了 */
   const eolRef = useRef<'\n' | '\r\n'>('\n');
@@ -565,6 +570,8 @@ export function PreviewPane(props: Props) {
           /* mask：点菜单外面 = 不想编辑了，菜单关掉（用户实报：点其他地方菜单不消失） */
           <ContextMenu x={editMenu.x} y={editMenu.y} items={editMenu.items} onClose={() => setEditMenu(null)} mask />
         )}
+        {/* 内容区右键：复制所选内容 / 复制全部内容 */}
+        {copyMenu.menuElement}
       </div>
       {/* md 阅读主题：变量 inline 打在这个滚动容器上，只作用其子树（工具栏/界面不受影响） */}
       {editing ? (
@@ -586,7 +593,15 @@ export function PreviewPane(props: Props) {
           onError={(m) => props.onError(m)}
         />
       ) : (
-      <div className="diff" style={{ flex: 1, overflow: 'auto', ...mdVars }}>
+      // data-content-zoom：鼠标在这里时 Ctrl+滚轮只缩放文件内容（app.tsx 的全局监听按它区分）
+      <div
+        className="diff"
+        data-content-zoom=""
+        style={{ flex: 1, overflow: 'auto', ...mdVars }}
+        // 图片没有可复制的文字，保留浏览器原生右键行为
+        onContextMenu={target.img ? undefined : copyMenu.openMenu}
+        onMouseDownCapture={target.img ? undefined : copyMenu.captureSelection}
+      >
         {/* 图片预览：直接显示图片（点击放大复用 md-render 的放大机制） */}
         {target.img ? (
           <div

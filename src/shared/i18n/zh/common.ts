@@ -25,6 +25,11 @@ export const common = {
   'common.refreshed': '已刷新',
   'common.preview': '预览',
   'common.write': '编写',
+  // 文件内容区右键菜单 / 复制结果提示
+  'common.copySelection': '复制所选内容',
+  'common.copyAllContent': '复制全部内容',
+  'common.copied': '已复制',
+  'common.copyFailed': '复制失败',
 
   // ---- 网络层 / 应用级消息（client/shared/api.ts）----
   // ⚠️ common.cancelled 是「用户主动中止」的消息文本；调用方判断取消**不要比较这段文本**

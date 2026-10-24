@@ -1139,6 +1139,20 @@ body.drag-trash-hot .drag-src {
   background: var(--panel2);
 }
 
+/* ---------- 文字缩放提示（Ctrl+滚轮 / Ctrl+0，跟随鼠标；停止滚动约 0.9s 后由 app.tsx 移除） ---------- */
+.zoom-tip {
+  position: fixed; z-index: 401; pointer-events: none;
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 999px;
+  padding: 4px 12px; font-size: 13px; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  box-shadow: 0 6px 20px rgba(0,0,0,.18);
+  animation: zoom-tip-in .12s ease;
+}
+@keyframes zoom-tip-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
 /* ---------- 操作结果提示（跟随鼠标，淡出） ---------- */
 .toast-tip {
   position: fixed; z-index: 400; background: var(--panel2);
@@ -1411,6 +1425,23 @@ body.resizing .sb-resizer-grip { opacity: 0; }
 /* 双方都改到的同一行（后端按行号交集算出来，经 DiffRender 的 marks 传入）：只在 add/del 底色之上
    叠一层琥珀背景。别再加左侧竖条之类的装饰（加过一次，用户看了让去掉） */
 .diff .line.mark { background: rgba(210,153,34,.22); }
+
+/* ---------- 文件内容缩放（Ctrl+滚轮悬停在内容区；界面不动） ----------
+   内容容器标了 data-content-zoom，字号基准 13px（.diff）乘以 --content-zoom（use-appearance 写入）。
+   行号 / 文件头徽标原本写死 px，在内容区里改成 em，跟着内容一起缩放。 */
+[data-content-zoom] .diff,
+.diff[data-content-zoom] { font-size: calc(13px * var(--content-zoom, 1)); }
+.diff[data-content-zoom] .sb-no,
+[data-content-zoom] .diff .sb-no { font-size: 0.923em; } /* 12/13 */
+.diff[data-content-zoom] .diff-filehead-badge,
+[data-content-zoom] .diff .diff-filehead-badge { font-size: 0.846em; } /* 11/13 */
+.diff[data-content-zoom] .diff-filehead-stat,
+[data-content-zoom] .diff .diff-filehead-stat { font-size: 0.923em; } /* 12/13 */
+/* 并排对比的双栏正文（历史差异视图）同样按 --content-zoom 缩放，两栏同倍率保持一致 */
+.sb-pane[data-content-zoom] { font-size: calc(13px * var(--content-zoom, 1)); }
+.sb-pane[data-content-zoom] .sb-no { font-size: 0.923em; } /* 12/13 */
+.sb-pane[data-content-zoom] .sb-fold-text,
+.sb-pane[data-content-zoom] .sb-ph-hint { font-size: 0.846em; } /* 11/13 */
 
 /* ---------- 空状态 ---------- */
 .empty { color: var(--dim); text-align: center; padding: 60px 0; }

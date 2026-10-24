@@ -11,6 +11,9 @@ export const shell = {
   'shell.dblClickDiff': 'Double-click to view diff',
   'shell.listSep': ', ',
   'shell.unknownError': 'Unknown error',
+  /** Zoom indicator (Ctrl+wheel / Ctrl+0): UI text vs file content */
+  'shell.zoomTip': 'Zoom {pct}%',
+  'shell.zoomTipContent': 'Content zoom {pct}%',
 
   // ---- 顶栏：仓库信息 ----
   'shell.header.noRepo': 'No repository',

@@ -25,6 +25,7 @@ export const look = {
   // ---- 字体设置弹窗 ----
   'look.font.title': '字体设置',
   'look.font.size': '字号',
+  'look.font.zoomHint': 'Ctrl+滚轮缩放文字：鼠标在文件内容区只缩放内容，界面不动；Ctrl+0 恢复 100%',
   'look.font.ui': '界面字体',
   'look.font.code': '代码字体（差异对比 / 代码查看等区域）',
   'look.font.preview': '实时预览',

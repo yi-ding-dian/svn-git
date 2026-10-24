@@ -1,6 +1,7 @@
 /** diff 文本着色渲染 */
 import React from 'react';
 import { t } from '../../shared/i18n/index.js';
+import { useContentCopyMenu, type CopyToast } from '../shared/content-copy.js';
 
 const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
 
@@ -79,8 +80,18 @@ function splitSections(text: string): { before: string[]; files: FileSection[] }
  *   这里用与 `vcs/diff-lines.ts` **完全相同**的行号跟踪规则，保证标出来的行和后端判定冲突的行严格对上
  *   （hunk 头重置行号；`--- `/`+++ ` 文件头不推进；`-` 与上下文行推进；`+` 停在插入位置不推进）。
  */
-export function DiffRender(props: { text: string; marks?: Set<number> }) {
+export function DiffRender(props: {
+  text: string;
+  marks?: Set<number>;
+  /** 标记为文件内容区：鼠标悬停时 Ctrl+滚轮只缩放这块内容（界面不动）。
+   *  只在"浏览/对比文件内容"的整页场景打开；弹窗里的并排对照保持原样。 */
+  contentZoom?: boolean;
+  /** 复制结果提示（`contentZoom` 时内容区右键菜单 / Ctrl+A + Ctrl+C 走这里） */
+  onToast?: CopyToast;
+}) {
   const marks = props.marks;
+  /** 内容区右键：复制所选内容 / 复制全部内容（全文取原始 diff，不含行号等界面文字） */
+  const copyMenu = useContentCopyMenu(() => props.text, props.onToast);
   const { before, files } = splitSections(props.text);
   let cur = 0;
   let lastDelMarked = false; // 上一个删除行是否被标记：改一行 = 删一行 + 插一行，插入行要跟着标
@@ -124,7 +135,13 @@ export function DiffRender(props: { text: string; marks?: Set<number> }) {
   };
 
   return (
-    <div className="diff">
+    <>
+    <div
+      className="diff"
+      data-content-zoom={props.contentZoom ? '' : undefined}
+      onContextMenu={props.contentZoom ? copyMenu.openMenu : undefined}
+      onMouseDownCapture={props.contentZoom ? copyMenu.captureSelection : undefined}
+    >
       {before.map((l, i) => renderLine(l, `b${i}`))}
       {files.map((f, fi) => (
         <React.Fragment key={`f${fi}`}>
@@ -143,5 +160,8 @@ export function DiffRender(props: { text: string; marks?: Set<number> }) {
         </React.Fragment>
       ))}
     </div>
+    {/* 内容区右键菜单（fixed 定位，不占布局） */}
+    {props.contentZoom && copyMenu.menuElement}
+    </>
   );
 }

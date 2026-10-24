@@ -76,7 +76,8 @@ export function DiffPane(props: {
       {/* 左栏：原版（flex 不伸缩，宽度由 leftRatio 控制；sb-pane 默认 flex:1 会覆盖 width） */}
       {/* 左栏 + 滚动条预览标记（结构同右栏：pane 让出 12px 给标记条） */}
       <div style={{ position: 'relative', flex: '0 0 auto', width: `${navigation.leftRatio}%`, display: 'flex', minWidth: 0 }}>
-      <div ref={leftPane} className="sb-pane" onScroll={navigation.onScrollSync('left')}>
+      {/* data-content-zoom：鼠标在正文里时 Ctrl+滚轮只缩放内容（界面不动） */}
+      <div ref={leftPane} className="sb-pane" data-content-zoom="" onScroll={navigation.onScrollSync('left')}>
         {isMd && previewL ? (
           <div
             className="md-render"
@@ -201,7 +202,7 @@ export function DiffPane(props: {
         </div>
       ) : (
       <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0 }}>
-      <div ref={rightPane} className="sb-pane" onScroll={navigation.onScrollSync('right')}>
+      <div ref={rightPane} className="sb-pane" data-content-zoom="" onScroll={navigation.onScrollSync('right')}>
         {isMd && previewR ? (
           <div
             className="md-render"

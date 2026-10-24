@@ -13,6 +13,9 @@ export const shell = {
   /** 列表拼接分隔符（文件行号、退出前警告项……） */
   'shell.listSep': '、',
   'shell.unknownError': '未知错误',
+  /** 缩放提示（Ctrl+滚轮 / Ctrl+0）：界面文字 / 文件内容两套 */
+  'shell.zoomTip': '缩放 {pct}%',
+  'shell.zoomTipContent': '内容缩放 {pct}%',
 
   // ---- 顶栏：仓库信息 ----
   'shell.header.noRepo': '未选择仓库',

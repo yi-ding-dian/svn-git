@@ -25,6 +25,7 @@ export const look = {
   // ---- 字体设置弹窗 ----
   'look.font.title': 'Font Settings',
   'look.font.size': 'Font Size',
+  'look.font.zoomHint': 'Ctrl+wheel zooms text: over file content only the content scales, the UI stays put. Ctrl+0 resets to 100%',
   'look.font.ui': 'UI Font',
   'look.font.code': 'Code Font (diffs, code views)',
   'look.font.preview': 'Live Preview',

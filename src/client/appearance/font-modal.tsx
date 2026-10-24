@@ -189,6 +189,8 @@ export function FontModal(props: {
           <span>{FONT_MIN}px</span>
           <span>{FONT_MAX}px</span>
         </div>
+        {/* Ctrl+滚轮缩放是全局快捷键，入口不在这里，给一行说明（100% = 上面设置的字号） */}
+        <div className="dim small" style={{ marginTop: 4 }}>{t('look.font.zoomHint')}</div>
       </div>
       <div style={{ marginBottom: 12 }}>
         {/* 界面字体 */}

@@ -25,6 +25,8 @@ interface Props {
   onChanged?: () => void;
   /** 返回按钮：退出历史视图回到文件浏览 */
   onBack: () => void;
+  /** 复制结果提示（右侧差异内容区的右键菜单） */
+  onToast?: (msg: string, err?: boolean) => void;
 }
 
 export function HistoryView(props: Props) {
@@ -596,7 +598,8 @@ export function HistoryView(props: Props) {
               <button className="mini" style={{ lineHeight: '16px' }} onClick={() => setDiffOf(null)}>{t('hist.back')}</button>
             </div>
             {/* ⏳ 计算差异… */}
-            {diffLoading ? <div className="loading">{t('hist.loadingDiff')}</div> : <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DiffRender text={diffText} /></div>}
+            {/* data-content-zoom：鼠标在这里时 Ctrl+滚轮只缩放差异正文（界面不动） */}
+            {diffLoading ? <div className="loading">{t('hist.loadingDiff')}</div> : <div data-content-zoom="" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DiffRender text={diffText} contentZoom onToast={props.onToast} /></div>}
           </>
         )}
       </div>

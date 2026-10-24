@@ -21,6 +21,11 @@ export const common = {
   'common.refreshed': 'Refreshed',
   'common.preview': 'Preview',
   'common.write': 'Write',
+  // File-content context menu / copy result toasts
+  'common.copySelection': 'Copy selection',
+  'common.copyAllContent': 'Copy all content',
+  'common.copied': 'Copied',
+  'common.copyFailed': 'Copy failed',
 
   // ---- Network / app-level messages (client/shared/api.ts) ----
   'common.cancelled': 'Canceled',

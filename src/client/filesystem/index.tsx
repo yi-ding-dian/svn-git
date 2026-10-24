@@ -1849,6 +1849,8 @@ export function FsView(props: Props) {
               setPreview(null); // 文本读取失败：红条提示并退回列表（对应旧 openFile 读取失败后的终态）
               if (search.fileQuery.trim()) search.setShowResults(true);
             }}
+            // 内容区右键复制 / Ctrl+A 复制结果提示
+            onToast={props.onToast}
             onSaved={(msg) => {
               // 内联编辑保存后：文件状态会从干净变成 M（或未版本化项内容变了），列表必须重拉；
               // 树模式同样要重载（带展开状态的节点）

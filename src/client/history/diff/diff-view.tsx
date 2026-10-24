@@ -442,7 +442,7 @@ export function DiffView(props: Props) {
       )}
       {/* (无差异) */}
       {!loading && !error && sideMode && !versions && <div className="empty">{t('hist.noDiff')}</div>}
-      {!loading && !error && !sideMode && <DiffRender text={text} />}
+      {!loading && !error && !sideMode && <DiffRender text={text} contentZoom onToast={props.onToast} />}
       {restore.restoreTarget && (
         <ConfirmModal
           danger
