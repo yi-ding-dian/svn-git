@@ -54,6 +54,7 @@ export const fs = {
   'fs.filter.new': 'New',
   'fs.filter.deleted': 'Deleted',
   'fs.filter.all': 'All',
+  'fs.filter.allTitle': 'Clear status filters and show all change states',
 
   // ---- Empty states ----
   'fs.empty.noMatchFilter': 'No files match the filter',

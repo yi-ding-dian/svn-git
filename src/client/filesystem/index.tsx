@@ -1445,7 +1445,9 @@ export function FsView(props: Props) {
               {showHidden ? <IconEye /> : <IconEyeClosed />} {t('fs.toolbar.hiddenFiles')}
             </button>
           </Tooltip>
-          <span className="row" style={{ gap: 4 }}>
+          {/* 显示开关与状态过滤是两类控件：竖线分开，过滤组内做成分段控件 */}
+          <span className="fs-toolbar-sep" />
+          <span className="fs-filter-group">
             {(['changed', 'new', 'deleted'] as Filter[]).map((f) => (
               <Tooltip
                 key={f}
@@ -1479,10 +1481,18 @@ export function FsView(props: Props) {
                 </button>
               </Tooltip>
             ))}
-            {filters.size > 0 && (
-              // 全部
-              <button className="mini" onClick={() => { setFilters(new Set()); setMode(prevModeRef.current); }}>{t('fs.filter.all')}</button>
-            )}
+            {/* 全部：常驻第四段（无过滤时灰显），避免激活过滤时后面的按钮整体跳位 */}
+            <button
+              className="mini"
+              disabled={filters.size === 0}
+              title={t('fs.filter.allTitle')}
+              onClick={() => {
+                setFilters(new Set());
+                setMode(prevModeRef.current);
+              }}
+            >
+              {t('fs.filter.all')}
+            </button>
           </span>
           <span className="row" style={{ gap: 4, marginLeft: 4 }}>
             {/* 列表视图 */}

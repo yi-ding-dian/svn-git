@@ -54,6 +54,7 @@ export const fs = {
   'fs.filter.new': '仅新文件',
   'fs.filter.deleted': '仅删除',
   'fs.filter.all': '全部',
+  'fs.filter.allTitle': '清除状态过滤，显示所有变更状态',
 
   // ---- 空态 ----
   'fs.empty.noMatchFilter': '没有符合条件的文件',

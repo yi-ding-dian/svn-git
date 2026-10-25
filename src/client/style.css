@@ -373,6 +373,23 @@ body {
 .header button { margin-left: 4px; }
 /* 按钮分组分隔线（传输 / 版本管理 / 仓库 / 维护 / 外观退出） */
 .header-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; margin-left: 4px; }
+/* 文件浏览工具栏：显示开关与状态过滤之间的竖线，以及状态过滤分段控件。
+   分段控件让三个过滤看起来是一组；「全部」常驻，避免激活过滤时后面的按钮被挤动。 */
+.fs-toolbar-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; margin: 0 2px; }
+.fs-filter-group {
+  display: inline-flex; align-items: center;
+  border: 1px solid var(--border); border-radius: 7px; overflow: hidden;
+  background: var(--panel2);
+}
+.fs-filter-group button.mini {
+  border: 0; border-radius: 0; background: transparent;
+  padding: 3px 9px;
+}
+.fs-filter-group button.mini + button.mini { border-left: 1px solid var(--border); }
+.fs-filter-group button.mini:hover:not(:disabled) { background: var(--border); }
+.fs-filter-group button.mini.primary { background: var(--accent); color: #ffffff; }
+.fs-filter-group button.mini.primary:hover { background: #79c0ff; }
+.fs-filter-group button.mini:disabled { opacity: .45; cursor: default; }
 /* 拖拽插入线：工具栏内蓝色竖条，指示插入位置 */
 .tool-drop-line {
   width: 3px; height: 24px; border-radius: 2px; background: var(--accent);
