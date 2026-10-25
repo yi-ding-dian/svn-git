@@ -4,9 +4,51 @@ import { t } from '../../shared/i18n/index.js';
 import { IconRename } from '../ui/icons.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
+import type { LineCondition } from '../../shared/types.js';
 
 export type Filter = 'changed' | 'new' | 'deleted';
 export type Mode = 'list' | 'tree' | 'browse';
+
+/** 行数输入清洗：只留开头的 < / > 和数字，其余字符丢弃；>= / <= 归一为 ≥ / <。
+ *  最多 9 位——行数阈值没有超过十亿的实用场景，也防手抖粘贴一长串。 */
+export function sanitizeLineQuery(raw: string): string {
+  // 中文输入法容易打出全角 ＜ ＞ ０-９：先归一成半角，否则会被下面整串过滤掉
+  // >= / <= 一并归一：>=100 视为「100」（≥，与无符号同义），<=100 视为「<100」
+  const normalized = raw
+    .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/＜/g, '<')
+    .replace(/＞/g, '>')
+    .replace(/\s+/g, '')
+    .replace(/>=/g, '')
+    .replace(/<=/g, '<')
+    .replace(/=/g, '');
+  const filtered = normalized.replace(/[^\d<>]/g, '');
+  const operator = filtered.startsWith('<') || filtered.startsWith('>') ? filtered[0]! : '';
+  return operator + filtered.replace(/[^\d]/g, '').slice(0, 9);
+}
+
+/** 解析行数条件：无符号 = ≥；> = 严格大于；< = 严格小于。
+ *  空、只有符号、0、非法字符一律返回 null（确定按钮据此禁用）。 */
+export function parseLineCondition(raw: string): LineCondition | null {
+  const m = /^([<>])?(\d+)$/.exec(raw.trim());
+  if (!m) return null;
+  const value = Number(m[2]);
+  if (!Number.isSafeInteger(value) || value < 1) return null;
+  return { operator: m[1] === '>' ? 'gt' : m[1] === '<' ? 'lt' : 'gte', value };
+}
+
+/** 两个条件是否完全一致（比较符号 + 数值）：按钮显示「重新扫描」还是高亮「确定」 */
+export function sameLineCondition(a: LineCondition | null, b: LineCondition | null): boolean {
+  return !!a && !!b && a.operator === b.operator && a.value === b.value;
+}
+
+/** 条件的界面文案：≥ 1,000 行 / > 1,000 行 / < 100 行 */
+export function lineConditionText(condition: LineCondition): string {
+  const n = condition.value.toLocaleString();
+  if (condition.operator === 'gt') return t('fs.line.condGt', { n });
+  if (condition.operator === 'lt') return t('fs.line.condLt', { n });
+  return t('fs.line.condGte', { n });
+}
 
 /** 还原菜单按状态语义化命名：A=取消添加 / D=撤销删除 / M·C·R=还原（isDir 时用带"目录"的写法） */
 export function revertName(code: string, isDir = false): { label: string; title: string } {
@@ -97,6 +139,8 @@ export interface VisibleRow {
   isDir: boolean;
   size: number;
   mtime: string;
+  /** 行数（仅行数过滤树的文件行有；用于行内展示与列对齐） */
+  lines?: number;
   count?: number;
   codes?: string[];
   depth: number;

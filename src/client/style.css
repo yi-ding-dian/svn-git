@@ -899,7 +899,33 @@ body.drag-trash-hot .drag-src {
   cursor: pointer; user-select: none; white-space: nowrap;
 }
 .search-mode-chip:hover { color: var(--accent); border-color: var(--accent); }
-.search-mode-chip.content { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+.search-mode-chip.content,
+.search-mode-chip.line { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+/* 行数模式的确认/取消按钮：与清空按钮同一位置，省出输入区宽度 */
+.search-confirm {
+  position: absolute; right: 3px; top: 50%; transform: translateY(-50%);
+  min-width: 44px; height: 18px; padding: 0 5px; border-radius: 5px;
+  border: 1px solid var(--border); background: var(--panel2); color: var(--dim);
+  font-size: 10.5px; line-height: 16px; cursor: pointer; white-space: nowrap;
+}
+.search-confirm:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.search-confirm.primary { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+.search-confirm:disabled { opacity: .45; cursor: default; }
+/* 行数语法说明：浮在搜索框下方（placeholder 放不下整句），扫过一次后头部会显示解析结果 */
+.search-line-hint {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: 121;
+  max-width: min(520px, calc(100vw - 24px));
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel2); color: var(--dim); font-size: 11px;
+  white-space: normal; pointer-events: none;
+  box-shadow: 0 8px 30px rgba(0,0,0,.25);
+}
+/* 行数结果头部：进度 / 统计 / 截断提示 / 退出 */
+.fs-line-header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 4px 8px; margin-bottom: 4px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border); background: var(--panel);
+}
 /* 搜索框右边缘拖拽手柄：常态隐形（热区跨在边框上），hover 显形提示可拖 */
 .search-resize { position: absolute; right: -3px; top: 2px; bottom: 2px; width: 6px; cursor: col-resize; border-radius: 3px; z-index: 2; }
 .search-resize:hover { background: var(--accent); opacity: .45; }
@@ -1269,6 +1295,12 @@ body.drag-trash-hot .drag-src {
 .ctx-item.disabled, .ctx-item.disabled.danger { color: var(--dim); cursor: not-allowed; }
 .ctx-item.disabled .ctx-icon { opacity: .65; }
 .ctx-item.disabled:hover { background: transparent; }
+/* 右侧小字说明：把菜单的横向空白利用起来（目前只有搜索模式菜单用） */
+.ctx-desc {
+  margin-left: 12px; flex-shrink: 0;
+  font-size: 0.78em; color: var(--dim); white-space: nowrap;
+}
+.ctx-item:hover:not(.disabled) .ctx-desc { color: #ffffff; opacity: .82; }
 .ctx-sep { height: 1px; background: var(--border); margin: 5px 10px; }
 
 /* ---------- 主题色块按钮 ---------- */

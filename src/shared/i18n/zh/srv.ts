@@ -21,6 +21,7 @@ export const srv = {
   'srv.invalidParams': '参数不合法',
   'srv.incompleteParams': '参数不完整',
   'srv.missingPath': '缺少路径',
+  'srv.badLineCondition': '行数条件无效（应为 ≥ / > / < 一个正整数）',
   // ---- SVN 仓库浏览（repobrowse）----
   'srv.badRepoUrl': '仓库地址无效（仅支持 svn / http(s) / file）',
   'srv.repoFileTooBig': '文件太大（超过 2MB），请用「下载到…」查看',

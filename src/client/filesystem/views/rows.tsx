@@ -104,8 +104,20 @@ export function TreeRow(props: {
         )}
       </span>
       {props.buttons}
-      {!props.filtered && !row.isDir && <span className="dim small nowrap">{fmtSize(row.size)}</span>}
-      {!props.filtered && !row.isDir && <span className="dim small nowrap" style={{ width: 110 }}>{row.mtime}</span>}
+      {/* 行数过滤：文件行多一列行数（固定宽度，便于竖着扫大小）；其余模式不显示 */}
+      {!row.isDir && row.lines != null && (
+        <span className="dim small nowrap" style={{ width: 88, textAlign: 'right' }}>
+          {t('fs.line.value', { n: row.lines })}
+        </span>
+      )}
+      {/* 行数模式由 filtered=true 渲染，但仍要展示大小/时间——以是否有 lines 区分。
+          大小给固定宽度，否则 "9 B" / "1.2 MB" 长度不同会把行数列推得参差不齐 */}
+      {(!props.filtered || row.lines != null) && !row.isDir && (
+        <span className="dim small nowrap" style={row.lines != null ? { width: 68, textAlign: 'right' } : undefined}>
+          {fmtSize(row.size)}
+        </span>
+      )}
+      {(!props.filtered || row.lines != null) && !row.isDir && <span className="dim small nowrap" style={{ width: 110 }}>{row.mtime}</span>}
     </div>
   );
 }

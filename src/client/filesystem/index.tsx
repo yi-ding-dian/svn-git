@@ -7,7 +7,9 @@ import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { useShareStatus } from '../share/share-context.js';
-import { filterEntries, type Filter, type Mode, type VisibleRow } from './utils.js';
+import { filterEntries, parseLineCondition, type Filter, type Mode, type VisibleRow } from './utils.js';
+import type { LineCondition } from '../../shared/types.js';
+import { useLineScan, useLineRows, LineScanHeader } from './line-filter.js';
 import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } from './menus.js';
 import { useFileSearch, FsSearchBox } from './search.js';
 import { useFilterTree } from './filter-tree.js';
@@ -137,8 +139,51 @@ export function FsView(props: Props) {
   const [focusIndex, setFocusIndex] = useState(0);
   // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
   const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean; tc?: { state: 'missing' | 'present' | 'unknown'; inner?: boolean; innerCount?: number }; tcItem?: { fromRev?: string; fromAuthor?: string; fromDate?: string } } | null>(null);
-  // 文件搜索（工具栏）：防抖查询 + 结果下拉状态收于 useFileSearch
+  // 文件搜索（工具栏）：防抖查询 + 结果下拉状态收于 useFileSearch；行数模式另走 useLineScan
   const search = useFileSearch(data?.dir ?? '');
+  const lineScan = useLineScan(data?.dir ?? '');
+  const line = useLineRows(lineScan.tree, showHidden);
+  /** 取稳定的动作函数：hook 返回的对象每次渲染都是新的，直接进依赖数组会让 lint 追着对象跑 */
+  const { scan: scanLines, reset: resetLineScan } = lineScan;
+  const { toggleCollapsed: toggleLineCollapsed } = line;
+  const exitSearchLineMode = search.exitLineMode;
+  /** 行数结果是否接管主列表区（开始扫描后成立；选中行数模式但还没确认时不成立） */
+  const lineActive = search.mode === 'lineCount' && lineScan.started;
+  /** 行数模式是否已经改过主视图（进入时记住原视图，退出恢复） */
+  const lineViewActiveRef = useRef(false);
+
+  /** 点「确定」：先记原视图并切树，再发扫描；状态过滤与行数互斥（进入前清掉） */
+  const startLineScan = useCallback(
+    (condition: LineCondition) => {
+      if (!lineViewActiveRef.current) {
+        lineViewActiveRef.current = true;
+        prevModeRef.current = mode;
+      }
+      if (filters.size > 0) setFilters(new Set());
+      if (mode !== 'tree') setMode('tree');
+      scanLines(condition);
+    },
+    [mode, filters, scanLines]
+  );
+  /** 只退出行数扫描与它改过的视图，不动搜索框模式（模式菜单切走时由调用方再 setMode） */
+  const onLineExit = useCallback(() => {
+    resetLineScan();
+    if (lineViewActiveRef.current) {
+      lineViewActiveRef.current = false;
+      setMode(prevModeRef.current);
+    }
+  }, [resetLineScan]);
+  /** 完整退出：同时清空阈值输入并把搜索框切回上一个文本模式（Esc / 头部「全部」） */
+  const exitLineMode = useCallback(() => {
+    onLineExit();
+    exitSearchLineMode();
+  }, [onLineExit, exitSearchLineMode]);
+  /** 切目录（面包屑/上下级/键盘）：行数范围是当前目录，旧结果必须退出 */
+  const exitLineModeRef = useRef(exitLineMode);
+  exitLineModeRef.current = exitLineMode;
+  useEffect(() => {
+    if (lineViewActiveRef.current) exitLineModeRef.current();
+  }, [dir]);
   // only：显式指定选中集合（拖入上传用）——跳过"按 code 同状态全选"，只选中真正落盘的那几个
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -403,6 +448,15 @@ export function FsView(props: Props) {
     [expanded, loadNode]
   );
 
+  /** 目录展开/收起：行数树与普通树各有一套折叠集合，按当前模式分派 */
+  const toggleRowExpand = useCallback(
+    (rel: string) => {
+      if (lineActive) toggleLineCollapsed(rel);
+      else toggleExpand(rel);
+    },
+    [lineActive, toggleLineCollapsed, toggleExpand]
+  );
+
   // 列表模式条目
   const listEntries = useMemo(() => {
     if (!data) return [];
@@ -426,10 +480,22 @@ export function FsView(props: Props) {
     setMode(prevModeRef.current);
   };
 
-  /** 树行渲染（树列表与过滤树共用；filtered=true 时目录点击折叠、双击文件跳转）。
+  /** 行数树双击文件 → 退出行数模式，跳到所在目录并选中（与过滤树同一套「跳回去看」心智） */
+  const jumpToLineFile = (rel: string) => {
+    exitLineMode();
+    const idx = rel.lastIndexOf('/');
+    setDir(idx >= 0 ? rel.slice(0, idx) : '');
+    setPendingLocate(null);
+    setSelected(new Set([rel]));
+    setFocusIndex(0);
+    setFilters(new Set());
+  };
+
+  /** 树行渲染（树列表、过滤树、行数树共用；filtered=true 时目录点击折叠、双击文件跳转）。
+   *  lineMode=true 时状态角标只做展示：行数树的行不在 nodeData 里，点击定位会落到背后的普通树。
    *  key 必须是 rel：不写 key 时 React 按下标复用行实例，折叠/展开/换过滤后行内组件状态
    *  （如图片缩略图的"加载失败"标记）会串到别的文件上——顺带修掉的既有隐患 */
-  const renderTreeRow = (row: VisibleRow, i: number, filtered: boolean) => (
+  const renderTreeRow = (row: VisibleRow, i: number, filtered: boolean, lineMode = false) => (
     <TreeRow
       key={row.rel}
       row={row}
@@ -437,7 +503,7 @@ export function FsView(props: Props) {
       filtered={filtered}
       focused={i === focusIndex}
       multi={selected.has(row.rel)}
-      searchHit={search.nameResults.includes(row.rel)}
+      searchHit={!lineMode && search.nameResults.includes(row.rel)}
       pulse={pulseRels.includes(row.rel)}
       clipCut={cutRels.has(row.rel)}
       dragSrc={dragRels.has(row.rel)}
@@ -447,7 +513,7 @@ export function FsView(props: Props) {
       renaming={inline?.kind === 'rename' && inline.rel === row.rel ? inlineInput('left', row.name) : undefined}
       desc={descOf(row.rel)}
       buttons={rowButtons(row)}
-      locateBadge={locateBadge}
+      locateBadge={lineMode ? undefined : locateBadge}
       rowRef={(el) => {
         if (el) rowRefs.current.set(row.rel, el);
         else rowRefs.current.delete(row.rel); // 行卸载（收起/切换模式）时移除，避免残留导致泄漏
@@ -470,7 +536,10 @@ export function FsView(props: Props) {
           return;
         }
         if (r.isDir && !ev.ctrlKey && !ev.shiftKey) {
-          if (filtered) {
+          if (lineMode) {
+            // 行数树：本地折叠（数据已全量，无需再加载）
+            toggleLineCollapsed(r.rel);
+          } else if (filtered) {
             // 过滤树：本地折叠（数据已全量，无需再加载）
             ft.setCollapsed((s) => {
               const n = new Set(s);
@@ -491,7 +560,10 @@ export function FsView(props: Props) {
           return;
         }
         if (filtered) {
-          if (!r.isDir) jumpToFile(r.rel);
+          if (!r.isDir) {
+            if (lineMode) jumpToLineFile(r.rel);
+            else jumpToFile(r.rel);
+          }
         } else if (!r.isDir) void openFile(r.name, r.code, r.rel);
       }}
       onContextMenu={(ev, r, idx) => onRowContext(ev, { isDir: r.isDir, code: r.code, rel: r.rel, name: r.name, treeConflicted: r.treeConflicted, codes: r.codes }, idx)}
@@ -609,7 +681,8 @@ export function FsView(props: Props) {
   });
 
   // ---------- 键盘导航 ----------
-  const rows = mode === 'tree' ? visibleRows : listEntries;
+  // 行数模式的结果也是树：键盘 ↑↓/Enter 走同一套行模型，不能落到背后那份普通树上
+  const rows = mode === 'tree' ? (lineActive ? line.rows : visibleRows) : listEntries;
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   /** 行的相对仓库根路径：树模式的行自带 rel，列表/网格模式由当前目录 + 名称推出 */
@@ -646,6 +719,15 @@ export function FsView(props: Props) {
     }
     setMode(target);
   };
+  /** 视图按钮：行数模式固定树视图，点别的视图 = 退出行数再切过去（不带走行树里的选中位置） */
+  const switchView = (target: Mode) => {
+    if (lineViewActiveRef.current) {
+      exitLineMode();
+      setMode(target);
+      return;
+    }
+    switchMode(target);
+  };
   const focusRef = useRef(focusIndex);
   focusRef.current = focusIndex;
 
@@ -663,7 +745,7 @@ export function FsView(props: Props) {
     ctx,
     preview,
     closeCtx,
-    toggleExpand,
+    toggleExpand: toggleRowExpand,
     openFile,
     setFocusIndex,
     setDir,
@@ -1372,6 +1454,9 @@ export function FsView(props: Props) {
                 <button
                   className={`mini tool-btn ${filters.has(f) ? 'primary' : ''}`}
                   onClick={() => {
+                    // 状态过滤与行数模式互斥：点状态过滤先完整退出行数（搜索框切回文本模式，不覆盖它记住的原视图）
+                    const wasLine = lineViewActiveRef.current;
+                    if (wasLine) exitLineMode();
                     const willActive = !filters.has(f);
                     const next = new Set(filters);
                     if (next.has(f)) next.delete(f);
@@ -1379,7 +1464,7 @@ export function FsView(props: Props) {
                     setFilters(next);
                     if (willActive) {
                       // 激活过滤 → 切树视图展示过滤树
-                      if (filters.size === 0) prevModeRef.current = mode;
+                      if (filters.size === 0 && !wasLine) prevModeRef.current = mode;
                       setMode('tree');
                     } else if (next.size === 0) {
                       // 全部取消 → 恢复原视图
@@ -1401,13 +1486,13 @@ export function FsView(props: Props) {
           </span>
           <span className="row" style={{ gap: 4, marginLeft: 4 }}>
             {/* 列表视图 */}
-            <button className={`mini tool-btn ${mode === 'list' ? 'primary' : ''}`} onClick={() => switchMode('list')} title={t('fs.toolbar.listTitle')}>
+            <button className={`mini tool-btn ${mode === 'list' ? 'primary' : ''}`} onClick={() => switchView('list')} title={t('fs.toolbar.listTitle')}>
               {/* 列表 */}
               <IconList /> {t('fs.toolbar.list')}
             </button>
             <button
               className={`mini tool-btn ${mode === 'tree' ? 'primary' : ''}`}
-              onClick={() => switchMode('tree')}
+              onClick={() => switchView('tree')}
               // 树视图
               title={t('fs.toolbar.treeTitle')}
             >
@@ -1415,7 +1500,7 @@ export function FsView(props: Props) {
               <IconTree /> {t('fs.toolbar.tree')}
             </button>
             {/* 文件浏览器视图 */}
-            <button className={`mini tool-btn ${mode === 'browse' ? 'primary' : ''}`} onClick={() => switchMode('browse')} title={t('fs.toolbar.browseTitle')}>
+            <button className={`mini tool-btn ${mode === 'browse' ? 'primary' : ''}`} onClick={() => switchView('browse')} title={t('fs.toolbar.browseTitle')}>
               {/* 浏览 */}
               <IconGrid /> {t('fs.toolbar.browse')}
             </button>
@@ -1449,6 +1534,9 @@ export function FsView(props: Props) {
           </button>
           <FsSearchBox
             search={search}
+            lineScan={lineScan}
+            onLineStart={startLineScan}
+            onLineExit={onLineExit}
             onPick={(rel, at, line) => {
               // 内容搜索命中行：打开预览跳到该行。**不 setPendingLocate**——列表定位在子目录里
               // 会切目录，而 load() 切目录时会 setPreview(null) 把刚打开的预览关掉；
@@ -1554,8 +1642,8 @@ export function FsView(props: Props) {
             }}
           />
         )}
-        {/* 树模式首次加载 */}
-        {mode === 'tree' && nodeData.size === 0 && !error && (
+        {/* 树模式首次加载（行数结果接管时不显示：数据不来自 nodeData） */}
+        {mode === 'tree' && !lineActive && nodeData.size === 0 && !error && (
           <div className="loading">
             <div className="spinner" style={{ width: 24, height: 24 }} />
             {/* 正在加载… */}
@@ -1583,36 +1671,63 @@ export function FsView(props: Props) {
             </span>
           </div>
         )}
-        {/* 树模式扁平化行 */}
+        {/* 树模式：行数结果 / 状态过滤树 / 普通树 */}
         {mode === 'tree' && !preview && (
-          <div
-            {...drop.fileAreaProps}
-            className={`list${drop.dragging ? ' fs-drop-active' : ''}`}
-            style={{ overflow: 'auto', flex: 1 }}
-            onContextMenu={onBlankContext}
-            onClick={(ev) => {
-              if (ev.target === ev.currentTarget) {
-                setSelected(new Set()); // 空白处点击清空多选
-                setFocusIndex(-1); // 同时清除焦点选中高亮
-              }
-            }}
-          >
-            {/* 过滤激活：渲染过滤树（树列表同款行样式，仅数据过滤；目录可折叠，双击文件跳转） */}
-            {filters.size > 0 ? (
-              ft.filterTree && ft.filterTree.length === 0 ? (
-                // 没有符合条件的文件
-                <div className="empty">{t('fs.empty.noMatchFilter')}</div>
-              ) : (
-                ft.filterRows.map((row, i) => renderTreeRow(row, i, true))
-              )
-            ) : (
-              <>
-                {/* 空文件夹（← 上级 · 空白处右键菜单） */}
-                {visibleRows.length === 0 && !error && <div className="empty">{t('fs.empty.tree')}</div>}
-                {visibleRows.map((row, i) => renderTreeRow(row, i, false))}
-              </>
+          <>
+            {lineActive && (
+              <LineScanHeader
+                lineScan={lineScan}
+                inputCondition={parseLineCondition(search.lineQuery)}
+                onExit={exitLineMode}
+              />
             )}
-          </div>
+            <div
+              {...drop.fileAreaProps}
+              className={`list${drop.dragging ? ' fs-drop-active' : ''}`}
+              style={{ overflow: 'auto', flex: 1 }}
+              onContextMenu={onBlankContext}
+              onClick={(ev) => {
+                if (ev.target === ev.currentTarget) {
+                  setSelected(new Set()); // 空白处点击清空多选
+                  setFocusIndex(-1); // 同时清除焦点选中高亮
+                }
+              }}
+            >
+              {lineActive ? (
+                line.rows.length === 0 ? (
+                  <div className="empty">
+                    {lineScan.status === 'scanning' ? (
+                      <>
+                        <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} /> {t('fs.line.scanningHint')}
+                      </>
+                    ) : lineScan.status === 'error' ? (
+                      t('fs.line.error', { msg: lineScan.error })
+                    ) : lineScan.status === 'done' ? (
+                      t('fs.line.empty')
+                    ) : (
+                      t('fs.line.cancelledHint')
+                    )}
+                  </div>
+                ) : (
+                  line.rows.map((row, i) => renderTreeRow(row, i, true, true))
+                )
+              ) : filters.size > 0 ? (
+                /* 过滤激活：渲染过滤树（树列表同款行样式，仅数据过滤；目录可折叠，双击文件跳转） */
+                ft.filterTree && ft.filterTree.length === 0 ? (
+                  // 没有符合条件的文件
+                  <div className="empty">{t('fs.empty.noMatchFilter')}</div>
+                ) : (
+                  ft.filterRows.map((row, i) => renderTreeRow(row, i, true))
+                )
+              ) : (
+                <>
+                  {/* 空文件夹（← 上级 · 空白处右键菜单） */}
+                  {visibleRows.length === 0 && !error && <div className="empty">{t('fs.empty.tree')}</div>}
+                  {visibleRows.map((row, i) => renderTreeRow(row, i, false))}
+                </>
+              )}
+            </div>
+          </>
         )}
         {/* 列表模式 */}
         {mode === 'list' && !preview && (

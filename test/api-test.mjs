@@ -59,6 +59,30 @@ const post = async (p, body = {}, headers = {}) => {
   });
   return { code: r.status, body: await r.json().catch(() => ({})) };
 };
+/** NDJSON 流式端点：解析每一行，done 为最后一行里的结果对象 */
+const getNdjson = async (p) => {
+  const r = await fetch(B + p);
+  const text = await r.text();
+  const ticks = text
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return {};
+      }
+    });
+  return { code: r.status, ticks, done: ticks.find((tick) => tick.done) ?? null };
+};
+/** 从行数树里收集所有 path（断言目录归属） */
+const treePaths = (nodes, out = []) => {
+  for (const node of nodes ?? []) {
+    out.push(node.path);
+    treePaths(node.children, out);
+  }
+  return out;
+};
 
 try {
   // ---------- 1. 核心结构 ----------
@@ -426,7 +450,9 @@ src/
   // ---------- 12. 还原到指定版本（git checkout REV -- path，历史视图右键） ----------
   {
     const f = path.join(GIT_DIR, 'readme.md');
-    fs.writeFileSync(f, 'version-one\n');
+    // 内容带时间戳：测试仓库 HEAD 可能正好就是 "version-one"（固定基线提交已不在时 setup 会 reset 到 HEAD），
+    // 写同样内容会得到"nothing to commit"，把本段的准备步骤误判成失败
+    fs.writeFileSync(f, `version-one-${Date.now()}\n`);
     const c1 = await post('/api/commit', { paths: ['readme.md'], message: 'v1' });
     check('restore-version 准备：v1 提交成功', c1.code === 200 && c1.body.ok === true, `msg=${c1.body.message}`);
     fs.writeFileSync(f, 'version-two\n');
@@ -443,6 +469,85 @@ src/
     const item12 = st12.body.items?.find((i) => i.path === 'readme.md');
     check('git restore 后显示 M（工作区修改，可提交）', st12.code === 200 && item12?.code === 'M', `code=${item12?.code}`);
   }
+
+  // ---------- 13. 行数过滤（/api/line-scan） ----------
+  {
+    const lineDir = path.join(GIT_DIR, 'line-scan-fixture');
+    fs.mkdirSync(path.join(lineDir, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(lineDir, 'five.txt'), '1\n2\n3\n4\n5\n');
+    // 无尾换行：19 个 \n + 最后一行 = 20 行
+    fs.writeFileSync(path.join(lineDir, 'sub', 'twenty.txt'), Array.from({ length: 20 }, (_, i) => String(i)).join('\n'));
+    fs.writeFileSync(path.join(lineDir, 'hundred.txt'), 'x\n'.repeat(100));
+    fs.writeFileSync(path.join(lineDir, 'empty.txt'), '');
+    fs.writeFileSync(path.join(lineDir, 'binary.dat'), Buffer.from([0, 1, 2, 3, 10]));
+
+    const findNode = (nodes, target) => {
+      for (const node of nodes ?? []) {
+        if (node.path === target) return node;
+        const hit = findNode(node.children, target);
+        if (hit) return hit;
+      }
+      return null;
+    };
+
+    const gte20 = await getNdjson('/api/line-scan?dir=line-scan-fixture&op=gte&value=20');
+    const paths20 = treePaths(gte20.done?.tree);
+    check(
+      '行数扫描 gte 20：命中 2 个文件',
+      gte20.code === 200 && gte20.done?.matched === 2,
+      `done=${JSON.stringify(gte20.done && { matched: gte20.done.matched, scanned: gte20.done.scanned })}`,
+    );
+    check(
+      '行数扫描 gte 20：树按目录归属含 20 行与 100 行文件',
+      paths20.includes('line-scan-fixture/sub/twenty.txt') && paths20.includes('line-scan-fixture/hundred.txt'),
+      `paths=${paths20.join(',')}`,
+    );
+    check(
+      '行数扫描：节点带准确行数（无尾换行算一行）',
+      findNode(gte20.done?.tree, 'line-scan-fixture/sub/twenty.txt')?.lines === 20 &&
+        findNode(gte20.done?.tree, 'line-scan-fixture/hundred.txt')?.lines === 100,
+      `twenty=${findNode(gte20.done?.tree, 'line-scan-fixture/sub/twenty.txt')?.lines} hundred=${findNode(gte20.done?.tree, 'line-scan-fixture/hundred.txt')?.lines}`,
+    );
+    check(
+      '行数扫描：空文件与二进制文件被跳过',
+      (gte20.done?.skippedEmpty ?? 0) >= 1 && (gte20.done?.skippedBinary ?? 0) >= 1,
+      `empty=${gte20.done?.skippedEmpty} binary=${gte20.done?.skippedBinary}`,
+    );
+
+    const gt20 = await getNdjson('/api/line-scan?dir=line-scan-fixture&op=gt&value=20');
+    check(
+      '行数扫描 gt 20：严格大于（20 行文件不命中）',
+      gt20.done?.matched === 1 && treePaths(gt20.done?.tree).includes('line-scan-fixture/hundred.txt'),
+      `matched=${gt20.done?.matched}`,
+    );
+
+    const lt20 = await getNdjson('/api/line-scan?dir=line-scan-fixture&op=lt&value=20');
+    check(
+      '行数扫描 lt 20：只有 5 行文件（空文件跳过）',
+      lt20.done?.matched === 1 && treePaths(lt20.done?.tree).includes('line-scan-fixture/five.txt'),
+      `matched=${lt20.done?.matched}`,
+    );
+
+    const gte5 = await getNdjson('/api/line-scan?dir=line-scan-fixture&op=gte&value=5');
+    check('行数扫描 gte 5：边界值命中（5 行 = ≥ 5）', gte5.done?.matched === 3, `matched=${gte5.done?.matched}`);
+
+    const sub = await getNdjson('/api/line-scan?dir=line-scan-fixture/sub&op=gte&value=1');
+    const subPaths = treePaths(sub.done?.tree);
+    check(
+      '行数扫描限定子目录：不越界到兄弟目录',
+      sub.done?.matched === 1 && subPaths.includes('line-scan-fixture/sub/twenty.txt') && !subPaths.includes('line-scan-fixture/five.txt'),
+      `paths=${subPaths.join(',')}`,
+    );
+
+    const badOp = await get('/api/line-scan?dir=line-scan-fixture&op=xx&value=5');
+    check('行数扫描：非法比较符 400', badOp.code === 400, `code=${badOp.code}`);
+    const badValue = await get('/api/line-scan?dir=line-scan-fixture&op=gte&value=0');
+    check('行数扫描：0 行阈值 400', badValue.code === 400, `code=${badValue.code}`);
+    const outOfScope = await get('/api/line-scan?dir=../&op=gte&value=5');
+    check('行数扫描：目录越界 403', outOfScope.code === 403, `code=${outOfScope.code}`);
+
+    fs.rmSync(lineDir, { recursive: true, force: true });
+  }
 } finally {
   // ---------- teardown：重置仓库,仅保留 api 测试文件之外的状态 ----------
   process.env.SVNGIT_REPO_DIR = GIT_DIR;
@@ -450,6 +555,7 @@ src/
   await run('git', ['reset', '-q', '--hard', b4t.code === 0 ? GIT_BASE_COMMIT : 'HEAD'], { cwd: GIT_DIR });
   fs.rmSync(path.join(GIT_DIR, 'api-cache-test.txt'), { force: true });
   fs.rmSync(path.join(GIT_DIR, 'api-keep-test.txt'), { force: true });
+  fs.rmSync(path.join(GIT_DIR, 'line-scan-fixture'), { recursive: true, force: true });
   await handle.close();
 }
 

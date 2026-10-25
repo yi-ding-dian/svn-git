@@ -9,6 +9,7 @@ export const srv = {
   'srv.invalidParams': 'Invalid parameters',
   'srv.incompleteParams': 'Incomplete parameters',
   'srv.missingPath': 'Missing path',
+  'srv.badLineCondition': 'Invalid line condition (expected ≥ / > / < a positive integer)',
   'srv.badRepoUrl': 'Invalid repository URL (only svn / http(s) / file are supported)',
   'srv.repoFileTooBig': 'File too large (> 2MB) — use "Download to…" instead',
   'srv.repoSaveExists': 'Target already exists: {path} (not overwritten)',

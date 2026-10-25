@@ -6,12 +6,16 @@
  *  互为独立：一次只搜一种、结果不混（用户定稿——搜文件名字时不想被内容命中污染，反之亦然）。 */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
+import type { LineCondition } from '../../shared/types.js';
 import { get } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
 import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { Tooltip } from '../ui/tooltip.js';
+import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 // 命中高亮已提升 shared（仓库浏览搜索共用，边界规范）
 import { highlightMatch } from '../shared/highlight-match.js';
+import { parseLineCondition, sanitizeLineQuery, sameLineCondition } from './utils.js';
+import type { LineScanState } from './line-filter.js';
 
 /** 内容搜索命中（与服务端 /api/search-content 的 hits 对应）；line 为 1-based */
 export interface ContentHit {
@@ -19,7 +23,9 @@ export interface ContentHit {
   line: number;
   text: string;
 }
-export type SearchMode = 'file' | 'content';
+export type SearchMode = 'file' | 'content' | 'lineCount';
+/** 非行数模式：记住它，退出行数模式时恢复（行数模式不参与「文件 ⇄ 内容」互切） */
+type TextSearchMode = Exclude<SearchMode, 'lineCount'>;
 /** 模式持久化 key：切过一次后下次打开沿用（免得每次都要再点） */
 const MODE_KEY = 'fsSearch.mode';
 /** 输入框宽度持久化 key（右边缘拖拽调整）与范围 */
@@ -28,10 +34,18 @@ const WIDTH_DEFAULT = 170;
 const WIDTH_MIN = 120;
 const WIDTH_MAX = 600;
 
-/** 搜索状态 hook：防抖 400ms 调 /api/search（当前目录），返回查询/结果/搜索中/高亮索引/展开态 */
+/** 搜索状态 hook：防抖 400ms 调 /api/search（当前目录），返回查询/结果/搜索中/高亮索引/展开态。
+ *  第三模式「行数」不在这里发请求：阈值输入是手动确认的（见 line-filter.tsx 的 useLineScan）。 */
 export function useFileSearch(dir: string) {
-  const [mode, setModeState] = useState<SearchMode>(() => (localStorage.getItem(MODE_KEY) === 'content' ? 'content' : 'file'));
+  const [mode, setModeState] = useState<SearchMode>(() => {
+    const saved = localStorage.getItem(MODE_KEY);
+    return saved === 'content' || saved === 'lineCount' ? saved : 'file';
+  });
+  /** 行数模式记住上一个文本模式：退出时回到它，而不是固定回「文件」 */
+  const prevModeRef = useRef<TextSearchMode>(mode === 'lineCount' ? 'file' : mode);
   const [fileQuery, setFileQuery] = useState('');
+  /** 行数阈值输入与文件名/内容查询分开存：切模式不互相覆盖 */
+  const [lineQuery, setLineQueryState] = useState('');
   const [nameResults, setNameResults] = useState<string[]>([]);
   const [contentResults, setContentResults] = useState<ContentHit[]>([]);
   const [truncated, setTruncated] = useState<'limit' | 'time' | undefined>(undefined);
@@ -49,6 +63,7 @@ export function useFileSearch(dir: string) {
   const abortRef = useRef<AbortController | null>(null);
 
   const setMode = useCallback((m: SearchMode) => {
+    if (m !== 'lineCount') prevModeRef.current = m;
     localStorage.setItem(MODE_KEY, m);
     setModeState(m);
     // 切换即清空另一模式的结果：旧模式的命中绝不能在新模式下闪现（不污染）
@@ -61,7 +76,27 @@ export function useFileSearch(dir: string) {
     setShowResults(false);
   }, []);
 
+  /** 行数输入只留 < / > 和数字（粘贴 >=100 之类的写法时 = 会被丢掉） */
+  const setLineQuery = useCallback((value: string) => setLineQueryState(sanitizeLineQuery(value)), []);
+
+  /** 退出行数模式：清空阈值并回到上一个文本模式（文件/内容） */
+  const exitLineMode = useCallback(() => {
+    setLineQueryState('');
+    setMode(prevModeRef.current);
+  }, [setMode]);
+
   useEffect(() => {
+    // 行数模式不走文件名/内容搜索：清掉旧结果，避免行数树下面还挂着上一轮命中
+    if (mode === 'lineCount') {
+      seqRef.current += 1;
+      abortRef.current?.abort();
+      setNameResults([]);
+      setContentResults([]);
+      setTruncated(undefined);
+      setShowResults(false);
+      setSearching(false);
+      return;
+    }
     const q = fileQuery.trim();
     // 门槛：至少 2 个字符，或 1 个汉字
     const isCn = /[一-鿿]/.test(q); // i18n-ignore: 判定输入是否含中文的逻辑正则（非界面文案）
@@ -121,6 +156,9 @@ export function useFileSearch(dir: string) {
     setMode,
     fileQuery,
     setFileQuery,
+    lineQuery,
+    setLineQuery,
+    exitLineMode,
     nameResults,
     contentResults,
     truncated,
@@ -139,9 +177,27 @@ export function useFileSearch(dir: string) {
 export type FileSearch = ReturnType<typeof useFileSearch>;
 
 /** 搜索输入框 + 结果下拉（受控：状态来自 useFileSearch；选中项回调 onPick）；
- *  框内左侧模式芯片切换 文件名 ⇄ 文件内容（placeholder 一起变，防"以为在搜名实为搜内容"） */
-export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, at: number, line?: number) => void }) {
-  const { mode, setMode, fileQuery, setFileQuery, nameResults, contentResults, truncated, showResults, setShowResults, searching, activeIdx, setActiveIdx, searchExpanded, setSearchExpanded } = props.search;
+ *  框内左侧模式芯片点击弹出 文件 / 内容 / 行数；行数模式手动确认后才扫描，
+ *  结果不落在下拉里，而是接管主列表区（见 line-filter.tsx）。 */
+export function FsSearchBox(props: {
+  search: FileSearch;
+  lineScan: LineScanState;
+  /** 点确定：父组件先切树视图，再调用 lineScan.scan */
+  onLineStart: (condition: LineCondition) => void;
+  /** 离开行数模式：重置扫描结果并恢复进入前的视图（不改变搜索模式） */
+  onLineExit: () => void;
+  onPick: (rel: string, at: number, line?: number) => void;
+}) {
+  const { mode, setMode, fileQuery, setFileQuery, lineQuery, setLineQuery, exitLineMode, nameResults, contentResults, truncated, showResults, setShowResults, searching, activeIdx, setActiveIdx, searchExpanded, setSearchExpanded } = props.search;
+  const lineScan = props.lineScan;
+  const isLine = mode === 'lineCount';
+  const lineCondition = isLine ? parseLineCondition(lineQuery) : null;
+  const isScanning = lineScan.status === 'scanning';
+  /** 已扫过同一条件 → 按钮变「重新扫描」；输入改了 → 高亮「确定」提示要重扫 */
+  const isRescan = !isScanning && !!lineCondition && sameLineCondition(lineCondition, lineScan.condition) && lineScan.status === 'done';
+  const needsRescan = !isScanning && !!lineCondition && !!lineScan.condition && !sameLineCondition(lineCondition, lineScan.condition);
+  const [modeMenu, setModeMenu] = useState<{ x: number; y: number } | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
   /** 输入框宽度：右边缘拖拽调整，持久化；越界值（手改 localStorage 等）一律回默认 */
   const [boxWidth, setBoxWidth] = useState(() => {
@@ -190,34 +246,79 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
     }
   };
 
+  const modeLabel = (m: SearchMode): string =>
+    m === 'file' ? t('fs.search.mode.file') : m === 'content' ? t('fs.search.mode.content') : t('fs.search.mode.lineCount');
+  const modeDesc = (m: SearchMode): string =>
+    m === 'file'
+      ? t('fs.search.mode.fileDesc')
+      : m === 'content'
+        ? t('fs.search.mode.contentDesc')
+        : t('fs.search.mode.lineCountDesc');
+  /** 选模式：离开行数时先收掉扫描结果并恢复视图；进入行数时把光标放进输入框 */
+  const chooseMode = (m: SearchMode) => {
+    setModeMenu(null);
+    if (m === mode) return;
+    if (isLine) {
+      props.onLineExit();
+      // 与 Esc/「全部」同一口径：离开行数模式就清空阈值，下次进来是空输入
+      props.search.exitLineMode();
+    }
+    setMode(m);
+    if (m === 'lineCount') setTimeout(() => inputRef.current?.focus(), 0);
+  };
+  const openModeMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setModeMenu({ x: rect.left, y: rect.bottom + 4 });
+  };
+  const modeItems: CtxMenuItem[] = (['file', 'content', 'lineCount'] as SearchMode[]).map((m) => ({
+    // 勾选放图标列：三个名字左对齐；右侧小字说明填掉原本的横向空白
+    icon: mode === m ? '✓' : '',
+    label: modeLabel(m),
+    desc: modeDesc(m),
+    action: () => chooseMode(m),
+  }));
+
   return (
     <span className="row" style={{ position: 'relative' }}>
       <ResizeCursor ghostRef={ghostRef} />
       <span style={{ position: 'relative' }} ref={wrapRef}>
-        {/* 模式芯片：点击切换。stopPropagation——防冒泡出去被当"点外部"顺带收起下拉 */}
+        {/* 模式芯片：点击弹列表选择 文件 / 内容 / 行数（三段式会把输入框挤窄，用菜单更省地方） */}
         <Tooltip content={t('fs.search.modeSwitch')}>
-          <span
-            className={`search-mode-chip${mode === 'content' ? ' content' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              setMode(mode === 'file' ? 'content' : 'file');
-            }}
-          >
-            {mode === 'file' ? t('fs.search.mode.file') : t('fs.search.mode.content')}
+          <span className={`search-mode-chip${mode === 'content' ? ' content' : ''}${isLine ? ' line' : ''}`} onClick={openModeMenu}>
+            {modeLabel(mode)} ▾
           </span>
         </Tooltip>
         <input
+          ref={inputRef}
           type="text"
-          // 🔍 搜索文件… / 🔍 搜索内容…
-          placeholder={mode === 'file' ? t('fs.search.placeholder') : t('fs.search.placeholderContent')}
-          value={fileQuery}
+          // 🔍 搜索文件… / 🔍 搜索内容… / 输入行数，如 1000
+          placeholder={
+            isLine ? t('fs.line.placeholder') : mode === 'file' ? t('fs.search.placeholder') : t('fs.search.placeholderContent')
+          }
+          value={isLine ? lineQuery : fileQuery}
           onChange={(e) => {
+            if (isLine) {
+              setLineQuery(e.target.value);
+              return;
+            }
             setFileQuery(e.target.value);
             setActiveIdx(0);
             setSearchExpanded(false);
           }}
           onKeyDown={(e) => {
             if (isImeComposing(e)) return;
+            if (isLine) {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (!isScanning && lineCondition) props.onLineStart(lineCondition);
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                props.onLineExit();
+                exitLineMode();
+              }
+              return;
+            }
             if (e.key === 'ArrowDown') {
               e.preventDefault();
               setActiveIdx((i) => Math.min(count - 1, i + 1));
@@ -232,12 +333,24 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
               setShowResults(false);
             }
           }}
-          style={{ width: boxWidth, paddingRight: 24, paddingLeft: 46 }}
+          style={{ width: boxWidth, paddingRight: isLine ? 58 : 24, paddingLeft: 52 }}
         />
         {/* 右边缘拖拽手柄：左右拖调整输入框宽度（宽度记忆，见 onResizeDown） */}
         <span className="search-resize" onMouseDown={onResizeDown} title={t('fs.search.resize')} />
-        {/* 右侧同一位置：搜索中转圈 / 否则是清空按钮（不并排占位，避免输入区变窄） */}
-        {searching ? (
+        {/* 右侧同一位置：行数模式的确认/取消 / 普通搜索的转圈与清空（不并排占位，避免输入区变窄） */}
+        {isLine ? (
+          <button
+            className={`search-confirm${needsRescan ? ' primary' : ''}`}
+            disabled={!isScanning && !lineCondition}
+            title={isScanning ? t('fs.line.cancel') : isRescan ? t('fs.line.rescan') : t('fs.line.confirm')}
+            onClick={() => {
+              if (isScanning) lineScan.cancel();
+              else if (lineCondition) props.onLineStart(lineCondition);
+            }}
+          >
+            {isScanning ? t('fs.line.cancel') : isRescan ? t('fs.line.rescan') : t('fs.line.confirm')}
+          </button>
+        ) : searching ? (
           // 正在搜索…
           <span className="search-spin search-box-spin" title={t('fs.search.searching')} />
         ) : (
@@ -257,7 +370,18 @@ export function FsSearchBox(props: { search: FileSearch; onPick: (rel: string, a
           )
         )}
       </span>
-      {(searching || (showResults && fileQuery.trim())) && (
+      {/* 行数语法的完整说明：placeholder 放不下这么长，扫过一次后头部会显示解析结果，就不再浮着了 */}
+      {isLine && !lineScan.started && <span className="search-line-hint">{t('fs.line.hint')}</span>}
+      {modeMenu && (
+        <ContextMenu
+          x={modeMenu.x}
+          y={modeMenu.y}
+          items={modeItems}
+          onClose={() => setModeMenu(null)}
+          mask
+        />
+      )}
+      {!isLine && (searching || (showResults && fileQuery.trim())) && (
         <div
           className="search-drop"
           style={{

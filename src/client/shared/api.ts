@@ -2,7 +2,7 @@
 
 // 状态码说明（i18n，值取当前语言）：单一事实源在 src/shared/types.ts（含 ' ' 无变化 键），此处 re-export 保持 web 侧既有导入路径不变
 export { CODE_DESC } from '../../shared/types.js';
-import type { ParsedDiff } from '../../shared/types.js';
+import type { LineCondition, ParsedDiff } from '../../shared/types.js';
 import type { TransferPhase } from '../../transfer-progress.js';
 import { t } from '../../shared/i18n/index.js';
 import type { Lang } from '../../shared/i18n/index.js';
@@ -376,6 +376,56 @@ export const get = {
       `/api/search-content?query=${encodeURIComponent(query)}&dir=${encodeURIComponent(dir)}`,
       { signal }
     ),
+  /** 行数过滤：流式 NDJSON（进度 → done 结果）。请求断开时后端销毁在途读取。 */
+  lineScan: async (
+    dir: string,
+    condition: LineCondition,
+    onTick: (tick: LineScanTick) => void,
+    signal?: AbortSignal
+  ): Promise<void> => {
+    const q = new URLSearchParams({
+      dir,
+      op: condition.operator,
+      value: String(condition.value),
+    });
+    const res = await fetch(`/api/line-scan?${q.toString()}`, { signal });
+    if (!res.ok || !res.body) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const j = (await res.json()) as { error?: string };
+        if (j.error) msg = j.error;
+      } catch {
+        /* 非 JSON 响应：保留状态码文案 */
+      }
+      onTick({ error: msg });
+      return;
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          onTick(JSON.parse(line) as LineScanTick);
+        } catch {
+          /* 半行/坏行：忽略 */
+        }
+      }
+    }
+    if (buf.trim()) {
+      try {
+        onTick(JSON.parse(buf) as LineScanTick);
+      } catch {
+        /* 尾部残行：忽略 */
+      }
+    }
+  },
   envCheck: () => api<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } }>('/api/env-check'),
   /** 远程连通性检测（网络灯）：ok=网络通;reason=认证失败/连接错误说明 */
   netCheck: () => api<{ ok: boolean; reason: string }>('/api/net-check'),
@@ -610,7 +660,30 @@ export interface FilterTreeNode {
   size?: number;
   /** 文件修改时间（目录为空） */
   mtime?: string;
+  /** 行数（仅行数过滤树的文件节点有；目录为空） */
+  lines?: number;
   children: FilterTreeNode[];
+}
+
+/** 行数过滤的流式进度（/api/line-scan，NDJSON 每行一个） */
+export interface LineScanTick {
+  total?: number;
+  scanned?: number;
+  done?: boolean;
+  tree?: FilterTreeNode[];
+  /** 匹配总数（截断前）与本次实际返回的节点数 */
+  matched?: number;
+  shown?: number;
+  skippedEmpty?: number;
+  skippedBinary?: number;
+  skippedLarge?: number;
+  skippedError?: number;
+  /** 候选文件超过上限（只扫描了前 N 个） */
+  capped?: boolean;
+  /** time=扫描超时；limit=匹配过多只返回前 N 个 */
+  truncated?: 'time' | 'limit';
+  elapsedMs?: number;
+  error?: string;
 }
 
 /** SVN 仓库布局探测：标准布局 trunk/branches/tags 目录是否存在 */

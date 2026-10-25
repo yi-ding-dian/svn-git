@@ -78,7 +78,10 @@ try {
   // 3) 当前分支快进更新：工作区文件应变成远端内容
   const upd = await vcs.branchUpdate('main', 0, 1);
   check('当前分支快进更新成功', upd.ok === true, upd.message);
-  check('工作区已更新到远端内容', fs.readFileSync(path.join(WORK_B, 'a.txt'), 'utf8') === 'v2\n');
+  // 按行尾无关比较：Windows 全局 core.autocrlf=true 时检出会把 LF 写成 CRLF（git 的正常行为），
+  // 直接比 'v2\n' 只会在 Linux 上成立
+  const eolInsensitive = (s) => s.replace(/\r\n/g, '\n');
+  check('工作区已更新到远端内容', eolInsensitive(fs.readFileSync(path.join(WORK_B, 'a.txt'), 'utf8')) === 'v2\n');
   bl = await vcs.branchList();
   mainB = bl.branches.find((b) => !b.remote && b.name === 'main');
   check('更新后 ahead/behind 归零', mainB?.ahead === 0 && mainB?.behind === 0, JSON.stringify(mainB));

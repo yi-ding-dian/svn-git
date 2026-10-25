@@ -49,6 +49,18 @@ export function compareName(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true });
 }
 
+/** ---------- 行数过滤（文件浏览搜索框第三模式） ---------- */
+
+/** 比较方式：gte = ≥ value（不输符号的默认值）；gt = > value；lt = < value。
+ *  前后端共用：前端解析输入，后端按同一套语义过滤。 */
+export type LineOperator = 'gte' | 'gt' | 'lt';
+
+export interface LineCondition {
+  operator: LineOperator;
+  /** 正整数；0 行没有筛选意义，解析与接口都会拒绝 */
+  value: number;
+}
+
 /** ---------- diff 分块（hunk）：hunk 级部分提交用，前后端共享 ---------- */
 
 /** hunk 内的一行。meta = diff 的 `\ No newline at end of file` 这类标记行（原样保留，不参与行数计数） */
