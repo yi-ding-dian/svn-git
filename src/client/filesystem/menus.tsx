@@ -30,12 +30,12 @@ export interface MenuServices {
   setIgnoreModal: (v: { dir: string }) => void;
   setUnignoreAsk: (v: { rel: string; name: string; isDir: boolean }) => void;
   setModuleIndexModal: (v: { md: string }) => void;
-  viewHistory: (rel: string, ev: React.MouseEvent) => void;
+  viewHistory: (rel: string, isDir: boolean, ev: React.MouseEvent) => void;
   openFile: (name: string, code: string, rel: string) => unknown;
   svnLock: (rel: string, action: 'lock' | 'unlock') => void;
   onAction: (op: 'add' | 'revert' | 'delete' | 'commit' | 'fs-delete' | 'move' | 'fs-move', paths: string[], keep?: boolean) => void;
   onDiff: (p: string) => void;
-  onLog: (p: string) => void;
+  onLog: (p: string, isDir?: boolean) => void;
   onUpdateDir: (dir: string) => void;
   onCommitSelect: (dir: string, label: string) => void;
   onToast: (m: string, err?: boolean) => void;
@@ -143,7 +143,7 @@ export function buildBlankItems(s: MenuServices): CtxMenuItem[] {
     // 提交修改的文件…
     { icon: <IconUpload />, label: t('fs.act.commitModified'), cmd: cmdOfRepo(s.repoType, 'commit', { msg: '…' }), action: () => s.onCommitSelect(s.dir, s.dir) },
     // 查看历史记录
-    { icon: <IconHistory />, label: t('fs.act.viewHistoryLong'), cmd: cmdOfRepo(s.repoType, 'view_history', { path: s.dir || '.' }), action: () => s.onLog(s.dir) },
+    { icon: <IconHistory />, label: t('fs.act.viewHistoryLong'), cmd: cmdOfRepo(s.repoType, 'view_history', { path: s.dir || '.' }), action: () => s.onLog(s.dir, true) },
     {
       icon: <IconCopy />,
       // 复制当前路径
@@ -316,7 +316,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
     items.push({ sep: true });
     // 查看历史：判断"服务器删得对不对"最直接的依据（谁删的、为什么删）
     // 查看历史
-    items.push({ icon: <IconHistory />, label: t('fs.act.viewHistory'), cmd: cmdOfRepo(s.repoType, 'view_history', { path: row.rel }), action: () => s.viewHistory(row.rel, ev) });
+    items.push({ icon: <IconHistory />, label: t('fs.act.viewHistory'), cmd: cmdOfRepo(s.repoType, 'view_history', { path: row.rel }), action: () => s.viewHistory(row.rel, row.isDir, ev) });
     items.push({ sep: true });
   } else if (row.code === '!') {
   // 缺失条目（'!' = 磁盘已删除但版本库还在）：磁盘无文件——只提供还原/历史/复制路径等有效操作；
@@ -341,7 +341,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       action: () => s.onAction('delete', [row.rel], true),
     });
     // 查看历史
-    items.push({ icon: <IconHistory />, label: t('fs.act.viewHistory'), cmd: cmdOfRepo(s.repoType, 'view_history', { path: row.rel }), action: () => s.viewHistory(row.rel, ev) });
+    items.push({ icon: <IconHistory />, label: t('fs.act.viewHistory'), cmd: cmdOfRepo(s.repoType, 'view_history', { path: row.rel }), action: () => s.viewHistory(row.rel, row.isDir, ev) });
     items.push({ sep: true });
     items.push({
       icon: <IconCopy />,
@@ -388,7 +388,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       }
       items.push({ sep: true });
       // 查看历史
-      if (row.code !== 'A') items.push({ icon: <IconHistory />, label: t('fs.act.viewHistory'), cmd: cmdOfRepo(s.repoType, 'view_history', { path: row.rel }), action: () => s.viewHistory(row.rel, ev) });
+      if (row.code !== 'A') items.push({ icon: <IconHistory />, label: t('fs.act.viewHistory'), cmd: cmdOfRepo(s.repoType, 'view_history', { path: row.rel }), action: () => s.viewHistory(row.rel, row.isDir, ev) });
       if (renameableCode(row.code)) items.push(renameItem(row.code, s.repoType, row.rel, true, s.onAction, s.startRename));
       // 忽略设置…
       items.push({ icon: <IconIgnore />, label: t('fs.act.ignoreSettings'), cmd: cmdOfRepo(s.repoType, 'ignore_add', { path: row.rel, pattern: '…' }), action: () => s.setIgnoreModal({ dir: row.rel }) });
@@ -513,7 +513,7 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       if (row.code !== 'M' && row.code !== 'C') items.push({ icon: <IconFile />, label: t('fs.act.viewContent'), action: () => void s.openFile(row.name, row.code, row.rel) });
       // 未版本化(?) 与已添加(A,尚未提交过) 的文件没有历史记录 → 不显示"查看历史"
       // 查看历史
-      if (row.code !== '?' && row.code !== 'A') items.push({ icon: <IconHistory />, label: t('fs.act.viewHistory'), cmd: cmdOfRepo(s.repoType, 'view_history', { path: row.rel }), action: () => s.viewHistory(row.rel, ev) });
+      if (row.code !== '?' && row.code !== 'A') items.push({ icon: <IconHistory />, label: t('fs.act.viewHistory'), cmd: cmdOfRepo(s.repoType, 'view_history', { path: row.rel }), action: () => s.viewHistory(row.rel, row.isDir, ev) });
       if (renameableCode(row.code)) items.push(renameItem(row.code, s.repoType, row.rel, false, s.onAction, s.startRename));
       if (s.repoType === 'svn' && row.code !== '?' && row.code !== 'A') {
         items.push({ sep: true });

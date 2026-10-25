@@ -53,7 +53,8 @@ interface Props {
   startRel?: string | null;
   onAction: (op: 'add' | 'revert' | 'delete' | 'commit' | 'fs-delete' | 'move' | 'fs-move', paths: string[], keep?: boolean) => void;
   onDiff: (path: string) => void;
-  onLog: (path: string) => void;
+  /** 打开历史视图：isDir 决定目录还原走反向合并（确认框/命令预览按它区分） */
+  onLog: (path: string, isDir?: boolean) => void;
   onCommitSelect: (dir: string, dirLabel: string) => void;
   onUpdateDir: (dir: string) => void;
   onToast: (msg: string, err?: boolean) => void;
@@ -901,14 +902,14 @@ export function FsView(props: Props) {
   };
 
   /** 查看历史：有记录 → 打开历史视图；无记录 → 点击位置提示 */
-  const viewHistory = (rel: string, ev: React.MouseEvent) => {
+  const viewHistory = (rel: string, isDir: boolean, ev: React.MouseEvent) => {
     void (async () => {
       try {
         const r = await get.log(rel);
-        if (r.logs.length > 0) props.onLog(rel);
+        if (r.logs.length > 0) props.onLog(rel, isDir);
         else showNoHistory(ev.clientX, ev.clientY);
       } catch {
-        props.onLog(rel);
+        props.onLog(rel, isDir);
       }
     })();
   };
@@ -1411,7 +1412,7 @@ export function FsView(props: Props) {
         </>
       )}
       {/* 历史 */}
-      {!e.isDir && e.code !== '?' && <ActionBtn icon={<IconClock />} label={t('fs.act.history')} onClick={() => props.onLog(e.rel)} />}
+      {!e.isDir && e.code !== '?' && <ActionBtn icon={<IconClock />} label={t('fs.act.history')} onClick={() => props.onLog(e.rel, false)} />}
     </span>
   );
 
@@ -2022,7 +2023,7 @@ export function FsView(props: Props) {
                   </>
                 )}
                 {/* 历史记录 */}
-                <button className="mini" onClick={() => props.onLog(relOf(sel))}>{t('fs.detail.history')}</button>
+                <button className="mini" onClick={() => props.onLog(relOf(sel), sel.isDir)}>{t('fs.detail.history')}</button>
               </div>
             </div>
           </div>

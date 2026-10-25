@@ -43,8 +43,24 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     return true;
   }
 
+  if (p === '/api/restore-preview' && req.method === 'POST') {
+    // 还原前预检（只读）：目标版本与当前工作区差多少。不改文件，所以不失效状态缓存
+    const { vcs, repo } = vcsOf();
+    const body = await readBody(req);
+    const relPath = String(body.path ?? '');
+    const rev = String(body.rev ?? '');
+    if (!relPath || !rev || !inRepoRoot(repo.root, path.resolve(repo.root, relPath))) {
+      // 参数不合法
+      sendJson(res, 400, { error: t('srv.invalidParams') });
+      return true;
+    }
+    const result = (await vcs.restorePreview?.(relPath, rev)) ?? { ok: false, message: MSG_UNSUPPORTED_OP() };
+    sendJson(res, 200, { ...result, authError: authErrorOf(result) });
+    return true;
+  }
+
   if (p === '/api/restore-version' && req.method === 'POST') {
-    // 还原到指定历史版本：git checkout REV -- path / svn cat -r REV 写回工作区（二进制/目录 svn 拒绝）
+    // 还原到指定历史版本：文件=git checkout / svn cat；目录=git checkout+清理 / svn 反向合并
     const { vcs, repo } = vcsOf();
     const body = await readBody(req);
     const relPath = String(body.path ?? '');

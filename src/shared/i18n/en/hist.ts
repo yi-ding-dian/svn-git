@@ -61,6 +61,7 @@ export const hist = {
   // ---- 提交行 / 变更文件右键菜单（仅未推送提交可操作）----
   'hist.restoreThis': 'Restore This Version',
   'hist.restoreItemTip': 'Restore {path} to the version of commit {rev} (overwrites the working copy; the result appears as a local modification)',
+  'hist.restoreDirItemTip': 'Restore the whole directory {path} to the version of commit {rev} (all files inside; overwrites the working copy)',
   'hist.amend': 'Edit Message',
   'hist.viewFileDiff': 'View Diff for This File',
   'hist.reset': 'Undo Commit',
@@ -91,7 +92,27 @@ export const hist = {
   'hist.restoreTitle': '↩ Restore to Version',
   'hist.restoreMsgA': 'Restore ',
   'hist.restoreMsgB': ' to the version of commit ',
-  'hist.restoreMsgC': ': it overwrites the working copy (the result is a local modification you can commit again). Continue?',
+  'hist.restoreMsgC': ': it overwrites the working copy.',
+  'hist.restoreOtherFiles': 'The other {n} file(s) in this list are unaffected.',
+  'hist.restoreLaterOverwritten':
+    'Any later changes to this content are overwritten too; review the working-tree diff before committing.',
+  'hist.restoreDirNote': 'This is a directory: everything under it is reverse-merged and may conflict; unversioned files are left alone.',
+  'hist.restoreMsgTail': 'The result is a local modification you can commit again.',
+  'hist.restoreDeletedTip': 'This commit deletes the file, so that version has no content to restore',
+  'hist.restoring': 'Restoring…',
+  'hist.previewLoading': '⏳ Checking the difference from the working copy…',
+  'hist.previewChecking': 'Checking…',
+  'hist.noRestoreNeededTitle': 'Nothing to Restore',
+  'hist.noRestoreNeeded': 'The working copy of {path} already matches the version of commit {rev}; there is nothing to restore.',
+  'hist.previewDiffLines':
+    'Compared with the working copy: {n} line changes (+{added} / −{removed})|Compared with the working copy: {n} lines change (+{added} / −{removed})',
+  'hist.previewPropOnly': 'Compared with the working copy: no line differences (properties may differ).',
+  'hist.previewBinary': 'Binary files cannot be compared line by line; the target version will overwrite the current file.',
+  'hist.previewMissing':
+    'The file is currently missing from the working copy; restoring will bring it back (re-adding its parent directories to the repository if needed).',
+  'hist.previewDir': '{n} file will change compared with the working copy (modified {m}, restored {r}, deleted {d})|{n} files will change compared with the working copy (modified {m}, restored {r}, deleted {d})',
+  'hist.previewFailed': 'Could not check the difference from the working copy ({msg}); you can still restore.',
+  'hist.viewRestoreDiff': 'View Full Diff',
 
   // ---- 差异视图工具栏（差异块导航 / 同步滚动）----
   'hist.blockCounter': 'Change {i}/{n}',

@@ -47,13 +47,31 @@ export interface LogEntry {
   author: string;
   date: string;
   msg: string;
-  /** 变更文件（svn: svn log -v；git: --name-status） */
-  changed: { action: string; path: string }[];
+  /** 变更文件（svn: svn log -v；git: --name-status）。
+   *  kind：svn 的 <path kind="dir"> 能列出目录项（整目录新增/删除），界面据此走"目录还原"；
+   *  git 只列文件，恒为 file/undefined */
+  changed: { action: string; path: string; kind?: 'file' | 'dir' }[];
   /** 是否为合并提交（git 多父；svn 恒无）。合并提交自身无文件变更（changed 恒为空），
    *  改动都记在两侧的提交上 —— 界面据此显示「合并」而不是「0 文件」 */
   isMerge?: boolean;
   /** 是否为根提交（无父提交；仅 git 可能）。历史详情弹窗据此用空树作为"前一版本" */
   isRoot?: boolean;
+}
+
+/** 还原前预检结果：目标版本 vs 当前工作区。
+ *  - 文件：added/removed 是"还原后会新增/删除的行数"（相对当前工作区）
+ *  - 目录：files 是"还原后会修改/找回/删除的文件数"
+ *  - 二进制文件无法逐行比较，只给 binary=true */
+export interface RestorePreview {
+  kind: 'file' | 'dir';
+  /** 完全一致：还原不会产生任何变化 */
+  same: boolean;
+  /** 文件当前在工作区里缺失（磁盘上没有）：还原会把它找回；此时没有右栏可对比 */
+  missing?: boolean;
+  binary?: boolean;
+  added?: number;
+  removed?: number;
+  files?: { modify: number; restore: number; remove: number };
 }
 
 export interface DiffResult {
@@ -234,8 +252,14 @@ export interface Vcs {
   commit(relPaths: string[], msg: string, stagedOnly?: string[]): Promise<VcsResult>;
   restoreMissing(): Promise<string[]>;
   revert(relPaths: string[]): Promise<VcsResult>;
-  /** 还原到指定历史版本：git checkout REV -- path；svn cat -r REV 写回工作区（文件级，二进制拒绝） */
-  restoreToRev?(relPath: string, rev: string): Promise<VcsResult>;
+  /** 还原前预检：目标版本与当前工作区差多少（只读，不改文件）。
+   *  same=true 表示内容已完全一致，界面据此拦下无意义的还原。 */
+  restorePreview?(relPath: string, rev: string): Promise<VcsResult & { preview?: RestorePreview }>;
+  /** 还原到指定历史版本（只改工作区，可再提交）：
+   *  - 文件：git checkout REV -- path；svn cat -r REV 字节写回
+   *  - 目录：git checkout REV -- dir + 删除该版本之后新增的文件；svn 反向合并（revert -R 后 merge）
+   *  conflicts：目录还原可能产生冲突（svn），由界面提示并交给冲突视图处理 */
+  restoreToRev?(relPath: string, rev: string): Promise<VcsResult & { conflicts?: string[] }>;
   remove(relPaths: string[]): Promise<VcsResult>;
   /** 仅从版本库移除（磁盘保留：git rm --cached / svn delete --keep-local） */
   removeKeep(relPaths: string[]): Promise<VcsResult>;

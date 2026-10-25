@@ -73,6 +73,8 @@ export function App() {
   // 从「提交修改的文件」弹窗进入差异视图时记录，返回时恢复该弹窗
   const [diffReturnModal, setDiffReturnModal] = useState<Modal>(null);
   const [logPath, setLogPath] = useState<string | undefined>(undefined);
+  /** 历史视图的路径是否为目录：目录还原走反向合并，确认框文案与命令预览按它区分 */
+  const [logIsDir, setLogIsDir] = useState(false);
   /** 文件夹视图当前浏览的相对目录：侧边栏切「历史」时按它过滤。
    *  不带它的话，历史视图用的是**上一次查看过的路径**（或整仓库）——用户实报"点击历史不是当前目录的历史"。 */
   const browseDirRef = useRef('');
@@ -561,7 +563,10 @@ export function App() {
       }
       setDiffFrom(view);
       setDiffTarget({ path, a, b });
-      if (path) setLogPath(path); // 历史视图联动记住当前文件
+      if (path) {
+        setLogPath(path); // 历史视图联动记住当前文件
+        setLogIsDir(false);
+      }
       setView('diff');
     },
     [view, showToast]
@@ -1110,8 +1115,9 @@ export function App() {
 
   const [diffFrom, setDiffFrom] = useState<View>('browse');
 
-  const showLog = useCallback((path?: string) => {
+  const showLog = useCallback((path?: string, isDir = false) => {
     setLogPath(path);
+    setLogIsDir(isDir);
     setView('log');
   }, []);
 
@@ -1291,8 +1297,8 @@ export function App() {
               onBrowseRepo={openRepoBrowse}
               onManageWorktrees={() => setModal({ type: 'worktrees' })}
               onNav={(v) => {
-                // 点「历史」带上当前浏览目录（'' = 仓库根 → 传 undefined 看全仓库）
-                if (v === 'log') showLog(browseDirRef.current || undefined);
+                // 点「历史」带上当前浏览目录（'' = 仓库根 → 传 undefined 看全仓库）；浏览目录恒为目录
+                if (v === 'log') showLog(browseDirRef.current || undefined, true);
                 else setView(v);
               }}
               onOpenHistory={openHistoryItem}
@@ -1313,7 +1319,7 @@ export function App() {
             <div className="content" onClick={touchHistory}>
               {/* 视图常驻（display 切换），切换回来保留原位置/展开状态 */}
               <div style={{ display: view === 'log' ? undefined : 'none', height: '100%' }}>
-                <HistoryView path={logPath} tick={tick} active={view === 'log'} repoType={repo?.type ?? 'git'} onChanged={refresh} onToast={showToast} onBack={() => setView('browse')} />
+                <HistoryView path={logPath} pathIsDir={logIsDir} tick={tick} active={view === 'log'} repoType={repo?.type ?? 'git'} onChanged={refresh} onToast={showToast} onOpenDiff={(path, rev) => gotoDiff(path, rev)} onBack={() => setView('browse')} />
               </div>
               <div style={{ display: view === 'diff' ? undefined : 'none', height: '100%' }}>
                 <DiffView
@@ -1350,7 +1356,7 @@ export function App() {
                   startRel={repo.startRel}
                   onAction={handleAction}
                   onDiff={(p) => gotoDiff(p)}
-                  onLog={(p) => showLog(p)}
+                  onLog={(p, isDir) => showLog(p, isDir)}
                   onDirChange={(d) => {
                     browseDirRef.current = d;
                   }}

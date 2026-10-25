@@ -13,10 +13,14 @@ import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { CommitChangesModal } from './commit-changes-modal.js';
+import { RestoreVersionConfirm } from './restore-version.js';
+import type { RestoreVersionTarget } from './restore-version.js';
 import { t } from '../../shared/i18n/index.js';
 
 interface Props {
   path?: string;
+  /** path 是否为目录：目录还原走反向合并，确认框文案与命令预览按它区分 */
+  pathIsDir?: boolean;
   tick: number;
   /** 当前视图是否激活：隐藏时不高频重拉（视图常驻挂载，tick 变化照常会触发 effect） */
   active: boolean;
@@ -27,6 +31,8 @@ interface Props {
   onBack: () => void;
   /** 复制结果提示（右侧差异内容区的右键菜单） */
   onToast?: (msg: string, err?: boolean) => void;
+  /** 打开完整差异视图（还原确认框里的「查看完整差异」：目标版本 vs 当前工作区） */
+  onOpenDiff?: (path: string, rev: string) => void;
 }
 
 export function HistoryView(props: Props) {
@@ -86,6 +92,9 @@ export function HistoryView(props: Props) {
   const [resetCfm, setResetCfm] = useState(false);
   /** 详情面板「变更文件」行的右键菜单（未推送提交时提供撤销提交；带该文件路径供"查看差异"） */
   const [fileMenu, setFileMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  /** 右键的那一行在这次提交里的条目（D=删除无内容可还原；kind=dir 走目录反向合并） */
+  const fileMenuEntry = fileMenu && sel ? sel.changed.find((c) => c.path === fileMenu.path) : undefined;
+  const fileMenuAction = fileMenuEntry?.action;
   /** 详情面板提交说明是否展开（长说明默认折叠，避免占满面板挤掉变更文件列表） */
   const [msgExpanded, setMsgExpanded] = useState(false);
   /** 提交完整说明缓存（rev → 标题+正文）：悬浮提示用（列表接口只带 %s 标题） */
@@ -111,8 +120,8 @@ export function HistoryView(props: Props) {
       cancelled = true;
     };
   }, [logs, props.repoType]); // repoType 也要入依赖：svn↔git 切换时需重判是否该请求完整说明
-  /** 还原到指定版本：待确认的提交（rev）；还原对象 = 当前查看路径（props.path） */
-  const [restoreOf, setRestoreOf] = useState<{ rev: string } | null>(null);
+  /** 还原到指定版本：待确认的提交与还原对象（提交行右键 = 当前查看路径；文件行右键/箭头 = 单个文件） */
+  const [restoreOf, setRestoreOf] = useState<RestoreVersionTarget | null>(null);
   const [busy, setBusy] = useState(false);
   /** 跟随鼠标提示（修改注释成功显示在点击处） */
   const [clickTip, setClickTip] = useState<{ x: number; y: number; msg: string } | null>(null);
@@ -276,20 +285,15 @@ export function HistoryView(props: Props) {
     }
   };
 
-  /** 还原到指定版本：覆盖当前工作区（成功后刷新历史与文件状态） */
-  const doRestore = async (rev: string) => {
-    if (!props.path) return;
+  /** 还原到指定版本完成：提示结果并刷新文件状态（请求由 RestoreVersionConfirm 发出） */
+  const onRestoreDone = (r: { ok: boolean; message: string; conflicts?: string[] }) => {
     setRestoreOf(null);
-    let r;
-    try {
-      r = await post.restoreVersion(props.path, rev);
-    } catch (e) {
-      r = { ok: false, message: (e as Error).message };
-    }
+    // 目录反向合并可能"改了但带冲突"：后端已返回可读的完整说明，别套「还原失败:」前缀
+    const hasConflicts = Boolean(r.conflicts?.length);
     setNoticeErr(!r.ok);
     // 还原失败: {msg}
-    setNotice(r.ok ? r.message : t('hist.restoreFailed', { msg: r.message }));
-    if (r.ok) {
+    setNotice(!r.ok && !hasConflicts ? t('hist.restoreFailed', { msg: r.message }) : r.message);
+    if (r.ok || hasConflicts) {
       setReloadKey((k) => k + 1); // 工作区变化：重载历史（diff 状态刷新）
       props.onChanged?.();
     }
@@ -567,7 +571,38 @@ export function HistoryView(props: Props) {
                   }}
                 >
                   <span className={`act ${c.action}`}>{c.action}</span>
-                  <span className="mono">{c.path}</span>
+                  {/* 路径单行截断：给行尾的还原箭头留位置（长路径原先会换行，把箭头挤出面板） */}
+                  <span
+                    className="mono"
+                    title={c.path}
+                    style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
+                    {c.path}
+                  </span>
+                  {/* 行尾「还原此版本」：只还原这一个文件（D=该提交里是删除，没有内容可还原）；
+                      悬停才显现，见 style.css 的 .row-restore */}
+                  {c.action !== 'D' && (
+                    <button
+                      className="row-restore"
+                      // 还原 {path} 到提交 {rev} 的版本内容（覆盖当前工作区，还原后为一次本地修改）
+                      title={c.kind === 'dir'
+                        ? t('hist.restoreDirItemTip', { path: c.path, rev: sel.rev.slice(0, 7) })
+                        : t('hist.restoreItemTip', { path: c.path, rev: sel.rev.slice(0, 7) })}
+                      onClick={(e) => {
+                        // 整行点击是查看差异：还原按钮不能顺带触发它
+                        e.stopPropagation();
+                        setRestoreOf({
+                          rev: sel.rev,
+                          path: c.path,
+                          kind: c.kind,
+                          // 目录还原会改动它下面的所有内容，"列表里其它文件不受影响"这句只对单文件说
+                          otherCount: c.kind === 'dir' ? 0 : sel.changed.length - 1,
+                        });
+                      }}
+                    >
+                      ↩
+                    </button>
+                  )}
                 </div>
               ))}
               {/* 无文件变更 */}
@@ -635,8 +670,12 @@ export function HistoryView(props: Props) {
                     label: t('hist.restoreThis'),
                     // 还原 {path} 到提交 {rev} 的版本内容（覆盖当前工作区，还原后为一次本地修改）
                     title: t('hist.restoreItemTip', { path: props.path, rev: logs[menu.index]!.rev.slice(0, 7) }),
-                    cmd: cmdOfRepo(props.repoType ?? 'git', 'restore_rev', { rev: logs[menu.index]!.rev, path: props.path }),
-                    action: () => setRestoreOf({ rev: logs[menu.index]!.rev }),
+                    cmd: cmdOfRepo(props.repoType ?? 'git', props.pathIsDir ? 'restore_rev_dir' : 'restore_rev', { rev: logs[menu.index]!.rev, path: props.path }),
+                    action: () => setRestoreOf({
+                      rev: logs[menu.index]!.rev,
+                      path: props.path!,
+                      kind: props.pathIsDir ? 'dir' : 'file',
+                    }),
                   },
                 ]
               : []),
@@ -697,6 +736,30 @@ export function HistoryView(props: Props) {
                 const p = fileMenu.path;
                 setFileMenu(null);
                 void showDiff(sel.rev, undefined, p);
+              },
+            },
+            {
+              icon: '↩',
+              // 还原此版本
+              label: t('hist.restoreThis'),
+              // 该提交里此文件是删除 → 置灰并说明原因（点了也没内容可写回）
+              title: fileMenuAction === 'D'
+                ? t('hist.restoreDeletedTip')
+                : fileMenuEntry?.kind === 'dir'
+                  ? t('hist.restoreDirItemTip', { path: fileMenu.path, rev: sel.rev.slice(0, 7) })
+                  : t('hist.restoreItemTip', { path: fileMenu.path, rev: sel.rev.slice(0, 7) }),
+              disabled: fileMenuAction === 'D',
+              cmd: cmdOfRepo(props.repoType ?? 'git', fileMenuEntry?.kind === 'dir' ? 'restore_rev_dir' : 'restore_rev', { rev: sel.rev, path: fileMenu.path }),
+              action: () => {
+                // 只还原这一个文件（或这一个目录）；同一次提交的其它路径不动
+                const p = fileMenu.path;
+                setFileMenu(null);
+                setRestoreOf({
+                  rev: sel.rev,
+                  path: p,
+                  kind: fileMenuEntry?.kind,
+                  otherCount: fileMenuEntry?.kind === 'dir' ? 0 : sel.changed.length - 1,
+                });
               },
             },
             ...(unpushedSet.has(sel.rev)
@@ -820,26 +883,30 @@ export function HistoryView(props: Props) {
           onCancel={() => setResetCfm(false)}
         />
       )}
-      {restoreOf && props.path && (
-        <ConfirmModal
-          // ↩ 还原到指定版本
-          title={t('hist.restoreTitle')}
-          message={
-            <>
-              {/* 将把  /  还原到提交  /  的版本内容：覆盖当前工作区（还原后为一次本地修改，可再次提交）。确认？ */}
-              {t('hist.restoreMsgA')}<b>{props.path}</b>{t('hist.restoreMsgB')}<span className="mono">{restoreOf.rev.slice(0, 7)}</span>{t('hist.restoreMsgC')}
-            </>
-          }
-          // 还原此版本
-          confirmLabel={t('hist.restoreThis')}
-          onConfirm={() => void doRestore(restoreOf.rev)}
+      {restoreOf && (
+        <RestoreVersionConfirm
+          target={restoreOf}
+          repoType={props.repoType}
+          onOpenDiff={props.onOpenDiff}
+          onDone={onRestoreDone}
           onCancel={() => setRestoreOf(null)}
-          confirmCmd={cmdOfRepo(props.repoType ?? 'git', 'restore_rev', { rev: restoreOf.rev, path: props.path })}
         />
       )}
       {/* 提交文件变动详情（最大化弹窗；在弹窗内切换提交，文件列表与差异一起更新） */}
       {changesOpen && sel && logs && (
-        <CommitChangesModal logs={logs} initialRev={sel.rev} onClose={() => setChangesOpen(false)} />
+        <CommitChangesModal
+          logs={logs}
+          initialRev={sel.rev}
+          repoType={props.repoType}
+          onClose={() => setChangesOpen(false)}
+          onToast={props.onToast}
+          onOpenDiff={props.onOpenDiff}
+          onRestored={() => {
+            // 工作区被改过：刷新文件状态与历史里的差异记号
+            setReloadKey((k) => k + 1);
+            props.onChanged?.();
+          }}
+        />
       )}
       {/* 非 HEAD 未推送提交操作说明弹窗 */}
       {infoTip && (

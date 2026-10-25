@@ -23,6 +23,8 @@ export const CMDS: Record<string, string> = {
   g_push: 'git push',
   g_revert: 'git checkout HEAD -- %paths%',
   g_restore_rev: 'git checkout %rev% -- %path%',
+  // 目录还原比 checkout 多一步：该版本之后新增的文件也要删掉，否则不是那个版本的样子
+  g_restore_rev_dir: 'git checkout %rev% -- %path%（并删除该版本之后新增的文件）', // i18n-ignore: 命令预览（教学用，末尾是动作说明），按设计保留原样
   g_delete: 'git rm -r %paths%',
   g_remove_keep: 'git rm --cached -r %paths%',
   g_move: 'git mv %from% %to%',
@@ -64,6 +66,8 @@ export const CMDS: Record<string, string> = {
   s_status: 'svn status',
   s_revert: 'svn revert %paths%',
   s_restore_rev: 'svn cat -r %rev% %path% > 写回工作区文件', // i18n-ignore: 命令预览（教学用，末尾是动作说明），按设计保留原样
+  // 目录不能 cat：先 revert 掉本地改动，再反向合并到工作区（可能产生冲突）
+  s_restore_rev_dir: 'svn revert -R %path% + svn merge -r HEAD:%rev% %path%（反向合并到工作区）', // i18n-ignore: 命令预览（教学用，末尾是动作说明），按设计保留原样
   s_delete: 'svn delete %paths%',
   s_remove_keep: 'svn delete --keep-local %paths%',
   s_move: 'svn move %from% %to%',

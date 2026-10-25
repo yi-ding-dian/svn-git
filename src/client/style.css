@@ -1386,6 +1386,20 @@ body.drag-trash-hot .drag-src {
 .changed-row:hover { background: var(--panel2); }
 /* 当前选中的文件（提交文件变动弹窗：左列表选中态） */
 .changed-row.active { background: var(--panel2); outline: 1px solid var(--accent); }
+/* 行尾「还原此版本」：只还原这一个文件；悬停行才显现（不常驻占视觉），键盘聚焦也可见 */
+.changed-row .row-restore {
+  margin-left: auto; flex-shrink: 0;
+  width: 22px; height: 22px; padding: 0; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; border-radius: 5px;
+  color: var(--dim); font-size: 14px; cursor: pointer;
+  opacity: 0; transition: opacity .12s, background .12s, border-color .12s, color .12s;
+}
+.changed-row:hover .row-restore,
+.changed-row .row-restore:focus-visible { opacity: 1; }
+.changed-row .row-restore:hover {
+  background: var(--panel); border-color: var(--border); color: var(--accent);
+}
 /* 提交文件变动弹窗：文件列表与差异之间的拖拽分隔条（中间竖线，悬停高亮） */
 .files-resizer {
   width: 12px; flex-shrink: 0; align-self: stretch; position: relative;

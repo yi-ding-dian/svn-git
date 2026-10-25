@@ -157,7 +157,8 @@ export interface LogEntry {
   author: string;
   date: string;
   msg: string;
-  changed: { action: string; path: string }[];
+  /** kind：svn 目录项（整目录新增/删除）；git 只列文件，恒为 file/undefined */
+  changed: { action: string; path: string; kind?: 'file' | 'dir' }[];
   /** 合并提交（git 多父）：自身无文件变更，界面显示「合并」而非「0 文件」（见 vcs/types.ts） */
   isMerge?: boolean;
   /** 根提交（无父）：历史详情弹窗用空树作为"前一版本"（见 vcs/types.ts） */
@@ -181,10 +182,28 @@ export interface VcsResult {
   warnings?: string[];
   /** git 推送认证失败类型（github / server / ssh），前端据此引导认证 */
   authType?: 'github' | 'server' | 'ssh';
+  /** 目录还原（svn 反向合并）产生的冲突文件：界面提示并交给冲突视图解决 */
+  conflicts?: string[];
   /** 系统回收站不可用（gio / trash-put / PowerShell 均失败）：failedPaths 为未删除的路径，前端据此二次确认（force 重发直接删） */
   trashUnavailable?: boolean;
   failedPaths?: string[];
   trashReason?: string;
+}
+
+/** 还原前预检（只读）：目标版本 vs 当前工作区。与 src/vcs/types.ts 的 RestorePreview 同构 */
+export interface RestorePreview {
+  kind: 'file' | 'dir';
+  /** 完全一致：界面直接拦下，不再进入还原确认 */
+  same: boolean;
+  /** 文件当前在工作区里缺失（磁盘上没有）：还原会把它找回 */
+  missing?: boolean;
+  /** 二进制文件：无法逐行统计 */
+  binary?: boolean;
+  /** 文件：还原后会新增/删除的行数 */
+  added?: number;
+  removed?: number;
+  /** 目录：还原后会修改/找回/删除的文件数 */
+  files?: { modify: number; restore: number; remove: number };
 }
 
 export interface BrowseResult {
@@ -828,6 +847,9 @@ export const post = {
   revert: (paths: string[]) => api<VcsResult>('/api/revert', json({ paths })),
   /** 还原到指定历史版本（git checkout REV -- path / svn cat -r REV 写回工作区） */
   restoreVersion: (path: string, rev: string) => api<VcsResult>('/api/restore-version', json({ path, rev })),
+  /** 还原前预检：目标版本与当前工作区是否一致、差多少（只读） */
+  restorePreview: (path: string, rev: string) =>
+    api<VcsResult & { preview?: RestorePreview }>('/api/restore-preview', json({ path, rev })),
   delete: (paths: string[], keep = false) => api<VcsResult>('/api/delete', json({ paths, keep })),
   push: (signal?: AbortSignal) => api<VcsResult>('/api/push', json({}, signal)),
   /** GitHub 新建仓库（⋯ 菜单，git 项目且 origin 尚未指向 github.com 时可用）。

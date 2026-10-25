@@ -8,7 +8,7 @@ import { t } from '../shared/i18n/index.js';
 import { progressDone, progressReport, progressStart, progressStepsStart, progressStepsAdvance } from '../transfer-progress.js';
 import { platform } from '../platform/index.js';
 import { CONFIG_DIR } from '../config.js';
-import type { BranchDeleteCheck, BranchListResult, CommitSummary, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, SvnLayout, VcsResult } from './types.js';
+import type { BranchDeleteCheck, BranchListResult, CommitSummary, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, RestorePreview, SvnLayout, VcsResult } from './types.js';
 
 /** svn 可执行文件解析：PATH 优先；找不到时试平台常见安装路径（Windows 上装完 svn 系统 PATH
  *  不会刷新到已运行的进程——兜底路径让「装完刷新页面即用」成立）。
@@ -351,12 +351,17 @@ export class SvnVcs {
     const entries = doc?.log?.logentry ?? [];
     const arr = Array.isArray(entries) ? entries : entries ? [entries] : [];
     return arr.map((e: any) => {
-      const changed: { action: string; path: string }[] = [];
+      const changed: { action: string; path: string; kind?: 'file' | 'dir' }[] = [];
       const paths = e.paths?.path;
       if (paths) {
         const pArr = Array.isArray(paths) ? paths : [paths];
         for (const p of pArr) {
-          changed.push({ action: String(p['@_action'] ?? ''), path: String(p['#text'] ?? p) });
+          changed.push({
+            action: String(p['@_action'] ?? ''),
+            path: String(p['#text'] ?? p),
+            // kind="dir"：整目录新增/删除/复制时的目录项（还原要按目录反向合并，不能 svn cat）
+            kind: p['@_kind'] === 'dir' ? 'dir' : 'file',
+          });
         }
       }
       return {
@@ -375,6 +380,32 @@ export class SvnVcs {
     });
   }
 
+  /** 工作副本相对仓库根的 URL 前缀（工作副本就是仓库根时为空；标准布局检出 trunk 时为 'trunk/'）。
+   *  svn log 的 changed 路径是**仓库根相对**（/trunk/a.txt），界面要拿它去 diff / 还原，
+   *  必须换成工作副本相对（a.txt）——否则 Windows 上会被当成盘符根路径（D:\trunk\a.txt）直接失败。 */
+  private async wcPrefix(): Promise<string> {
+    const r = await this.exec(['info', '--show-item', 'relative-url']);
+    if (r.code !== 0) return '';
+    const rel = r.stdout.trim().replace(/^\^\//, '').replace(/\/+$/, '');
+    return rel ? rel + '/' : '';
+  }
+
+  /** changed 路径：仓库根相对 → 工作副本相对；不在当前工作副本里的（多项目仓库的其它项目）原样保留 */
+  private toWcRelLogs(entries: LogEntry[], prefix: string): LogEntry[] {
+    const lead = `/${prefix}`; // '/trunk/'
+    for (const e of entries) {
+      for (const c of e.changed) {
+        if (!prefix) {
+          // 工作副本 = 仓库根：只去掉唯一的前导 '/'
+          if (c.path.startsWith('/')) c.path = c.path.slice(1);
+        } else if (c.path.startsWith(lead)) {
+          c.path = c.path.slice(lead.length);
+        }
+      }
+    }
+    return entries;
+  }
+
   async log(limit = 200, pathRel?: string, _offset = 0, afterRev?: string): Promise<LogEntry[]> {
     // -r HEAD:1 范围写法：显式起点 HEAD（wc 可能停在旧 revision，mixed revision 下默认查询会查空），
     // 注意必须是 HEAD:1 范围而非 -r HEAD 单版本（单版本只返回该 revision 一条记录）
@@ -391,7 +422,7 @@ export class SvnVcs {
       // svn log 失败: {err}
       throw new Error(t('vcs.svnLogFailed', { err: res.stderr.trim() }));
     }
-    return this.parseLogXml(res.stdout);
+    return this.toWcRelLogs(this.parseLogXml(res.stdout), await this.wcPrefix());
   }
 
   /** svn diff：工作区 vs 版本库，或 -r A:B 版本间；可限定路径 */
@@ -686,19 +717,175 @@ export class SvnVcs {
     };
   }
 
-  /** 还原到指定历史版本：svn cat -r REV 的**原始字节**直接写回工作区。
-   *  走字节搬运（raw）而不是"解成字符串再写回"：文本编码猜错会把 GBK 文件改成 UTF-8、
-   *  二进制文件更是直接损坏——原先只靠扩展名挡住二进制，GBK 文本是挡不住的（代码注释自认过）。
-   *  字节搬运后这两类都天然安全，二进制也能还原。 */
-  async restoreToRev(relPath: string, rev: string): Promise<VcsResult> {
+  /** 工作副本根 URL + 相对路径 = 该路径在版本库里的 URL。
+   *  路径已不在工作副本（被后续提交删除）时，查询/读取版本库内容只能走 URL。 */
+  private async wcUrlOf(relPath: string): Promise<string | null> {
+    const u = await this.exec(['info', '--show-item', 'url', '.']);
+    if (u.code !== 0) return null;
+    const base = u.stdout.trim().replace(/\/+$/, '');
+    return relPath ? `${base}/${relPath.replace(/\\/g, '/')}` : base;
+  }
+
+  /** 路径在工作副本里是文件还是目录（信息库读 kind，磁盘缺失但仍版本化的目录也能判断）。
+   *  工作副本里已经**没有**这条路径（被之后的提交删除）时，用仓库 URL 在目标版本上再读一次：
+   *  单文件还原要靠它判断该走 svn cat 还是目录合并。都没有返回 null。 */
+  private async pathKind(relPath: string, rev?: string): Promise<'file' | 'dir' | null> {
+    const r = await this.exec(['info', '--show-item', 'kind', relPath]);
+    const k = r.stdout.trim();
+    if (r.code === 0 && (k === 'dir' || k === 'file')) return k;
+    if (rev) {
+      const url = await this.wcUrlOf(relPath);
+      if (url) {
+        // 必须带 peg（@rev）：URL 的默认 peg 是 HEAD，路径在 HEAD 已被删除时查不到（E160013）
+        const ru = await this.exec(['info', '--show-item', 'kind', '-r', rev, `${url}@${rev}`]);
+        const ku = ru.stdout.trim();
+        if (ru.code === 0 && (ku === 'dir' || ku === 'file')) return ku;
+      }
+    }
+    try {
+      return fs.statSync(path.join(this.repo.root, relPath)).isDirectory() ? 'dir' : 'file';
+    } catch {
+      return null;
+    }
+  }
+
+  /** 还原前预检：目标版本 vs 当前工作区（只读，不改文件）。
+   *  文件用 svn diff 数增删行，目录用 --summarize 数文件；same=true 时界面直接拦下。 */
+  async restorePreview(relPath: string, rev: string): Promise<VcsResult & { preview?: RestorePreview }> {
+    const kind = await this.pathKind(relPath, rev);
+    if (kind === null) return { ok: false, message: t('vcs.restorePathMissing', { path: relPath }) };
+    if (kind === 'dir') {
+      // 目录本身已不在工作副本（被后续提交删除）：反向合并没有目标，整目录找回属于检出操作
+      const local = await this.exec(['info', '--show-item', 'kind', relPath]);
+      if (local.code !== 0) return { ok: false, message: t('vcs.restorePathMissing', { path: relPath }) };
+      // summarize 给状态（M/A/D），但会把「删掉后又加回、内容其实相同」的节点误报成 M
+      // （svn 1.14 实测）。再用完整 diff 的 Index 行核对"真实有内容变化的文件"，
+      // 既排除误报，也排除目录属性变化（Property changes 块没有 Index）。
+      const sum = await this.exec(['diff', '--summarize', '--ignore-properties', '-r', rev, relPath], { timeoutMs: 120_000 });
+      if (sum.code !== 0) return { ok: false, message: sum.stderr.trim() || t('vcs.restoreRevFailed') };
+      const full = await this.exec(['diff', '-r', rev, relPath], { timeoutMs: 120_000, decode: 'auto' });
+      if (full.code !== 0) return { ok: false, message: full.stderr.trim() || t('vcs.restoreRevFailed') };
+      // Windows 下 summarize 用反斜杠、diff 的 Index 用正斜杠：统一后再比对
+      const real = new Set(
+        full.stdout
+          .split('\n')
+          .filter((l) => l.startsWith('Index: '))
+          .map((l) => l.slice(7).trim().replace(/\\/g, '/')),
+      );
+      const files = { modify: 0, restore: 0, remove: 0 };
+      for (const line of sum.stdout.split('\n')) {
+        const status = line.trim()[0];
+        const p = line.slice(8).trim().replace(/\\/g, '/');
+        if (!status || !p || !real.has(p)) continue;
+        // REV → 工作区：A=工作区多出来的（还原要删）、D=工作区缺的（还原要找回）
+        if (status === 'M' || status === 'R') files.modify++;
+        else if (status === 'A') files.remove++;
+        else if (status === 'D') files.restore++;
+      }
+      const same = files.modify + files.restore + files.remove === 0;
+      return { ok: true, message: '', preview: { kind, same, files } };
+    }
     const abs = path.join(this.repo.root, relPath);
-    const res = await this.exec(['cat', '-r', rev, relPath], { timeoutMs: 60_000, raw: true });
+    const missing = !fs.existsSync(abs);
+    // 路径已不在工作副本（被后续提交删除）：没有工作区内容可 diff，还原会重建文件与父目录
+    const local = await this.exec(['info', '--show-item', 'kind', relPath]);
+    if (local.code !== 0) {
+      return { ok: true, message: '', preview: { kind: 'file', same: false, missing: true, added: 0, removed: 0 } };
+    }
+    const r = await this.exec(['diff', '-r', rev, relPath], { timeoutMs: 120_000, decode: 'auto' });
+    if (r.code !== 0) return { ok: false, message: r.stderr.trim() || t('vcs.restoreRevFailed') };
+    if (!r.stdout.trim()) return { ok: true, message: '', preview: { kind, same: true, missing, added: 0, removed: 0 } };
+    // 方向：svn diff -r REV 是 REV → 工作区。'+' 是工作区有、REV 没有（还原会删），'-' 反之（还原会加）
+    let plus = 0;
+    let minus = 0;
+    let hunks = 0;
+    for (const line of r.stdout.split('\n')) {
+      if (line.startsWith('@@')) hunks++;
+      else if (line.startsWith('+++') || line.startsWith('---')) continue;
+      else if (line.startsWith('+')) plus++;
+      else if (line.startsWith('-')) minus++;
+    }
+    // 没有 hunk：二进制或纯属性变化，无法逐行统计（界面按二进制提示）
+    if (hunks === 0) return { ok: true, message: '', preview: { kind, same: false, missing, binary: true } };
+    return { ok: true, message: '', preview: { kind, same: false, missing, added: minus, removed: plus } };
+  }
+
+  /** 还原到指定历史版本（只改工作区，可再提交）：
+   *  - 文件：svn cat -r REV 的**原始字节**直接写回。走字节搬运（raw）而不是"解成字符串再写回"：
+   *    文本编码猜错会把 GBK 文件改成 UTF-8、二进制文件更是直接损坏——原先只靠扩展名挡住二进制，
+   *    GBK 文本是挡不住的（代码注释自认过）。字节搬运后这两类都天然安全，二进制也能还原。
+   *  - 目录：revert -R 丢掉本地改动后，反向合并 HEAD→REV 到工作区（删除/新增/修改一起带上），
+   *    可能产生冲突；结果仍是普通工作区改动，不会改写历史。 */
+  async restoreToRev(relPath: string, rev: string): Promise<VcsResult & { conflicts?: string[] }> {
+    // 带上 rev：路径在之后的提交里被删除时，仍能从目标版本判断它当时是文件还是目录
+    const kind = await this.pathKind(relPath, rev);
+    if (kind === null) {
+      // 目标版本里也没有这条路径，没有可写的目标
+      return { ok: false, message: t('vcs.restorePathMissing', { path: relPath }) };
+    }
+    if (kind === 'dir') return this.restoreDirToRev(relPath, rev);
+    const abs = path.join(this.repo.root, relPath);
+    // 是否仍在版本控制里：被后续提交删除的文件/目录要靠 add --parents 重新纳入版本库，
+    // 否则写回后只是未版本化文件，界面上是 ?，没法正常提交
+    const local = await this.exec(['info', '--show-item', 'kind', relPath]);
+    const inWc = local.code === 0;
+    // 路径不在工作副本里时，svn cat 也不接受它：改按仓库 URL（带 peg）读取目标版本内容
+    let catTarget = relPath;
+    if (!inWc) {
+      const url = await this.wcUrlOf(relPath);
+      if (!url) return { ok: false, message: t('vcs.restorePathMissing', { path: relPath }) };
+      catTarget = `${url}@${rev}`;
+    }
+    const res = await this.exec(['cat', '-r', rev, catTarget], { timeoutMs: 60_000, raw: true });
     // svn cat -r {rev} 失败
     if (res.code !== 0 || !res.stdoutBuf) return { ok: false, message: res.stderr.trim() || t('vcs.svnCatRevFailed', { rev }) };
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, res.stdoutBuf);
+    if (!inWc) {
+      // 连同缺失的父目录一起重新加入（只加这一条路径的祖先，不会带回目录里的其他文件）
+      const add = await this.exec(['add', '--parents', relPath]);
+      if (add.code !== 0) return { ok: false, message: add.stderr.trim() || t('vcs.restoreRevFailed') };
+      // 已将 {path} 还原到 {rev} 版本，并把所在目录一并重新加入版本库（工作区修改，可提交）
+      return { ok: true, message: t('vcs.restoredToRevAdded', { path: relPath, rev: `r${rev}` }) };
+    }
     // 已将 {path} 还原到 {rev} 版本（工作区修改，可提交）
     return { ok: true, message: t('vcs.restoredToRev', { path: relPath, rev: `r${rev}` }) };
+  }
+
+  /** 目录还原：先丢弃目录内本地改动（还原语义就是覆盖），再反向合并到 REV。
+   *  `svn merge` 的源必须显式带 peg（relPath@HEAD）：只给目标时推导出的源不会产生任何改动
+   *  （1.14 实测：命令成功退出，但文件和目录一个都没变），所以这里不能省源参数。 */
+  private async restoreDirToRev(relPath: string, rev: string): Promise<VcsResult & { conflicts?: string[] }> {
+    const abs = path.join(this.repo.root, relPath);
+    // 目录本身已不在工作副本（被后续提交删除）：没有合并目标。
+    // 单文件还原可以重建文件+父目录；整目录找回需要重新检出，不在这个操作里做。
+    const local = await this.exec(['info', '--show-item', 'kind', relPath]);
+    if (local.code !== 0) return { ok: false, message: t('vcs.restorePathMissing', { path: relPath }) };
+    // 缺失（!）的目录/子项也由 revert 找回；未跟踪文件不受影响（merge 不会删它们）
+    const rv = await this.exec(['revert', '-R', relPath], { timeoutMs: 120_000 });
+    if (rv.code !== 0) return { ok: false, message: rv.stderr.trim() || t('vcs.restoreRevFailed') };
+    if (!fs.existsSync(abs)) {
+      // 目录在 HEAD 已被删除（版本库层面不存在）→ 没有合并目标
+      return { ok: false, message: t('vcs.restorePathMissing', { path: relPath }) };
+    }
+    // 两个参数都是实测必须的（否则 App 的常见工作副本状态会直接报 E195020）：
+    //  - --ignore-ancestry：按普通差异应用，不做合并追踪。否则「目标目录本身停在旧版本」
+    //    会被判成"从自己的未来历史反向合并"而拒绝；顺带也不会留下 mergeinfo 改动。
+    //  - --allow-mixed-revisions：本地提交过的工作副本根目录往往还停在旧版本（混合版本）。
+    const mg = await this.exec(
+      ['merge', '--ignore-ancestry', '--allow-mixed-revisions', '-r', `HEAD:${rev}`, `${relPath}@HEAD`, relPath],
+      { timeoutMs: 600_000 },
+    );
+    if (mg.code !== 0) return { ok: false, message: mg.stderr.trim() || t('vcs.restoreRevFailed') };
+    // 冲突检测：内容/属性冲突与树冲突都要报（交给冲突视图解决）
+    const st = await this.exec(['status', relPath]);
+    const conflicts = st.code === 0 ? this.parseStatusText(st.stdout).conflicts : [];
+    if (conflicts.length > 0) {
+      // 已把 {path} 还原到 {rev} 版本，但 {n} 个文件有冲突，需解决后提交
+      return { ok: false, conflicts, message: t('vcs.restoredDirToRevConflicts', { path: relPath, rev: `r${rev}`, n: conflicts.length }) };
+    }
+    // 已将 {path} 整个目录还原到 {rev} 版本（工作区修改，可提交）
+    return { ok: true, message: t('vcs.restoredDirToRev', { path: relPath, rev: `r${rev}` }) };
   }
 
   /** svn cat：查看版本库内文件内容 */
@@ -764,7 +951,7 @@ export class SvnVcs {
     if (expiredCount > 0) {
       const lg = await this.exec(['log', '-r', 'HEAD:BASE', '-v', '--xml']);
       if (lg.code === 0) {
-        remoteLogs = this.parseLogXml(lg.stdout);
+        remoteLogs = this.toWcRelLogs(this.parseLogXml(lg.stdout), await this.wcPrefix());
         // svn log -r N:M 是**含两端**的区间（倒序输出）：HEAD:BASE 会把 BASE 自身那版也列出来
         // ——去掉末条（即 BASE），behind 才是真正的"远程新提交数"（实测：只落后 1 个提交时算成了 2）
         remoteLogs.pop();

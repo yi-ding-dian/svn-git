@@ -6,9 +6,13 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ResizableModal } from '../shell/modal-shell.js';
 import { DiffView } from './diff/index.js';
+import { RestoreVersionConfirm } from './restore-version.js';
+import type { RestoreVersionTarget } from './restore-version.js';
 import { isBinaryFile } from '../shared/utils.js';
 import { IconResizeHorizontal } from '../ui/icons.js';
 import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
+import { ContextMenu } from '../ui/context-menu.js';
+import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { t } from '../../shared/i18n/index.js';
 import type { LogEntry } from '../shared/api.js';
 
@@ -33,14 +37,24 @@ export function CommitChangesModal(props: {
   logs: LogEntry[];
   /** 打开时选中的提交 */
   initialRev: string;
+  /** 仓库引擎：还原命令预览按 svn/git 显示真实命令 */
+  repoType?: 'svn' | 'git';
   onClose: () => void;
   onToast?: (msg: string, err?: boolean) => void;
+  /** 打开完整差异视图（还原确认框里的「查看完整差异」） */
+  onOpenDiff?: (path: string, rev: string) => void;
+  /** 还原成功：通知父级刷新文件状态与历史差异记号 */
+  onRestored?: () => void;
 }) {
   const [rev, setRev] = useState(props.initialRev);
   const entry = useMemo(() => props.logs.find((l) => l.rev === rev) ?? null, [props.logs, rev]);
   /** 用户点选的文件；切提交后若该路径不在新提交里，自动回退到第一个变更文件 */
   const [picked, setPicked] = useState<string | null>(null);
   const path = entry?.changed.some((c) => c.path === picked) ? picked : (entry?.changed[0]?.path ?? null);
+  /** 单个文件还原到当前提交的版本：待确认目标（确认前不动文件） */
+  const [restoreOf, setRestoreOf] = useState<RestoreVersionTarget | null>(null);
+  /** 文件列表右键菜单：位置 + 目标条目（action=D 无内容可还原；kind=dir 走目录反向合并） */
+  const [fileMenu, setFileMenu] = useState<{ x: number; y: number; path: string; action: string; kind?: 'file' | 'dir' } | null>(null);
   /** 前一版本：合并提交取第一父；根提交用空树 */
   const before = entry?.isRoot ? EMPTY_TREE : `${rev}^`;
   const binary = Boolean(path && isBinaryFile(path));
@@ -231,6 +245,10 @@ export function CommitChangesModal(props: {
                       style={{ cursor: 'pointer' }}
                       title={c.path}
                       onClick={() => setPicked(c.path)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setFileMenu({ x: e.clientX, y: e.clientY, path: c.path, action: c.action, kind: c.kind });
+                      }}
                     >
                       <span className={`act ${c.action}`}>{c.action}</span>
                       <span
@@ -239,6 +257,29 @@ export function CommitChangesModal(props: {
                       >
                         {c.path}
                       </span>
+                      {/* 行尾「还原此版本」：只还原这一个文件，本次提交的其它文件不动；
+                          D=该提交里是删除，那个版本没有内容可还原 */}
+                      {c.action !== 'D' && (
+                        <button
+                          className="row-restore"
+                          title={c.kind === 'dir'
+                            ? t('hist.restoreDirItemTip', { path: c.path, rev: rev.slice(0, 7) })
+                            : t('hist.restoreItemTip', { path: c.path, rev: rev.slice(0, 7) })}
+                          onClick={(e) => {
+                            // 整行点击是在右侧查看差异：还原按钮不能顺带切走视图
+                            e.stopPropagation();
+                            setRestoreOf({
+                              rev,
+                              path: c.path,
+                              kind: c.kind,
+                              // 目录还原会改动它下面的所有内容，"列表里其它文件不受影响"只对单文件说
+                              otherCount: c.kind === 'dir' ? 0 : (entry?.changed.length ?? 1) - 1,
+                            });
+                          }}
+                        >
+                          ↩
+                        </button>
+                      )}
                     </div>
                   ))}
                   {/* 无文件变更 */}
@@ -303,6 +344,56 @@ export function CommitChangesModal(props: {
           </div>
         </div>
       </ResizableModal>
+      {/* 文件列表右键：还原此版本（只还原这一个文件，本次提交的其它文件不动） */}
+      {fileMenu && entry && (
+        <ContextMenu
+          x={fileMenu.x}
+          y={fileMenu.y}
+          mask
+          items={[
+            {
+              icon: '↩',
+              // 还原此版本
+              label: t('hist.restoreThis'),
+              // 该提交里此文件是删除 → 置灰并说明原因
+              title: fileMenu.action === 'D'
+                ? t('hist.restoreDeletedTip')
+                : fileMenu.kind === 'dir'
+                  ? t('hist.restoreDirItemTip', { path: fileMenu.path, rev: rev.slice(0, 7) })
+                  : t('hist.restoreItemTip', { path: fileMenu.path, rev: rev.slice(0, 7) }),
+              disabled: fileMenu.action === 'D',
+              cmd: cmdOfRepo(props.repoType ?? 'git', fileMenu.kind === 'dir' ? 'restore_rev_dir' : 'restore_rev', { rev, path: fileMenu.path }),
+              action: () => {
+                const p = fileMenu.path;
+                setFileMenu(null);
+                setRestoreOf({
+                  rev,
+                  path: p,
+                  kind: fileMenu.kind,
+                  otherCount: fileMenu.kind === 'dir' ? 0 : (entry?.changed.length ?? 1) - 1,
+                });
+              },
+            },
+          ]}
+          onClose={() => setFileMenu(null)}
+        />
+      )}
+      {/* 还原确认（叠在详情弹窗之上）：只写工作区，不改历史 */}
+      {restoreOf && (
+        <RestoreVersionConfirm
+          target={restoreOf}
+          repoType={props.repoType}
+          onOpenDiff={props.onOpenDiff}
+          onDone={(r) => {
+            setRestoreOf(null);
+            // 目录反向合并可能"改了但带冲突"：后端已返回完整说明，别套「还原失败:」前缀
+            const hasConflicts = Boolean(r.conflicts?.length);
+            props.onToast?.(!r.ok && !hasConflicts ? t('hist.restoreFailed', { msg: r.message }) : r.message, !r.ok);
+            if (r.ok || hasConflicts) props.onRestored?.();
+          }}
+          onCancel={() => setRestoreOf(null)}
+        />
+      )}
       {/* 拖拽跟随图标：自己绘制的 SVG，拖拽期间替代系统光标 */}
       <ResizeCursor ghostRef={ghostRef} />
     </div>

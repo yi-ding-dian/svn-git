@@ -10,7 +10,7 @@ import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.
 import { loadConfig } from '../config.js';
 import { progressStart, progressDone, progressFromStderr } from '../transfer-progress.js';
 import { t, getLang } from '../shared/i18n/index.js';
-import type { CommitSummary, FileStatus, LogEntry, RepoInfo, TagDetail, VcsResult, WorktreeInfo } from './types.js';
+import type { CommitSummary, FileStatus, LogEntry, RepoInfo, RestorePreview, TagDetail, VcsResult, WorktreeInfo } from './types.js';
 
 /** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限）
  *  export 给 server.ts 的「获取仓库」用：clone 走的是那边（GitVcs.clone 目前无人调用） */
@@ -991,11 +991,91 @@ export class GitVcs {
     return { ok: true, message: t('vcs.removeKeepRemoved', { n: relPaths.length }) };
   }
 
-  /** 还原到指定历史版本：git checkout REV -- path（任意提交；文件/目录；结果=工作区修改，可提交） */
+  /** 还原前预检：目标版本 vs 当前工作区（只读，不改文件）。
+   *  文件给行数，目录给文件数；same=true 时界面直接拦下无意义的还原。 */
+  async restorePreview(relPath: string, rev: string): Promise<VcsResult & { preview?: RestorePreview }> {
+    // 路径类型：工作区存在就看磁盘；工作区缺失（如文件被删）看目标版本里的对象类型
+    let kind: 'file' | 'dir' = 'file';
+    try {
+      kind = fs.statSync(path.join(this.repo.root, relPath)).isDirectory() ? 'dir' : 'file';
+    } catch {
+      const probe = await this.exec(['cat-file', '-t', `${rev}:${relPath}`]);
+      if (probe.code === 0) kind = probe.stdout.trim() === 'tree' ? 'dir' : 'file';
+    }
+    if (kind === 'dir') {
+      const r = await this.exec([
+        '-c', 'core.quotepath=false', 'diff', '--name-status', '--no-renames', rev, '--', relPath,
+      ]);
+      if (r.code !== 0) return { ok: false, message: r.stderr.trim() || t('vcs.restoreRevFailed') };
+      const files = { modify: 0, restore: 0, remove: 0 };
+      for (const line of r.stdout.split('\n')) {
+        const status = line.split('\t')[0]?.trim()[0];
+        if (!status) continue;
+        // diff REV → 工作区：A=工作区多出来的（还原要删）、D=工作区缺的（还原要找回）
+        if (status === 'M' || status === 'T') files.modify++;
+        else if (status === 'A') files.remove++;
+        else if (status === 'D') files.restore++;
+      }
+      const same = files.modify + files.restore + files.remove === 0;
+      return { ok: true, message: '', preview: { kind, same, files } };
+    }
+    const missing = !fs.existsSync(path.join(this.repo.root, relPath));
+    const r = await this.exec(['-c', 'core.quotepath=false', 'diff', '--numstat', '--no-renames', rev, '--', relPath]);
+    if (r.code !== 0) return { ok: false, message: r.stderr.trim() || t('vcs.restoreRevFailed') };
+    const rows = r.stdout.split('\n').filter(Boolean);
+    if (rows.length === 0) return { ok: true, message: '', preview: { kind, same: true, missing, added: 0, removed: 0 } };
+    let binary = false;
+    let addedInWorktree = 0; // numstat 第 1 列：工作区有、REV 没有
+    let removedInWorktree = 0; // 第 2 列：REV 有、工作区没有
+    for (const row of rows) {
+      const [a, d] = row.split('\t');
+      if (a === '-' || d === '-') {
+        binary = true; // 二进制：numstat 输出 - -
+        continue;
+      }
+      addedInWorktree += Number(a) || 0;
+      removedInWorktree += Number(d) || 0;
+    }
+    // 方向翻过来：还原会新增的行 = REV 有而工作区没有的行（diff 的删除行）
+    return {
+      ok: true,
+      message: '',
+      preview: { kind, same: false, missing, binary, added: removedInWorktree, removed: addedInWorktree },
+    };
+  }
+
+  /** 还原到指定历史版本（任意提交；结果=工作区修改，可提交）：
+   *  - 文件：git checkout REV -- path
+   *  - 目录：checkout 之后还要删掉「REV 之后新增的文件」——checkout 只恢复 REV 里存在的路径，
+   *    不删多出来的，漏了这一步目录就不是那个版本的样子了 */
   async restoreToRev(relPath: string, rev: string): Promise<VcsResult> {
     const r = await this.exec(['checkout', rev, '--', relPath]);
     // 还原到指定版本失败
     if (r.code !== 0) return { ok: false, message: r.stderr.trim() || t('vcs.restoreRevFailed') };
+    let isDir = false;
+    try {
+      isDir = fs.statSync(path.join(this.repo.root, relPath)).isDirectory();
+    } catch {
+      isDir = false; // 文件被还原成缺失状态（REV 里没有它）→ 没有目录要清理
+    }
+    if (isDir) {
+      // REV..HEAD 之间新增（A）的路径 = 当前目录里多出来、那个版本没有的东西。
+      // --no-renames：重命名拆成 D 旧名 + A 新名，新名会被删、旧名由 checkout 恢复，回滚才完整。
+      const df = await this.exec([
+        '-c', 'core.quotepath=false', 'diff', '--name-only', '--no-renames', '--diff-filter=A', rev, 'HEAD', '--', relPath,
+      ]);
+      if (df.code === 0) {
+        for (const p of df.stdout.split('\n').map((l) => l.trim()).filter(Boolean)) {
+          try {
+            fs.rmSync(path.join(this.repo.root, p), { force: true });
+          } catch {
+            /* 单个文件删不掉不阻断其余还原：状态里仍会显示 D，交用户处理 */
+          }
+        }
+      }
+      // 已将 {path} 整个目录还原到 {rev} 版本（工作区修改，可提交）
+      return { ok: true, message: t('vcs.restoredDirToRev', { path: relPath, rev: rev.slice(0, 7) }) };
+    }
     // 已将 {path} 还原到 {rev} 版本（工作区修改，可提交）
     return { ok: true, message: t('vcs.restoredToRev', { path: relPath, rev: rev.slice(0, 7) }) };
   }

@@ -158,6 +158,12 @@ export const vcs = {
   'vcs.gitRmFailed': 'git rm failed',
   'vcs.removeKeepRemoved': 'Removed {n} item from the repository (local files kept, status becomes ? unversioned)|Removed {n} items from the repository (local files kept, status becomes ? unversioned)',
   'vcs.restoreRevFailed': 'Failed to restore to the specified revision',
+  'vcs.restorePathMissing': 'This path is no longer in the working copy (a later commit may have deleted it), so it cannot be restored',
+  'vcs.restoredDirToRev': 'Restored the whole directory {path} to {rev} (working-copy changes you can commit)',
+  'vcs.restoredToRevAdded':
+    'Restored {path} to {rev} and re-added its parent directories to the repository (working-copy changes you can commit)',
+  'vcs.restoredDirToRevConflicts':
+    'Restored {path} to {rev}, but {n} file has a conflict and must be resolved before committing|Restored {path} to {rev}, but {n} files have conflicts and must be resolved before committing',
   'vcs.gitMvFailed': 'git mv failed',
   'vcs.noRemotePush': 'This repository has no remote (origin), so it cannot push.',
   'vcs.pushCancelled': 'Push cancelled',

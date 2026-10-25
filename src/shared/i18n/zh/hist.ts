@@ -60,6 +60,7 @@ export const hist = {
   // ---- 提交行 / 变更文件右键菜单（仅未推送提交可操作）----
   'hist.restoreThis': '还原此版本',
   'hist.restoreItemTip': '还原 {path} 到提交 {rev} 的版本内容（覆盖当前工作区，还原后为一次本地修改）',
+  'hist.restoreDirItemTip': '还原 {path} 整个目录到提交 {rev} 的版本内容（含其中所有文件，覆盖当前工作区）',
   'hist.amend': '修改注释',
   'hist.viewFileDiff': '查看此文件差异',
   'hist.reset': '撤销提交',
@@ -89,7 +90,29 @@ export const hist = {
   'hist.restoreTitle': '↩ 还原到指定版本',
   'hist.restoreMsgA': '将把 ',
   'hist.restoreMsgB': ' 还原到提交 ',
-  'hist.restoreMsgC': ' 的版本内容：覆盖当前工作区（还原后为一次本地修改，可再次提交）。确认？',
+  'hist.restoreMsgC': ' 的版本内容：覆盖当前工作区。',
+  // 多文件提交里只还原其中一个文件时，说明列表里其余文件不受影响（历史可能按目录过滤，不说"整个提交"）
+  'hist.restoreOtherFiles': '列表里的另外 {n} 个文件不受影响。',
+  // 之后的提交若也改过这些内容，会在工作区里被一并覆盖（只是本地修改，提交前能核对）
+  'hist.restoreLaterOverwritten': '之后对这些内容的改动也会被覆盖；提交前可在工作区差异里核对。',
+  // 目录还原：反向合并会带上删除/新增，可能冲突；未跟踪文件不受影响
+  'hist.restoreDirNote': '这是一个目录：会反向合并它下面的所有内容，可能产生冲突；未跟踪文件不动。',
+  'hist.restoreMsgTail': '还原后为一次本地修改，可再次提交。',
+  // 该提交里此文件是删除操作 → 那个版本里没有内容可还原
+  'hist.restoreDeletedTip': '这次提交里该文件是删除操作，那个版本没有内容可以还原',
+  'hist.restoring': '还原中…',
+  // ---- 还原前预检（目标版本 vs 当前工作区，只读）----
+  'hist.previewLoading': '⏳ 正在检查与当前工作区的差异…',
+  'hist.previewChecking': '检查中…',
+  'hist.noRestoreNeededTitle': '无需还原',
+  'hist.noRestoreNeeded': '当前工作区的 {path} 已经与提交 {rev} 的版本完全一致，没有需要还原的改动。',
+  'hist.previewDiffLines': '与当前工作区相比：改动 {n} 行（+{added} / −{removed}）',
+  'hist.previewPropOnly': '与当前工作区相比：内容没有行差异（可能有属性变化）。',
+  'hist.previewBinary': '二进制文件无法逐行比较，将直接用该版本内容覆盖。',
+  'hist.previewMissing': '文件当前在工作区里缺失，还原会把它找回来（必要时连同所在目录一起重新纳入版本库）。',
+  'hist.previewDir': '与当前工作区相比：将改动 {n} 个文件（修改 {m}、恢复 {r}、删除 {d}）',
+  'hist.previewFailed': '无法检测与当前工作区的差异（{msg}），仍可继续还原。',
+  'hist.viewRestoreDiff': '查看完整差异',
 
   // ---- 差异视图工具栏（差异块导航 / 同步滚动）----
   'hist.blockCounter': '差异点 {i}/{n}',
