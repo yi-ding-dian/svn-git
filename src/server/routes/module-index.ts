@@ -55,6 +55,8 @@ export function parseModuleIndex(md: string): IndexEntry[] {
   const out: IndexEntry[] = [];
   const stack: { col: number; dir: string }[] = []; // 父目录栈（col=树形前缀列宽）
   let seenTop = false; // 是否已见过"文档根头"（首行 col0 无 ← 目录）
+  let treeEmitted = 0; // 树形条目数（表格行不算：md 开头的统计表会提前填满 out，
+                       // 害得文档根头剥不掉 → 所有路径多一层仓库目录名，前端永远匹配不到）
   let inFence = false; // 树图只在 ``` 代码块内解析（块外的 > 描述/MD 正文不参与）
   for (const line of md.split('\n')) {
     const t = line.trim();
@@ -70,6 +72,11 @@ export function parseModuleIndex(md: string): IndexEntry[] {
       const p = clean(tbl[1]!);
       const d = tbl[2]!.trim();
       if (!p || !d || /^[-:\s]+$/.test(p)) continue; // 表头/分隔行
+      // md 开头的统计/说明表（如「| 类别 | 文件数 |」「| 前端 TS/TSX（…） | 291 |」）不是路径→描述：
+      // 路径列必须含层级或扩展名、且不含空白，否则整张表会被当条目注入
+      // （还会提前填满 out，干扰文档根头的剥离）
+      if (!p.includes('/') && !p.includes('.')) continue;
+      if (/\s/.test(p)) continue;
       out.push({ path: p, desc: d });
       continue;
     }
@@ -83,9 +90,9 @@ export function parseModuleIndex(md: string): IndexEntry[] {
     const isDir = rawSeg.endsWith('/');
     const seg = clean(rawSeg);
     const col = prefix.length; // 树形前缀字符数（每层约 4 字符）
-    // 文档根头：尚无任何条目且首行无 ← 的顶层目录（如 svn-git/）→ 剥掉不建栈不入条；
-    // 若前面已出现过条目（如测试样本先列文件再列 src/）则 src/ 是真实目录，正常入栈
-    if (!seenTop && col === 0 && isDir && !desc && out.length === 0) {
+    // 文档根头：尚无任何**树形**条目且首行无 ← 的顶层目录（如 svn-git/）→ 剥掉不建栈不入条；
+    // 若树形块内已先列过条目（如测试样本先列文件再列 src/）则 src/ 是真实目录，正常入栈
+    if (!seenTop && col === 0 && isDir && !desc && treeEmitted === 0) {
       seenTop = true;
       stack.length = 0;
       continue;
@@ -95,9 +102,13 @@ export function parseModuleIndex(md: string): IndexEntry[] {
     if (isDir) {
       // 目录：入栈（供后代拼接）；带 ← 描述的目录同时作为条目
       stack.push({ col, dir: joined });
-      if (desc) out.push({ path: joined, desc });
+      if (desc) {
+        out.push({ path: joined, desc });
+        treeEmitted++;
+      }
     } else if (desc) {
       out.push({ path: joined, desc });
+      treeEmitted++;
     }
   }
   return out;
