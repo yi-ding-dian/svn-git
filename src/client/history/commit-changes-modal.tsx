@@ -55,8 +55,14 @@ export function CommitChangesModal(props: {
   const [restoreOf, setRestoreOf] = useState<RestoreVersionTarget | null>(null);
   /** 文件列表右键菜单：位置 + 目标条目（action=D 无内容可还原；kind=dir 走目录反向合并） */
   const [fileMenu, setFileMenu] = useState<{ x: number; y: number; path: string; action: string; kind?: 'file' | 'dir' } | null>(null);
-  /** 前一版本：合并提交取第一父；根提交用空树 */
-  const before = entry?.isRoot ? EMPTY_TREE : `${rev}^`;
+  /** 前一版本：Git 取第一父 `rev^`；SVN 用 rev-1（`^` 是 Git 语法，传给 svn 会报 E205000）。
+   *  根提交没有父：Git 用空树对象，SVN 用 r0（差异表现为整文件新增）。 */
+  const before =
+    props.repoType === 'svn'
+      ? String(Math.max(0, Number(rev) - 1))
+      : entry?.isRoot
+        ? EMPTY_TREE
+        : `${rev}^`;
   const binary = Boolean(path && isBinaryFile(path));
   /** 版本行改成人话：原始 `rev^` 对非 Git 用户不可读（^ = 父提交，即上一版） */
   const leftLabel = entry?.isRoot ? t('hist.changes.beforeRoot') : t('hist.changes.before', { rev });
@@ -201,7 +207,8 @@ export function CommitChangesModal(props: {
             >
               {props.logs.map((l) => (
                 <option key={l.rev} value={l.rev}>
-                  {l.rev} · {l.msg}
+                  {/* 下拉只显示提交标题（第一行）：完整说明常有几十行，全部铺开会把列表撑爆；悬浮看全文 */}
+                  {l.rev} · {l.msg.split('\n')[0]}
                 </option>
               ))}
             </select>
