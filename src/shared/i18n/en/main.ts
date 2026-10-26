@@ -2,6 +2,7 @@
 export const main = {
   'main.title': 'svn-git Version Control',
   'main.pickDir': 'Select SVN/Git Project Directory',
+  'main.saveFile': 'Save exported file',
   'main.dedupe': '  Removed {n} duplicate entry|  Removed {n} duplicate entries',
   'main.repoHint': '({type} repository detected: {root})',
   'main.serverStarted': '  Server started: {url}',

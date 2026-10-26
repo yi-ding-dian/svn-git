@@ -38,6 +38,7 @@ import { RevertModal } from '../filesystem/revert.js';
 import { RenameModal } from '../filesystem/rename.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { ShareDialog } from '../share/share-dialog.js';
+import { CodeStatsDialog } from '../stats/code-stats.js';
 import type { Modal } from './modal-types.js';
 import { PushConfirmModal } from '../ops/push-confirm.js';
 import { ConflictResolverModal } from '../conflicts/conflicts.js';
@@ -48,7 +49,7 @@ import { FontModal } from '../appearance/font-modal.js';
 import { TerminalModal } from '../terminal/terminal.js';
 import { OpenModal } from '../repo/open.js';
 import { IconOk } from '../ui/icons.js';
-import { pathAutoWidth, translateVcsError } from '../shared/utils.js';
+import { pathAutoWidth, translateVcsError, baseName } from '../shared/utils.js';
 import { useGetRepoTask, GetRepoAuthModal } from '../repo/get-repo-task.js';
 import type { View } from './sidebar.js';
 import { t } from '../../shared/i18n/index.js';
@@ -293,6 +294,13 @@ export function ModalHost(props: ModalHostProps) {
         />
       )}
       {modal?.type === 'share' && <ShareDialog onClose={() => setModal(null)} />}
+      {modal?.type === 'code-stats' && (
+        <CodeStatsDialog
+          rootName={baseName(repo?.root ?? '')}
+          repoRoot={repo?.root ?? ''}
+          onClose={() => setModal(null)}
+        />
+      )}
       {modal?.type === 'terminal' && (
         <TerminalModal
           initialDir={browseDir}

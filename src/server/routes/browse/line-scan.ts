@@ -26,7 +26,7 @@ import {
 } from '../util.js';
 
 /** 单文件读取上限：超过不读（大日志/生成物行数没有「大代码文件」的排查价值） */
-const MAX_FILE_BYTES = 32 * 1024 * 1024;
+export const MAX_FILE_BYTES = 32 * 1024 * 1024;
 /** 候选文件上限：防极端目录把内存拉爆（超出会标记 capped） */
 const MAX_CANDIDATES = 100_000;
 /** 返回给前端的匹配上限：超过只保留最相关的前 N 个（≥/> 取最大，< 取最小） */
@@ -84,8 +84,9 @@ type CountResult =
   | { ok: false; reason: 'binary' | 'error' | 'aborted' };
 
 /** 字节流数 `\n`：不 split 成字符串，避免大文件把内存/GC 拖垮。
- *  首个块检测 NUL 判二进制（UTF-16 文本也会被当二进制——项目里的源码不是这种编码）。 */
-function countFileLines(abs: string, signal: AbortSignal): Promise<CountResult> {
+ *  首个块检测 NUL 判二进制（UTF-16 文本也会被当二进制——项目里的源码不是这种编码）。
+ *  **export**：项目代码统计（code-stats.ts）复用同一套计数口径，两处行数才不会打架。 */
+export function countFileLines(abs: string, signal: AbortSignal): Promise<CountResult> {
   return new Promise((resolve) => {
     if (signal.aborted) {
       resolve({ ok: false, reason: 'aborted' });
@@ -130,8 +131,9 @@ function countFileLines(abs: string, signal: AbortSignal): Promise<CountResult> 
 }
 
 /** 候选文件收集：git 走 ls-files（天然排除忽略产物），svn / 失败回退遍历。
- *  软链一律跳过：不跟随才不会有环、也不会读到仓库外的内容。 */
-async function collectCandidates(
+ *  软链一律跳过：不跟随才不会有环、也不会读到仓库外的内容。
+ *  **export**：项目代码统计复用（同一套「哪些文件算候选」口径）。 */
+export async function collectCandidates(
   repo: RepoInfo,
   startAbs: string,
   startRel: string,
@@ -200,14 +202,15 @@ async function collectCandidates(
   return { files, capped };
 }
 
-/** 缓存读写：大小 + mtime 完全一致才算命中（mtime 精度到毫秒，编辑器保存后必然变化） */
-function cacheGet(abs: string, st: fs.Stats): number | null {
+/** 缓存读写：大小 + mtime 完全一致才算命中（mtime 精度到毫秒，编辑器保存后必然变化）。
+ *  **export**：项目代码统计复用同一份进程级行数缓存（先统计过一次，再按条件统计几乎秒出）。 */
+export function cacheGet(abs: string, st: fs.Stats): number | null {
   const hit = lineCountCache.get(abs);
   if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) return hit.lines;
   return null;
 }
 
-function cacheSet(abs: string, st: fs.Stats, lines: number): void {
+export function cacheSet(abs: string, st: fs.Stats, lines: number): void {
   if (lineCountCache.size >= MAX_CACHE_ENTRIES) {
     const oldest = lineCountCache.keys().next().value;
     if (oldest !== undefined) lineCountCache.delete(oldest);

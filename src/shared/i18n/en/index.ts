@@ -16,6 +16,7 @@ import { repo } from './repo.js';
 import { shell } from './shell.js';
 import { srv } from './srv.js';
 import { share } from './share.js';
+import { stats } from './stats.js';
 import { term } from './term.js';
 import { ui } from './ui.js';
 import { vcs } from './vcs.js';
@@ -33,6 +34,7 @@ export const en: Record<I18nKey, string> = {
   ...term,
   ...srv,
   ...share,
+  ...stats,
   ...vcs,
   ...plat,
   ...main,

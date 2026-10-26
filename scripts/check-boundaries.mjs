@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const CLIENT = path.resolve('src/client');
-const DOMAINS = ['filesystem', 'conflicts', 'ops', 'repo', 'appearance', 'history', 'terminal'];
+const DOMAINS = ['filesystem', 'conflicts', 'ops', 'repo', 'appearance', 'history', 'terminal', 'stats'];
 
 function walk(dir, acc = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

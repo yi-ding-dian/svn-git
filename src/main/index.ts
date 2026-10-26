@@ -5,7 +5,7 @@ import os from 'node:os';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { createRequire } from 'node:module';
-import { startServer, setPickDirHandler } from '../server/index.js';
+import { startServer, setPickDirHandler, setSaveFileHandler } from '../server/index.js';
 import { killAllChildren } from '../vcs/exec.js';
 import { recoverInflight } from '../inflight.js';
 import { detectRepo } from '../vcs/detect.js';
@@ -159,7 +159,10 @@ async function boot() {
   if (process.versions.electron) {
     try {
       const { dialog } = require('electron') as {
-        dialog: { showOpenDialog(opts: unknown): Promise<{ canceled: boolean; filePaths: string[] }> };
+        dialog: {
+          showOpenDialog(opts: unknown): Promise<{ canceled: boolean; filePaths: string[] }>;
+          showSaveDialog(opts: unknown): Promise<{ canceled: boolean; filePath?: string }>;
+        };
       };
       setPickDirHandler(async () => {
         const r = await dialog.showOpenDialog({
@@ -168,6 +171,17 @@ async function boot() {
           properties: ['openDirectory'],
         });
         return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+      });
+      // 导出报告用「另存为」：defaultPath 由调用方给（项目目录 + 建议文件名），
+      // 用户打开时就直接落在当前项目里，不用从家目录一层层点过去
+      setSaveFileHandler(async ({ defaultPath, filterName }) => {
+        const r = await dialog.showSaveDialog({
+          // 保存导出文件
+          title: t('main.saveFile'),
+          defaultPath,
+          filters: [{ name: filterName, extensions: ['md', 'txt'] }],
+        });
+        return r.canceled || !r.filePath ? null : r.filePath;
       });
     } catch (e) {
       /* 纯 node 运行时无对话框 */

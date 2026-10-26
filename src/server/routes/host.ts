@@ -20,6 +20,14 @@ export function setPickDirHandler(fn: () => Promise<string | null>): void {
   pickDirHandler = fn;
 }
 
+/** 系统「另存为」对话框（Electron dialog 注入；纯 node / 浏览器模式为 null）。
+ *  与 pickDirHandler 分开：导出报告需要**预填文件名**、并默认落在项目目录——
+ *  目录选择器给不了文件名，浏览器端的 showSaveFilePicker 也控制不了初始目录。 */
+let saveFileHandler: ((opts: { defaultPath: string; filterName: string }) => Promise<string | null>) | null = null;
+export function setSaveFileHandler(fn: (opts: { defaultPath: string; filterName: string }) => Promise<string | null>): void {
+  saveFileHandler = fn;
+}
+
 /** 目录浏览（打开仓库页用）：列目录 + 仓库识别 */
 function browseDirs(dir: string): { entries: { name: string; isDir: boolean }[]; repo: RepoInfo | null } {
   const out: { name: string; isDir: boolean }[] = [];
@@ -147,6 +155,63 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const picked = await pickDirHandler();
         sendJson(res, 200, { path: picked, unsupported: false });
+        return true;
+      }
+
+      if (p === '/api/pick-save-file' && req.method === 'POST') {
+        // 系统「另存为」对话框（导出报告用）：默认目录 + 预填文件名由调用方给，
+        // 用户选完返回**完整路径**；纯 node / 浏览器模式返回 unsupported，前端自行降级。
+        if (!saveFileHandler) {
+          sendJson(res, 200, { path: null, unsupported: true });
+          return true;
+        }
+        const body = await readBody(req);
+        const startDir = String(body.startDir ?? '');
+        const name = String(body.name ?? '');
+        if (!name) {
+          // 路径为空
+          sendJson(res, 400, { error: t('srv.pathEmpty') });
+          return true;
+        }
+        // 默认路径 = 项目目录/文件名（项目目录不存在就退回文件名本身，让对话框用系统默认位置）
+        const defaultPath = startDir && fs.existsSync(startDir) ? path.join(startDir, name) : name;
+        try {
+          const picked = await saveFileHandler({ defaultPath, filterName: t('srv.mdFilter') });
+          sendJson(res, 200, { path: picked, unsupported: false });
+        } catch (e) {
+          sendJson(res, 500, { error: (e as Error).message });
+        }
+        return true;
+      }
+
+      if (p === '/api/save-text' && req.method === 'POST') {
+        // 把前端生成的文本落到用户刚在「另存为」里选的路径（宿主级操作：路径可不在任何仓库内，
+        // 与 mkdir / rename 同一档权限——只受 CSRF 同源限制）。写盘面收窄的三条约束：
+        // 必须是绝对路径、父目录必须已存在（不隐式 mkdir）、目标不能是目录。
+        const body = await readBody(req);
+        const target = String(body.path ?? '');
+        const content = String(body.content ?? '');
+        if (!target || !path.isAbsolute(target)) {
+          // 路径为空
+          sendJson(res, 400, { error: t('srv.pathEmpty') });
+          return true;
+        }
+        const parent = path.dirname(target);
+        if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
+          sendJson(res, 400, { error: t('srv.dirNotFound', { path: parent }) });
+          return true;
+        }
+        if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
+          sendJson(res, 400, { error: t('srv.saveTargetIsDir', { path: target }) });
+          return true;
+        }
+        try {
+          // 报告是纯文本：显式 utf8（不用 encodeText——那是给仓库内文件保留原编码用的）
+          fs.writeFileSync(target, content, 'utf8');
+          sendJson(res, 200, { ok: true, path: target });
+        } catch (e) {
+          sendJson(res, 500, { error: t('srv.writeFailed', { msg: (e as Error).message }) });
+        }
         return true;
       }
 

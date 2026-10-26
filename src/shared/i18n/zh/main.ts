@@ -2,6 +2,7 @@
 export const main = {
   'main.title': 'svn-git文件版本管理',
   'main.pickDir': '选择 SVN/Git 项目目录',
+  'main.saveFile': '保存导出文件',
   'main.dedupe': '  已清理最近项目中的 {n} 条重复记录',
   'main.repoHint': '（检测到 {type} 仓库: {root}）',
   'main.serverStarted': '  服务已启动: {url}',

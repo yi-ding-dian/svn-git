@@ -408,6 +408,17 @@ export function IconTree({ size = 14 }: IconProps) {
   );
 }
 
+/** 代码统计：三根递增的柱子（⋯ 菜单 / 统计弹窗标题用） */
+export function IconStats({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <rect x="3.5" y="13" width="4.5" height="8" rx="1.2" fill="#58a6ff" />
+      <rect x="9.75" y="8" width="4.5" height="13" rx="1.2" fill="#3fb950" />
+      <rect x="16" y="3.5" width="4.5" height="17.5" rx="1.2" fill="#a371f7" />
+    </svg>
+  );
+}
+
 /** 浏览视图：紫蓝九宫格 */
 export function IconGrid({ size = 14 }: IconProps) {
   return (

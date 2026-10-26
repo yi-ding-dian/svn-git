@@ -47,7 +47,7 @@ export interface ServerHandle {
 
 /** 系统目录选择器（Electron dialog 注入；纯 node 为 null）：
  * 宿主实现随 /api/pick-dir 端点迁至 routes/misc.ts，此处 re-export 保持 server.js 导出语义（main.tsx 静态导入不受影响） */
-export { setPickDirHandler } from './routes/host.js';
+export { setPickDirHandler, setSaveFileHandler } from './routes/host.js';
 
 /** 静态资源 Content-Type（键带点 = path.extname 产物；仓库内文件的图片 MIME 见 routes/misc.ts 的 IMG_MIME） */
 const MIME: Record<string, string> = {

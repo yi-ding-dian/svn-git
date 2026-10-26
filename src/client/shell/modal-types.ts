@@ -35,6 +35,8 @@ export type Modal =
   | { type: 'revert-confirm'; dir: string; dirLabel: string; items: { path: string; code: string }[] }
   | { type: 'rename'; from: string; fsMode: boolean }
   | { type: 'terminal' }
+  /** 项目代码统计（⋯ 菜单）：按目录统计行数并导出 md */
+  | { type: 'code-stats' }
   /** 局域网共享配置（⋯ 菜单） */
   | { type: 'share' }
   | {

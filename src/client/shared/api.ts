@@ -445,6 +445,57 @@ export const get = {
       }
     }
   },
+  /** 项目代码统计：流式 NDJSON（进度 → done 结果树 + 总行数）。
+   *  whole=true 统计整个项目（含仓库根目录下的文件）；否则按 dirs 里的仓库相对路径统计。 */
+  codeStats: async (
+    dirs: string[],
+    whole: boolean,
+    codeOnly: boolean,
+    onTick: (tick: CodeStatsTick) => void,
+    signal?: AbortSignal
+  ): Promise<void> => {
+    const q = new URLSearchParams();
+    for (const d of dirs) q.append('dirs', d);
+    if (whole) q.set('whole', '1');
+    if (codeOnly) q.set('codeOnly', '1');
+    const res = await fetch(`/api/code-stats?${q.toString()}`, { signal });
+    if (!res.ok || !res.body) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const j = (await res.json()) as { error?: string };
+        if (j.error) msg = j.error;
+      } catch {
+        /* 非 JSON 响应：保留状态码文案 */
+      }
+      onTick({ error: msg });
+      return;
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          onTick(JSON.parse(line) as CodeStatsTick);
+        } catch {
+          /* 半行/坏行：忽略 */
+        }
+      }
+    }
+    if (buf.trim()) {
+      try {
+        onTick(JSON.parse(buf) as CodeStatsTick);
+      } catch {
+        /* 尾部残行：忽略 */
+      }
+    }
+  },
   envCheck: () => api<{ svn: { installed: boolean; version: string }; git: { installed: boolean; version: string } }>('/api/env-check'),
   /** 远程连通性检测（网络灯）：ok=网络通;reason=认证失败/连接错误说明 */
   netCheck: () => api<{ ok: boolean; reason: string }>('/api/net-check'),
@@ -705,6 +756,40 @@ export interface LineScanTick {
   error?: string;
 }
 
+/** 项目代码统计（/api/code-stats）的树节点：目录的 lines/files 是**子树合计**，文件是自身值 */
+export interface CodeStatsNode {
+  name: string;
+  path: string;
+  isDir: boolean;
+  lines: number;
+  files: number;
+  children: CodeStatsNode[];
+}
+
+/** 项目代码统计的流式进度（NDJSON 每行一个） */
+export interface CodeStatsTick {
+  /** 候选文件总数 / 已处理数（进度） */
+  total?: number;
+  scanned?: number;
+  done?: boolean;
+  tree?: CodeStatsNode[];
+  /** 总行数 / 命中文件数（done 时） */
+  lines?: number;
+  files?: number;
+  /** 本次实际统计的目录（祖先已选时子目录已收敛；'' = 仓库根） */
+  dirs?: string[];
+  skippedEmpty?: number;
+  skippedBinary?: number;
+  skippedLarge?: number;
+  skippedError?: number;
+  /** 候选文件超过上限（只统计了前 N 个） */
+  capped?: boolean;
+  /** time = 统计超时（返回已统计部分） */
+  truncated?: 'time';
+  elapsedMs?: number;
+  error?: string;
+}
+
 /** SVN 仓库布局探测：标准布局 trunk/branches/tags 目录是否存在 */
 export interface SvnLayout {
   trunk: boolean;
@@ -956,6 +1041,12 @@ export const post = {
     api<VcsResult & { files?: { path: string; status: string; code?: string }[] }>('/api/pull-any', json({ path: dir }, signal)),
   /** 远程文件保存到本地（「下载到…」）：目标已存在则后端拒绝 */
   repoSave: (url: string, dir: string) => api<{ ok: boolean; path?: string; error?: string }>('/api/repo-save', json({ url, dir })),
+  /** 系统「另存为」对话框（Electron）：默认落在 startDir 并预填 name；纯 node/浏览器返回 unsupported */
+  pickSaveFile: (startDir: string, name: string) =>
+    api<{ path: string | null; unsupported: boolean }>('/api/pick-save-file', json({ startDir, name })),
+  /** 把文本写到用户刚选的路径（宿主级写入：父目录必须已存在，目标不能是目录） */
+  saveText: (path: string, content: string) =>
+    api<{ ok: boolean; path?: string; error?: string }>('/api/save-text', json({ path, content })),
   /** 清除系统凭据缓存中匹配该 URL 的条目（退出登录/切换账号用；**前端必须二次确认**——影响其他 svn 客户端） */
   svnForgetCache: (url: string) => api<{ ok: boolean; cleared: string[] }>('/api/svn-forget-cache', json({ url })),
   /** 仓库浏览右键「检出到本地」：URL 直连检出工作副本。

@@ -10,6 +10,7 @@
  *  目录列表拉取失败只提示、不阻断（调用方自行决定后续动作）。 */
 import React, { useEffect, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
+import { IconFolder } from './icons.js';
 
 /** 某节点的直接子目录清单（只放目录——文件不是勾选单位）；loading/fail 与数据同存（展开过就不再重拉） */
 type NodeList = string[] | 'loading' | 'fail';
@@ -161,8 +162,9 @@ export function DirCheckTree(props: {
                     if (el) el.indeterminate = isPartial(r.rel);
                   }}
                 />
+                <IconFolder size={13} />
                 <span className="small mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  📁 {r.name}
+                  {r.name}
                 </span>
               </label>
             </div>

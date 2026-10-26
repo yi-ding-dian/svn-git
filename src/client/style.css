@@ -687,6 +687,21 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .modal-x:hover { background: var(--panel2); color: var(--text); }
 .modal-x:disabled { opacity: .4; cursor: default; background: transparent; color: var(--dim); }
+/* 标题栏「?」说明按钮（ModalShell help）：紧跟标题的小图标（说明收进悬浮提示，不占高度） */
+.modal-help {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; margin-left: 6px; padding: 0;
+  border: none; background: transparent; color: var(--dim);
+  cursor: pointer; border-radius: 50%; vertical-align: middle;
+}
+.modal-help:hover { background: var(--panel2); color: var(--text); }
+
+/* 标题栏右上角「最大化 / 还原」（ModalShell maxable）：外观与仓库浏览弹窗同款
+   （.mini 小按钮 + ⛶ / 🗗 字形），绝对定位在 × 左侧 */
+.modal-max {
+  position: absolute; top: 50%; right: 48px; transform: translateY(-50%);
+  line-height: 1.15;
+}
 
 /* ---------- 浏览模式（文件管理器图标网格，整体放大 20%） ---------- */
 .grid-view {

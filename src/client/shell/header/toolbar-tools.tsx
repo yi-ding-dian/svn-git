@@ -10,7 +10,7 @@ import { launchMagicFlight } from '../../animations/index.js';
 import { baseName } from '../../shared/utils.js';
 import { parseGithub } from '../../../shared/github.js';
 import { t, type I18nKey } from '../../../shared/i18n/index.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconTerminal, IconGitHub, IconGitHubPlus, IconTrash, IconFork } from '../../ui/icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconTerminal, IconGitHub, IconGitHubPlus, IconTrash, IconFork, IconStats } from '../../ui/icons.js';
 import { type Modal } from '../modal-types.js';
 
 /** 顶部工具按钮（图标 + 文字，统一样式；mousedown 可启动拖拽定制） */
@@ -336,6 +336,18 @@ export const TOOLS: ToolDef[] = [
     }),
   },
   {
+    // 项目代码统计：勾选目录 → 统计行数 → 导出 md（默认收在 ⋯ 菜单，可拖到工具栏常驻）
+    key: 'code-stats', zone: 'menu', visible: (c) => !!c.repoType, menuLabelKey: 'stats.tool.label',
+    render: (c) => ({
+      icon: <IconStats />,
+      // 项目代码统计
+      label: t('stats.tool.label'),
+      // 按目录统计代码行数，可导出 md 报告
+      title: t('stats.tool.title'),
+      onClick: () => c.setModal({ type: 'code-stats' }),
+    }),
+  },
+  {
     key: 'font', zone: 'menu',
     render: (c) => ({
       icon: <IconFont />,
@@ -343,8 +355,7 @@ export const TOOLS: ToolDef[] = [
       label: t('shell.tool.font'),
       onClick: () => c.setModal({ type: 'font' }),
     }),
-  },
-  {
+  },  {
     key: 'git-info', zone: 'menu', visible: (c) => c.repoType === 'git',
     render: (c) => ({
       icon: <IconGear />,

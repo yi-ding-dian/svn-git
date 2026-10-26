@@ -10,6 +10,12 @@ export function ModalShell(props: {
   height?: number | string;
   /** 最小宽度（默认 480） */
   minWidth?: number;
+  /** 标题栏左侧显示「最大化 / 还原」按钮（大列表类弹窗用；最大化走 ResizableModal 的受控 maxed） */
+  maxable?: boolean;
+  /** 标题右边的「?」说明：悬浮显示（把占高度的说明文字收进提示里，给内容区让空间） */
+  help?: React.ReactNode;
+  /** 内容区额外样式（如压缩上内边距：默认 `.modal .body` 是 16px，密排弹窗想更贴标题栏） */
+  bodyStyle?: React.CSSProperties;
   /** 底部操作区；不传时仅「关闭」按钮 */
   foot?: React.ReactNode;
   /** 标题栏右上角显示 × 关闭按钮（选择型弹窗用，替代底部「关闭」） */
@@ -23,13 +29,41 @@ export function ModalShell(props: {
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  /** 最大化状态（maxable 才生效）：由标题栏左侧按钮切换，拖动边缘退出最大化时同步回落 */
+  const [maxed, setMaxed] = useState(false);
   return (
     <div className="modal-mask">
-      <ResizableModal width={props.width ?? 560} minWidth={props.minWidth} height={props.height} onEsc={props.onClose}>
+      <ResizableModal
+        width={props.width ?? 560}
+        minWidth={props.minWidth}
+        height={props.height}
+        maxed={props.maxable ? maxed : undefined}
+        onToggleMax={props.maxable ? () => setMaxed((m) => !m) : undefined}
+        onEsc={props.onClose}
+      >
         <h3 style={{ position: 'relative' }}>
           {props.icon && <span style={{ marginRight: 8 }}>{props.icon}</span>}
           {props.title}
+          {props.help && (
+            // 说明（? 图标悬浮显示）：不占内容区高度
+            <Tooltip content={<TipHint>{props.help}</TipHint>}>
+              <button className="modal-help" aria-label={t('common.help')}>
+                <IconHelp size={14} />
+              </button>
+            </Tooltip>
+          )}
           {props.titleExtra}
+          {props.maxable && (
+            // 最大化 / 还原：与仓库浏览弹窗同款（.mini 小按钮 + ⛶ / 🗗），定位在 × 左侧
+            <button
+              className="mini modal-max"
+              title={maxed ? t('common.restore') : t('common.maximize')}
+              aria-label={maxed ? t('common.restore') : t('common.maximize')}
+              onClick={() => setMaxed((m) => !m)}
+            >
+              {maxed ? '🗗' : '⛶'}
+            </button>
+          )}
           {props.closeIcon && (
             // 关闭（或「返回」：两级视图时由调用方指定）
             <button
@@ -42,7 +76,7 @@ export function ModalShell(props: {
             </button>
           )}
         </h3>
-        <div className="body">{props.children}</div>
+        <div className="body" style={props.bodyStyle}>{props.children}</div>
         {/* 关闭 */}
         {!props.hideFoot && <div className="foot">{props.foot ?? <button onClick={props.onClose}>{t('common.close')}</button>}</div>}
       </ResizableModal>
@@ -71,6 +105,8 @@ export function ModalShell(props: {
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
+import { Tooltip, TipHint } from '../ui/tooltip.js';
+import { IconHelp } from '../ui/icons.js';
 
 /** 边缘热区厚度(px) */
 const EDGE = 8;
