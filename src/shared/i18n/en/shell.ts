@@ -70,6 +70,7 @@ export const shell = {
   'shell.tool.pushTitle': 'Push {n} unpushed commit (with progress and auth guidance)|Push {n} unpushed commits (with progress and auth guidance)',
   'shell.tool.stash': 'Stash',
   'shell.tool.stashTitleCount': 'Stash ({n} item)|Stash ({n} items)',
+  'shell.tool.stashViewOnly': 'Stash ({n} item; no local changes — view/restore existing stashes)|Stash ({n} items; no local changes — view/restore existing stashes)',
   'shell.tool.stashTitle': 'Stash',
   'shell.tool.stashDisabled': 'Nothing to stash (modify files first)',
   'shell.tool.branch': 'Branch',

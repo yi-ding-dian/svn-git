@@ -185,16 +185,20 @@ export const TOOLS: ToolDef[] = [
       label: c.stashCount != null && c.stashCount > 0 ? (
         <>Stash<span className={`push-count ${c.stashCount > 0 ? 'on' : ''}`}>{c.stashCount}</span></>
       ) : 'Stash',
-      title: c.canStash === false
+      title: c.canStash === false && !(c.stashCount != null && c.stashCount > 0)
         // 工作区没有改动可储藏（先修改文件，储藏才有东西可收）
         ? t('shell.tool.stashDisabled')
         : c.stashCount != null && c.stashCount > 0
-          // Stash 储藏（{n} 条）
-          ? t('shell.tool.stashTitleCount', { n: c.stashCount })
+          ? c.canStash === false
+            // 工作区无改动，但已有 {n} 条储藏：仍可打开查看 / 恢复 / 丢弃
+            ? t('shell.tool.stashViewOnly', { n: c.stashCount })
+            // Stash 储藏（{n} 条）
+            : t('shell.tool.stashTitleCount', { n: c.stashCount })
           // Stash 储藏
           : t('shell.tool.stashTitle'),
       onClick: () => c.setModal({ type: 'stash' }),
-      disabled: c.canStash === false,
+      // 工作区无改动且没有已有储藏 → 没东西可做；有储藏时始终可打开管理
+      disabled: c.canStash === false && !(c.stashCount != null && c.stashCount > 0),
     }),
   },
   {

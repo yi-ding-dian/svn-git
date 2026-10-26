@@ -72,6 +72,7 @@ export const shell = {
   'shell.tool.pushTitle': '推送 {n} 个未推送提交（含进度与认证引导）',
   'shell.tool.stash': 'Stash',
   'shell.tool.stashTitleCount': 'Stash 储藏（{n} 条）',
+  'shell.tool.stashViewOnly': 'Stash 储藏（{n} 条；工作区无改动，可查看/恢复已有储藏）',
   'shell.tool.stashTitle': 'Stash 储藏',
   'shell.tool.stashDisabled': '工作区没有改动可储藏（先修改文件，储藏才有东西可收）',
   'shell.tool.branch': '分支',
