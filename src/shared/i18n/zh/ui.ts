@@ -44,4 +44,11 @@ export const ui = {
   'ui.diffFileHead.mod': '修改',
   'ui.diffFileHead.rename': '重命名',
   'ui.diffFileHead.binary': '二进制',
+  // ---- 通用目录勾选树（DirCheckTree）----
+  'ui.dirTree.loading': '正在获取目录列表…',
+  'ui.dirTree.loadFail': '目录列表获取失败，请稍后重试',
+  'ui.dirTree.empty': '（该目录下没有子目录）',
+  'ui.dirTree.emptyChild': '（空目录）',
+  'ui.dirTree.expand': '展开',
+  'ui.dirTree.collapse': '收起',
 } as const;

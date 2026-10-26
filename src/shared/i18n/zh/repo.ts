@@ -167,13 +167,8 @@ export const repo = {
   'repo.co.cancelMsg': '已下载的内容会被清理（未完成的目录会被删除），之后需要重新检出。确认取消？',
   'repo.co.cancelKeep': '继续检出',
   'repo.co.cancelConfirm': '确认取消',
-  'repo.co.sparseLoading': '正在获取目录列表…',
   'repo.co.sparseLoadFail': '目录列表获取失败——不影响完整检出',
   // —— 勾选树（多级）与检出大小检测 ——
-  'repo.co.treeExpand': '展开',
-  'repo.co.treeCollapse': '收起',
-  'repo.co.treeEmpty': '（该目录下没有子目录）',
-  'repo.co.treeEmptyChild': '（空目录）',
   'repo.co.needPick': '请先勾选要检出的目录（可点「全选」）',
   'repo.co.sizeBtn': '🔍 检测大小',
   'repo.co.sizeTip': '检测将检出的文件数与占用空间（只读，不下载文件）',

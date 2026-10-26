@@ -44,4 +44,11 @@ export const ui = {
   'ui.diffFileHead.mod': 'Modified',
   'ui.diffFileHead.rename': 'Renamed',
   'ui.diffFileHead.binary': 'Binary',
+  // ---- Generic directory check tree (DirCheckTree) ----
+  'ui.dirTree.loading': 'Loading directory list…',
+  'ui.dirTree.loadFail': 'Failed to load the directory list. Please try again later',
+  'ui.dirTree.empty': '(no subdirectories)',
+  'ui.dirTree.emptyChild': '(empty folder)',
+  'ui.dirTree.expand': 'Expand',
+  'ui.dirTree.collapse': 'Collapse',
 };

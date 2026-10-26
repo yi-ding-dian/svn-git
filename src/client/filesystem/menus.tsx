@@ -5,7 +5,7 @@ import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { absPath } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconTrash, IconDiff, IconFile, IconIgnore, IconEyeClosed, IconExternal, IconLock, IconUnlock, IconStar, IconTerminal, IconErr } from '../ui/icons.js';
+import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconTrash, IconDiff, IconFile, IconIgnore, IconEyeClosed, IconExternal, IconLock, IconUnlock, IconTerminal, IconErr } from '../ui/icons.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
 import type { Clip, ClipItem } from './use-file-transfer.js';
@@ -24,7 +24,6 @@ export interface MenuServices {
   /** 就地重命名（只给未版本化条目用：纯磁盘改名，不值得弹窗） */
   startRename: (rel: string) => void;
   root?: string;
-  favs: { path: string }[];
   setIgnoreTarget: (t: 'gitignore' | 'global' | 'exclude') => void;
   ignoreFile: (t: { code: string; rel: string; name: string }) => void;
   setIgnoreModal: (v: { dir: string }) => void;
@@ -42,8 +41,6 @@ export interface MenuServices {
   /** 在当前目录打开系统终端窗口 */
   openTerminal: (dir: string) => void;
   openInFm: (dir: string) => void;
-  removeFav: (rel: string) => void;
-  addFavDir: (rel: string) => void;
   /** openWith 异步取到程序列表后替换菜单第 owIdx 项的子菜单 */
   menuPatchItems: (owIdx: number, subs: CtxMenuItem[]) => void;
   /** 文件剪贴板（复制/剪切/粘贴）：null = 空 */
@@ -392,16 +389,6 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       if (renameableCode(row.code)) items.push(renameItem(row.code, s.repoType, row.rel, true, s.onAction, s.startRename));
       // 忽略设置…
       items.push({ icon: <IconIgnore />, label: t('fs.act.ignoreSettings'), cmd: cmdOfRepo(s.repoType, 'ignore_add', { path: row.rel, pattern: '…' }), action: () => s.setIgnoreModal({ dir: row.rel }) });
-      // 常用文件夹（仅 svn：git 加载快无需预加载）：自身已加入显示移除；父目录已加入则不再显示；其余显示加入
-      if (s.repoType === 'svn') {
-        if (s.favs.some((f) => f.path === row.rel)) {
-          // 已加入常用文件夹（点击移除）
-          items.push({ icon: <IconStar />, label: t('fs.act.favAdded'), action: () => s.removeFav(row.rel) });
-        } else if (!s.favs.some((f) => row.rel.startsWith(f.path + '/'))) {
-          // 加入常用文件夹
-          items.push({ icon: <IconStar />, label: t('fs.act.favAdd'), action: () => s.addFavDir(row.rel) });
-        }
-      }
       // 有版本库内容且非调度中（非 '!' 缺失；A 添加/D 删除调度不显示——各自有"取消添加/撤销删除"）
       if (removableFromRepo(row.code)) {
         items.push({ sep: true });
@@ -432,16 +419,6 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       items.push(renameItem(row.code, s.repoType, row.rel, true, s.onAction, s.startRename));
       // 移到回收站 / 把该目录移入系统回收站，可从回收站恢复（不影响版本库）
       items.push({ icon: <IconTrash />, label: t('fs.act.deleteDisk'), danger: true, title: t('fs.menu.deleteDirDiskTitle'), action: () => s.onAction('fs-delete', [row.rel]) });
-      // 常用文件夹（仅 svn：git 加载快无需预加载）
-      if (s.repoType === 'svn') {
-        if (s.favs.some((f) => f.path === row.rel)) {
-          // 已加入常用文件夹（点击移除）
-          items.push({ icon: <IconStar />, label: t('fs.act.favAdded'), action: () => s.removeFav(row.rel) });
-        } else if (!s.favs.some((f) => row.rel.startsWith(f.path + '/'))) {
-          // 加入常用文件夹
-          items.push({ icon: <IconStar />, label: t('fs.act.favAdd'), action: () => s.addFavDir(row.rel) });
-        }
-      }
     }
     // 远程访问：下载整个目录（服务端边遍历边打包 ZIP）——所有目录状态都提供
     if (s.remote) {

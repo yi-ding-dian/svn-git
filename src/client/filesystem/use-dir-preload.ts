@@ -44,9 +44,20 @@ export function useDirPreload(onLoaded: (dir: string, data: FsData) => void) {
   const onLoadedRef = useRef(onLoaded);
   onLoadedRef.current = onLoaded;
 
-  /** 预加载目录（BFS + 并发 6，结果写入调用方缓存，之后进入秒开） */
-  const preloadDir = useCallback((rootRel: string) => {
+  /** 预加载目录（BFS + 并发 6，结果写入调用方缓存，之后进入秒开）。
+   *  force=true：把该目录及子树从「已见」和待办队列里移除后重新入队（「重新预加载」用），
+   *  否则同一目录在一次会话里只会拉一次；已经在飞的请求由 worker 自然完成，不重复取消。 */
+  const preloadDir = useCallback((rootRel: string, force = false) => {
     const queue = queueRef.current;
+    if (force) {
+      for (const v of [...seenRef.current]) {
+        if (v === rootRel || v.startsWith(rootRel + '/')) seenRef.current.delete(v);
+      }
+      for (let i = queue.length - 1; i >= 0; i--) {
+        const q = queue[i].rel;
+        if (q === rootRel || q.startsWith(rootRel + '/')) queue.splice(i, 1);
+      }
+    }
     if (!seenRef.current.has(rootRel)) {
       seenRef.current.add(rootRel);
       queue.push({ rel: rootRel, depth: 0 });

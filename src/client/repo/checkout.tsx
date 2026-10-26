@@ -5,12 +5,12 @@
  *  认证失败由 checkout-task 的 CheckoutAuthModal 引导（账号密码**只本次用**、后端不落盘）。
  *
  *  入口：repo-browse.tsx 树里右键（目录行 + 空白 = 仓库根）。 */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoCheck } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { launchMagicFlight } from '../animations/index.js';
 import { PickDirModal } from './pick-dir.js';
-import { CheckoutTree } from './checkout-tree.js';
+import { DirCheckTree } from '../ui/dir-check-tree.js';
 import { CheckoutSizeDialog } from './checkout-size.js';
 import { CheckoutConfirmDialog } from './checkout-confirm.js';
 import { FormRow } from '../ui/ui.js';
@@ -70,6 +70,16 @@ export function CheckoutDialog(props: {
   const [checkedDirs, setCheckedDirs] = useState<Set<string>>(() => new Set());
   /** 根级一级目录（树汇报；「全选」按钮与默认全选用） */
   const [rootDirs, setRootDirs] = useState<string[]>([]);
+  /** 树的数据源：远程 svn list，只取目录；失败（ok=false）返回 null 让树显示重试提示 */
+  const loadDirs = useCallback(
+    async (rel: string): Promise<string[] | null> => {
+      const base = props.url.replace(/\/+$/, '');
+      const r = await get.repoList(rel ? `${base}/${rel}` : base);
+      if (!r.ok || !r.entries) return null;
+      return r.entries.filter((e) => e.isDir && e.name !== '..').map((e) => e.name);
+    },
+    [props.url],
+  );
   /** 默认全选已初始化的 URL（同一弹出实例只自动勾一次；用户取消过就不再打扰） */
   const initedUrlRef = useRef('');
   /** 树汇报一级目录：首次（每个 URL）自动全选——打开弹窗默认即为完整检出 */
@@ -366,7 +376,14 @@ export function CheckoutDialog(props: {
             {t('repo.co.sizeBtn')}
           </button>
         </div>
-        <CheckoutTree rootUrl={props.url} value={checkedDirs} onChange={setCheckedDirs} onRootDirs={onRootDirs} />
+        <DirCheckTree
+          loadDirs={loadDirs}
+          value={checkedDirs}
+          onChange={setCheckedDirs}
+          onRootDirs={onRootDirs}
+          // 目录列表获取失败——不影响完整检出
+          loadFailText={t('repo.co.sparseLoadFail')}
+        />
       </FormRow>
       {/* 检出目录预览：完整落地路径 + 轻量预检（放在选择性检出之后：先定范围，再看落地位置） */}
       <FormRow label={t('repo.co.targetPreview')}>

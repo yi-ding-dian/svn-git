@@ -33,7 +33,7 @@ import { ModuleIndexDialog } from './module-index.js';
 /** 有版本库内容（可从版本库移除，非添加/删除调度中）：干净 / M / C（A 添加调度用"还原=取消添加"，D 删除调度不再移除） */
 /** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
 import { IgnoreModal } from './ignore-modal.js';
-import { FavDirsModal } from './fav-dirs.js';
+import { FavDirsModal, type FavDir } from './fav-dirs.js';
 import { fmtSize, statusColor, isBinaryFile, isImageFile, isImeComposing } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 /** 命令预览: 多路径缩写（前 3 个 + …） */
@@ -86,6 +86,9 @@ function ActionBtn(props: {
     </Tooltip>
   );
 }
+
+/** 跨项目目录缓存保留的项目数：切走的项目缓存留在内存里，切回直接秒开（LRU 淘汰最久未用的） */
+const CROSS_PROJECT_CACHE_KEEP = 5;
 
 export function FsView(props: Props) {
   /** 共享访问状态：远程时右键菜单不提供「在本机启动外部程序」 */
@@ -213,17 +216,15 @@ export function FsView(props: Props) {
   // 注意：load 必须是稳定引用（用 nodeDataRef 读写缓存），否则 setNodeData → load 重建 → effect 循环 → 抖动
   const nodeDataRef = useRef(nodeData);
   nodeDataRef.current = nodeData;
+  /** 当前目录镜像（切项目时判断 dir 是否会变化：相同则 dir effect 不触发，要显式加载） */
+  const dirRef = useRef(dir);
+  dirRef.current = dir;
   const [fsLoading, setFsLoading] = useState(false);
   // 大目录提示（条目多时提示原因，避免误以为卡死；5 秒后自动消失）
   const [bigTip, setBigTip] = useState('');
   const bigTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---------- 常用文件夹：指定 + 后台递归预加载缓存（大仓库秒开） ----------
-  interface FavDir {
-    path: string;
-    name: string;
-    addedAt: number;
-  }
   const favKey = (root: string) => `svngit:fav-dirs:${root}`;
   const loadFavs = (root: string): FavDir[] => {
     try {
@@ -263,24 +264,40 @@ export function FsView(props: Props) {
     setNodeData((m) => new Map(m).set(d, r));
   });
 
-  /** 加入常用文件夹（去重后保存 + 立即预加载） */
-  const addFavDir = (rel: string) => {
+  // ---------- 跨项目目录缓存：切走收起来、切回直接恢复（不必重新预加载） ----------
+  /** repoRoot → 目录缓存；只留最近切换过的 CROSS_PROJECT_CACHE_KEEP 个项目（仅内存，重启清空） */
+  const cacheByRootRef = useRef(new Map<string, Map<string, FsData>>());
+  /** 上一个渲染的项目根（切走时把它的缓存收进桶里） */
+  const prevRootRef = useRef<string | null>(null);
+  /** 缓存不完整的项目（切走时预加载还没跑完 / 本项目内刷新清过缓存）：切回时重新预加载 */
+  const incompleteRootsRef = useRef(new Set<string>());
+  /** preload 状态镜像（切换 effect 里读，避免把它加进依赖导致重复执行） */
+  const preloadRef = useRef(preload);
+  preloadRef.current = preload;
+  /** 当前项目根镜像（invalidateCache 是稳定回调，不能把 props.repoRoot 加进依赖） */
+  const repoRootRef = useRef<string>(props.repoRoot ?? '');
+  repoRootRef.current = props.repoRoot ?? '';
+  /** 切项目时的 tick：App 打开项目后会 refresh()，这次 tick 不能当成「用户刷新」去清刚恢复的缓存 */
+  const tickAtSwitchRef = useRef(props.tick);
+  /** 本次切换是否恢复了该项目的缓存（树/浏览模式据此跳过重载） */
+  const restoredAtSwitchRef = useRef(false);
+  /** 树/浏览模式 effect 上次处理的 tick（区分「切项目」与「用户刷新」） */
+  const lastTreeTickRef = useRef(props.tick);
+
+  /** 保存勾选树的结果（弹窗「确定并预加载」）：勾选集合 = 新的常用列表，写本机 + 立即预加载 */
+  const saveFavs = (paths: string[]) => {
     if (!props.repoRoot) return;
-    const list = loadFavs(props.repoRoot);
-    if (list.some((f) => f.path === rel)) return;
-    const next = [...list, { path: rel, name: rel.split('/').pop() || rel, addedAt: Date.now() }];
+    const old = new Map(loadFavs(props.repoRoot).map((f) => [f.path, f]));
+    const next: FavDir[] = paths.map(
+      (p) => old.get(p) ?? { path: p, name: p.split('/').pop() || p, addedAt: Date.now() },
+    );
     localStorage.setItem(favKey(props.repoRoot), JSON.stringify(next));
     setFavs(next);
-    preloadDir(rel);
-    // 已加入常用文件夹，正在后台预加载：{rel}
-    props.onToast(t('fs.fav.added', { rel }));
-  };
-  /** 移除常用文件夹 */
-  const removeFav = (rel: string) => {
-    if (!props.repoRoot) return;
-    const next = loadFavs(props.repoRoot).filter((f) => f.path !== rel);
-    localStorage.setItem(favKey(props.repoRoot), JSON.stringify(next));
-    setFavs(next);
+    // force：刚改选过的目录要重拉（已缓存的子目录仍命中，不会整棵重来）
+    for (const p of paths) preloadDir(p, true);
+    setFavModal(false);
+    // 已保存 {n} 个常用文件夹，正在后台预加载 / 已移除全部常用文件夹
+    props.onToast(next.length > 0 ? t('fs.fav.saved', { n: next.length }) : t('fs.fav.cleared'));
   };
   /** 加载目录（列表/浏览模式）。quiet=true 为静默强刷（操作后 / tick 刷新）：不出顶部加载条、
    *  不弹大目录提示——列表原地换数据，界面不闪；切目录、首次进入照常给加载反馈。 */
@@ -333,19 +350,52 @@ export function FsView(props: Props) {
   useEffect(() => {
     void load(dir, false);
   }, [dir, load]);
-  // 仓库切换（repoRoot 变化）→ 浏览位置回到操作范围(子项目/根)，清空旧目录缓存
+  // 仓库切换（repoRoot 变化）→ 浏览位置回到操作范围(子项目/根)
+  // 目录缓存按项目分桶：切走收起、切回恢复（秒开，不重新预加载）；只留最近 5 个项目
   useEffect(() => {
-    setDir(props.startRel ?? '');
+    const prev = prevRootRef.current;
+    tickAtSwitchRef.current = props.tick;
+    if (prev && prev !== props.repoRoot) {
+      // 切走：收起上一个项目的缓存（最近使用排最后，超过上限淘汰最久未用的）
+      const buckets = cacheByRootRef.current;
+      buckets.delete(prev);
+      buckets.set(prev, nodeDataRef.current);
+      while (buckets.size > CROSS_PROJECT_CACHE_KEEP) {
+        const oldest = buckets.keys().next().value;
+        if (oldest === undefined) break;
+        buckets.delete(oldest);
+      }
+      // 预加载没跑完就切走 → 缓存不完整，切回时要补拉
+      if (preloadRef.current?.running) incompleteRootsRef.current.add(prev);
+    }
+    prevRootRef.current = props.repoRoot ?? null;
+    // 切回：恢复该项目上次的缓存（存在则进入目录命中缓存，秒开）
+    const restored = props.repoRoot ? cacheByRootRef.current.get(props.repoRoot) : undefined;
+    restoredAtSwitchRef.current = Boolean(restored);
+    const targetDir = props.startRel ?? '';
+    const restoredMap = restored ? new Map(restored) : new Map();
+    setDir(targetDir);
     setSel(null);
     setPreview(null);
-    setNodeData(new Map());
+    setNodeData(restoredMap);
+    // nodeDataRef 下一渲染才更新；这里先写，供下面的 load 读（否则读到上一个项目的缓存）
+    nodeDataRef.current = restoredMap;
+    // 两个项目的起始目录相同时 dir 不变、dir effect 不会触发 → 列表会残留上一个项目的内容，
+    // 必须显式加载一次（命中恢复的缓存则秒开；首次挂载交给 dir effect，避免重复请求）
+    if (prev && dirRef.current === targetDir) void load(targetDir, false);
+    setFavModal(false); // 仓库切换：勾选树指向旧仓库，直接关掉
     // 自动预加载该仓库保存的常用文件夹（仅 svn，git 无需预加载；后台，不阻塞界面）
     if (props.repoRoot) {
       resetPreload(); // 停掉旧仓库的预加载 worker，清空队列与已见集合，避免污染新仓库缓存
       if (props.repoType === 'svn') {
         const saved = loadFavs(props.repoRoot);
         setFavs(saved);
-        for (const f of saved) preloadDir(f.path);
+        // 缓存完整且该常用目录已在缓存里 → 保留（切回秒开）；否则补拉
+        const complete = Boolean(restored) && !incompleteRootsRef.current.has(props.repoRoot);
+        incompleteRootsRef.current.delete(props.repoRoot);
+        for (const f of saved) {
+          if (!complete || !restored!.has(f.path)) preloadDir(f.path);
+        }
       } else {
         setFavs([]);
       }
@@ -359,6 +409,8 @@ export function FsView(props: Props) {
    *  整体清空会让树闪成整页加载态、列表闪空白再重建（「操作后界面刷新抖动」的根源）；
    *  其余目录缓存照旧清掉（操作可能改动任意目录，陈旧缓存下次进入会显示旧状态）。 */
   const invalidateCache = useCallback(() => {
+    // 刷新 / 操作清过缓存 → 该项目缓存不完整；切走再切回时重新补预加载
+    if (repoRootRef.current) incompleteRootsRef.current.add(repoRootRef.current);
     const keep = new Set<string>(['', dir, ...expandedRef.current]);
     setNodeData((m) => {
       let changed = false;
@@ -383,15 +435,22 @@ export function FsView(props: Props) {
   // 视图隐藏时只失效缓存不请求：切回来（active 变化）会补拉，否则后台每个视图都在跟着 tick 跑。
   useEffect(() => {
     if (props.tick === 0) return;
+    // 切项目带来的 tick（App 打开项目后会 refresh）：刚恢复的缓存就是切换时刻的数据，
+    // 不能再整体失效/强刷——否则"切回秒开"变成"重新请求根目录、常用目录缓存被清空"
+    if (props.tick === tickAtSwitchRef.current) return;
     invalidateCache();
     if (!props.active) return;
     void load(dir, true, true);
   }, [props.tick, props.active, load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 树/浏览模式：初始化 + 刷新时重载根和已展开节点（同样只在视图可见时做）
+  // 切回已缓存的项目时跳过重载（缓存直接可用）；切到新项目 / 用户刷新照常重载
   useEffect(() => {
     if (mode !== 'tree' && mode !== 'browse') return;
     if (!props.active) return;
+    const tickChanged = props.tick !== lastTreeTickRef.current;
+    lastTreeTickRef.current = props.tick;
+    if (tickChanged && props.tick === tickAtSwitchRef.current && restoredAtSwitchRef.current) return;
     reloadOpenNodes();
   }, [mode, props.tick, props.active, loadNode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -832,7 +891,6 @@ export function FsView(props: Props) {
     remote: Boolean(share && !share.local),
     dir: data?.dir ?? '',
     root: data?.root,
-    favs,
     setIgnoreTarget,
     ignoreFile,
     setIgnoreModal,
@@ -849,8 +907,6 @@ export function FsView(props: Props) {
     onToast: props.onToast,
     openTerminal,
     openInFm,
-    removeFav,
-    addFavDir,
     menuPatchItems,
     clip: clipFlow.clip,
     repoRoot: data?.root ?? '',
@@ -2163,14 +2219,14 @@ export function FsView(props: Props) {
         />
       )}
 
-      {/* 常用文件夹管理弹窗 */}
+      {/* 常用文件夹管理弹窗（目录勾选树：勾选=加入/取消=移除） */}
       {favModal && (
         <FavDirsModal
           favs={favs}
           preload={preload}
-          onRemove={removeFav}
+          onSave={saveFavs}
           onPreloadAll={() => {
-            for (const f of favs) preloadDir(f.path);
+            for (const f of favs) preloadDir(f.path, true);
           }}
           onClose={() => setFavModal(false)}
         />

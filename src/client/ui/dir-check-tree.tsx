@@ -1,43 +1,45 @@
-/** 选择性检出的勾选树（检出弹窗内使用）：
+/** 通用目录勾选树（远程选择性检出 / 本地常用文件夹预加载共用）：
  *  懒加载——首次只拉根级一级子目录，展开某节点时才拉它的直接子目录（大仓库不预拉全树）；
  *  勾选集合只存**显式勾选**的相对路径（如 branches/AnHui）——父级「全要」时子级不再逐项存
  *  （被父覆盖），渲染时按「祖先覆盖」推导显示为勾选。
  *  取消一个被祖先覆盖的节点 = 把该祖先「拆开」：祖先移除、它**已加载**的直接子目录全加入、
  *  再把本节点移除（能点到本节点说明祖先展开过，kids 必已加载——拆开无遗漏）。
  *  「半选」只是视觉（indeterminate）：有勾选子孙但自身未勾/未被覆盖，点击 = 勾上并清理子孙。
- *  目录列表拉取失败只提示、不阻断（不影响完整检出）。 */
+ *  数据源由 loadDirs 提供（远程 repoList / 本地 fs 均可），组件不关心协议；
+ *  **loadDirs 必须是稳定引用（useCallback）**，否则根级会被反复重拉。
+ *  目录列表拉取失败只提示、不阻断（调用方自行决定后续动作）。 */
 import React, { useEffect, useState } from 'react';
-import { get } from '../shared/api.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 某节点的直接子目录清单（只放目录——文件不是勾选单位）；loading/fail 与数据同存（展开过就不再重拉） */
-type NodeList = { name: string }[] | 'loading' | 'fail';
+type NodeList = string[] | 'loading' | 'fail';
 
-export function CheckoutTree(props: {
-  /** 仓库（或浏览到的目录）URL：树根 */
-  rootUrl: string;
+export function DirCheckTree(props: {
+  /** 拉取某节点的直接子目录名；rel='' 为根；null=失败 */
+  loadDirs: (rel: string) => Promise<string[] | null>;
   /** 显式勾选的相对路径集合 */
   value: Set<string>;
   onChange: (v: Set<string>) => void;
   /** 根级一级目录加载成功时上报（父组件用它做「默认全选」与「全选」按钮）；失败/空仓库不报 */
   onRootDirs?: (dirs: string[]) => void;
+  /** 根级加载失败文案（默认通用文案；检出场景有自己的说明） */
+  loadFailText?: string;
 }) {
   const [kids, setKids] = useState<Record<string, NodeList>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  /** 打开（或 URL 变化）：重置并拉根级一级子目录（选择性检出的起始一步） */
+  /** 打开（或数据源变化）：重置并拉根级一级子目录 */
   useEffect(() => {
     let alive = true;
     setKids({ '': 'loading' });
     setExpanded(new Set());
-    get
-      .repoList(props.rootUrl.replace(/\/+$/, ''))
-      .then((r) => {
+    props
+      .loadDirs('')
+      .then((dirs) => {
         if (!alive) return;
-        const dirs = r.ok && r.entries ? r.entries.filter((e) => e.isDir && e.name !== '..') : null;
-        setKids({ '': dirs ? dirs.map((e) => ({ name: e.name })) : 'fail' });
+        setKids({ '': dirs ?? 'fail' });
         // 一级目录清单上报（父组件的默认全选/全选按钮用）
-        if (dirs && dirs.length > 0) props.onRootDirs?.(dirs.map((e) => e.name));
+        if (dirs && dirs.length > 0) props.onRootDirs?.(dirs);
       })
       .catch(() => {
         if (alive) setKids({ '': 'fail' });
@@ -47,7 +49,7 @@ export function CheckoutTree(props: {
     };
     // onRootDirs 是父组件内联回调，不入依赖（入了会每次渲染重拉根级）；回调内读 ref/稳定 setter，旧闭包无影响
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.rootUrl]);
+  }, [props.loadDirs]);
 
   /** 展开/收起节点；首次展开时拉它的直接子目录 */
   const toggleExpand = (rel: string) => {
@@ -62,11 +64,9 @@ export function CheckoutTree(props: {
     setExpanded((s) => new Set(s).add(rel));
     if (kids[rel]) return;
     setKids((k) => ({ ...k, [rel]: 'loading' }));
-    get
-      .repoList(`${props.rootUrl.replace(/\/+$/, '')}/${rel}`)
-      .then((r) => {
-        setKids((k) => ({ ...k, [rel]: r.ok && r.entries ? r.entries.filter((e) => e.isDir && e.name !== '..').map((e) => ({ name: e.name })) : 'fail' }));
-      })
+    props
+      .loadDirs(rel)
+      .then((dirs) => setKids((k) => ({ ...k, [rel]: dirs ?? 'fail' })))
       .catch(() => setKids((k) => ({ ...k, [rel]: 'fail' })));
   };
 
@@ -97,7 +97,7 @@ export function CheckoutTree(props: {
         // 取消一个被祖先覆盖的节点 = 把祖先拆开（能点到本节点 → 祖先已展开过 → 直接子目录必已加载）
         n.delete(cov);
         const sib = kids[cov];
-        if (Array.isArray(sib)) for (const e of sib) n.add(`${cov}/${e.name}`);
+        if (Array.isArray(sib)) for (const name of sib) n.add(`${cov}/${name}`);
         n.delete(rel);
       } else {
         n.add(rel);
@@ -113,9 +113,9 @@ export function CheckoutTree(props: {
   const walk = (rel: string, depth: number) => {
     const list = kids[rel];
     if (!Array.isArray(list)) return;
-    for (const e of list) {
-      const childRel = rel ? `${rel}/${e.name}` : e.name;
-      rows.push({ rel: childRel, name: e.name, depth });
+    for (const name of list) {
+      const childRel = rel ? `${rel}/${name}` : name;
+      rows.push({ rel: childRel, name, depth });
       if (expanded.has(childRel)) walk(childRel, depth + 1);
     }
   };
@@ -124,15 +124,14 @@ export function CheckoutTree(props: {
   const root = kids[''];
   if (root === 'loading' || root === undefined) {
     // 正在获取目录列表…
-    return <div className="dim small">{t('repo.co.sparseLoading')}</div>;
+    return <div className="dim small">{t('ui.dirTree.loading')}</div>;
   }
   if (root === 'fail') {
-    // 目录列表获取失败——不影响完整检出
-    return <div className="dim small">{t('repo.co.sparseLoadFail')}</div>;
+    return <div className="dim small">{props.loadFailText ?? t('ui.dirTree.loadFail')}</div>;
   }
   if (root.length === 0) {
     // （该目录下没有子目录）
-    return <div className="dim small">{t('repo.co.treeEmpty')}</div>;
+    return <div className="dim small">{t('ui.dirTree.empty')}</div>;
   }
   return (
     // flex: 1——在弹出窗里随可用高度伸缩（弹窗拉大时长高）；内容少时=内容高，不撑空
@@ -148,7 +147,7 @@ export function CheckoutTree(props: {
                 style={{ border: 'none', background: 'none', padding: 0, width: 14, color: 'var(--dim)', cursor: 'pointer', flexShrink: 0 }}
                 onClick={() => toggleExpand(r.rel)}
                 // 展开 / 收起
-                title={open ? t('repo.co.treeCollapse') : t('repo.co.treeExpand')}
+                title={open ? t('ui.dirTree.collapse') : t('ui.dirTree.expand')}
               >
                 {open ? '▾' : '▸'}
               </button>
@@ -170,17 +169,17 @@ export function CheckoutTree(props: {
             {/* 展开后的子级状态：加载中 / 失败 / 空目录 */}
             {open && sub === 'loading' && (
               <div className="dim small" style={{ paddingLeft: (r.depth + 1) * 14 + 18 }}>
-                {t('repo.co.sparseLoading')}
+                {t('ui.dirTree.loading')}
               </div>
             )}
             {open && sub === 'fail' && (
               <div className="dim small" style={{ paddingLeft: (r.depth + 1) * 14 + 18 }}>
-                {t('repo.co.sparseLoadFail')}
+                {props.loadFailText ?? t('ui.dirTree.loadFail')}
               </div>
             )}
             {open && Array.isArray(sub) && sub.length === 0 && (
               <div className="dim small" style={{ paddingLeft: (r.depth + 1) * 14 + 18 }}>
-                {t('repo.co.treeEmptyChild')}
+                {t('ui.dirTree.emptyChild')}
               </div>
             )}
           </React.Fragment>

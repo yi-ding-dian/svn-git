@@ -39,7 +39,7 @@ export const fs = {
   'fs.toolbar.tree': '树',
   'fs.toolbar.browseTitle': '文件浏览器视图',
   'fs.toolbar.browse': '浏览',
-  'fs.toolbar.favTitle': '常用文件夹：指定后后台预加载缓存，进入秒开',
+  'fs.toolbar.favTitle': '常用文件夹：勾选要预加载的目录，进入秒开',
   'fs.toolbar.fav': '⭐ 常用',
   'fs.toolbar.favN': '⭐ 常用({n})',
   'fs.toolbar.upTitle': '上一级',
@@ -134,8 +134,6 @@ export const fs = {
   'fs.act.newFolderTitle': '在当前目录新建一个文件夹，名字就地输入（回车或点空白处确认，Esc 取消）',
   'fs.act.newFile': '新建文件…',
   'fs.act.newFileTitle': '在当前目录新建一个空文件，名字就地输入（回车或点空白处确认，Esc 取消）',
-  'fs.act.favAdd': '加入常用文件夹',
-  'fs.act.favAdded': '已加入常用文件夹（点击移除）',
   'fs.act.injectDesc': '注入文件说明…',
 
   // ---- 右键菜单文案（menus.tsx）----
@@ -276,14 +274,20 @@ export const fs = {
 
   // ---- 常用文件夹（fav-dirs.tsx / index.tsx）----
   'fs.fav.title': '⭐ 常用文件夹',
-  'fs.fav.hint': '右键文件夹 →「加入常用文件夹」后，该文件夹下所有子目录会在后台递归预加载并缓存，之后点击里面的任何内容都秒开（本机保存，仅当前电脑生效）。',
-  'fs.fav.empty': '还没有常用文件夹',
-  'fs.fav.remove': '移除',
+  'fs.fav.hint':
+    '勾选要预加载的文件夹（默认全选一级目录，展开可细选子目录），取消勾选即移除。确定后后台预加载并缓存，之后进入这些目录秒开；build / bin / node_modules 等产物目录会自动跳过（本机保存，仅当前电脑生效）。',
+  'fs.fav.defaultAll': '默认全选一级目录；取消勾选即移除该常用文件夹',
+  'fs.fav.selectAll': '全选',
+  'fs.fav.selectAllTip': '勾选全部一级目录',
+  'fs.fav.unselectAll': '全不选',
+  'fs.fav.unselectAllTip': '取消全部勾选（确定后会移除所有常用文件夹）',
+  'fs.fav.confirm': '确定并预加载',
+  'fs.fav.saved': '已保存 {n} 个常用文件夹，正在后台预加载',
+  'fs.fav.cleared': '已移除全部常用文件夹',
   'fs.fav.preloading': '预加载中…',
   'fs.fav.preloadAll': '全部重新预加载',
   'fs.fav.progress': '⏳ 正在后台预加载：{done}/{total}（{cur}）',
   'fs.fav.done': '后台预加载完成（{n} 个目录）',
-  'fs.fav.added': '已加入常用文件夹，正在后台预加载：{rel}',
   'fs.fav.barProgress': '正在后台预加载常用文件夹：{done}/{total}（{cur}）',
   'fs.fav.barDone': '✅ 常用文件夹后台预加载完成（{n} 个目录），进入秒开',
 

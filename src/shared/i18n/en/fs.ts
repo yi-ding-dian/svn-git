@@ -39,7 +39,7 @@ export const fs = {
   'fs.toolbar.tree': 'Tree',
   'fs.toolbar.browseTitle': 'File browser view',
   'fs.toolbar.browse': 'Browse',
-  'fs.toolbar.favTitle': 'Favorite folders: preloaded and cached in the background for instant opening',
+  'fs.toolbar.favTitle': 'Favorite folders: pick the folders to preload; instant opening afterwards',
   'fs.toolbar.fav': '⭐ Favorites',
   'fs.toolbar.favN': '⭐ Favorites ({n})',
   'fs.toolbar.upTitle': 'Go up one level',
@@ -134,8 +134,6 @@ export const fs = {
   'fs.act.newFolderTitle': 'Create a folder in the current directory; type the name in place (Enter or click elsewhere to confirm, Esc to cancel)',
   'fs.act.newFile': 'New File…',
   'fs.act.newFileTitle': 'Create an empty file in the current directory; type the name in place (Enter or click elsewhere to confirm, Esc to cancel)',
-  'fs.act.favAdd': 'Add to Favorite Folders',
-  'fs.act.favAdded': 'In favorite folders (click to remove)',
   'fs.act.injectDesc': 'Inject File Descriptions…',
 
   // ---- Context menu strings (menus.tsx) ----
@@ -276,14 +274,20 @@ export const fs = {
 
   // ---- Favorite folders (fav-dirs.tsx / index.tsx) ----
   'fs.fav.title': '⭐ Favorite Folders',
-  'fs.fav.hint': 'After right-clicking a folder → "Add to Favorite Folders", all of its subfolders are recursively preloaded and cached in the background; anything inside then opens instantly (saved locally, this computer only).',
-  'fs.fav.empty': 'No favorite folders yet',
-  'fs.fav.remove': 'Remove',
+  'fs.fav.hint':
+    'Check the folders to preload (top-level folders are checked by default; expand to pick subfolders). Unchecking removes the favorite. On confirm they are preloaded and cached in the background, so entering them is instant; artifact folders such as build / bin / node_modules are skipped automatically (saved locally, this computer only).',
+  'fs.fav.defaultAll': 'Top-level folders are checked by default; unchecking removes that favorite',
+  'fs.fav.selectAll': 'Select All',
+  'fs.fav.selectAllTip': 'Check all top-level folders',
+  'fs.fav.unselectAll': 'Select None',
+  'fs.fav.unselectAllTip': 'Uncheck everything (confirming removes all favorite folders)',
+  'fs.fav.confirm': 'Confirm and Preload',
+  'fs.fav.saved': 'Saved {n} favorite folder; preloading in background|Saved {n} favorite folders; preloading in background',
+  'fs.fav.cleared': 'All favorite folders removed',
   'fs.fav.preloading': 'Preloading…',
   'fs.fav.preloadAll': 'Preload All Again',
   'fs.fav.progress': '⏳ Preloading in background: {done}/{total} ({cur})',
   'fs.fav.done': 'Background preload finished ({n} folder)|Background preload finished ({n} folders)',
-  'fs.fav.added': 'Added to favorite folders; preloading in background: {rel}',
   'fs.fav.barProgress': 'Preloading favorite folders in background: {done}/{total} ({cur})',
   'fs.fav.barDone': '✅ Favorite folders preloaded ({n} folder); instant open from now on|✅ Favorite folders preloaded ({n} folders); instant open from now on',
 

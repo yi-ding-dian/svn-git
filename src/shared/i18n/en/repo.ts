@@ -163,13 +163,8 @@ export const repo = {
   'repo.co.cancelMsg': 'Downloaded content will be discarded (the incomplete directory is deleted); you will need to check out again. Cancel it?',
   'repo.co.cancelKeep': 'Keep Checking Out',
   'repo.co.cancelConfirm': 'Yes, Cancel',
-  'repo.co.sparseLoading': 'Loading directory list…',
   'repo.co.sparseLoadFail': 'Failed to load the directory list — full checkout still works',
   // —— Multi-level selection tree & checkout size probe ——
-  'repo.co.treeExpand': 'Expand',
-  'repo.co.treeCollapse': 'Collapse',
-  'repo.co.treeEmpty': '(no subdirectories)',
-  'repo.co.treeEmptyChild': '(empty folder)',
   'repo.co.needPick': 'Check at least one directory first (or click Select All)',
   'repo.co.sizeBtn': '🔍 Probe Size',
   'repo.co.sizeTip': 'Probe the file count and disk usage of this checkout (read-only, downloads nothing)',
