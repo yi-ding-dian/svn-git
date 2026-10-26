@@ -71,18 +71,23 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           /* URL 解析失败保持原样 */
         }
       }
-      // 转换失败（提交路径不属于当前工作副本，如其他分支/标签的提交）→
-      // 尝试从服务器 URL 直接 diff（不依赖本地工作副本，需网络）；失败再明确提示。
-      // URL 用 ^/ 仓库根相对语法：在 wc 内由 svn 自己解析仓库根，绕开 URL 映射
-      // （入口 /software2 与仓库内路径 /projects 不一致）拼接错误的问题
-      if (pathRel && y === '') {
+      // 转换失败（y === ''）分两种：
+      //  - 以 / 开头：仓库内绝对路径，但它不属于当前工作副本（其他分支/标签的提交）→ 只能走服务器 URL
+      //  - 不以 / 开头：前端历史视图直接传的工作副本相对路径 → 照常本地 diff
+      //    （远程新提交还没 update 到本地时，svn diff -r N-1:N 仍能用工作副本 URL 比较两个版本）
+      const urlPath = pathRel ?? '';
+      const serverUrl = urlPath
+        ? urlPath.startsWith('/')
+          ? '^' + urlPath
+          : `${(repo.url ?? '').replace(/\/+$/, '')}/${urlPath}`
+        : '';
+      const canUrlDiff = Boolean(urlPath) && (urlPath.startsWith('/') || Boolean(repo.url));
+      if (pathRel && y === '' && urlPath.startsWith('/')) {
         try {
-          if (pathRel.startsWith('/')) {
-            const du = await vcs.diffUrl?.(String(n - 1), rev, '^' + pathRel);
-            if (du && (du.ok || du.output)) {
-              sendJson(res, 200, du);
-              return true;
-            }
+          const du = await vcs.diffUrl?.(String(n - 1), rev, serverUrl);
+          if (du && (du.ok || du.output)) {
+            sendJson(res, 200, du);
+            return true;
           }
         } catch {
           /* URL 失败走下方提示 */
@@ -95,16 +100,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       // 文件不在当前工作副本（D 已删除 / A 未更新到本地）或新增文件版本间不存在 →
       // 回退服务器 URL 版本间比较（不依赖工作副本，A/D 都能输出）；
       // URL 也失败时（极端场景）用 svn cat 取内容构造"整文件新增"
-      if ((!d.ok || !d.output.trim()) && pathRel && pathRel.startsWith('/')) {
+      if ((!d.ok || !d.output.trim()) && canUrlDiff) {
         try {
-          const url = '^' + pathRel;
-          const du = await vcs.diffUrl?.(String(n - 1), rev, url);
+          const du = await vcs.diffUrl?.(String(n - 1), rev, serverUrl);
           if (du && (du.ok || du.output)) {
             sendJson(res, 200, du);
             return true;
           }
           // cat 兜底：URL 带 @rev peg（路径在 HEAD 已删除时无 peg 会解析失败）
-          const cat = await vcs.catRev?.(rev, `${url}@${rev}`);
+          const cat = await vcs.catRev?.(rev, `${serverUrl}@${rev}`);
           if (cat && cat.ok && cat.output) {
             const lines = cat.output.split('\n');
             if (lines.length && lines[lines.length - 1] === '') lines.pop();
