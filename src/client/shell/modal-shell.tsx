@@ -283,6 +283,9 @@ export function ResizableModal(props: {
   /** 按住边缘热区开始拖拽 */
   const startDrag = (dir: string) => (e: React.MouseEvent) => {
     if (e.button !== 0) return;
+    // 最大化且外部没提供「还原」回调：拖拽无法退出最大化，进入 fixed + maxed 宽高会跑出屏幕，
+    // 而且热区会盖住弹窗内部贴着左/右边缘的控件（如文件变动详情的列表分隔条）
+    if (props.maxed && !props.onToggleMax) return;
     const el = elRef.current;
     if (!el) return;
     e.preventDefault();
@@ -330,15 +333,16 @@ export function ResizableModal(props: {
       onClick={(e) => e.stopPropagation()}
     >
       {props.children}
-      {/* 8 方向拖拽热区:四边 + 四角 */}
-      {EDGES.map((ed) => (
-        <div
-          key={ed.dir}
-          className={`mr-edge mr-edge-${ed.dir}${dragDir === ed.dir ? ' active' : ''}`}
-          style={{ ...ed.style, cursor: ed.cursor }}
-          onMouseDown={startDrag(ed.dir)}
-        />
-      ))}
+      {/* 8 方向拖拽热区:四边 + 四角（最大化且无法还原时不渲染，避免跑出屏幕 / 遮挡内部控件） */}
+      {!(props.maxed && !props.onToggleMax) &&
+        EDGES.map((ed) => (
+          <div
+            key={ed.dir}
+            className={`mr-edge mr-edge-${ed.dir}${dragDir === ed.dir ? ' active' : ''}`}
+            style={{ ...ed.style, cursor: ed.cursor }}
+            onMouseDown={startDrag(ed.dir)}
+          />
+        ))}
     </div>
   );
 }
