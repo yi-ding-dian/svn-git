@@ -8,6 +8,12 @@ export const vcs = {
   // ---- 认证 ----
   'vcs.authFailed': 'SVN authentication failed. Check your username and password (press o to set)',
   'vcs.authFailedCode': 'SVN authentication failed ({code}). Check your username and password (press o to set)',
+  'vcs.authzFailed': 'SVN authorization failed. This account has no read access to this path (press o to switch accounts)',
+  'vcs.authzFailedCode': 'SVN authorization failed ({code}). This account has no read access to this path (press o to switch accounts)',
+  'vcs.proxyAuthFailed': 'SVN authentication failed: the proxy requires authentication. Check your system proxy settings (press o to set your account)',
+  'vcs.proxyAuthFailedCode': 'SVN authentication failed ({code}): the proxy requires authentication. Check your system proxy settings (press o to set your account)',
+  'vcs.verifyFailed': 'Failed to verify the username and password',
+  'vcs.verifyUrlFailed': 'Cannot read the server URL of the current working copy',
 
   // ---- svn: queries / commit ----
   'vcs.svnStatusFailed': 'svn status failed: {err}',

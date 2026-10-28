@@ -1114,6 +1114,13 @@ export const post = {
     api<VcsResult>('/api/ignore', json({ path, pattern, target })),
   unignore: (path: string) => api<VcsResult>('/api/unignore', json({ path })),
   config: (cfg: { username: string; password: string; trustServerCert: boolean }) => api<{ ok: boolean }>('/api/config', json(cfg)),
+  /** 保存 SVN 凭据前验证（工作副本根 URL 上跑 svn log -l 1）：
+   *  code=认证/权限/代理时前端阻止保存，NET（网络类）由用户确认后仍可保存 */
+  svnVerify: (cred: { username: string; password: string; trustServerCert: boolean }) =>
+    api<{ ok: boolean; skipped?: boolean; code?: 'AUTH' | 'AUTHZ' | 'PROXY' | 'NET'; message?: string }>(
+      '/api/svn-verify',
+      json(cred),
+    ),
   /** 切换界面语言：主进程随即 setLang，server / vcs / main 的消息语言一并跟上 */
   lang: (lang: Lang) => api<{ ok: boolean }>('/api/lang', json({ lang })),
   historyRemove: (path: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remove', json({ path })),

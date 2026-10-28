@@ -14,7 +14,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from '../../config.js';
-import { sendJson, readBody, type Ctx } from './util.js';
+import { sendJson, readBody, vcsOf, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** svn 官方凭据缓存目录（Linux/macOS；Windows 路径不同，读不到则降级为空） */
@@ -87,6 +87,28 @@ export function findCacheCreds(url: string): CacheCred[] {
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
   const p = url.pathname;
+
+  if (p === '/api/svn-verify' && req.method === 'POST') {
+    // 保存 SVN 凭据前验证：用临时账号密码在工作副本根 URL 上跑 `svn log -l 1`（与历史页同命令同路径）。
+    // 密码只在本次请求内存里（不落盘、不进日志）；--no-auth-cache 不写系统凭据缓存。
+    const { vcs, repo } = vcsOf();
+    if (repo.type !== 'svn' || !vcs.verifyCredential) {
+      // 非 SVN 仓库没有可验证的凭据：直接放行
+      sendJson(res, 200, { ok: true, skipped: true });
+      return true;
+    }
+    const body = await readBody(req);
+    sendJson(
+      res,
+      200,
+      await vcs.verifyCredential(
+        String(body.username ?? ''),
+        String(body.password ?? ''),
+        Boolean(body.trustServerCert ?? false),
+      ),
+    );
+    return true;
+  }
 
   if (p === '/api/svn-identity' && req.method === 'GET') {
     // 当前 SVN 身份（只读）：工具配置账号 + 系统凭据缓存账号（按 ?url= 的 host 匹配）

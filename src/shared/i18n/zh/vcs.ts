@@ -13,6 +13,12 @@ export const vcs = {
   // ---- 认证 ----
   'vcs.authFailed': 'SVN 认证失败，请检查账号密码（按 o 设置）',
   'vcs.authFailedCode': 'SVN 认证失败（{code}），请检查账号密码（按 o 设置）',
+  'vcs.authzFailed': 'SVN 权限不足，当前账号没有该路径的读取权限（按 o 更换账号）',
+  'vcs.authzFailedCode': 'SVN 权限不足（{code}），当前账号没有该路径的读取权限（按 o 更换账号）',
+  'vcs.proxyAuthFailed': 'SVN 认证失败：代理要求认证，请检查系统代理设置（按 o 设置账号密码）',
+  'vcs.proxyAuthFailedCode': 'SVN 认证失败（{code}）：代理要求认证，请检查系统代理设置（按 o 设置账号密码）',
+  'vcs.verifyFailed': '验证账号密码失败',
+  'vcs.verifyUrlFailed': '无法读取当前工作副本的服务器地址',
 
   // ---- svn：查询类命令失败 / 提交 ----
   'vcs.svnStatusFailed': 'svn status 失败: {err}',

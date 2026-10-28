@@ -29,6 +29,8 @@ export function LoginModal(props: {
   const [trust, setTrust] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  /** 网络类验证失败的消息（非 null 时弹「无法连接服务器，仍要保存？」确认框） */
+  const [pendingNet, setPendingNet] = useState<string | null>(null);
   // 系统凭据缓存身份（打开时查一次；realm 原文供确认框展示）
   const [cacheUser, setCacheUser] = useState('');
   const [cacheRealm, setCacheRealm] = useState('');
@@ -62,31 +64,62 @@ export function LoginModal(props: {
     };
   }, [props.repoUrl]);
 
-  /** 表单保存（= 添加 / 切换账号）：写入工具配置；系统缓存里有旧账号（且与新账号不同）一并清除 */
+  /** 写入配置（验证通过、或用户确认「网络不通仍保存」后调用）：含旧缓存清理/toast/关闭 */
+  const doSave = async () => {
+    await post.config({ username, password, trustServerCert: trust });
+    let clearedUser = '';
+    if (props.repoUrl && cacheUser && cacheUser !== username) {
+      try {
+        await post.svnForgetCache(props.repoUrl);
+        clearedUser = cacheUser;
+      } catch {
+        /* 清缓存失败不拦保存（可再点退出重试） */
+      }
+    }
+    props.onSaved();
+    props.onToast(
+      username
+        ? // SVN 账号已保存 / SVN 账号已保存，并清除系统缓存中的旧账号 {user}
+          clearedUser
+          ? t('repo.login.savedCacheCleared', { user: clearedUser })
+          : t('repo.login.saved')
+        : // SVN 账号已清除
+          t('repo.login.cleared')
+    );
+    props.onClose();
+  };
+
+  /** 表单保存（= 添加 / 切换账号）：**先验证再保存**——账号密码错的配置不落下，
+   *  免得等到历史页/更新时才报认证失败（用户实报）。网络类失败由用户确认后仍可保存。 */
   const submit = async () => {
     setBusy(true);
+    setErr('');
     try {
-      await post.config({ username, password, trustServerCert: trust });
-      let clearedUser = '';
-      if (props.repoUrl && cacheUser && cacheUser !== username) {
-        try {
-          await post.svnForgetCache(props.repoUrl);
-          clearedUser = cacheUser;
-        } catch {
-          /* 清缓存失败不拦保存（可再点退出重试） */
+      const v = await post.svnVerify({ username, password, trustServerCert: trust });
+      if (!v.ok) {
+        if (v.code === 'NET') {
+          // 服务器连不上/超时：凭据无法验证，交给用户决定是否仍保存（离线配置不吃亏）
+          setPendingNet(v.message ?? t('repo.login.verifyFailed'));
+          return;
         }
+        // 认证/权限/代理失败：不保存、保留原配置（弹窗内红字提示）
+        setErr(v.message ?? t('repo.login.verifyFailed'));
+        return;
       }
-      props.onSaved();
-      props.onToast(
-        username
-          ? // SVN 账号已保存 / SVN 账号已保存，并清除系统缓存中的旧账号 {user}
-            clearedUser
-            ? t('repo.login.savedCacheCleared', { user: clearedUser })
-            : t('repo.login.saved')
-          : // SVN 账号已清除
-            t('repo.login.cleared')
-      );
-      props.onClose();
+      await doSave();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 网络类失败确认「仍要保存」 */
+  const saveAnyway = async () => {
+    setPendingNet(null);
+    setBusy(true);
+    try {
+      await doSave();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -132,8 +165,8 @@ export function LoginModal(props: {
         foot={
           editing ? (
             <button className="primary" onClick={() => void submit()} disabled={busy}>
-              {/* 保存中… / 保存 */}
-              {busy ? t('repo.saving') : t('common.save')}
+              {/* 验证中… / 保存（保存前先向服务器验证账号密码与读取权限） */}
+              {busy ? t('repo.login.verifying') : t('common.save')}
             </button>
           ) : (
             <>
@@ -225,6 +258,26 @@ export function LoginModal(props: {
           confirmLabel={t('repo.login.logout')}
           onConfirm={() => void logout()}
           onCancel={() => setConfirmLogout(false)}
+        />
+      )}
+      {/* 网络类验证失败：服务器连不上，凭据没法验证——由用户决定是否仍保存 */}
+      {pendingNet !== null && (
+        <ConfirmModal
+          // 无法连接服务器
+          title={t('repo.login.verifyNetTitle')}
+          message={
+            <>
+              <div>{pendingNet}</div>
+              <div className="dim small" style={{ marginTop: 6 }}>
+                {/* 凭据尚未验证（服务器连不上）。仍要保存吗？ */}
+                {t('repo.login.verifyNetHint')}
+              </div>
+            </>
+          }
+          // 仍要保存
+          confirmLabel={t('repo.login.verifyNetSave')}
+          onConfirm={() => void saveAnyway()}
+          onCancel={() => setPendingNet(null)}
         />
       )}
     </>

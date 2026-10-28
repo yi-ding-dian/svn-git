@@ -92,6 +92,15 @@ export interface VcsResult {
   warnings?: string[];
 }
 
+/** 保存 SVN 凭据前的验证结果：skipped=无需验证（用户名留空/本地仓库视为可保存）；
+ *  code 区分认证/权限/代理/网络，前端据此决定「阻止保存」还是「确认后可保存」 */
+export interface CredentialVerifyResult {
+  ok: boolean;
+  skipped?: boolean;
+  code?: 'AUTH' | 'AUTHZ' | 'PROXY' | 'NET';
+  message?: string;
+}
+
 // 状态码说明（i18n，取值时按当前语言算）定义收敛于 src/shared/types.ts（前后端单一来源）
 export { CODE_DESC } from '../shared/types.js';
 
@@ -250,6 +259,9 @@ export interface Vcs {
   add(relPaths: string[]): Promise<VcsResult>;
   /** 提交。stagedOnly：已在 hunk 弹窗里部分暂存过的文件，提交时跳过整文件 add（否则会覆盖用户选中的块） */
   commit(relPaths: string[], msg: string, stagedOnly?: string[]): Promise<VcsResult>;
+  /** 保存 SVN 凭据前验证（账号密码 + 读取权限）；git 不实现。
+   *  用户名留空/本地仓库时返回 skipped=true（视为可保存） */
+  verifyCredential?(username: string, password: string, trustServerCert?: boolean): Promise<CredentialVerifyResult>;
   restoreMissing(): Promise<string[]>;
   revert(relPaths: string[]): Promise<VcsResult>;
   /** 还原前预检：目标版本与当前工作区差多少（只读，不改文件）。

@@ -8,7 +8,7 @@ import { t } from '../shared/i18n/index.js';
 import { progressDone, progressReport, progressStart, progressStepsStart, progressStepsAdvance } from '../transfer-progress.js';
 import { platform } from '../platform/index.js';
 import { CONFIG_DIR } from '../config.js';
-import type { BranchDeleteCheck, BranchListResult, CommitSummary, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, RestorePreview, SvnLayout, VcsResult } from './types.js';
+import type { BranchDeleteCheck, BranchListResult, CommitSummary, CredentialVerifyResult, FileStatus, IgnorePlan, LogEntry, MainlinePlan, RepoInfo, RestorePreview, SvnLayout, VcsResult } from './types.js';
 
 /** svn 可执行文件解析：PATH 优先；找不到时试平台常见安装路径（Windows 上装完 svn 系统 PATH
  *  不会刷新到已运行的进程——兜底路径让「装完刷新页面即用」成立）。
@@ -38,8 +38,38 @@ export interface SvnCred {
   trustServerCert?: boolean;
 }
 
-/** SVN 认证失败错误码（E170001: auth failed; E170013: 底层 IO/连接错误） */
-const AUTH_ERR = /E170001|Authentication failed|authorization failed/i;
+/** svn 认证类错误的分类结果：code = 最内层错误码（svn 错误是层层包裹的栈，最内层才是根因） */
+export interface SvnErrorDetail {
+  code?: string;
+  /** auth=账号密码错 / authz=账号没有该路径权限 / proxy=代理要求认证 */
+  kind: 'auth' | 'authz' | 'proxy';
+}
+
+/** 从 svn 输出里识别认证类错误，非认证错误返回 null。
+ *  **为什么取最后一个 E 码**：认证失败时 svn 输出的是错误栈——
+ *    svn: E170013: Unable to connect to a repository at URL '...'
+ *    svn: E215004: No more credentials or we tried too many times.
+ *    svn: E170001: Authentication failed
+ *  旧实现取第一个码，永远拿到外层 E170013：界面显示「认证失败（E170013）」，
+ *  既盖住真正的 E170001/E215004，又让人误以为是网络问题（用户实报）。
+ *  按文案先分代理/权限——三者都可能带 E170001，不能只看码。 */
+export function classifySvnError(text: string): SvnErrorDetail | null {
+  const codes = [...text.matchAll(/E\d{6}/g)].map((m) => m[0]);
+  const code = codes.length ? codes[codes.length - 1] : undefined;
+  // 代理：407 / Proxy Authentication Required → svn 报 "HTTP proxy authorization failed"
+  if (/proxy (?:authorization|authentication) failed|proxy authentication required|HTTP 407/i.test(text)) {
+    return { code, kind: 'proxy' };
+  }
+  // 授权（密码对但没有该路径读权限）必须排在认证前：两种情况都可能报 E170001。
+  // E220001 / "Item is not readable"（本地化后是「条目不可读」）是路径无权访问的典型报错
+  if (/authorization failed|item is not readable|not readable|条目不可读/i.test(text)) {
+    return { code, kind: 'authz' };
+  }
+  // 认证：E215004（没有更多凭据/试太多次）经常是失败输出的最内层码
+  if (/authentication failed|E170001|E215004/i.test(text)) return { code, kind: 'auth' };
+  return null;
+}
+
 
 /** svn status --xml 的 item 单词 -> 统一状态码 */
 const ITEM_MAP: Record<string, string> = {
@@ -139,21 +169,24 @@ export class SvnVcs {
       signal?: AbortSignal;
       decode?: 'utf8' | 'auto';
       raw?: boolean;
-      /** 临时凭据（删除分支时用户手输的账号+密码）：覆盖配置里的账号，密码仍走 stdin */
-      auth?: { username: string; password: string };
+      /** 临时凭据（删除分支/保存前验证时用户手输的账号+密码）：覆盖配置里的账号，密码仍走 stdin。
+       *  trustServerCert / noAuthCache：只对本次命令生效（验证时信任用户当前勾选、且不写凭据缓存） */
+      auth?: { username: string; password: string; trustServerCert?: boolean; noAuthCache?: boolean };
     } = {},
   ) {
     const stdinData = extra.auth
       ? extra.auth.password + '\n'
       : (extra.stdinData ?? (this.cred?.username ? this.cred.password + '\n' : undefined));
     // 有临时凭据时用它替换配置账号（不能叠加：两个 --username 会让 svn 取错）
+    const trust = extra.auth ? (extra.auth.trustServerCert ?? this.cred?.trustServerCert) : this.cred?.trustServerCert;
     const base = extra.auth
       ? [
           '--username',
           extra.auth.username,
           '--password-from-stdin',
           '--non-interactive',
-          ...(this.cred?.trustServerCert ? ['--trust-server-cert'] : []),
+          ...(trust ? ['--trust-server-cert'] : []),
+          ...(extra.auth.noAuthCache ? ['--no-auth-cache'] : []),
         ]
       : this.baseArgs();
     return run(await resolveSvnBin(), base.concat(args), {
@@ -205,16 +238,19 @@ export class SvnVcs {
     return { changed, contentChanged, conflicts };
   }
 
-  /** 认证失败检查，返回错误信息或 null */
+  /** 认证类错误 → 用户文案（认证 / 权限 / 代理分别提示）；非认证错误返回 null */
   authError(res: { stderr: string; stdout: string }): string | null {
-    const s = res.stderr + '\n' + res.stdout;
-    if (AUTH_ERR.test(s)) {
-      const m = s.match(/E\d{6}|authentication failed|authorization failed/i);
-      // ⚠️ 英文文案必须含 "authentication failed"：server/routes/util.ts 的 isAuthError() 靠它兜底识别
-      // SVN 认证失败（{code}），请检查账号密码（按 o 设置） / SVN 认证失败，请检查账号密码（按 o 设置）
-      return m ? t('vcs.authFailedCode', { code: m[0] }) : t('vcs.authFailed');
+    const d = classifySvnError(res.stderr + '\n' + res.stdout);
+    if (!d) return null;
+    if (d.kind === 'proxy') {
+      return d.code ? t('vcs.proxyAuthFailedCode', { code: d.code }) : t('vcs.proxyAuthFailed');
     }
-    return null;
+    if (d.kind === 'authz') {
+      return d.code ? t('vcs.authzFailedCode', { code: d.code }) : t('vcs.authzFailed');
+    }
+    // ⚠️ 英文文案必须含 "authentication failed"：server/routes/util.ts 的 isAuthError() 靠它兜底识别
+    // SVN 认证失败（{code}），请检查账号密码（按 o 设置） / SVN 认证失败，请检查账号密码（按 o 设置）
+    return d.code ? t('vcs.authFailedCode', { code: d.code }) : t('vcs.authFailed');
   }
 
   /** 统一失败返回：认证失败时携带结构化 code（服务层透传,不再正则匹配文案） */
@@ -237,6 +273,34 @@ export class SvnVcs {
       revision: String(entry['@_revision'] ?? ''),
       relUrl: String(entry?.relative_url ?? ''),
     };
+  }
+
+  /** 保存凭据前验证「账号密码 + 读取权限」：在工作副本根 URL 上跑与历史页相同的
+   *  `svn log -l 1`（用户实报的失败场景正是历史页）。这样能提前挡住：
+   *  密码错（AUTH）、账号没有该路径读权限（AUTHZ）、代理要求认证（PROXY）。
+   *  密码只走本次 stdin；`--no-auth-cache` 保证不把刚输入的密码写进 svn 官方凭据缓存。
+   *  用户名留空（= 改用 svn 凭据缓存）或本地 file:// 仓库时跳过验证。 */
+  async verifyCredential(username: string, password: string, trustServerCert?: boolean): Promise<CredentialVerifyResult> {
+    const user = username.trim();
+    if (!user) return { ok: true, skipped: true };
+    const url = (await this.info()).url ?? '';
+    if (/^file:/i.test(url)) return { ok: true, skipped: true };
+    if (!url) {
+      // 读不到工作副本 URL：按网络类错误处理（前端会问「是否仍保存」），不阻断离线配置
+      return { ok: false, code: 'NET', message: t('vcs.verifyUrlFailed') };
+    }
+    const res = await this.exec(['log', '-l', '1', '--xml', url], {
+      timeoutMs: 15_000,
+      auth: { username: user, password, trustServerCert, noAuthCache: true },
+    });
+    if (res.code === 0) return { ok: true };
+    const d = classifySvnError(res.stderr + '\n' + res.stdout);
+    if (d) {
+      const code = d.kind === 'proxy' ? 'PROXY' : d.kind === 'authz' ? 'AUTHZ' : 'AUTH';
+      return { ok: false, code, message: this.authError(res) ?? t('vcs.verifyFailed') };
+    }
+    // 非认证类失败（网络不可达/超时/服务器错误）：前端确认后仍可保存
+    return { ok: false, code: 'NET', message: res.stderr.trim() || t('vcs.verifyFailed') };
   }
 
   /** svn status --xml：工作副本状态 */

@@ -67,8 +67,9 @@ export function  vcsOf(): { vcs: ReturnType<typeof createVcs>; repo: RepoInfo } 
 
 /** 认证失败错误码 */
 export function  isAuthError(err: Error): boolean {
-  // 这行是**解析错误文本**的正则（vcs 层抛出的「认证失败…」/ git 英文输出），不是界面文案，禁止翻译
-  return /认证失败|E170001|Authentication failed/i.test(err.message); // i18n-ignore: 解析用正则，翻了认证识别失效
+  // 这行是**解析错误文本**的正则（vcs 层抛出的「认证失败…」/ git 英文输出），不是界面文案，禁止翻译。
+  // 权限不足/代理认证也是认证类引导：svn 三种都可能是 E170001，文案分类见 vcs/svn.ts 的 classifySvnError
+  return /认证失败|权限不足|代理要求认证|E170001|E215004|Authentication failed|Authorization failed|proxy authentication/i.test(err.message); // i18n-ignore: 解析用正则，翻了认证识别失效
 }
 
 /** 统一认证判定：结构化 code 优先（P1-5），正则仅兜底 throw 型异常与未迁移路径 */

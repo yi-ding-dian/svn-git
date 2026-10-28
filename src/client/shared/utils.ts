@@ -173,10 +173,11 @@ const VCS_ERR_INFO: { re: RegExp; key: I18nKey }[] = [
   { re: /E155004|working copy locked/i, key: 'common.vcsErr.locked' },
   // svn: 文件存在冲突
   { re: /E155015|remains in conflict|merge conflict|CONFLICT \(content/i, key: 'common.vcsErr.conflict' },
-  // svn: 无法连接服务器
-  { re: /E170013|E175002|cannot connect|Could not connect|Unable to connect/i, key: 'common.vcsErr.connect' },
-  // svn: 认证失败
-  { re: /E170001|Authentication failed|authorization failed/i, key: 'common.vcsErr.auth' },
+  // svn: 认证/权限失败（必须排在"无法连接"之前：认证失败的输出里同时带外层 E170013）
+  { re: /E170001|E215004|Authentication failed|authorization failed|proxy authentication/i, key: 'common.vcsErr.auth' },
+  // svn: 无法连接服务器。E170013 是认证失败的**外层包装码**（真实原因在更内层），不能放进来，
+  // 否则原文报错会被翻译成"连接服务器失败"，把人往网络方向带
+  { re: /E175002|cannot connect|Could not connect|Unable to connect/i, key: 'common.vcsErr.connect' },
   // git: 工作区有未提交修改
   { re: /Please commit your changes or stash them|your local changes would be overwritten/i, key: 'common.vcsErr.localChanges' },
   // git: 非快进（需先拉取）
