@@ -8,8 +8,8 @@
  *  两个客户端（Electron 窗口 / 外部浏览器）localStorage 各自独立，但都通过 POST 汇到同一个主进程。
  *  故对齐规则是：**本地有偏好就用本地的**（该客户端自己的选择），本地没有才跟随主进程。
  */
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
-import { getLang, setLang, subscribeLang, isLang, t, type Lang } from '../../shared/i18n/index.js';
+import { useCallback, useSyncExternalStore } from 'react';
+import { getLang, setLang, subscribeLang, isLang, type Lang } from '../../shared/i18n/index.js';
 import { get, post } from './api.js';
 
 const LS_KEY = 'svngit-lang';
@@ -60,12 +60,10 @@ export function syncLangFromServer(): void {
  */
 export function useLang(): { lang: Lang; changeLang: (next: Lang) => void } {
   const lang = useSyncExternalStore(subscribeLang, getLang);
-  // 标签页 / Electron 窗口标题（Electron 默认让页面的 document.title 覆盖窗口标题，
-  // 故不必在主进程 setTitle —— 主进程的语言只影响系统对话框等原生 UI）
-  useEffect(() => {
-    // svn-git文件版本管理
-    document.title = t('main.title');
-  }, [lang]);
+  // 标签页标题**不在这里设置**：它是固定的 svn-git-V<版本>（index.html 的 <title>，构建时由
+  // scripts/build-web.mjs 把 %VERSION% 换成 package.json 版本），不随界面语言变。
+  // 之前这里每次都写 document.title = t('main.title')，把 <title> 覆盖回了中文全名。
+  // Electron 窗口标题另有其道：主进程设 title 并挡掉 page-title-updated（见 main/index.ts）。
   const changeLang = useCallback((next: Lang) => {
     setLang(next); // 本地立即生效，不等网络
     writeLocal(next);

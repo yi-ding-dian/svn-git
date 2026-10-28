@@ -26,6 +26,20 @@ export const CONTENT_ZOOM_MIN = 60;
 export const CONTENT_ZOOM_MAX = 300;
 export const CONTENT_ZOOM_DEFAULT = 100;
 
+/** 把当前主题的面板色/文字色同步给原生标题栏按钮区（Windows 自绘标题栏的覆盖层，见 main/index.ts）。
+ *  浏览器里没有 preload 注入的 bridge → 静默跳过。 */
+function syncTitleBarOverlay(): void {
+  const bridge = (window as unknown as {
+    svngit?: { setTitleBarOverlay?: (options: { color: string; symbolColor: string }) => void };
+  }).svngit;
+  if (!bridge?.setTitleBarOverlay) return;
+  const style = getComputedStyle(document.body);
+  bridge.setTitleBarOverlay({
+    color: style.getPropertyValue('--panel').trim(),
+    symbolColor: style.getPropertyValue('--text').trim(),
+  });
+}
+
 export function useAppearance() {
   const [theme, setTheme] = useState(() => {
     try {
@@ -111,6 +125,8 @@ export function useAppearance() {
     } catch {
       /* ignore */
     }
+    // 标题栏按钮区跟着换色（写在变量落地之后：上面刚改的 dataset/inline 变量这里才读得到）
+    syncTitleBarOverlay();
   }, [theme, myThemes]);
 
   /** 自定义配色的实时预览：临时写变量（不落库）；传 null 时恢复正式主题的变量 */

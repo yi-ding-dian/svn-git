@@ -15,6 +15,9 @@ const BUILD_TAG = (() => {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 })();
 
+/** 版本号（package.json）：注入 index.html 的 %VERSION% —— 标签页标题显示 svn-git-V1.1.0 */
+const VERSION = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+
 /** 复制静态文件 */
 function copyStatic() {
   fs.copyFileSync('src/client/index.html', 'dist/client/index.html');
@@ -23,8 +26,12 @@ function copyStatic() {
   fs.writeFileSync('dist/client/style.css', css);
   fs.copyFileSync('build/icon.png', 'dist/client/icon.png');
   fs.copyFileSync('src/preload/index.cjs', 'dist/preload.cjs'); // Electron preload
-  // index.html 的 %BUILD_TAG% 占位符替换为最新构建戳（每次复制后立即处理）
-  const html = fs.readFileSync('dist/client/index.html', 'utf8').replaceAll('%BUILD_TAG%', BUILD_TAG);
+  // index.html 的 %BUILD_TAG% 占位符替换为最新构建戳（每次复制后立即处理）；
+  // %VERSION% 换成 package.json 版本（标签页/书签标题）
+  const html = fs
+    .readFileSync('dist/client/index.html', 'utf8')
+    .replaceAll('%BUILD_TAG%', BUILD_TAG)
+    .replaceAll('%VERSION%', VERSION);
   fs.writeFileSync('dist/client/index.html', html);
 }
 copyStatic();

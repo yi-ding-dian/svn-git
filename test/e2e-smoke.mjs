@@ -18,6 +18,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+/** 标签页标题 = svn-git-V<package.json 版本>（构建脚本把 %VERSION% 填进 index.html） */
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+
 /** 造一个「有远程且本地领先」的夹具。
  *  「修改注释」菜单只在未推送提交上出现，纯本地仓库测不到这条路径——而那正是
  *  "改注释丢正文"（数据丢失级）bug 的入口，必须有回归覆盖。
@@ -119,7 +122,7 @@ try {
   console.log(`== 前端冒烟（服务 127.0.0.1:${port}，夹具 ${path.relative(ROOT, FIXTURE)}）==`);
   await page.goto(`http://127.0.0.1:${port}`);
   await page.waitForTimeout(2500);
-  check('页面加载', (await page.title()) === 'svn-git文件版本管理');
+  check('页面加载', (await page.title()) === `svn-git-V${PKG_VERSION}`);
 
   console.log('== 历史视图 ==');
   await page.getByText('历史', { exact: true }).first().click();

@@ -7,6 +7,7 @@ import { FsView } from '../filesystem/index.js';
 import { OpenView } from '../repo/open.js';
 import { type Modal } from './modal-types.js';
 import { AppHeader } from './header/index.js';
+import { TitleStrip } from './title-strip.js';
 import {
   useAppearance,
   ZOOM_DEFAULT,
@@ -1123,6 +1124,8 @@ export function App() {
 
   return (
     <div className="app">
+      {/* 自绘标题条（仅 Windows 打包版；浏览器/ Linux 里不渲染） */}
+      <TitleStrip version={info?.version} />
       <AppHeader
         view={view}
         repo={repo}

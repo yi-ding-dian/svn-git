@@ -362,6 +362,34 @@ body {
 /* ---------- 布局 ---------- */
 .app { display: flex; flex-direction: column; height: 100%; }
 
+/* 自绘标题条（仅 Windows 打包版；主进程藏掉了系统标题栏，见 main/index.ts）。
+   高度由 title-strip.tsx 内联给出（与主进程 titleBarOverlay.height 同源：shared/titlebar.ts） */
+.title-strip {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 200; /* 高于弹窗遮罩(100)：像真标题栏一样不被遮住，弹窗打开时也能拖窗口 */
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag; /* 整条可拖动窗口 */
+  user-select: none;
+}
+.title-strip-text {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: calc(100% - 320px); /* 两侧让出系统按钮区（约 140px），标题再长也压不到按钮 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--dim); /* 连字符与版本号 */
+  letter-spacing: 0.3px;
+}
+/* svn / git 双色：与 GIT、SVN 徽标同一套主题色；加粗一档，12.5px 的彩字不加粗会发虚 */
+.title-strip-svn { color: var(--svn); font-weight: 600; }
+.title-strip-git { color: var(--git); font-weight: 600; }
+
 .header {
   display: flex; align-items: center; gap: 12px;
   padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border);

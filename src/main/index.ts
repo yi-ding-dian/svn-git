@@ -13,6 +13,7 @@ import { platform, setHostOwnsWindow } from '../platform/index.js';
 import { dedupeHistory } from '../server/routes/recent.js';
 import { loadConfig } from '../config.js';
 import { t, setLang } from '../shared/i18n/index.js';
+import { TITLE_BAR_HEIGHT } from '../shared/titlebar.js';
 
 const require = createRequire(import.meta.url);
 
@@ -51,6 +52,7 @@ async function openUI(url: string) {
     const electron = require('electron') as {
       BrowserWindow: typeof import('electron').BrowserWindow;
       Menu: typeof import('electron').Menu;
+      ipcMain: typeof import('electron').ipcMain;
       app: typeof import('electron').app;
     };
     electron.Menu.setApplicationMenu(null);
@@ -61,12 +63,23 @@ async function openUI(url: string) {
       height: 820,
       minWidth: 960,
       minHeight: 600,
-      // svn-git文件版本管理
-      title: t('main.title'),
+      // 窗口标题：svn-git-V1.1.0（版本取打进包里的 package.json）
+      title: `svn-git-V${electron.app.getVersion()}`,
       autoHideMenuBar: true,
       // import.meta.dirname = 编译产物 main/index.js 所在目录（dist/main/）——
       // icon 和 preload 都在它的上一级（dist/client/、dist/preload.cjs），所以要先 '..'
       icon: path.join(import.meta.dirname ?? '.', '..', 'client', 'icon.png'),
+      // Windows：藏掉系统标题栏，改由页面自绘一条居中的标题条（client/shell/title-strip.tsx）。
+      // 系统标题永远左对齐贴图标，没有「居中」开关——只能自己画。
+      // titleBarOverlay 让最小化/最大化/关闭仍由系统绘制：Snap 布局、双击最大化、悬停高亮都保留。
+      // 其他平台（Linux）照旧用原生标题栏，一行不动。
+      ...(process.platform === 'win32'
+        ? {
+            titleBarStyle: 'hidden' as const,
+            // 初始配色取浅色主题的 --panel/--text；换主题后由渲染层经 IPC 同步（见下方 ipcMain）
+            titleBarOverlay: { height: TITLE_BAR_HEIGHT, color: '#f6f8fa', symbolColor: '#1f2328' },
+          }
+        : {}),
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -74,6 +87,18 @@ async function openUI(url: string) {
       },
     });
     win.setMenuBarVisibility(false);
+    // 页面里 <title> 一加载就会把上面的标题覆盖掉（Electron 默认行为），挡回去：标题只认上面那个
+    win.on('page-title-updated', (e) => e.preventDefault());
+    // 前端换主题时同步标题栏覆盖层的底色/符号色（否则右上角三颗系统按钮那块底色跟界面主题对不上）
+    electron.ipcMain.on('svngit:titlebar-overlay', (e, options: { color?: string; symbolColor?: string }) => {
+      // 只认本窗口的渲染进程
+      if (e.sender !== win.webContents || process.platform !== 'win32') return;
+      try {
+        win.setTitleBarOverlay(options);
+      } catch {
+        /* 窗口已销毁：忽略 */
+      }
+    });
     // 关闭窗口 = 退出应用（停止服务）
     win.on('closed', () => electron.app.quit());
     await win.loadURL(url);
