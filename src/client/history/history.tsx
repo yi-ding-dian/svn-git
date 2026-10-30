@@ -17,6 +17,14 @@ import { RestoreVersionConfirm } from './restore-version.js';
 import type { RestoreVersionTarget } from './restore-version.js';
 import { t } from '../../shared/i18n/index.js';
 
+/** 列表行只显示提交说明的第一行（subject）。
+ *  Git 的 msg 本来就是 %s（第一行）；SVN log 返回整段说明，不截断的话列表会把
+ *  标题和正文连成一条长串（Git/SVN 表现不一致，用户实报）。详情与悬浮提示仍用全文。 */
+function subjectOf(msg: string): string {
+  const nl = msg.search(/\r?\n/);
+  return nl < 0 ? msg : msg.slice(0, nl);
+}
+
 interface Props {
   path?: string;
   /** path 是否为目录：目录还原走反向合并，确认框文案与命令预览按它区分 */
@@ -454,7 +462,7 @@ export function HistoryView(props: Props) {
                         <span className="rev">{l.rev}</span>
                         <span className="date">{l.date.slice(0, 16)}</span>
                         <span className="author">{l.author}</span>
-                        <span className="msg">{l.msg}</span>
+                        <span className="msg">{subjectOf(l.msg)}</span>
                         {/* 合并提交：⇄ + 相对第一父的文件数（后端 log 已带 --diff-merges=first-parent） */}
                         <Tooltip content={l.isMerge ? t('hist.mergeStatTip') : ''}>
                           <span className="stat">
