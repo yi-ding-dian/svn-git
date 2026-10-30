@@ -18,7 +18,8 @@ import { InlineEditor, type InlineEditorHandle } from '../shared/inline-editor.j
 import { useContentCopyMenu } from '../shared/content-copy.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { MdThemePopover, loadMdTheme, saveMdTheme, mdThemeVars, mdThemeName } from '../shared/md-theme.js';
-import { MdTocPopover, type TocItem } from './md-toc.js';
+import { MdTocPopover } from '../ui/md-toc.js';
+import { useMdToc } from '../ui/use-md-toc.js';
 
 /** 预览目标：{文件名, 相对路径, 状态码?, 是否图片?}；文本内容由面板自行加载 */
 export interface PreviewTarget {
@@ -148,10 +149,8 @@ export function PreviewPane(props: Props) {
   const [mdThemePop, setMdThemePop] = useState<{ x: number; y: number } | null>(null);
   /** 文档目录气泡：只记按钮底边 y（水平位置由浮层自己贴窗口右侧算） */
   const [tocPop, setTocPop] = useState<{ y: number; x: number } | null>(null);
-  /** 目录条目：md 渲染后从 DOM 提取（见下方 effect）；空数组 = 没标题或不在预览态 */
-  const [tocItems, setTocItems] = useState<TocItem[]>([]);
-  /** md 正文容器：提取标题、挂锚点、跳转定位都靠它 */
-  const mdBodyRef = useRef<HTMLDivElement | null>(null);
+  /** 目录条目 / md 正文容器：公共 hook（渲染后从 DOM 提取标题并挂锚点，文件预览与差异预览共用） */
+  const { bodyRef: mdBodyRef, items: tocItems, rescan: rescanToc, clear: clearToc, jump: jumpToc } = useMdToc();
   const previewRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   /** 顶部说明文案（与旧 openFile 打开时生成的 note 一致；img 目标无说明） */
@@ -172,25 +171,15 @@ export function PreviewPane(props: Props) {
   /** md 阅读主题的 inline 变量（只打给 md 的预览容器；「跟随界面」为 undefined 不覆盖） */
   const mdVars = isMd ? mdThemeVars(mdTheme) : undefined;
 
-  /** 文档目录：md 渲染完成后从 **DOM** 提取标题，并给它们挂上锚点 id。
-   *  走 DOM 而不是解析 md 源码 —— 这样条目顺序与文本跟屏幕上看到的完全一致
-   *  （marked 的 renderer 调用次序在引用、列表等嵌套块里可能与源码顺序不同），也不用给 markdown.ts 加参数。
+  /** 文档目录：md 渲染完成后从 **DOM** 提取标题（见 use-md-toc），并给它们挂上锚点 id。
    *  mdTheme 也要入依赖：切 md 主题会重设 innerHTML，锚点 id 得重新挂。 */
   useEffect(() => {
-    const el = mdBodyRef.current;
-    if (!el || !mdPreview) {
-      setTocItems([]);
+    if (!mdPreview) {
+      clearToc();
       return;
     }
-    const hs = [...el.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')];
-    setTocItems(
-      hs.map((h, i) => {
-        const id = `md-h-${i}`;
-        h.id = id;
-        return { level: Number(h.tagName[1]), text: h.textContent ?? '', id };
-      }),
-    );
-  }, [text, mdPreview, mdTheme]);
+    rescanToc();
+  }, [text, mdPreview, mdTheme, clearToc, rescanToc]);
 
   /** 离开预览态（切「查看原文」）时收起目录气泡：此时正文容器已卸载，
    *  mdBodyRef 变 null，条目点下去也是"完全没反应"。 */
@@ -683,7 +672,7 @@ export function PreviewPane(props: Props) {
           y={tocPop.y}
           x={tocPop.x}
           items={tocItems}
-          onJump={(id) => mdBodyRef.current?.querySelector<HTMLElement>(`#${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}
+          onJump={jumpToc}
           onClose={() => setTocPop(null)}
         />
       )}

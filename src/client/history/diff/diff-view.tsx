@@ -10,6 +10,8 @@ import { ContextMenu, type CtxMenuItem } from '../../ui/context-menu.js';
 import { parseUnifiedDiff, lineMarksOf, type DiffLine } from '../../../shared/diff-parse.js';
 import { t } from '../../../shared/i18n/index.js';
 import { ConfirmModal } from '../../ui/prompt.js';
+import { MdTocPopover } from '../../ui/md-toc.js';
+import { useMdToc } from '../../ui/use-md-toc.js';
 import { DiffErrorBar, DiffPaneHeaders, DiffStaleTip, DiffTopBar } from './diff-toolbar.js';
 import { DiffPane } from './diff-pane.js';
 import { useDiffRows } from './use-diff-rows.js';
@@ -56,6 +58,23 @@ export function DiffView(props: Props) {
   // md 文件双栏预览：左右独立开关（预览=该栏原文 Markdown 渲染，非 diff 行视图）
   const [previewL, setPreviewL] = useState(false);
   const [previewR, setPreviewR] = useState(false);
+  // md 预览目录：左右各一份（BASE 与当前版本的标题可能不同）；浮层位置跟着各自按钮走
+  const {
+    bodyRef: mdLeftRef,
+    items: tocLeftItems,
+    rescan: rescanLeftToc,
+    clear: clearLeftToc,
+    jump: jumpLeftToc,
+  } = useMdToc();
+  const {
+    bodyRef: mdRightRef,
+    items: tocRightItems,
+    rescan: rescanRightToc,
+    clear: clearRightToc,
+    jump: jumpRightToc,
+  } = useMdToc();
+  const [tocPopL, setTocPopL] = useState<{ x: number; y: number } | null>(null);
+  const [tocPopR, setTocPopR] = useState<{ x: number; y: number } | null>(null);
   // 双栏同步滚动（按钮开关）：滚任一栏 → 另一栏按修改块对齐跟随。
   // 只在「显示全部」开启时出现（片段模式两栏长短不齐，同步没有意义——按钮届时隐藏）
   const [syncMode, setSyncMode] = useState(false);
@@ -97,6 +116,23 @@ export function DiffView(props: Props) {
   // md 文件：左右栏预览（renderMarkdown 复用文件预览同款渲染；baseDir 供相对图片路径）
   const isMd = Boolean(props.target?.path?.toLowerCase().endsWith('.md'));
   const mdBaseDir = props.target?.path?.includes('/') ? props.target.path.slice(0, props.target.path.lastIndexOf('/')) : '';
+
+  /** 预览目录：预览开启 / 版本内容变化后从**渲染后的 DOM** 重新提取标题；
+   *  离开预览态清空并收起浮层（容器已卸载，条目点下去会毫无反应）。 */
+  useEffect(() => {
+    if (previewL) rescanLeftToc();
+    else {
+      clearLeftToc();
+      setTocPopL(null);
+    }
+  }, [previewL, versions?.left, rescanLeftToc, clearLeftToc]);
+  useEffect(() => {
+    if (previewR) rescanRightToc();
+    else {
+      clearRightToc();
+      setTocPopR(null);
+    }
+  }, [previewR, versions?.right, rescanRightToc, clearRightToc]);
 
   // 行模型：左右两栏行列表、占位行锚点、差异块列表
   const { delAnchorRight, leftRows, rightRows, blocks } = useDiffRows({
@@ -409,6 +445,8 @@ export function DiffView(props: Props) {
             previewR={previewR}
             setPreviewR={setPreviewR}
             readOnly={props.readOnly}
+            tocL={{ count: tocLeftItems.length, open: Boolean(tocPopL), onToggle: (pos) => setTocPopL((v) => (v ? null : pos)) }}
+            tocR={{ count: tocRightItems.length, open: Boolean(tocPopR), onToggle: (pos) => setTocPopR((v) => (v ? null : pos)) }}
           />
           <DiffPane
             isMd={isMd}
@@ -431,6 +469,8 @@ export function DiffView(props: Props) {
             leftRefs={leftRefs}
             rightRefs={rightRefs}
             leftPhRefs={leftPhRefs}
+            mdLeftRef={mdLeftRef}
+            mdRightRef={mdRightRef}
             targetPath={props.target!.path!}
             openLineMenu={openLineMenu}
             selRef={selRef}
@@ -459,6 +499,13 @@ export function DiffView(props: Props) {
       )}
       {lineCtx && (
         <ContextMenu x={lineCtx.x} y={lineCtx.y} items={lineCtx.items} onClose={() => setLineCtx(null)} mask />
+      )}
+      {/* md 预览目录浮层：左右各一，点条目在各自预览容器内滚动（不关浮层，方便连续跳） */}
+      {tocPopL && tocLeftItems.length > 0 && (
+        <MdTocPopover y={tocPopL.y} x={tocPopL.x} items={tocLeftItems} onJump={jumpLeftToc} onClose={() => setTocPopL(null)} />
+      )}
+      {tocPopR && tocRightItems.length > 0 && (
+        <MdTocPopover y={tocPopR.y} x={tocPopR.x} items={tocRightItems} onJump={jumpRightToc} onClose={() => setTocPopR(null)} />
       )}
     </div>
   );

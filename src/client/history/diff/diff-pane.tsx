@@ -35,6 +35,9 @@ export function DiffPane(props: {
   leftRefs: React.MutableRefObject<Map<number, HTMLDivElement>>;
   rightRefs: React.MutableRefObject<Map<number, HTMLDivElement>>;
   leftPhRefs: React.MutableRefObject<Map<number, HTMLDivElement[]>>;
+  /** md 预览正文容器（左右各一）：目录提取与跳转用 */
+  mdLeftRef: React.MutableRefObject<HTMLDivElement | null>;
+  mdRightRef: React.MutableRefObject<HTMLDivElement | null>;
   targetPath: string;
   openLineMenu: (e: React.MouseEvent, rowText: string, side: 'left' | 'right') => void;
   selRef: React.MutableRefObject<string>;
@@ -64,6 +67,8 @@ export function DiffPane(props: {
     leftRefs,
     rightRefs,
     leftPhRefs,
+    mdLeftRef,
+    mdRightRef,
     targetPath,
     openLineMenu,
     selRef,
@@ -80,6 +85,7 @@ export function DiffPane(props: {
       <div ref={leftPane} className="sb-pane" data-content-zoom="" onScroll={navigation.onScrollSync('left')}>
         {isMd && previewL ? (
           <div
+            ref={mdLeftRef}
             className="md-render"
             style={{ padding: 16 }}
             dangerouslySetInnerHTML={{ __html: renderMarkdown(versions?.left ?? '', { baseDir: mdBaseDir }) }}
@@ -205,6 +211,7 @@ export function DiffPane(props: {
       <div ref={rightPane} className="sb-pane" data-content-zoom="" onScroll={navigation.onScrollSync('right')}>
         {isMd && previewR ? (
           <div
+            ref={mdRightRef}
             className="md-render"
             style={{ padding: 16 }}
             dangerouslySetInnerHTML={{ __html: renderMarkdown(versions?.right ?? '', { baseDir: mdBaseDir }) }}

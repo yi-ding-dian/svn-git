@@ -1,12 +1,14 @@
 /** Markdown 目录浮层：多级折叠树，点条目跳到文档对应标题。
  *
  *  定位/关闭沿用 MdThemePopover 那套（贴按钮、越界回退、点遮罩关闭）。
- *  条目由调用方从**渲染后的 DOM** 里提取（见 preview-pane 的 effect）—— 那样 id 顺序天然等于屏幕顺序，
+ *  条目由调用方从**渲染后的 DOM** 里提取（见 use-md-toc 的 rescan）—— 那样 id 顺序天然等于屏幕顺序，
  *  不用去猜 marked 的 renderer 调用次序（嵌套在引用/列表里的标题，两者可能对不上）。
+ *
+ *  放在 ui/（而不是某个业务域）：文件预览与差异预览都要用，跨域共享组件不能留在业务域里。
  */
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
-import { Tooltip } from '../ui/tooltip.js';
+import { Tooltip } from './tooltip.js';
 
 /** 目录条目（DOM 上已按 id 挂好锚点） */
 export interface TocItem {

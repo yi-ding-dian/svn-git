@@ -175,6 +175,8 @@ export const hist = {
   'hist.backToCompare': 'Back to Diff',
   'hist.mdPreviewLeft': 'Markdown preview (original)',
   'hist.mdPreviewRight': 'Markdown preview (current)',
+  'hist.tocTitle': 'Document outline (click to expand / collapse)',
+  'hist.tocCount': 'Contents ({n})',
 
   // ---- 并排行标记与占位行 ----
   'hist.leftEmpty': '(original is empty — file added)',

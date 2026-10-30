@@ -175,6 +175,8 @@ export const hist = {
   'hist.backToCompare': '返回对比',
   'hist.mdPreviewLeft': 'Markdown 渲染预览（原版）',
   'hist.mdPreviewRight': 'Markdown 渲染预览（当前）',
+  'hist.tocTitle': '文档目录（点击展开 / 收起）',
+  'hist.tocCount': '目录 ({n})',
 
   // ---- 并排行标记与占位行 ----
   'hist.leftEmpty': '（原版为空 — 新增文件）',

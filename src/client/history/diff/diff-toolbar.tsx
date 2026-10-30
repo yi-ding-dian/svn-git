@@ -111,8 +111,12 @@ export function DiffPaneHeaders(props: {
   previewR: boolean;
   setPreviewR: React.Dispatch<React.SetStateAction<boolean>>;
   readOnly?: boolean;
+  /** md 预览目录（该栏预览且有标题时才显示按钮；open=浮层是否展开）。
+   *  onToggle 收到按钮左下角坐标（浮层贴在按钮下方展开） */
+  tocL?: { count: number; open: boolean; onToggle: (pos: { x: number; y: number }) => void };
+  tocR?: { count: number; open: boolean; onToggle: (pos: { x: number; y: number }) => void };
 }) {
-  const { versions, labels, embedded, sideMode, blocks, curBlock, goPrevBlock, goNextBlock, showAll, syncMode, setSyncMode, onToggleShowAll, search, edit, isMd, previewL, setPreviewL, previewR, setPreviewR, readOnly } = props;
+  const { versions, labels, embedded, sideMode, blocks, curBlock, goPrevBlock, goNextBlock, showAll, syncMode, setSyncMode, onToggleShowAll, search, edit, isMd, previewL, setPreviewL, previewR, setPreviewR, readOnly, tocL, tocR } = props;
 
   /** 嵌入弹窗时的差异块导航：只显示 ↑/↓，放在左右两栏中间的缝隙里（不单占一行） */
   const embeddedBlockNav = sideMode && blocks.length > 0 && (
@@ -237,6 +241,21 @@ export function DiffPaneHeaders(props: {
                 </button>
               </Tooltip>
             )}
+            {isMd && previewL && tocL && tocL.count > 0 && (
+              // 文档目录（原版预览）
+              <Tooltip content={t('hist.tocTitle')}>
+                <button
+                  className={`mini${tocL.open ? ' primary' : ''}`}
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    tocL.onToggle({ x: r.left, y: r.bottom + 4 });
+                  }}
+                >
+                  {/* ☰ 目录 ({n}) */}
+                  ☰ {t('hist.tocCount', { n: tocL.count })}
+                </button>
+              </Tooltip>
+            )}
           </div>
         </div>
         {/* 右栏：当前 */}
@@ -307,6 +326,21 @@ export function DiffPaneHeaders(props: {
                 <button className="mini" onClick={() => setPreviewR((v) => !v)}>
                   {/* 返回对比 / 预览 */}
                   {previewR ? t('hist.backToCompare') : `👁 ${t('common.preview')}`}
+                </button>
+              </Tooltip>
+            )}
+            {isMd && previewR && tocR && tocR.count > 0 && (
+              // 文档目录（当前版本预览）
+              <Tooltip content={t('hist.tocTitle')}>
+                <button
+                  className={`mini${tocR.open ? ' primary' : ''}`}
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    tocR.onToggle({ x: r.left, y: r.bottom + 4 });
+                  }}
+                >
+                  {/* ☰ 目录 ({n}) */}
+                  ☰ {t('hist.tocCount', { n: tocR.count })}
                 </button>
               </Tooltip>
             )}
