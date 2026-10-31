@@ -150,11 +150,13 @@ export function useDiffRows(args: {
   // 左栏在"新增"处插入空占位行（带背景标记），左右视觉对齐、定位直观。
   // 默认只渲染差异片段（diff 行）；「显示全部」开启后遍历原版**全文**（未改动行平铺显示、
   // 差异行照旧标记、未配对新增处插占位行——与 rightRows 的全文模式同构）
-  const leftRows = useMemo(() => {
+  /** 左栏行（折叠前）：完整行集。复制「左栏全部文本」要用这份——折叠只是视觉收起，
+   *  复制不能缺行（用户实报：折叠块里的内容复制不到） */
+  const leftRowsUnfolded = useMemo(() => {
     if (!versions) return [];
     const rows: LeftRow[] = [];
     if (!showAll) {
-      // phIndex：占位行按块内序号进 ref 数组（连接带/动画按行取元素）；折叠由末尾 foldBlockRows 统一处理
+      // phIndex：占位行按块内序号进 ref 数组（连接带/动画按行取元素）；折叠统一在下面的 leftRows 里做
       //
       // 空行间隔：同一逻辑块内被**未改动的空白上下文行**隔开的占位行连续显示，不再显示这些空 ctx
       // （它们只是 diff 把 BASE 空行和新增段空行配了对）。注意只跳过 ctx——
@@ -182,13 +184,7 @@ export function useDiffRows(args: {
           rows.push({ no: -l.block, text: '', change: true, block: l.block, line: l, ph: true, phIndex: idx });
         }
       });
-      return foldBlockRows(
-        rows,
-        blockTotals,
-        NEVER_EXPANDED,
-        (block, total, hidden) => ({ no: foldKey(block), text: '', change: true, block, ph: true, phIndex: COLLAPSE_HEAD, fold: true, foldN: hidden, foldTotal: total }),
-        (block, total) => ({ no: tailKey(block), text: '', change: true, block, ph: true, phIndex: COLLAPSE_HEAD + 1, tail: true, foldTotal: total }),
-      );
+      return rows;
     }
     // 全文模式：空文件保持空行集（让"（原版为空 — 新增文件）"空态照旧显示）
     if (versions.left === '') return rows;
@@ -213,14 +209,22 @@ export function useDiffRows(args: {
       else rows.push({ no, text: ln, change: false, block: -1 });
       for (const a of after.get(no) ?? []) rows.push({ no: -a.block, text: '', change: true, block: a.block, ph: true, phIndex: 0 });
     });
-    return foldBlockRows(
-      rows,
-      blockTotals,
-      NEVER_EXPANDED,
-      (block, total, hidden) => ({ no: foldKey(block), text: '', change: true, block, ph: true, phIndex: COLLAPSE_HEAD, fold: true, foldN: hidden, foldTotal: total }),
-      (block, total) => ({ no: tailKey(block), text: '', change: true, block, ph: true, phIndex: COLLAPSE_HEAD + 1, tail: true, foldTotal: total }),
-    );
-  }, [versions, diffLines, showAll, addAnchorLeft, blockTotals]);
+    return rows;
+  }, [versions, diffLines, showAll, addAnchorLeft]);
+
+  /** 左栏渲染行（折叠后）：大块收起为前 COLLAPSE_HEAD 行 + 一行「+n 行（点击展开）」。
+   *  左栏不参与展开，始终传 NEVER_EXPANDED。两栏折叠口径一致（共用 blockTotals）。 */
+  const leftRows = useMemo(
+    () =>
+      foldBlockRows(
+        leftRowsUnfolded,
+        blockTotals,
+        NEVER_EXPANDED,
+        (block, total, hidden) => ({ no: foldKey(block), text: '', change: true, block, ph: true, phIndex: COLLAPSE_HEAD, fold: true, foldN: hidden, foldTotal: total }),
+        (block, total) => ({ no: tailKey(block), text: '', change: true, block, ph: true, phIndex: COLLAPSE_HEAD + 1, tail: true, foldTotal: total }),
+      ),
+    [leftRowsUnfolded, blockTotals],
+  );
 
   const rightRows = useMemo(() => {
     if (!versions) return [];
@@ -274,5 +278,5 @@ export function useDiffRows(args: {
       .map(([id, v]) => ({ id, left: v.left, right: v.right }));
   }, [diffLines]);
 
-  return { delAnchorRight, addAnchorLeft, blockTotals, leftRows, rightRows, blocks };
+  return { delAnchorRight, addAnchorLeft, blockTotals, leftRows, leftRowsUnfolded, rightRows, blocks };
 }

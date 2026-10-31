@@ -135,7 +135,7 @@ export function DiffView(props: Props) {
   }, [previewR, versions?.right, rescanRightToc, clearRightToc]);
 
   // 行模型：左右两栏行列表、占位行锚点、差异块列表
-  const { delAnchorRight, leftRows, rightRows, blocks } = useDiffRows({
+  const { delAnchorRight, leftRows, leftRowsUnfolded, rightRows, blocks } = useDiffRows({
     versions,
     diffLines,
     lineMarks,
@@ -152,6 +152,18 @@ export function DiffView(props: Props) {
       // 复制失败
       .catch(() => props.onToast?.(t('hist.copyFailed')));
   };
+  /** 「复制{side}全部文本」的文本来源：右栏 = 当前版本全文（rightRows 的每行文本就是它），
+   *  左栏「显示全部」= 原版全文。两者都直接取版本原文——大块折叠只是视觉收起，
+   *  按可见行拼会漏掉折叠部分（用户实报）；也顺带避免删除/新增占位行拼出多余空行。
+   *  左栏片段模式仍是片段语义（只复制差异片段），但要取折叠前的行集。 */
+  const allTextOf = (side: 'left' | 'right') => {
+    if (side === 'right') return versions?.right ?? '';
+    if (showAll) return versions?.left ?? '';
+    return leftRowsUnfolded
+      .filter((r) => !r.ph)
+      .map((r) => r.text)
+      .join('\n');
+  };
   const openLineMenu = (e: React.MouseEvent, rowText: string, side: 'left' | 'right') => {
     e.preventDefault();
     const sel = selRef.current;
@@ -166,7 +178,7 @@ export function DiffView(props: Props) {
       // 复制此行 / 本行已复制
       { icon: <IconCopy />, label: t('hist.copyRow'), action: () => copyText(rowText, t('hist.copiedRow')) },
       // 复制{side}全部文本 / {side}全部文本已复制
-      { icon: <IconCopy />, label: t('hist.copyAll', { side: sideName }), action: () => copyText((side === 'left' ? leftRows : rightRows).map((r) => r.text).join('\n'), t('hist.copiedAll', { side: sideName })) },
+      { icon: <IconCopy />, label: t('hist.copyAll', { side: sideName }), action: () => copyText(allTextOf(side), t('hist.copiedAll', { side: sideName })) },
     );
     setLineCtx({ x: e.clientX, y: e.clientY, items });
   };
