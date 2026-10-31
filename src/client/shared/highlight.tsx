@@ -12,6 +12,21 @@ import css from 'highlight.js/lib/languages/css';
 import bash from 'highlight.js/lib/languages/bash';
 import ini from 'highlight.js/lib/languages/ini';
 import markdown from 'highlight.js/lib/languages/markdown';
+// 常见后端/移动端语言：不注册的话这些文件只能按纯文本看
+import java from 'highlight.js/lib/languages/java';
+import kotlin from 'highlight.js/lib/languages/kotlin';
+import csharp from 'highlight.js/lib/languages/csharp';
+import go from 'highlight.js/lib/languages/go';
+import rust from 'highlight.js/lib/languages/rust';
+import php from 'highlight.js/lib/languages/php';
+import ruby from 'highlight.js/lib/languages/ruby';
+import swift from 'highlight.js/lib/languages/swift';
+import dart from 'highlight.js/lib/languages/dart';
+import scala from 'highlight.js/lib/languages/scala';
+import sql from 'highlight.js/lib/languages/sql';
+import yaml from 'highlight.js/lib/languages/yaml';
+import lua from 'highlight.js/lib/languages/lua';
+import powershell from 'highlight.js/lib/languages/powershell';
 
 hljs.registerLanguage('cpp', cpp);
 hljs.registerLanguage('c', c);
@@ -24,6 +39,20 @@ hljs.registerLanguage('css', css);
 hljs.registerLanguage('bash', bash);
 hljs.registerLanguage('ini', ini);
 hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('java', java);
+hljs.registerLanguage('kotlin', kotlin);
+hljs.registerLanguage('csharp', csharp);
+hljs.registerLanguage('go', go);
+hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('php', php);
+hljs.registerLanguage('ruby', ruby);
+hljs.registerLanguage('swift', swift);
+hljs.registerLanguage('dart', dart);
+hljs.registerLanguage('scala', scala);
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('lua', lua);
+hljs.registerLanguage('powershell', powershell);
 
 /** 语言标识 → 注册语言名映射（两种来源共用：文件扩展名、Markdown 代码块标记） */
 const EXT_LANG: Record<string, string> = {
@@ -32,6 +61,9 @@ const EXT_LANG: Record<string, string> = {
   ts: 'typescript', tsx: 'typescript', json: 'json', xml: 'xml', html: 'xml', htm: 'xml',
   css: 'css', scss: 'css', sh: 'bash', bash: 'bash', zsh: 'bash', shell: 'bash', ini: 'ini', cfg: 'ini', conf: 'ini',
   md: 'markdown', markdown: 'markdown',
+  java: 'java', kt: 'kotlin', kts: 'kotlin', cs: 'csharp', go: 'go', rs: 'rust',
+  php: 'php', rb: 'ruby', rake: 'ruby', swift: 'swift', dart: 'dart', scala: 'scala', sc: 'scala',
+  sql: 'sql', yaml: 'yaml', yml: 'yaml', lua: 'lua', ps1: 'powershell', psm1: 'powershell',
 };
 
 /** 语言标识归一化：别名查表（py→python），表里没有就原样小写（python→python）；未注册名由调用方回退纯文本 */
