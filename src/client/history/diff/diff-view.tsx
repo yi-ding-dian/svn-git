@@ -154,7 +154,7 @@ export function DiffView(props: Props) {
   };
   /** 「复制{side}全部文本」的文本来源：右栏 = 当前版本全文（rightRows 的每行文本就是它），
    *  左栏「显示全部」= 原版全文。两者都直接取版本原文——大块折叠只是视觉收起，
-   *  按可见行拼会漏掉折叠部分（用户实报）；也顺带避免删除/新增占位行拼出多余空行。
+   *  按可见行拼会漏掉折叠部分；也顺带避免删除/新增占位行拼出多余空行。
    *  左栏片段模式仍是片段语义（只复制差异片段），但要取折叠前的行集。 */
   const allTextOf = (side: 'left' | 'right') => {
     if (side === 'right') return versions?.right ?? '';
@@ -459,6 +459,7 @@ export function DiffView(props: Props) {
             readOnly={props.readOnly}
             tocL={{ count: tocLeftItems.length, open: Boolean(tocPopL), onToggle: (pos) => setTocPopL((v) => (v ? null : pos)) }}
             tocR={{ count: tocRightItems.length, open: Boolean(tocPopR), onToggle: (pos) => setTocPopR((v) => (v ? null : pos)) }}
+            targetPath={props.target!.path!}
           />
           <DiffPane
             isMd={isMd}

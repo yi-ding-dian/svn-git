@@ -15,7 +15,7 @@ export interface MdTocApi {
   /** 挂到 md 正文容器上：提取标题、跳转都靠它。
    *  用**回调 ref** 而不是 MutableRefObject：容器可能被卸载后重建（差异视图进/出就地编辑、
    *  文件预览切原文/预览），重建后调用方的 rescan 依赖（内容、开关）往往没变、effect 不重跑，
-   *  新 DOM 上没有锚点 id，目录条目点下去全都"没反应"（用户实报：编辑后再预览，目录跳不动）。 */
+   *  新 DOM 上没有锚点 id，目录条目点下去全都"没反应"。 */
   bodyRef: (el: HTMLDivElement | null) => void;
   items: TocItem[];
   /** 重新提取（正文重渲染后调用） */

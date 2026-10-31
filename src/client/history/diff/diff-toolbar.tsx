@@ -1,6 +1,6 @@
 /** 差异视图的顶栏与栏头：顶栏（标题/差异块导航/返回）与版本号行 + 左右栏头
  *  （搜索开关、显示全部、编辑/预览按钮）。嵌入弹窗时顶栏整行隐藏，块导航挪到两栏缝隙。 */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { isImeComposing } from '../../shared/utils.js';
 import { t } from '../../../shared/i18n/index.js';
 import type { DiffLabels, DiffTarget } from './diff-types.js';
@@ -8,6 +8,9 @@ import type { DiffBlock, DiffVersions } from './use-diff-rows.js';
 import type { DiffEditApi } from './use-diff-edit.js';
 import type { DiffSearchApi } from './use-diff-search.js';
 import { Tooltip } from '../../ui/tooltip.js';
+import { MdTocPopover } from '../../ui/md-toc.js';
+import { useSourceToc } from '../../ui/use-source-toc.js';
+import { useSourceOutline } from '../../ui/use-source-outline.js';
 
 /** 文件被外部改动时的提示条：更新文件（重拉两侧版本与 diff）/ 忽略 */
 export function DiffStaleTip(props: { onReload: () => void; onDismiss: () => void }) {
@@ -115,8 +118,24 @@ export function DiffPaneHeaders(props: {
    *  onToggle 收到按钮左下角坐标（浮层贴在按钮下方展开） */
   tocL?: { count: number; open: boolean; onToggle: (pos: { x: number; y: number }) => void };
   tocR?: { count: number; open: boolean; onToggle: (pos: { x: number; y: number }) => void };
+  /** 当前文件路径：编辑态代码大纲按扩展名选语言规则 */
+  targetPath: string;
 }) {
-  const { versions, labels, embedded, sideMode, blocks, curBlock, goPrevBlock, goNextBlock, showAll, syncMode, setSyncMode, onToggleShowAll, search, edit, isMd, previewL, setPreviewL, previewR, setPreviewR, readOnly, tocL, tocR } = props;
+  const { versions, labels, embedded, sideMode, blocks, curBlock, goPrevBlock, goNextBlock, showAll, syncMode, setSyncMode, onToggleShowAll, search, edit, isMd, previewL, setPreviewL, previewR, setPreviewR, readOnly, tocL, tocR, targetPath } = props;
+
+  /** 编辑态目录（md）：正文在编辑器里，条目按草稿源码实时解析，点一条让编辑器跳到那一行 */
+  const editTocItems = useSourceToc(edit.editing ? edit.draftText : '');
+  /** 编辑态大纲（非 md）：同一份草稿按扩展名解析函数 / 类 */
+  const editOutlineItems = useSourceOutline(edit.editing ? edit.draftText : '', targetPath, edit.editing && !isMd);
+  const [editTocPop, setEditTocPop] = useState<{ x: number; y: number } | null>(null);
+  const [editOutlinePop, setEditOutlinePop] = useState<{ x: number; y: number } | null>(null);
+  /** 退出编辑态时收起编辑态浮层（目录 / 大纲）：按钮已消失，浮层点下去也够不到编辑器 */
+  useEffect(() => {
+    if (!edit.editing) {
+      setEditTocPop(null);
+      setEditOutlinePop(null);
+    }
+  }, [edit.editing]);
 
   /** 嵌入弹窗时的差异块导航：只显示 ↑/↓，放在左右两栏中间的缝隙里（不单占一行） */
   const embeddedBlockNav = sideMode && blocks.length > 0 && (
@@ -266,6 +285,36 @@ export function DiffPaneHeaders(props: {
                 {/* 编辑中 */}
                 <span className="dim small">{t('fs.pv.editing')}</span>
                 <span className="grow" />
+                {/* 编辑态大纲（非 md）：函数 / 类 / 方法，点一条让编辑器跳到那一行 */}
+                {!isMd && editOutlineItems.length > 0 && (
+                  <Tooltip content={t('hist.outlineTitle')}>
+                    <button
+                      className={`mini${editOutlinePop ? ' primary' : ''}`}
+                      onClick={(e) => {
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setEditOutlinePop((v) => (v ? null : { x: r.left, y: r.bottom + 4 }));
+                      }}
+                    >
+                      {/* ☰ 大纲 ({n}) */}
+                      ☰ {t('hist.outlineCount', { n: editOutlineItems.length })}
+                    </button>
+                  </Tooltip>
+                )}
+                {/* 编辑态目录（md）：条目来自草稿源码，点一条让编辑器跳到那一行 */}
+                {isMd && editTocItems.length > 0 && (
+                  <Tooltip content={t('hist.tocTitle')}>
+                    <button
+                      className={`mini${editTocPop ? ' primary' : ''}`}
+                      onClick={(e) => {
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setEditTocPop((v) => (v ? null : { x: r.left, y: r.bottom + 4 }));
+                      }}
+                    >
+                      {/* ☰ 目录 ({n}) */}
+                      ☰ {t('hist.tocCount', { n: editTocItems.length })}
+                    </button>
+                  </Tooltip>
+                )}
                 {/* 💾 保存（有修改才点亮）；保存后自动重新对比 */}
                 <button className={`mini${edit.editDirty ? ' primary' : ''}`} onClick={() => edit.editorRef.current?.save()}>{t('fs.pv.saveBtn')}</button>
                 {/* 取消：丢弃修改，回到差异视图 */}
@@ -349,6 +398,32 @@ export function DiffPaneHeaders(props: {
           </div>
         </div>
       </div>
+      {/* 编辑态目录浮层：不自动关，方便连续跳（条目 id = 源码行号） */}
+      {editTocPop && (
+        <MdTocPopover
+          y={editTocPop.y}
+          x={editTocPop.x}
+          items={editTocItems}
+          onJump={(id) => {
+            const line = Number(id);
+            if (line > 0) edit.editorRef.current?.gotoLine(line);
+          }}
+          onClose={() => setEditTocPop(null)}
+        />
+      )}
+      {/* 编辑态代码大纲浮层：同上 */}
+      {editOutlinePop && (
+        <MdTocPopover
+          y={editOutlinePop.y}
+          x={editOutlinePop.x}
+          items={editOutlineItems}
+          onJump={(id) => {
+            const line = Number(id);
+            if (line > 0) edit.editorRef.current?.gotoLine(line);
+          }}
+          onClose={() => setEditOutlinePop(null)}
+        />
+      )}
     </>
   );
 }

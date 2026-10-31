@@ -26,6 +26,8 @@ export function useDiffEdit(args: {
   editingRef.current = editing;
   const [editDirty, setEditDirty] = useState(false);
   const [editData, setEditData] = useState<{ text: string; eol: '\n' | '\r\n'; jumpLine?: number } | null>(null);
+  /** 草稿文本：编辑态的 md 目录按它实时解析标题（InlineEditor 挂载/每次改动时上报） */
+  const [draftText, setDraftText] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
 
   /** 进入就地编辑：先拉一次**最新工作区文本**（兼做准入——非 UTF-8/超限文件不给编辑），
@@ -63,6 +65,7 @@ export function useDiffEdit(args: {
   const cancelEdit = () => {
     setEditing(false);
     setEditData(null);
+    setDraftText('');
   };
 
   /** 换文件时退出编辑态：不退出的话新文件会拿旧文件的内容进编辑器 */
@@ -70,12 +73,14 @@ export function useDiffEdit(args: {
     setEditing(false);
     setEditData(null);
     setEditDirty(false);
+    setDraftText('');
   };
 
   /** 保存成功：退出编辑 + 重新对比（工作区文件与 diff 一起重载） */
   const onEditorSaved = (m: string) => {
     setEditing(false);
     setEditData(null);
+    setDraftText('');
     setReloadKey((k) => k + 1); // 保存后重新对比（工作区文件与 diff 一起重载）
     onToast?.(m);
   };
@@ -87,6 +92,8 @@ export function useDiffEdit(args: {
     editDirty,
     setEditDirty,
     editData,
+    draftText,
+    onDraftChange: setDraftText,
     reloadKey,
     setReloadKey,
     startEdit,

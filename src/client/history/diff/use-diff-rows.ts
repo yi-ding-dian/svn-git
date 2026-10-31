@@ -151,7 +151,7 @@ export function useDiffRows(args: {
   // 默认只渲染差异片段（diff 行）；「显示全部」开启后遍历原版**全文**（未改动行平铺显示、
   // 差异行照旧标记、未配对新增处插占位行——与 rightRows 的全文模式同构）
   /** 左栏行（折叠前）：完整行集。复制「左栏全部文本」要用这份——折叠只是视觉收起，
-   *  复制不能缺行（用户实报：折叠块里的内容复制不到） */
+   *  复制不能缺行 */
   const leftRowsUnfolded = useMemo(() => {
     if (!versions) return [];
     const rows: LeftRow[] = [];

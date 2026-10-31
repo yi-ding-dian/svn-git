@@ -202,6 +202,7 @@ export function DiffPane(props: {
             fileName={targetPath.split('/').pop() ?? ''}
             jumpLine={edit.editData.jumpLine}
             onDirtyChange={edit.setEditDirty}
+            onDraftChange={edit.onDraftChange}
             onSaved={edit.onEditorSaved}
             onError={edit.onEditorError}
           />

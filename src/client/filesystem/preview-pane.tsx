@@ -20,6 +20,8 @@ import { renderMarkdown } from '../shared/markdown.js';
 import { MdThemePopover, loadMdTheme, saveMdTheme, mdThemeVars, mdThemeName } from '../shared/md-theme.js';
 import { MdTocPopover } from '../ui/md-toc.js';
 import { useMdToc } from '../ui/use-md-toc.js';
+import { useSourceToc } from '../ui/use-source-toc.js';
+import { useSourceOutline } from '../ui/use-source-outline.js';
 
 /** 预览目标：{文件名, 相对路径, 状态码?, 是否图片?}；文本内容由面板自行加载 */
 export interface PreviewTarget {
@@ -151,6 +153,14 @@ export function PreviewPane(props: Props) {
   const [tocPop, setTocPop] = useState<{ y: number; x: number } | null>(null);
   /** 目录条目 / md 正文容器：公共 hook（渲染后从 DOM 提取标题并挂锚点，文件预览与差异预览共用） */
   const { bodyRef: mdBodyRef, items: tocItems, rescan: rescanToc, clear: clearToc, jump: jumpToc } = useMdToc();
+  /** 编辑态目录：正文在 textarea 里（没有渲染后的 DOM 可扫），条目按**草稿源码**实时解析；
+   *  点条目让编辑器跳到源码行（InlineEditor.gotoLine），不用挂锚点 */
+  const [editTocText, setEditTocText] = useState('');
+  const [editTocPop, setEditTocPop] = useState<{ y: number; x: number } | null>(null);
+  const editTocItems = useSourceToc(editing ? editTocText : '');
+  /** 代码大纲浮层位置（浏览态 / 编辑态各一） */
+  const [outlinePop, setOutlinePop] = useState<{ y: number; x: number } | null>(null);
+  const [editOutlinePop, setEditOutlinePop] = useState<{ y: number; x: number } | null>(null);
   const previewRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   /** 顶部说明文案（与旧 openFile 打开时生成的 note 一致；img 目标无说明） */
@@ -168,6 +178,9 @@ export function PreviewPane(props: Props) {
    *  拿去编辑保存就会把这句话写进文件 —— 和 fileEnc 一样不给内联编辑 */
   const [fileTruncated, setFileTruncated] = useState(false);
   const isMd = target.name.toLowerCase().endsWith('.md');
+  /** 代码大纲（非 md）：浏览态与编辑态各一份——编辑态按草稿防抖解析，点条目让编辑器跳行 */
+  const outlineItems = useSourceOutline(text ?? '', target.name, !editing && !isMd);
+  const editOutlineItems = useSourceOutline(editing ? editTocText : '', target.name, editing && !isMd);
   /** md 阅读主题的 inline 变量（只打给 md 的预览容器；「跟随界面」为 undefined 不覆盖） */
   const mdVars = isMd ? mdThemeVars(mdTheme) : undefined;
 
@@ -186,6 +199,14 @@ export function PreviewPane(props: Props) {
   useEffect(() => {
     if (!mdPreview) setTocPop(null);
   }, [mdPreview]);
+
+  /** 退出编辑态时收起编辑态浮层（目录 / 大纲）：按钮已消失，浮层留着点也够不到编辑器 */
+  useEffect(() => {
+    if (!editing) {
+      setEditTocPop(null);
+      setEditOutlinePop(null);
+    }
+  }, [editing]);
 
   // 目标变化（FsView 每次打开都写入新对象）→ 重置内部模式并重新读取内容
   useEffect(() => {
@@ -364,6 +385,12 @@ export function PreviewPane(props: Props) {
     if (jumpLine == null || text == null) return;
     previewRefs.current.get(jumpLine - 1)?.scrollIntoView({ block: 'center' });
   }, [jumpLine, text]);
+  /** 大纲/定位跳行：复用上面那套（滚到中间 + .pv-jump 行高亮）。
+   *  同一行连点两次时 jumpLine 不变、effect 不会再跑，这里手动补一次滚动 */
+  const jumpToSourceLine = (line: number) => {
+    if (line === jumpLine) previewRefs.current.get(line - 1)?.scrollIntoView({ block: 'center' });
+    else setJumpLine(line);
+  };
   const matches = useMemo(() => {
     if (!searchActive || !searchQ.trim()) return [] as number[];
     const q = searchQ.toLowerCase();
@@ -446,6 +473,21 @@ export function PreviewPane(props: Props) {
         )}
         {!editing && (
           <>
+        {/* 代码大纲（非 md）：函数 / 类 / 方法，点一条滚到对应行 */}
+        {!isMd && !target.img && outlineItems.length > 0 && (
+          <Tooltip content={t('fs.pv.outlineTitle')}>
+            <button
+              className={`mini${outlinePop ? ' primary' : ''}`}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setOutlinePop((v) => (v ? null : { y: r.bottom + 4, x: r.left }));
+              }}
+            >
+              {/* ☰ 大纲 ({n}) */}
+              ☰ {t('fs.pv.outlineCount', { n: outlineItems.length })}
+            </button>
+          </Tooltip>
+        )}
         <button
           className={`mini ${blameMode ? 'primary' : ''}`}
           disabled={target.code === '?' || target.code === 'I'}
@@ -542,6 +584,36 @@ export function PreviewPane(props: Props) {
               {eolRef.current === '\r\n' ? ` · ${t('fs.pv.keepCrlf')}` : ''}
             </span>
             <span className="grow" />
+            {/* 编辑态大纲（非 md）：条目来自草稿源码，点一条让编辑器跳到那一行 */}
+            {!isMd && editOutlineItems.length > 0 && (
+              <Tooltip content={t('fs.pv.outlineTitle')}>
+                <button
+                  className={`mini${editOutlinePop ? ' primary' : ''}`}
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setEditOutlinePop((v) => (v ? null : { y: r.bottom + 4, x: r.left }));
+                  }}
+                >
+                  {/* ☰ 大纲 ({n}) */}
+                  ☰ {t('fs.pv.outlineCount', { n: editOutlineItems.length })}
+                </button>
+              </Tooltip>
+            )}
+            {/* 编辑态目录（md）：条目来自草稿源码，点一条让编辑器跳到那一行 */}
+            {isMd && editTocItems.length > 0 && (
+              <Tooltip content={t('fs.pv.tocTitle')}>
+                <button
+                  className={`mini${editTocPop ? ' primary' : ''}`}
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setEditTocPop((v) => (v ? null : { y: r.bottom + 4, x: r.left }));
+                  }}
+                >
+                  {/* ☰ 目录 ({n}) */}
+                  ☰ {t('fs.pv.tocCount', { n: editTocItems.length })}
+                </button>
+              </Tooltip>
+            )}
             {/* 💾 保存（有修改才点亮） */}
             <button className={`mini${editDirty ? ' primary' : ''}`} onClick={() => editorRef.current?.save()}>{t('fs.pv.saveBtn')}</button>
             {/* 取消 */}
@@ -574,6 +646,7 @@ export function PreviewPane(props: Props) {
           fileName={target.name}
           jumpLine={jumpLine}
           onDirtyChange={setEditDirty}
+          onDraftChange={setEditTocText}
           onSaved={(m) => {
             setEditing(false);
             setReloadKey((k) => k + 1); // 重读内容（保存后预览刷新）
@@ -674,6 +747,45 @@ export function PreviewPane(props: Props) {
           items={tocItems}
           onJump={jumpToc}
           onClose={() => setTocPop(null)}
+        />
+      )}
+      {/* 代码大纲气泡（浏览态）：条目 id = 源码行号，点一条滚到那一行并高亮 */}
+      {outlinePop && (
+        <MdTocPopover
+          y={outlinePop.y}
+          x={outlinePop.x}
+          items={outlineItems}
+          onJump={(id) => {
+            const line = Number(id);
+            if (line > 0) jumpToSourceLine(line);
+          }}
+          onClose={() => setOutlinePop(null)}
+        />
+      )}
+      {/* 代码大纲气泡（编辑态）：点一条让编辑器光标落到那一行 */}
+      {editOutlinePop && (
+        <MdTocPopover
+          y={editOutlinePop.y}
+          x={editOutlinePop.x}
+          items={editOutlineItems}
+          onJump={(id) => {
+            const line = Number(id);
+            if (line > 0) editorRef.current?.gotoLine(line);
+          }}
+          onClose={() => setEditOutlinePop(null)}
+        />
+      )}
+      {/* 编辑态目录气泡：条目的 id 是源码行号，点一条让编辑器光标落到那一行 */}
+      {editTocPop && (
+        <MdTocPopover
+          y={editTocPop.y}
+          x={editTocPop.x}
+          items={editTocItems}
+          onJump={(id) => {
+            const line = Number(id);
+            if (line > 0) editorRef.current?.gotoLine(line);
+          }}
+          onClose={() => setEditTocPop(null)}
         />
       )}
       {/* md 阅读主题气泡：选完接着看（不关气泡，可连续试）；Esc / 点遮罩只关气泡，预览留着 */}

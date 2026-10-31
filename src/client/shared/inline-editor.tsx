@@ -38,6 +38,8 @@ export const InlineEditor = forwardRef<
     jumpLine?: number;
     /** 脏状态变化（调用方据此点亮/熄灭保存按钮） */
     onDirtyChange: (dirty: boolean) => void;
+    /** 草稿文本上报（挂载时也报一次初始文本）：编辑态的目录要从草稿实时解析标题 */
+    onDraftChange?: (text: string) => void;
     onSaved: (message: string) => void;
     onError: (message: string) => void;
   }
@@ -61,6 +63,11 @@ export const InlineEditor = forwardRef<
     props.onDirtyChange(dirty);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在脏状态翻转时通知
   }, [dirty]);
+  /** 草稿上报：编辑态的目录按草稿实时解析（与上面同理，只在草稿变化时通知；挂载时报初始文本） */
+  useEffect(() => {
+    props.onDraftChange?.(draft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在草稿变化时上报
+  }, [draft]);
   /** 光标定位到指定行（1-based）+ 滚动居中。挂载时的 jumpLine 与编辑中「点左栏差异行」
    *  的联动共用；读 ta.value（实时草稿，编辑中内容可能已变）。
    *  flashRange 给了就**整段行脉冲**（高亮层对应行加动画类——textarea 背景透明，底色可见） */

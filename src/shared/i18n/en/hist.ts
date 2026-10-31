@@ -177,6 +177,9 @@ export const hist = {
   'hist.mdPreviewRight': 'Markdown preview (current)',
   'hist.tocTitle': 'Document outline (click to expand / collapse)',
   'hist.tocCount': 'Contents ({n})',
+  // Code outline (in-place editing of non-Markdown files: functions / classes / methods)
+  'hist.outlineTitle': 'Code outline: functions / classes / methods (click to jump to a line)',
+  'hist.outlineCount': 'Outline ({n})',
 
   // ---- 并排行标记与占位行 ----
   'hist.leftEmpty': '(original is empty — file added)',

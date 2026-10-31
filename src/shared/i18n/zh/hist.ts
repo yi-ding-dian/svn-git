@@ -177,6 +177,9 @@ export const hist = {
   'hist.mdPreviewRight': 'Markdown 渲染预览（当前）',
   'hist.tocTitle': '文档目录（点击展开 / 收起）',
   'hist.tocCount': '目录 ({n})',
+  // 代码大纲（就地编辑非 md 文件时：函数 / 类 / 方法）
+  'hist.outlineTitle': '代码大纲：函数 / 类 / 方法（点击跳到对应行）',
+  'hist.outlineCount': '大纲 ({n})',
 
   // ---- 并排行标记与占位行 ----
   'hist.leftEmpty': '（原版为空 — 新增文件）',

@@ -495,6 +495,9 @@ export const fs = {
   // ---- Markdown preview: document outline ----
   'fs.pv.tocCount': 'Contents ({n})',
   'fs.pv.tocTitle': 'Document outline (click to expand / collapse)',
+  // ---- Code outline (non-Markdown: functions / classes / methods) ----
+  'fs.pv.outlineCount': 'Outline ({n})',
+  'fs.pv.outlineTitle': 'Code outline: functions / classes / methods (click to jump to a line)',
   'fs.pv.copyCode': 'Copy',
   'fs.pv.copied': 'Copied',
   'fs.pv.tocToggle': 'Expand / collapse this section',
