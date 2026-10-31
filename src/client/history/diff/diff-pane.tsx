@@ -35,9 +35,9 @@ export function DiffPane(props: {
   leftRefs: React.MutableRefObject<Map<number, HTMLDivElement>>;
   rightRefs: React.MutableRefObject<Map<number, HTMLDivElement>>;
   leftPhRefs: React.MutableRefObject<Map<number, HTMLDivElement[]>>;
-  /** md 预览正文容器（左右各一）：目录提取与跳转用 */
-  mdLeftRef: React.MutableRefObject<HTMLDivElement | null>;
-  mdRightRef: React.MutableRefObject<HTMLDivElement | null>;
+  /** md 预览正文容器（左右各一）：目录提取与跳转用。回调 ref——容器重建时由 useMdToc 重新挂锚点 */
+  mdLeftRef: React.RefCallback<HTMLDivElement>;
+  mdRightRef: React.RefCallback<HTMLDivElement>;
   targetPath: string;
   openLineMenu: (e: React.MouseEvent, rowText: string, side: 'left' | 'right') => void;
   selRef: React.MutableRefObject<string>;
