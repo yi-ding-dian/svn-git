@@ -513,6 +513,8 @@ export function App() {
       kind: 'push',
       // 任务标题：推送 · {项目名} · {分支}（带项目名——切换项目后也能分清是哪个仓库在推）
       title: t('shell.tasks.pushTitle', { repo: baseName(repo?.root ?? ''), branch: repo?.revOrBranch ?? '' }),
+      // 失败后可在铃铛里重试：推送幂等，原样再推一次
+      retry: () => pushNow(),
       run: async (signal) => {
         try {
           const r = await post.push(signal);
@@ -899,6 +901,8 @@ export function App() {
         kind: 'update',
         // 任务标题：{repo} · {branch} · 更新（右键子目录更新时追加目录——同检出标题的拼接先例）
         title: `${t('shell.tasks.updateTitle', { repo: baseName(repo?.root ?? ''), branch: repo?.revOrBranch ?? '' })}${dir ? ` · ${dir}` : ''}`,
+        // 失败后可在铃铛里重试：更新幂等，原样再更新一次
+        retry: () => doUpdateDir(dir),
         run: async (signal) => {
           try {
             const r = await post.update(dir || undefined, signal);

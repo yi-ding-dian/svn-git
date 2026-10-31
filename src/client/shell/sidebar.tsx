@@ -254,6 +254,8 @@ export function Sidebar(props: {
       kind: `pull:${path}`,
       // 标题：项目名 · 分支 · 拉取（分支取探测值；未探测到就省略——同检出标题的拼接先例）
       title: `${baseName(path)}${probes[path]?.branch ? ` · ${probes[path]!.branch}` : ''} · ${t('shell.tasks.pullAction')}`,
+      // 失败后可在铃铛里重试：拉取幂等，原样再拉一次
+      retry: () => pullProject(path),
       run: async (signal) => {
         const r = await post.pullAny(path, signal);
         if (r.ok) {

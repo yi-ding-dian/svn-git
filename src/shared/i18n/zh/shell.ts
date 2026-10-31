@@ -159,6 +159,9 @@ export const shell = {
   // 通知行悬浮提示（消息两行截断后，点行弹窗看完整内容）
   'shell.notify.detail': '详情',
   'shell.notify.detailTip': '点击查看详情',
+  // 失败任务的「重试」：用同一组参数把这次任务再跑一遍
+  'shell.notify.retry': '重试',
+  'shell.notify.retryTip': '用原来的参数重新执行这次任务',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': '分隔符',

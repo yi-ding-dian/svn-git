@@ -47,6 +47,9 @@ let tasks: BgTask[] = [];
 const listeners = new Set<() => void>();
 /** 取消句柄不进公开快照（快照只放可序列化状态） */
 const aborts = new Map<number, AbortController>();
+/** 失败后的「重试」回调（发起方给：用同一组参数再发起一次）。同样不进快照——
+ *  快照要能序列化，这里放的是闭包。成功后就不再需要，失败留着直到被重试或通知被关掉。 */
+const retries = new Map<number, () => void>();
 
 function emit() {
   for (const l of listeners) l();
@@ -58,11 +61,15 @@ export function startTask(opts: {
   title: string;
   /** 进度通道（传了就进任务快照，详情弹窗显示实时进度；无进度的任务不传） */
   chan?: string;
+  /** 失败后的重试动作：铃铛通知里的「重试」按钮调用它（通常是"用同一组参数再发起一次"）。
+   *  只有能安全原样重跑的任务才传——重试由用户手动触发，不会自动重跑。 */
+  retry?: () => void;
   run: (signal: AbortSignal) => Promise<TaskRunResult>;
 }): number {
   const id = nextId++;
   const ac = new AbortController();
   aborts.set(id, ac);
+  if (opts.retry) retries.set(id, opts.retry);
   tasks = [{ id, kind: opts.kind, title: opts.title, chan: opts.chan, status: 'running', startedAt: Date.now() }, ...tasks];
   emit();
   void opts
@@ -70,16 +77,36 @@ export function startTask(opts: {
     .then((r) => {
       if (!aborts.has(id)) return; // 已被取消收尾过（cancel 先落地）
       aborts.delete(id);
+      if (r.ok) retries.delete(id); // 成功就没有"重试"可言了
       patch(id, { status: r.ok ? 'done' : 'error', message: r.message, data: r.data, endedAt: Date.now() });
     })
     .catch((e: unknown) => {
       if (!aborts.has(id)) return;
       aborts.delete(id);
       const err = e as Error & { cancelled?: boolean };
+      if (err.cancelled) retries.delete(id); // 用户自己取消的，不提供重试
       // 已取消（用户点了取消——ApiError.cancelled）
       patch(id, { status: err.cancelled ? 'cancelled' : 'error', message: err.message, endedAt: Date.now() });
     });
   return id;
+}
+
+/** 这个任务能不能重试：发起方传了 retry，且同类型任务没在跑（防叠任务） */
+export function canRetryTask(id: number): boolean {
+  if (!retries.has(id)) return false;
+  const tk = tasks.find((x) => x.id === id);
+  return !(tk?.kind && hasRunningTask(tk.kind));
+}
+
+/** 重试一个失败的任务：执行发起方给的"同参数再跑一次"。返回是否真的发起了
+ *  （任务太旧没有重试动作 / 同类任务在跑 → false）。发起后旧任务的重试动作即失效——
+ *  新任务若再失败，会有它自己的通知和重试。 */
+export function retryTask(id: number): boolean {
+  if (!canRetryTask(id)) return false;
+  const run = retries.get(id)!;
+  retries.delete(id);
+  run();
+  return true;
 }
 
 /** 取消进行中的任务（abort 请求/子进程；任务状态由 run 的收尾落到 cancelled） */
@@ -87,6 +114,7 @@ export function cancelTask(id: number): void {
   const ac = aborts.get(id);
   if (!ac) return;
   aborts.delete(id);
+  retries.delete(id);
   ac.abort();
   patch(id, { status: 'cancelled', message: undefined, endedAt: Date.now() });
 }

@@ -157,6 +157,9 @@ export const shell = {
   // Row hover hint (message is clamped to 2 lines; click to open the full content)
   'shell.notify.detail': 'Details',
   'shell.notify.detailTip': 'Click to view details',
+  // Retry a failed task with the same parameters
+  'shell.notify.retry': 'Retry',
+  'shell.notify.retryTip': 'Run this task again with the same parameters',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': 'Separator',

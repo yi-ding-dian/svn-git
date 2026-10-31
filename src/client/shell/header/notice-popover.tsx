@@ -1,6 +1,7 @@
 /** 任务通知面板（铃铛）：完成/失败通知列表 + 详情入口。 */
 import React, { useEffect, useState } from 'react';
 import { useNotices, markAllRead, removeNotice } from '../../shared/notices.js';
+import { useTasks, canRetryTask, retryTask } from '../../shared/tasks.js';
 import { UpdateResultModal, type UpdateResultDetail } from '../../ops/update-result.js';
 import { InfoModal } from '../../ui/prompt.js';
 import { t } from '../../../shared/i18n/index.js';
@@ -18,6 +19,8 @@ function asUpdateDetail(d: unknown): UpdateResultDetail | null {
  *  打开即全部已读（红点消失）；全部关掉 → 铃铛随之消失（父层条件渲染），面板自动收起 */
 export function NoticePopover(props: { x: number; y: number; onClose: () => void; onOpenTaskDetail: (id: number) => void }) {
   const notices = useNotices();
+  // 订阅任务 store：失败通知上的「重试」按钮可用与否跟着任务状态变（同类任务开跑 → 置灰）
+  useTasks();
   /** 打开的「更新结果」详情窗（点面板里带「详情 ▸」的通知行） */
   const [detail, setDetail] = useState<UpdateResultDetail | null>(null);
   /** 「全文」小窗（无更新详情的通知——消息被两行截断后，点开看完整内容） */
@@ -94,6 +97,21 @@ export function NoticePopover(props: { x: number; y: number; onClose: () => void
                 )}
               </span>
               <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                {/* 重试（仅失败、且发起方给了重试动作、且同类任务没在跑）：同参数重跑，
+                    真正跑起来后移除这条旧通知（新任务有它自己的沙漏与结果通知） */}
+                {n.err && n.taskId != null && canRetryTask(n.taskId) && (
+                  <button
+                    className="mini"
+                    title={t('shell.notify.retryTip')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (retryTask(n.taskId!)) removeNotice(n.id);
+                    }}
+                  >
+                    {/* 重试 */}
+                    {t('shell.notify.retry')}
+                  </button>
+                )}
                 {/* 详情（点击查看更新文件清单/警告 或 检出文件清单） */}
                 {(ud || coTaskId !== null) && <span className="dim small nowrap">{t('shell.notify.detail')} ▸</span>}
                 {/* 关闭这条通知（stopPropagation：行可点时点 × 不应打开详情） */}

@@ -41,6 +41,8 @@ export function startGetRepoTask(
     title: `${p.title ?? t('repo.get.title')} · ${p.name}`,
     // 进度通道 = 落地目录（任务详情弹窗据此展示实时进度）
     chan: target,
+    // 失败后可在铃铛里重试：同一组参数再拉一次（后端失败/超时会先清掉半截目录）
+    retry: () => startGetRepoTask(p, hooks),
     run: async (signal) => {
       try {
         const r = await post.repoCreate(p.type, p.dir, p.name, p.url, true, signal, p.ref, p.depth, {

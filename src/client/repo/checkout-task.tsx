@@ -57,6 +57,8 @@ export function startCheckoutTask(
     title: `${t('repo.co.title')} · ${p.name}`,
     // 进度通道 = 落地目录（后端检出期间周期扫盘上报"已检出 N 个文件 · X MB"）
     chan: target,
+    // 失败后可在铃铛里重试：同一组参数再检一次（后端失败/超时会先清掉半截目录）
+    retry: () => startCheckoutTask(p, hooks),
     run: async (signal) => {
       try {
         const r = await post.repoCheckout(p.url, p.dir, p.name, p.cred, signal, p.dirs);
