@@ -170,9 +170,36 @@ function gitSubcommandIndex(args: string[]): number {
 }
 
 export class GitVcs {
+  /** origin 地址缓存：判断是否 GitHub（只有 GitHub 才注入项目私钥）。
+   *  用单独的 run 读取而不是 this.exec——exec 本身要用它判断，会递归。
+   *  null = 还没读过；'' = 没有 origin / 读取失败 */
+  private originCache: string | null = null;
+
   constructor(private repo: RepoInfo) {}
 
-  private exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; env?: Record<string, string>; decode?: 'utf8' | 'auto' } = {}) {
+  /** 读 origin 地址（缓存）。失败返回空串，不影响命令本身 */
+  private async originUrl(): Promise<string> {
+    if (this.originCache !== null) return this.originCache;
+    const res = await run('git', ['remote', 'get-url', 'origin'], { cwd: this.repo.root, timeoutMs: 15_000 });
+    this.originCache = res.code === 0 ? res.stdout.trim() : '';
+    return this.originCache;
+  }
+
+  /** GitHub 专用 SSH 私钥参数（config.json 的 git.sshKeyPath）：
+   *  - 没配私钥 / origin 不是 GitHub → 空串，行为与改动前完全一致；
+   *  - 配了 → 只给 GitHub 的 ssh 加 -i；不设 IdentitiesOnly，默认密钥仍可兜底。
+   *  **路径统一正斜杠**：GIT_SSH_COMMAND 经 shell 解析，Windows 反斜杠会被当转义符；
+   *  双引号容纳空格。保存接口已拒绝换行/引号，这里再兜底去掉引号。 */
+  private async sshKeyArg(): Promise<string> {
+    const key = loadConfig().git?.sshKeyPath?.trim();
+    if (!key) return '';
+    const origin = await this.originUrl();
+    if (!/^(?:ssh:\/\/)?(?:[^@/\s]+@)?github\.com[:/]/i.test(origin)) return '';
+    const p = key.replace(/\\/g, '/').replace(/"/g, '');
+    return ` -i "${p}"`;
+  }
+
+  private async exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; env?: Record<string, string>; decode?: 'utf8' | 'auto' } = {}) {
     // 传输类子命令（push / pull / fetch）自动上报进度，供顶栏任务面板显示"已传多少、多快"：
     //  - `--progress` 必须显式加（stderr 不是终端时 git 默认不吐）；
     //  - 通道名就是子命令名——同一时刻只对一个仓库做传输（推送侧另有防重入），不必再拼路径；
@@ -182,6 +209,7 @@ export class GitVcs {
     const sub = args[i] ?? '';
     const chan = sub === 'push' || sub === 'pull' || sub === 'fetch' ? sub : '';
     if (chan) progressStart(chan);
+    const sshKey = await this.sshKeyArg();
     return run('git', chan ? [...args.slice(0, i + 1), '--progress', ...args.slice(i + 1)] : args, {
       cwd: this.repo.root,
       timeoutMs: extra.timeoutMs ?? 120_000,
@@ -190,7 +218,7 @@ export class GitVcs {
       stdinData: extra.stdinData, // 透传：此前声明了但漏传，导致 -F - 读到空说明
       // GIT_TERMINAL_PROMPT=0：禁用终端交互提示（否则 git 检测到启动终端会卡在 "Username for..." 等输入，
       //  不走工具的认证弹窗）；GIT_SSH_COMMAND BatchMode：SSH 不交互（不卡主机指纹/密码输入），失败快速返回
-      env: { GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new', ...extra.env },
+      env: { GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: `ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new${sshKey}`, ...extra.env },
       // 进度表的生命周期跟着这次 git 命令走：命令一结束就撤。推送可能连跑几条（无上游重试、
       // 认证重试），每条各自 Start/Done——中间的空档正好就是"两次传输之间"
       ...(chan ? { onStderrLine: (line: string) => progressFromStderr(chan, line) } : {}),
@@ -247,6 +275,7 @@ export class GitVcs {
       : await this.exec(['remote', 'add', 'origin', url]);
     // 设置远程地址失败
     if (r.code !== 0) return { ok: false, message: r.stderr.trim() || t('vcs.setRemoteFailed') };
+    this.originCache = null; // origin 变了：下次按新地址判断是否 GitHub（决定要不要注入私钥）
     // 远程地址已更新 / 远程地址已添加
     return { ok: true, message: hasOrigin ? t('vcs.remoteUpdated') : t('vcs.remoteAdded') };
   }

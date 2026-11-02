@@ -317,6 +317,9 @@ export function GitInfoModal(props: {
   const [identity, setIdentity] = useState<{ name: string; email: string; scope: 'repo' | 'global' | '' } | null>(null);
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
+  /** SSH 私钥路径：配置后 GitHub 的 SSH 传输用它；空 = 系统默认 ~/.ssh */
+  const [sshKey, setSshKey] = useState('');
+  const [sshBusy, setSshBusy] = useState(false);
 
   const load = () => {
     get
@@ -329,6 +332,10 @@ export function GitInfoModal(props: {
     get
       .gitIdentity()
       .then(setIdentity)
+      .catch(() => {});
+    get
+      .gitSshKey()
+      .then((r) => setSshKey(r.path))
       .catch(() => {});
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -352,6 +359,25 @@ export function GitInfoModal(props: {
       // 配置失败: {msg}
       .catch((e: Error) => props.onToast(t('ops.gitInfo.err.save', { msg: (e as Error).message }), true))
       .finally(() => setBusy(false));
+  };
+
+  const saveSshKey = () => {
+    setSshBusy(true);
+    void post
+      .gitSshKeySave(sshKey.trim())
+      .then((r) => {
+        props.onToast(r.message, !r.ok);
+        // 服务端会把 ~ 展开成绝对路径：保存成功后回显规范化后的值
+        if (r.ok) {
+          get
+            .gitSshKey()
+            .then((v) => setSshKey(v.path))
+            .catch(() => {});
+        }
+      })
+      // 保存 SSH 私钥失败: {msg}
+      .catch((e: Error) => props.onToast(t('ops.gitInfo.sshKeyErr', { msg: (e as Error).message }), true))
+      .finally(() => setSshBusy(false));
   };
 
   return (
@@ -428,6 +454,27 @@ export function GitInfoModal(props: {
                 </div>
                 {/* 修改后推送/拉取将使用新地址（已有 origin 则更新，没有则添加） */}
                 <div className="dim small" style={{ marginTop: 6 }}>{t('ops.gitInfo.remoteHint')}</div>
+              </FormRow>
+              {/* SSH 私钥配置 */}
+              <FormRow label={t('ops.gitInfo.sshKeyLabel')}>
+                <div className="row" style={{ gap: 8 }}>
+                  {/* 留空用系统默认（~/.ssh/id_ed25519） */}
+                  <input
+                    type="text"
+                    placeholder={t('ops.gitInfo.sshKeyPlaceholder')}
+                    value={sshKey}
+                    onChange={(e) => setSshKey(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (isImeComposing(e)) return;
+                      if (e.key === 'Enter') saveSshKey();
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                  {/* 保存中… / 保存 */}
+                  <button className="mini primary" disabled={sshBusy} onClick={saveSshKey}>{sshBusy ? t('ops.gitInfo.saving') : t('common.save')}</button>
+                </div>
+                {/* 仅对 github.com 的 SSH 连接生效；可在项目根运行 gen-ssh-key.sh 生成项目内私钥 */}
+                <div className="dim small" style={{ marginTop: 6 }}>{t('ops.gitInfo.sshKeyHint')}</div>
               </FormRow>
             </>
           )}

@@ -30,3 +30,6 @@ test2
 dist-appimage
 修改记录
 md文件预览测试
+
+# 项目内 SSH 私钥（gen-ssh-key 生成，勿提交）
+.git-ssh/

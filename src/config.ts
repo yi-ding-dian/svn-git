@@ -16,6 +16,9 @@ export interface AppConfig {
   git?: {
     username: string;
     password: string;
+    /** SSH 私钥路径（如项目内 .git-ssh/id_ed25519）：配置后 GitHub 的 SSH 传输用它；
+     *  留空则走系统默认（~/.ssh）。私钥是本地文件路径，不是凭据本体，明文存即可 */
+    sshKeyPath?: string;
   };
   /** 界面语言。虽是「偏好」而非凭据，但 server / vcs / main 都要读它决定消息语言，
    *  而这三者与 config.json 同在主进程，故与凭据同放一处（本文件注释本就自称「全局配置 + 凭据」）。 */
@@ -30,7 +33,7 @@ const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
 const DEFAULTS: AppConfig = {
   svn: { username: '', password: '', trustServerCert: false },
-  git: { username: '', password: '' },
+  git: { username: '', password: '', sshKeyPath: '' },
   lang: DEFAULT_LANG,
   share: { ...DEFAULT_SHARE, allow: [] },
 };
@@ -78,6 +81,7 @@ export function loadConfig(): AppConfig {
       git: {
         username: String(data?.git?.username ?? ''),
         password: data?.git?.password ? decode(String(data.git.password)) : '',
+        sshKeyPath: String(data?.git?.sshKeyPath ?? ''),
       },
       // 非法值（手改 config.json）一律回退默认，不让脏数据把界面搞成未知语言
       lang: isLang(data?.lang) ? data.lang : DEFAULT_LANG,
@@ -100,6 +104,7 @@ export function saveConfig(cfg: AppConfig): void {
       git: {
         username: cfg.git?.username ?? '',
         password: cfg.git?.password ? encode(cfg.git.password) : '',
+        sshKeyPath: cfg.git?.sshKeyPath ?? '',
       },
       lang: isLang(cfg.lang) ? cfg.lang : DEFAULT_LANG,
       share: readShare(cfg.share),

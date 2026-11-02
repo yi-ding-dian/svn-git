@@ -3,6 +3,9 @@
  * lang 放在本域：它就是 config.json 的一个字段，且改完要立刻生效（setLang 直接改主进程变量，server/vcs/main 同时切）。 */
 import { sendJson, readBody, vcsOf, MSG_UNSUPPORTED_OP } from './util.js';
 import { loadConfig, saveConfig } from '../../config.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { clearGithubIdentityCache } from './github.js';
 import { t, setLang, getLang, isLang } from '../../shared/i18n/index.js';
 import type { Ctx } from './util.js';
@@ -57,6 +60,37 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     sendJson(res, 200, { ok: true, message: t('srv.gitAuthSaved') });
     return true;
   }
+  if (p === '/api/git-ssh-key' && req.method === 'GET') {
+    // SSH 私钥路径（不进凭据弹窗：它是本机文件路径，不是账号密码）
+    const cfg = loadConfig();
+    sendJson(res, 200, { path: cfg.git?.sshKeyPath ?? '' });
+    return true;
+  }
+  if (p === '/api/git-ssh-key' && req.method === 'POST') {
+    // 保存 SSH 私钥路径：空串 = 清除（走系统默认 ~/.ssh）；非空必须是存在的文件。
+    // 路径会拼进 GIT_SSH_COMMAND，换行/引号一律拒绝，避免被当成额外的 ssh 参数。
+    const body = await readBody(req);
+    const raw = String(body.path ?? '').trim();
+    let keyPath = raw;
+    if (keyPath.startsWith('~')) keyPath = path.join(os.homedir(), keyPath.slice(1));
+    if (keyPath && /[\r\n"]/.test(keyPath)) {
+      // 私钥路径不能包含换行或引号
+      sendJson(res, 400, { error: t('srv.gitSshKeyInvalid') });
+      return true;
+    }
+    if (keyPath && !fs.existsSync(keyPath)) {
+      // 找不到私钥文件：{path}
+      sendJson(res, 400, { error: t('srv.gitSshKeyNotFound', { path: keyPath }) });
+      return true;
+    }
+    const cfg = loadConfig();
+    cfg.git = { username: cfg.git?.username ?? '', password: cfg.git?.password ?? '', sshKeyPath: keyPath };
+    saveConfig(cfg);
+    // SSH 私钥路径已保存
+    sendJson(res, 200, { ok: true, message: t('srv.gitSshKeySaved') });
+    return true;
+  }
+
   if (p === '/api/config' && req.method === 'GET') {
     const cfg = loadConfig();
     sendJson(res, 200, { username: cfg.svn.username, trustServerCert: cfg.svn.trustServerCert });
