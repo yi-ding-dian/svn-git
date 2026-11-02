@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { detectRepo } from '../vcs/detect.js';
 import { createAskPass, authTypeOf } from '../vcs/git.js';
+import { resolveSvnBin, classifySvnError } from '../vcs/svn.js';
 import { loadConfig } from '../config.js';
 import { run, type RunResult } from '../vcs/exec.js';
 import { markInflight, clearInflight } from '../inflight.js';
@@ -255,7 +256,15 @@ export function startServer(): Promise<ServerHandle> {
           }
         }
         // authError/authType：克隆因认证失败时带给前端，由它引导用户去设置里填 git 凭据
-        let result: { ok: boolean; message: string; repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' };
+        // （SVN 检出同理：authType='svn'，前端弹 SVN 账号框；user = 本次实际账号，空 = 匿名）
+        let result: {
+          ok: boolean;
+          message: string;
+          repoDir?: string;
+          authError?: boolean;
+          authType?: 'github' | 'server' | 'ssh' | 'svn';
+          user?: string;
+        };
         if (type === 'git') {
           if (mode === 'worktree' && ref) {
             // worktree 检出：在当前工作副本里创建共享 .git 的第二工作树（省磁盘）。
@@ -277,9 +286,9 @@ export function startServer(): Promise<ServerHandle> {
               }
             }
           } else if (url) {
-            // 克隆（私有仓库要认证）：先**裸试**一次 —— 公开仓库无需凭据，也避免把凭据白白送出去；
-            // 认证失败且**存了凭据**时带 GIT_ASKPASS 重试（与 push 同一套机制）；仍失败则带上
-            // authType 交给前端，引导用户去设置里填 git 凭据。
+            // 克隆（私有仓库要认证）：保存过凭据时**首次请求就带 GIT_ASKPASS**（省掉"先 401 失败、
+            // 再带凭据重试"的一来一回）；没存凭据 = 匿名，公开仓库直接成功。
+            // 认证失败（凭据错/没凭据）时带 authType 交给前端，引导用户去设置里填 git 凭据。
             //
             // **客户端断开要真的停**：用户点「取消」/关掉弹窗（或前端 10 分钟超时）会 abort 请求，
             // 这里把它接到子进程上 —— 否则 git 会在后台白跑到 10 分钟，还可能凭空建出目录。
@@ -326,8 +335,17 @@ export function startServer(): Promise<ServerHandle> {
             if (!depth) void githubRepoBytes(cloneUrl).then((n) => progressSetTotal(target, n));
             const onStderrLine = (line: string) => progressFromStderr(target, line);
             const gitCred = loadConfig().git;
+            /** 保存过凭据就**首次请求直接带上**（GIT_ASKPASS），省掉"先 401 失败、再带凭据重试"的往返；
+             *  凭据本身错误时 git 会立即报认证失败，由下方 authError 引导用户换凭据。 */
+            const askPass = gitCred?.username && gitCred?.password ? createAskPass(gitCred) : null;
             const runGit = (args: string[], extra?: { cwd?: string; env?: Record<string, string> }) =>
-              run('git', args, { timeoutMs: CLONE_TIMEOUT_MS, signal: ac.signal, cwd: extra?.cwd, env: extra?.env, onStderrLine });
+              run('git', args, {
+                timeoutMs: CLONE_TIMEOUT_MS,
+                signal: ac.signal,
+                cwd: extra?.cwd,
+                env: askPass ? { ...extra?.env, GIT_ASKPASS: askPass.path } : extra?.env,
+                onStderrLine,
+              });
             /** 浅克隆走 init：它不像 clone 那样拒绝非空目录，必须自己拦 */
             let blocked = '';
             let r: RunResult;
@@ -350,12 +368,6 @@ export function startServer(): Promise<ServerHandle> {
                   // 只取该标签指向的提交（depth 1）；refspec 同时建立本地标签
                   const fetchArgs = ['fetch', '--progress', '--depth', String(depth), 'origin', `${ref}:${ref}`];
                   r = await runGit(fetchArgs, { cwd: target });
-                  if (r.code !== 0 && !r.aborted && isAuthFail(r) && gitCred?.username && gitCred?.password) {
-                    const ask = createAskPass(gitCred);
-                    progressStart(target); // 重试从零开始：进度重置
-                    r = await runGit(fetchArgs, { cwd: target, env: { GIT_ASKPASS: ask.path } });
-                    ask.cleanup();
-                  }
                   if (r.code === 0) {
                     const co = await runGit(['checkout', '-q', '--detach', ref], { cwd: target });
                     if (co.code !== 0) r = co;
@@ -366,13 +378,6 @@ export function startServer(): Promise<ServerHandle> {
               // 完整克隆到标签/分支：拉全历史/分支，成功后显式 checkout 目标
               const cloneArgs = ['clone', '--progress', cloneUrl, target];
               r = await runGit(cloneArgs);
-              if (r.code !== 0 && !r.aborted && isAuthFail(r) && gitCred?.username && gitCred?.password) {
-                cleanupTarget();
-                const ask = createAskPass(gitCred);
-                progressStart(target);
-                r = await runGit(cloneArgs, { env: { GIT_ASKPASS: ask.path } });
-                ask.cleanup();
-              }
               if (r.code === 0) {
                 // 标签 → detached；分支 → checkout 本地分支（远程分支建同名跟踪分支）
                 const co = await runGit(
@@ -389,13 +394,6 @@ export function startServer(): Promise<ServerHandle> {
               // 普通获取仓库（原行为）
               const cloneArgs = ['clone', '--progress', cloneUrl, target];
               r = await runGit(cloneArgs);
-              if (r.code !== 0 && !r.aborted && isAuthFail(r) && gitCred?.username && gitCred?.password) {
-                cleanupTarget();
-                const ask = createAskPass(gitCred);
-                progressStart(target);
-                r = await runGit(cloneArgs, { env: { GIT_ASKPASS: ask.path } });
-                ask.cleanup();
-              }
             }
             const authFail = isAuthFail(r);
             res.off('close', onClose);
@@ -421,6 +419,7 @@ export function startServer(): Promise<ServerHandle> {
               // 克隆失败
               result = { ok: false, message: r.stderr.trim() || t('srv.cloneFailed'), authError: authFail || undefined, authType: authFail ? authTypeOf(url) : undefined };
             }
+            askPass?.cleanup(); // 临时 askpass 脚本（含凭据）用完即删
           } else {
             // init：新建仓库的默认分支统一指到 main（init.defaultBranch 配置要 git 2.28+，用户机器实测
             // git 2.20——老到没有该配置，init 只会产出 master；GitHub 生态默认 main）。
@@ -447,7 +446,23 @@ export function startServer(): Promise<ServerHandle> {
             const targetExistedBefore = fs.existsSync(target);
             // 登记"正在检出到哪儿"（与 git 克隆同一套：强杀后下次启动收尾）
             markInflight(target);
-            const r = await run('svn', ['checkout', '-q', url, target], { timeoutMs: 600_000, signal: ac.signal });
+            // 凭据：本次请求带的临时账号（获取前/认证失败后弹框填写，不落盘）优先，
+            // 其次工具配置（「SVN 登录」保存的）；两者都空 = 匿名。
+            // **必须 --non-interactive**：没有凭据时 svn 会尝试交互读账号，而子进程 stdin
+            // 已立即关闭，结果只会是 E215004/E170001（用户实报"没配账号直接报错"）。
+            const cfg = loadConfig();
+            const tempUser = typeof body.username === 'string' ? String(body.username).trim() : '';
+            const svnUser = tempUser || cfg.svn.username;
+            const svnPass = tempUser ? String(body.password ?? '') : cfg.svn.password;
+            const svnNet = ['--non-interactive'];
+            if (svnUser) svnNet.push('--username', svnUser, '--password-from-stdin');
+            if (tempUser) svnNet.push('--no-auth-cache'); // 临时凭据不写 svn 官方凭据缓存
+            if (cfg.svn.trustServerCert) svnNet.push('--trust-server-cert');
+            const r = await run(await resolveSvnBin(), ['checkout', '-q', ...svnNet, url, target], {
+              timeoutMs: 600_000,
+              signal: ac.signal,
+              stdinData: svnUser ? svnPass + '\n' : undefined,
+            });
             res.off('close', onClose);
             clearInflight(target); // 检出跑完了（成功/失败/取消都算）：撤掉登记
             if (r.aborted || r.timedOut) {
@@ -462,8 +477,15 @@ export function startServer(): Promise<ServerHandle> {
               // 已检出 SVN 工作副本 {path}
               result = { ok: true, message: t('srv.svnCheckedOut', { path: target }) + (cleanedRemnant ? t('srv.remnantCleaned') : ''), repoDir: target };
             } else {
-              // svn checkout 失败
-              result = { ok: false, message: r.stderr.trim() || t('srv.svnCheckoutFailed') };
+              // svn checkout 失败。认证/授权失败（密码错、匿名无读权限）→ 带 authError 回前端弹账号框；
+              // 代理认证失败不在此列（那是系统代理设置问题，弹 SVN 账号框没用）
+              const detail = classifySvnError(`${r.stderr}\n${r.stdout}`);
+              const needCred = detail?.kind === 'auth' || detail?.kind === 'authz';
+              result = {
+                ok: false,
+                message: r.stderr.trim() || t('srv.svnCheckoutFailed'),
+                ...(needCred ? { authError: true, authType: 'svn' as const, user: svnUser } : {}),
+              };
             }
           } else {
             // svnadmin create（本地仓库）+ 可选标准布局 + 工作副本
@@ -505,7 +527,9 @@ export function startServer(): Promise<ServerHandle> {
           sendJson(res, 400, { error: t('srv.unknownRepoType') });
           return;
         }
-        sendJson(res, 200, { ...result, authError: false });
+        // authError 只在认证失败时为 true / 其余 undefined→false；**不能无条件写 false**
+        // （否则 git 克隆/SVN 检出的认证失败标志会被吞掉，前端永远不弹认证框）
+        sendJson(res, 200, { ...result, authError: result.authError ?? false });
         return;
       }
 

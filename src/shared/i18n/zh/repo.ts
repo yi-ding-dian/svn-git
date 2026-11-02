@@ -352,6 +352,14 @@ export const repo = {
     '⚠ 目标位于 {type} 仓库内（{root}）——检出的文件会成为外层仓库的未版本化内容，状态/数据可能错乱',
   'repo.get.existsTip': '⚠ 目标目录已存在且非空（{target}）——克隆/检出到非空目录会失败，可能已有仓库/文件',
 
+  // ---- 获取仓库的 SVN 账号弹窗（获取前无账号 / 认证失败重试用）----
+  'repo.get.svnCredTitle': 'SVN 账号',
+  'repo.get.svnCredHint': '还没有可用的 SVN 账号——填写有权限的账号密码，或匿名获取（服务器允许匿名读取时才可用）',
+  'repo.get.svnCredFailHint': '当前账号没有通过认证，请换一个有读取权限的账号',
+  'repo.get.svnCredSave': '保存为默认 SVN 账号（获取成功后生效，之后打开其他 SVN 项目也用它）',
+  'repo.get.svnCredAnon': '匿名获取',
+  'repo.get.svnCredAnonTip': '不提供账号直接检出（仅当服务器允许匿名读取时可用）',
+
   // ---- 推送/克隆认证弹窗（GitPushAuthModal；purpose 是语义枚举，取值 push / get）----
   'repo.auth.needUserPass': '请填写用户名和密码',
   'repo.auth.saveFailed': '保存失败: {msg}',

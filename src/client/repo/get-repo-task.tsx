@@ -7,18 +7,22 @@
  *  任务本身活在 shared/tasks 的 store 里：进度/取消归顶栏沙漏，完成自动打开项目，
  *  完成/失败进铃铛（App 统一通知），认证失败由本文件末尾的 GetRepoAuthModal 引导、保存后自动重试。 */
 import React from 'react';
-import { post } from '../shared/api.js';
+import { post, get } from '../shared/api.js';
 import { startTask, pollTransferProgress } from '../shared/tasks.js';
 import { translateVcsError, joinPath } from '../shared/utils.js';
 import { GitPushAuthModal } from './git-auth.js';
+import { SvnCredModal } from './svn-cred.js';
 import type { GetRepoParams } from './repo-create.js';
 import { t } from '../../shared/i18n/index.js';
 
-/** 认证失败时交给调用方弹框的信息（retry = 存好凭据后重跑这次获取） */
+/** 认证失败时交给调用方弹框的信息（retry = 用好凭据重跑这次获取） */
 export interface GetAuthAsk {
-  type: 'github' | 'server' | 'ssh';
+  type: 'github' | 'server' | 'ssh' | 'svn';
   error: string;
-  retry: () => void;
+  /** SVN：失败时实际使用的账号（空 = 匿名），弹框提示用 */
+  user?: string;
+  /** 重试；SVN 可带本次填的临时账号密码（仅本次用；勾选「保存为默认」的在获取成功后才写入） */
+  retry: (cred?: { username: string; password: string }, save?: boolean) => void;
 }
 
 /** 发起获取（克隆/检出）后台任务。**立刻返回**——弹窗该在此时关掉，进度由顶栏沙漏接管。 */
@@ -49,15 +53,42 @@ export function startGetRepoTask(
           checkout: p.checkout,
           mode: p.mode,
           repoRoot: p.repoRoot,
+          username: p.svnCred?.username,
+          password: p.svnCred?.password,
         });
-        // 认证失败：不在这里报错了事——弹认证框（存的是 git 账号/Token），保存后自动重试
+        // 认证失败：不在这里报错了事——弹认证框，保存后自动重试
+        // （git = 存账号/Token；svn = 只本次用，勾选保存的在获取成功后才写入配置）
         if (!r.ok && r.authError && r.authType) {
-          hooks.onAuthNeeded({ type: r.authType, error: r.message, retry: () => startGetRepoTask(p, hooks) });
+          if (r.authType === 'svn') {
+            hooks.onAuthNeeded({
+              type: 'svn',
+              error: r.message,
+              user: r.user ?? '',
+              retry: (cred, save) => startGetRepoTask({ ...p, svnCred: cred, saveSvnCred: save }, hooks),
+            });
+          } else {
+            hooks.onAuthNeeded({ type: r.authType, error: r.message, retry: () => startGetRepoTask(p, hooks) });
+          }
           return { ok: false, message: r.message };
         }
         // 完成即打开（弹窗早就关了，与它无关）：打开服务端返回的仓库路径（git/svn 均为目标目录），
         // 没返回时兜底拼路径
-        if (r.ok) hooks.onCreated(r.repoDir ?? target);
+        if (r.ok) {
+          // 勾选「保存为默认 SVN 账号」：**获取成功才写入**——账号密码错时不污染已保存的配置
+          if (p.svnCred && p.saveSvnCred) {
+            try {
+              const cur = await get.config();
+              await post.config({
+                username: p.svnCred.username,
+                password: p.svnCred.password,
+                trustServerCert: cur.trustServerCert,
+              });
+            } catch {
+              /* 保存失败不打扰（工作副本已经检出成功） */
+            }
+          }
+          hooks.onCreated(r.repoDir ?? target);
+        }
         return { ok: r.ok, message: r.message };
       } finally {
         stopPoll?.(); // 任务收尾就停轮询（真在跑时才挂上，见下）
@@ -74,6 +105,21 @@ export function startGetRepoTask(
 /** 认证失败引导框（`purpose='get'` 让文案说"获取"而不是"推送"）：
  *  调用方拿 useGetRepoTask 的 auth 渲染它即可，保存后自动重试。 */
 export function GetRepoAuthModal(props: { auth: GetAuthAsk; onClose: () => void; onToast: (m: string, err?: boolean) => void }): React.ReactElement {
+  // SVN：填账号密码（可勾选保存为默认）后重试——与 git 的 Token 弹框分开（字段与保存语义都不同）
+  if (props.auth.type === 'svn') {
+    return (
+      <SvnCredModal
+        username={props.auth.user}
+        error={props.auth.error}
+        onSubmit={(cred, save) => {
+          const retry = props.auth.retry;
+          props.onClose();
+          retry(cred, save);
+        }}
+        onClose={props.onClose}
+      />
+    );
+  }
   return (
     <GitPushAuthModal
       type={props.auth.type}

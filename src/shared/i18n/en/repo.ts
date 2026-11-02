@@ -352,6 +352,15 @@ export const repo = {
   'repo.get.existsTip':
     '⚠ The target directory already exists and is not empty ({target}) — cloning/checking out into a non-empty directory fails; it may already contain a repository/files',
 
+  // ---- SVN credential dialog for fetching (no saved account / retry after auth failure) ----
+  'repo.get.svnCredTitle': 'SVN Credentials',
+  'repo.get.svnCredHint':
+    'No SVN account is available yet — enter an account with access, or fetch anonymously (only works if the server allows anonymous reads)',
+  'repo.get.svnCredFailHint': 'The current account failed authentication — please use an account with read access',
+  'repo.get.svnCredSave': 'Save as the default SVN account (takes effect after a successful fetch; used for other SVN projects too)',
+  'repo.get.svnCredAnon': 'Fetch anonymously',
+  'repo.get.svnCredAnonTip': 'Check out without an account (only works if the server allows anonymous reads)',
+
   // ---- 推送/克隆认证弹窗 ----
   'repo.auth.needUserPass': 'Please enter the username and password',
   'repo.auth.saveFailed': 'Failed to save: {msg}',

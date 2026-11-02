@@ -180,8 +180,8 @@ export interface VcsResult {
   code?: 'AUTH' | 'ABORTED' | 'NO_CHANGES' | 'NO_IDENTITY';
   /** svn 命令输出警告行（如 W205011 外部定义失败） */
   warnings?: string[];
-  /** git 推送认证失败类型（github / server / ssh），前端据此引导认证 */
-  authType?: 'github' | 'server' | 'ssh';
+  /** 认证失败类型（github / server / ssh 为 git 推送；svn 为 SVN 检出），前端据此引导认证 */
+  authType?: 'github' | 'server' | 'ssh' | 'svn';
   /** 目录还原（svn 反向合并）产生的冲突文件：界面提示并交给冲突视图解决 */
   conflicts?: string[];
   /** 系统回收站不可用（gio / trash-put / PowerShell 均失败）：failedPaths 为未删除的路径，前端据此二次确认（force 重发直接删） */
@@ -1083,9 +1083,23 @@ export const post = {
     signal?: AbortSignal,
     ref = '',
     depth = 0,
-    opts?: { checkout?: 'detach' | 'branch'; mode?: 'clone' | 'worktree'; repoRoot?: string },
+    opts?: {
+      checkout?: 'detach' | 'branch';
+      mode?: 'clone' | 'worktree';
+      repoRoot?: string;
+      /** SVN 本次临时凭据（获取前/认证失败后弹框填写；后端只本次用、不落盘） */
+      username?: string;
+      password?: string;
+    },
   ) =>
-    api<VcsResult & { repoDir?: string; authError?: boolean; authType?: 'github' | 'server' | 'ssh' }>(
+    api<
+      VcsResult & {
+        repoDir?: string;
+        authError?: boolean;
+        /** SVN 认证失败时本次实际使用的账号（空串 = 匿名） */
+        user?: string;
+      }
+    >(
       '/api/repo-create',
       json({ type, dir, name, url, standard, ref, depth, ...opts }, signal),
     ),

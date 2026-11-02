@@ -520,7 +520,8 @@ export function App() {
           const r = await post.push(signal);
           if (r.ok) refresh();
           // 认证失败 → 弹认证引导（带失败原因）；其余失败只回给任务（横幅/铃铛提示，详情点铃铛看）
-          else if (r.authType) setPushAuth({ type: r.authType, error: r.message });
+          // （svn 只出现在 SVN 检出结果里，推送不会有——类型排除后弹 git 认证框）
+          else if (r.authType && r.authType !== 'svn') setPushAuth({ type: r.authType, error: r.message });
           else if (r.code !== 'ABORTED') {
             // 非认证类失败：可能是"推别人的仓库、没有写权限"→ 查一次权限（带凭据的只读接口）确认后引导 Fork。
             // 不用正则猜 git 报错文本（措辞不可靠）；仅 canPush===false 才引导，其余原因保持原样只回报错。

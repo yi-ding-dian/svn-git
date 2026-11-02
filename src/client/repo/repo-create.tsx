@@ -1,10 +1,11 @@
 /** 新建 / 获取仓库弹窗：新建仓库（CreateRepoDialog，git init / svnadmin create）+ 获取仓库（GetRepoDialog，git clone / svn checkout） */
 import React, { useState } from 'react';
-import { post, type RepoCheck } from '../shared/api.js';
+import { post, get, type RepoCheck } from '../shared/api.js';
 import { launchMagicFlight } from '../animations/index.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { IconDownload, IconPlus } from '../ui/icons.js';
 import { PickDirModal } from './pick-dir.js';
+import { SvnCredModal } from './svn-cred.js';
 import { HelpNote, FormRow } from '../ui/ui.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
@@ -322,6 +323,10 @@ export interface GetRepoParams {
   mode?: 'clone' | 'worktree';
   /** worktree 模式：在哪个工作副本里执行（当前仓库根） */
   repoRoot?: string;
+  /** SVN 临时凭据（获取前/认证失败后弹框填写；只本次用、后端不落盘） */
+  svnCred?: { username: string; password: string };
+  /** 获取成功后把 svnCred 保存为默认 SVN 账号（用户勾选时） */
+  saveSvnCred?: boolean;
   /** 任务标题覆盖（标签检出显示「检出标签 · v1」） */
   title?: string;
 }
@@ -346,7 +351,25 @@ export function GetRepoDialog(props: {
   /** 前置检测中（repoCheck——几百毫秒）：按钮禁用 +「获取中…」文案 */
   const [checkBusy, setCheckBusy] = useState(false);
   const [picker, setPicker] = useState(false);
-  const [pending, setPending] = useState<RepoCheck | null>(null); // 二次确认数据
+  /** 二次确认数据（SVN 时附带本次临时凭据：确认后随任务带走） */
+  const [pending, setPending] = useState<
+    (RepoCheck & { cred?: { username: string; password: string }; save?: boolean }) | null
+  >(null);
+  /** SVN 账号预弹框：工具配置和系统凭据缓存都没有账号时弹出（认证失败后的重试框在任务侧，见 get-repo-task） */
+  const [svnAsk, setSvnAsk] = useState<{ user: string } | null>(null);
+
+  /** 前置风险检测 → 二次确认；cred/save 是 SVN 弹框里填的账号与「保存为默认」勾选 */
+  const checkAndConfirm = (cred?: { username: string; password: string }, save = false) => {
+    setCheckBusy(true);
+    void post
+      .repoCheck(type, dir.trim(), name.trim(), url.trim())
+      .then((r) => setPending({ ...r, cred, save }))
+      .catch((e) => {
+        setMsg((e as Error).message);
+        setMsgErr(true);
+      })
+      .finally(() => setCheckBusy(false));
+  };
 
   const submit = () => {
     if (!url.trim()) {
@@ -361,26 +384,44 @@ export function GetRepoDialog(props: {
       setMsgErr(true);
       return;
     }
-    setCheckBusy(true);
-    // 前置风险检测（目标已存在 / 位于仓库内），成功后弹二次确认
-    void post
-      .repoCheck(type, dir.trim(), name.trim(), url.trim())
-      .then((r) => setPending(r))
-      .catch((e) => {
-        setMsg((e as Error).message);
-        setMsgErr(true);
-      })
-      .finally(() => setCheckBusy(false));
+    // SVN（网络仓库）：获取前查有没有可用身份——工具配置和 svn 官方凭据缓存都为空才预弹账号框。
+    // 有任一就直接跑：匿名可读的服务器 / 别处登录过的缓存账号不该被强制输账号。
+    // file:// 本地仓库不需要认证，跳过检测。
+    if (type === 'svn' && /^(https?|svn):\/\//i.test(url.trim())) {
+      setCheckBusy(true);
+      void get
+        .svnIdentity(url.trim())
+        .then((id) => {
+          if (!id.config && !id.cache) {
+            setSvnAsk({ user: '' });
+            setCheckBusy(false);
+          } else {
+            checkAndConfirm(); // 内部自己管理 checkBusy
+          }
+        })
+        .catch(() => checkAndConfirm()); // 身份查询失败不挡路：直接按原流程获取
+      return;
+    }
+    checkAndConfirm();
   };
 
   /** 二次确认通过 → 把参数交给调用方发起后台任务，本弹窗立刻关闭。
    *  **不再在弹窗里等**：进度/取消归顶栏沙漏，结果归顶部横幅 + 铃铛，认证失败由调用方引导重试
    *  （弹窗一关，任务状态就没地方显示了——留在弹窗里等，用户关窗时又会以为"关了就该停"）。 */
   const startGet = () => {
+    const cred = pending?.cred;
+    const save = pending?.save;
     setPending(null);
     setMsg('');
     setMsgErr(false);
-    props.onStart({ type, dir: dir.trim(), name: name.trim(), url: url.trim() });
+    props.onStart({
+      type,
+      dir: dir.trim(),
+      name: name.trim(),
+      url: url.trim(),
+      svnCred: cred,
+      saveSvnCred: save,
+    });
     props.onClose();
   };
 
@@ -523,6 +564,22 @@ export function GetRepoDialog(props: {
             startGet();
           }}
           onCancel={() => setPending(null)}
+        />
+      )}
+      {/* SVN 账号（获取前预弹）：填了 → 带临时凭据走二次确认；匿名 → 不记账号直接走 */}
+      {svnAsk && (
+        <SvnCredModal
+          username={svnAsk.user}
+          allowAnonymous
+          onAnonymous={() => {
+            setSvnAsk(null);
+            checkAndConfirm();
+          }}
+          onSubmit={(cred, save) => {
+            setSvnAsk(null);
+            checkAndConfirm(cred, save);
+          }}
+          onClose={() => setSvnAsk(null)}
         />
       )}
       {/* 目录选择（与「打开项目」共用的目录浏览器）：选择所在目录 */}
