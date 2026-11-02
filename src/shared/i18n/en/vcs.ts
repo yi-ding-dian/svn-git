@@ -157,6 +157,8 @@ export const vcs = {
   // ---- git: pull / revert / delete / move / push ----
   'vcs.noRemotePull': 'This repository has no remote (origin), so it cannot pull updates.',
   'vcs.gitPullFailed': 'git pull failed',
+  'vcs.gitAuthNeedCred': 'Git authentication failed: check the username and token in Git Info & Config ({err})',
+  'vcs.gitAuthNeedCredNoDetail': 'Git authentication failed: check the username and token in Git Info & Config',
   'vcs.pullLatestBranch': 'Already up to date (branch {branch} @ {hash})',
   'vcs.updateDone': 'Update complete',
   'vcs.gitRevertFailed': 'git revert failed',

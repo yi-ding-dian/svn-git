@@ -861,7 +861,9 @@ export class GitVcs {
   }
 
   /** git pull */
-  async pull(signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }> {
+  async pull(
+    signal?: AbortSignal
+  ): Promise<VcsResult & { files?: { path: string; status: string; code: string }[]; authType?: 'github' | 'server' | 'ssh' }> {
     // 无远程（孤仓库）：git pull 只会报原始 fatal，换成友好提示（不执行命令）
     const remotes = await this.remoteList();
     // 此仓库未配置远程（origin），无法拉取更新。
@@ -870,25 +872,56 @@ export class GitVcs {
     // 保证"拉取成功后立即重查"一定拿到新值（顶栏横条 / 侧栏 ⬇ 角标才能立刻消失）
     this.invalidatePreflight();
     // -c core.quotepath=false：更新输出的中文文件名不做八进制转义
-    let res = await this.exec(['-c', 'core.quotepath=false', 'pull'], { timeoutMs: 600_000, signal });
+    const pullOnce = (env?: Record<string, string>) =>
+      this.exec(['-c', 'core.quotepath=false', 'pull'], { timeoutMs: 600_000, signal, env }).then(async (r) => {
+        // 当前分支无上游跟踪信息（git pull 不知道拉哪个远程分支）：
+        // 自动用 git pull origin <当前分支> 重试，无需用户手动设置 upstream
+        if (r.code !== 0 && !r.aborted && /没有跟踪信息|no tracking information/i.test(r.stderr)) { // i18n-ignore: 解析 git pull 的中英文报错
+          const branch = (await this.exec(['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
+          if (branch && branch !== 'HEAD') {
+            return this.exec(['-c', 'core.quotepath=false', 'pull', 'origin', branch], { timeoutMs: 600_000, signal, env });
+          }
+        }
+        return r;
+      });
+    const isAuthErr = (text: string) =>
+      // i18n-ignore: 解析 git 输出的英文报错
+      /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(text);
+
+    let res = await pullOnce();
     // 更新已取消
     if (res.aborted) return { ok: false, message: t('vcs.updateCancelled') };
-    if (res.code !== 0) {
-      // 当前分支无上游跟踪信息（git pull 不知道拉哪个远程分支）：
-      // 自动用 git pull origin <当前分支> 重试，无需用户手动设置 upstream
-      if (/没有跟踪信息|no tracking information/i.test(res.stderr)) { // i18n-ignore: 解析 git pull 的中英文报错
-        const branch = (await this.exec(['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
-        if (branch && branch !== 'HEAD') {
-          const retry = await this.exec(['-c', 'core.quotepath=false', 'pull', 'origin', branch], { timeoutMs: 600_000, signal });
-          // 更新已取消
-          if (retry.aborted) return { ok: false, message: t('vcs.updateCancelled') };
-          if (retry.code === 0) res = retry;
-          // git pull 失败
-          else return { ok: false, message: retry.stderr.trim() || t('vcs.gitPullFailed') };
-        }
+    // 认证失败：用已保存的凭据（GIT_ASKPASS）自动重试一次——与 push / fetchRemote 同一套机制。
+    // 没有这段时 pull 永远带不上设置里存的 Token：https 远程只会报
+    // "could not read Username ... terminal prompts disabled"（用户实报：推送正常、更新必失败）
+    let authFailed = res.code !== 0 && isAuthErr(res.stderr + res.stdout);
+    const cred = loadConfig().git;
+    if (authFailed && cred?.username && cred?.password) {
+      const ask = createAskPass(cred);
+      try {
+        res = await pullOnce({ GIT_ASKPASS: ask.path });
+      } finally {
+        ask.cleanup();
       }
-      // git pull 失败
-      if (res.code !== 0) return { ok: false, message: res.stderr.trim() || t('vcs.gitPullFailed') };
+      // 更新已取消
+      if (res.aborted) return { ok: false, message: t('vcs.updateCancelled') };
+      // 按**重试这次**的结果重新判定：凭据过期/无权访问时仍算认证失败，要引导用户去改
+      authFailed = res.code !== 0 && isAuthErr(res.stderr + res.stdout);
+    }
+    if (res.code !== 0) {
+      if (!authFailed) {
+        // git pull 失败
+        return { ok: false, message: res.stderr.trim() || t('vcs.gitPullFailed') };
+      }
+      // 认证失败不再把英文 fatal 直接糊给用户：给出去哪儿改的提示，原始报错附在括号里便于分辨
+      // （Token 过期 / 无该仓库权限 / 私有仓库未配凭据）
+      const raw = res.stderr.trim().split('\n')[0]?.trim() ?? '';
+      return {
+        ok: false,
+        message: raw ? t('vcs.gitAuthNeedCred', { err: raw }) : t('vcs.gitAuthNeedCredNoDetail'),
+        code: 'AUTH',
+        authType: authTypeOf(await this.remote()),
+      };
     }
     const out = res.stdout.trim();
     // 无更新：git 输出 "Already up to date." 等（中英文），提示当前分支 + 短 hash

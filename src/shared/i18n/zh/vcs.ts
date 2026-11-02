@@ -162,6 +162,8 @@ export const vcs = {
   // ---- git：拉取 / 还原 / 删除 / 移动 / 推送 ----
   'vcs.noRemotePull': '此仓库未配置远程（origin），无法拉取更新。',
   'vcs.gitPullFailed': 'git pull 失败',
+  'vcs.gitAuthNeedCred': 'Git 认证失败：请到「Git 信息与配置」检查账号与 Token（{err}）',
+  'vcs.gitAuthNeedCredNoDetail': 'Git 认证失败：请到「Git 信息与配置」检查账号与 Token',
   'vcs.pullLatestBranch': '已是最新（分支 {branch} @ {hash}）',
   'vcs.updateDone': '更新完成',
   'vcs.gitRevertFailed': 'git 还原失败',
