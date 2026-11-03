@@ -108,6 +108,22 @@ export interface GitHubReleasesResult {
   tags?: GitHubTag[];
 }
 
+/** 批量清理：保留最近 N 个版本后，更早版本里可删除的产物 */
+export interface ReleaseCleanupRelease {
+  tagName: string;
+  publishedAt: string;
+  assets: { id: number; name: string; size: number }[];
+}
+
+export interface ReleaseCleanupPreview {
+  ok: boolean;
+  error?: string;
+  keep?: number;
+  releases?: ReleaseCleanupRelease[];
+  totalAssets?: number;
+  totalSize?: number;
+}
+
 /** 一键发版预检（/api/release） */
 export interface ReleaseInfo {
   ok: boolean;
@@ -745,8 +761,21 @@ export const get = {
   githubRepo: (force?: boolean) => api<GitHubRepoResult>(`/api/github-repo${force ? '?force=1' : ''}`),
   /** 发布历史（版本 + 产物下载地址）；force=1 跳过 5 分钟缓存 */
   githubReleases: (force?: boolean) => api<GitHubReleasesResult>(`/api/github-releases${force ? '?force=1' : ''}`),
+  /** 批量清理预览：保留最近 keep 个版本，更早版本的产物 */
+  githubReleaseCleanup: (keep: number) =>
+    api<ReleaseCleanupPreview>(`/api/github-release-cleanup?keep=${keep}`),
   /** 一键发版预检：当前版本 / 默认说明 / 工作区状态 */
   releaseInfo: () => api<ReleaseInfo>('/api/release'),
+  /** 查某个 tag 的 CI 运行状态（发布后台任务轮询） */
+  releaseStatus: (tag: string) =>
+    api<{
+      ok: boolean;
+      error?: string;
+      status: 'pending' | 'queued' | 'in_progress' | 'completed';
+      conclusion: string | null;
+      htmlUrl: string;
+      artifacts: { name: string; size: number }[];
+    }>(`/api/release-status?tag=${encodeURIComponent(tag)}`),
   /** origin 仓库的访问权限（推送失败后判「无写权限」用；纯读）。
    *  ok=false 查询失败（原因在 message）；canPush=null 表示无凭据查不了；isGithub=false 表示 origin 不是 GitHub。
    *  前端只在 canPush === false 时引导 Fork（宁可不引导，不误弹）。 */
@@ -1245,6 +1274,12 @@ export const post = {
   /** 开启/关闭 GitHub 下载加速（prefix 空 = 默认 gh-proxy.com） */
   gitDownloadProxySave: (enabled: boolean, prefix: string) =>
     api<{ ok: boolean; enabled: boolean; prefix: string }>('/api/git-download-proxy', json({ enabled, prefix })),
+  /** 执行批量清理：只删旧 Release 的产物 */
+  githubReleaseCleanupRun: (keep: number) =>
+    api<{ ok: boolean; deleted: number; failed: { name: string; error: string }[]; error?: string }>(
+      '/api/github-release-cleanup',
+      json({ keep }),
+    ),
   /** 执行一键发版（实际调用 deploy/release.mjs） */
   releaseRun: (level: 'patch' | 'minor' | 'major', note: string) =>
     api<{ ok: boolean; message: string; timedOut?: boolean }>('/api/release-run', json({ level, note })),

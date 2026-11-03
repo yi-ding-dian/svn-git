@@ -35,8 +35,10 @@ export interface ReleasesPanelHandle {
   releasesUrl: () => string;
 }
 
-export const GitHubReleasesPanel = forwardRef<ReleasesPanelHandle, { onUrlChange: (url: string) => void }>(
-  function GitHubReleasesPanel({ onUrlChange }, ref) {
+export const GitHubReleasesPanel = forwardRef<
+  ReleasesPanelHandle,
+  { onUrlChange: (url: string) => void; onCleanup: () => void }
+>(function GitHubReleasesPanel({ onUrlChange, onCleanup }, ref) {
   const [data, setData] = useState<GitHubReleasesResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -247,6 +249,12 @@ export const GitHubReleasesPanel = forwardRef<ReleasesPanelHandle, { onUrlChange
                   <button className="mini" onClick={() => open(rel.htmlUrl)} title={rel.htmlUrl}>
                     <IconExternal size={14} /> GitHub
                   </button>
+                  {/* 当前版本有产物才显示「清理产物」；仅标签/无产物不显示 */}
+                  {rel.assets.length > 0 && (
+                    <button className="mini danger" style={{ marginLeft: 'auto' }} onClick={onCleanup}>
+                      {t('ops.releaseCleanup.entry')}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

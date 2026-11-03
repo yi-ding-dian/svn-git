@@ -71,6 +71,8 @@ export const srv = {
   'srv.releaseUnsupported': 'This project has no deploy/release.mjs, so one-click release is unavailable',
   'srv.releaseBadLevel': 'Invalid version level (must be patch / minor / major)',
   'srv.releaseBadNote': 'The release note cannot be empty, contain line breaks, or exceed 200 characters',
+  'srv.releaseNoGithub': 'The remote is not GitHub, so CI status cannot be queried',
+  'srv.releaseBadTag': 'Invalid version tag format',
   'srv.gitSshKeyInvalid': 'The SSH private key path cannot contain line breaks or quotes',
   'srv.gitSshKeyNotFound': 'Private key file not found: {path}',
   'srv.remoteUrlEmpty': 'Remote URL is required',
@@ -205,6 +207,7 @@ export const srv = {
   'srv.githubRateLimited': 'GitHub API rate-limited (anonymous quota — try again later)',
   'srv.githubRateLimitedAuth': 'GitHub API rate-limited (token quota) — try again later',
   'srv.githubTimeout': 'GitHub request timed out ({sec}s)',
+  'srv.githubCleanupNeedToken': 'Batch cleanup requires configured GitHub credentials (Token)',
   // ---- GitHub delete repository ----
   'srv.githubDeleteConfirmMismatch': 'Confirmation name mismatch (type {name})',
   'srv.githubDeleteNeedToken': 'Deleting a repository requires a token provided in the dialog — saved credentials are not reused',

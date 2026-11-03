@@ -8,6 +8,7 @@ import { ModalShell } from '../shell/modal-shell.js';
 import { IconRelease, IconRefresh, IconExternal } from '../ui/icons.js';
 import { GitHubReleasesPanel, type ReleasesPanelHandle } from '../repo/github-releases.js';
 import { ReleaseFormPanel, type ReleaseFormHandle } from './release-modal.js';
+import { ReleaseCleanupModal } from './release-cleanup.js';
 import { post } from '../shared/api.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -18,12 +19,15 @@ export function ReleaseHubModal(props: { canRelease: boolean; isGithub: boolean;
   const [releasesUrl, setReleasesUrl] = useState('');
   /** 发布表单上报的 foot 按钮状态（是否禁用 / 按钮文字） */
   const [formState, setFormState] = useState<{ disabled: boolean; label: string }>({ disabled: true, label: '' });
+  /** 批量清理弹窗（保留最近 N 个版本，删除更早的产物） */
+  const [cleanupOpen, setCleanupOpen] = useState(false);
 
   const openReleases = () => {
     if (releasesUrl) void post.openUrl(releasesUrl).catch(() => {});
   };
 
   return (
+    <>
     <ModalShell
       title={t('ops.releaseHub.title')}
       icon={<IconRelease size={18} />}
@@ -90,11 +94,22 @@ export function ReleaseHubModal(props: { canRelease: boolean; isGithub: boolean;
       </div>
 
       {tab === 'history' && props.isGithub && (
-        <GitHubReleasesPanel ref={releasesRef} onUrlChange={setReleasesUrl} />
+        <GitHubReleasesPanel
+          ref={releasesRef}
+          onUrlChange={setReleasesUrl}
+          onCleanup={() => setCleanupOpen(true)}
+        />
       )}
       {tab === 'form' && props.canRelease && (
-        <ReleaseFormPanel ref={formRef} onStateChange={setFormState} />
+        <ReleaseFormPanel ref={formRef} onStateChange={setFormState} onClose={props.onClose} />
       )}
     </ModalShell>
+      {cleanupOpen && (
+        <ReleaseCleanupModal
+          onClose={() => setCleanupOpen(false)}
+          onDone={() => releasesRef.current?.refresh()}
+        />
+      )}
+    </>
   );
 }

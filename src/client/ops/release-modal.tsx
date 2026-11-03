@@ -5,6 +5,8 @@ import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'rea
 import { ConfirmModal } from '../ui/prompt.js';
 import { ResultLine } from '../ui/result-line.js';
 import { get, post, type ReleaseInfo } from '../shared/api.js';
+import { startTask } from '../shared/tasks.js';
+import { launchMagicFlight } from '../animations/index.js';
 import { IconPackage } from '../ui/icons.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -17,15 +19,13 @@ export interface ReleaseFormHandle {
 
 export const ReleaseFormPanel = forwardRef<
   ReleaseFormHandle,
-  { onStateChange: (s: { disabled: boolean; label: string }) => void }
->(function ReleaseFormPanel({ onStateChange }, ref) {
+  { onStateChange: (s: { disabled: boolean; label: string }) => void; onClose: () => void }
+>(function ReleaseFormPanel({ onStateChange, onClose }, ref) {
   const [info, setInfo] = useState<ReleaseInfo | null>(null);
   const [error, setError] = useState('');
   const [level, setLevel] = useState<Level>('patch');
   const [note, setNote] = useState('');
   const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   /** 非 main 分支时的切换确认 */
   const [switchConfirm, setSwitchConfirm] = useState(false);
   const [switching, setSwitching] = useState(false);
@@ -44,7 +44,7 @@ export const ReleaseFormPanel = forwardRef<
   const next = info?.next[level] ?? '';
   const tag = next ? `v${next}` : '';
   const onMain = info?.branch === 'main';
-  const disabled = busy || !info || info.dirty || !note.trim() || !next || !onMain;
+  const disabled = switching || !info || info.dirty || !note.trim() || !next || !onMain;
 
   /** 非 main：用户确认后切到 main，再重新读取版本/说明 */
   const switchToMain = () => {
@@ -67,26 +67,53 @@ export const ReleaseFormPanel = forwardRef<
       .finally(() => setSwitching(false));
   };
 
-  const run = () => {
+  const run = () => setConfirming(true);
+
+  /** 点确认：飞行动画 → 关闭弹窗 → 后台任务（发布 + 轮询 CI）。
+   *  完成/失败由任务系统统一通知（顶部横幅 + 铃铛）。 */
+  const runTask = (e: React.MouseEvent<HTMLButtonElement>) => {
     setConfirming(false);
-    setBusy(true);
-    setResult(null);
-    void post
-      .releaseRun(level, note.trim())
-      .then((r) => setResult({ ok: r.ok, message: r.message }))
-      .catch((e: Error) => setResult({ ok: false, message: e.message }))
-      .finally(() => setBusy(false));
+    launchMagicFlight(e.currentTarget.getBoundingClientRect());
+    const taskTag = tag;
+    const taskLevel = level;
+    const taskNote = note.trim();
+    onClose();
+    startTask({
+      kind: 'release',
+      title: t('ops.release.taskTitle', { tag: taskTag }),
+      run: async (signal) => {
+        const r = await post.releaseRun(taskLevel, taskNote);
+        if (!r.ok) return { ok: false, message: r.message };
+        return watchTag(taskTag, signal);
+      },
+    });
+  };
+
+  /** 轮询该 tag 的 CI 状态，直到完成/失败/超时 */
+  const watchTag = async (taskTag: string, signal: AbortSignal): Promise<{ ok: boolean; message: string }> => {
+    for (let i = 0; i < 120; i++) {
+      if (signal.aborted) return { ok: false, message: t('ops.release.taskCancelled') };
+      try {
+        const s = await get.releaseStatus(taskTag);
+        if (s.ok && s.status === 'completed') {
+          return s.conclusion === 'success'
+            ? { ok: true, message: t('ops.release.taskDone', { tag: taskTag, n: s.artifacts.length }) }
+            : { ok: false, message: t('ops.release.taskFailed', { tag: taskTag }) };
+        }
+      } catch {
+        /* 网络抖动：继续等 */
+      }
+      await new Promise((r) => setTimeout(r, 15_000));
+    }
+    return { ok: false, message: t('ops.release.taskTimeout', { tag: taskTag }) };
   };
 
   useImperativeHandle(ref, () => ({ run }));
 
-  // 把发布按钮的可用状态和文案上报给外层 foot；结果页禁用（用右上角关闭）
+  // 把发布按钮的可用状态和文案上报给外层 foot
   useEffect(() => {
-    onStateChange({
-      disabled: disabled || !!result,
-      label: busy ? t('ops.release.running') : t('ops.release.run', { tag }),
-    });
-  }, [disabled, busy, result, tag, onStateChange]);
+    onStateChange({ disabled, label: t('ops.release.run', { tag }) });
+  }, [disabled, tag, onStateChange]);
 
   const levels: { key: Level; label: string }[] = [
     { key: 'patch', label: t('ops.release.levelPatch') },
@@ -99,7 +126,7 @@ export const ReleaseFormPanel = forwardRef<
         {error && <ResultLine msg={error} err />}
         {!info && !error && <div className="loading">{t('ops.release.loading')}</div>}
 
-        {info && !result && (
+        {info && (
           <>
             <div className="row small" style={{ gap: 8, marginBottom: 10 }}>
               {/* 当前版本 */}
@@ -125,7 +152,7 @@ export const ReleaseFormPanel = forwardRef<
                         background: active ? 'var(--panel2)' : 'transparent',
                         borderRadius: 8,
                         padding: '8px 10px',
-                        cursor: busy ? 'default' : 'pointer',
+                        cursor: 'pointer',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 2,
@@ -135,7 +162,6 @@ export const ReleaseFormPanel = forwardRef<
                         type="radio"
                         name="release-level"
                         checked={active}
-                        disabled={busy}
                         onChange={() => setLevel(l.key)}
                         style={{ display: 'none' }}
                       />
@@ -172,7 +198,6 @@ export const ReleaseFormPanel = forwardRef<
                 value={note}
                 maxLength={200}
                 placeholder={t('ops.release.notePlaceholder')}
-                disabled={busy}
                 onChange={(e) => setNote(e.target.value)}
                 style={{ flex: 1 }}
               />
@@ -269,44 +294,13 @@ export const ReleaseFormPanel = forwardRef<
           </>
         )}
 
-        {result && (
-          <>
-            <div
-              className="small"
-              style={{ color: result.ok ? 'var(--ok)' : 'var(--err)', fontWeight: 600, marginBottom: 8 }}
-            >
-              {result.ok ? t('ops.release.done') : t('ops.release.failed')}
-            </div>
-            <pre
-              className="mono small"
-              style={{
-                maxHeight: 220,
-                overflow: 'auto',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                background: 'var(--panel2)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                padding: 8,
-                margin: 0,
-              }}
-            >
-              {result.message}
-            </pre>
-            {result.ok && (
-              // CI 在 GitHub Actions 运行，完成后可在「发布历史」查看产物
-              <div className="dim small" style={{ marginTop: 8 }}>{t('ops.release.ciHint')}</div>
-            )}
-          </>
-        )}
-
       {confirming && (
         <ConfirmModal
           danger
           title={t('ops.release.confirmTitle', { tag })}
           message={t('ops.release.confirmMsg', { tag })}
           confirmLabel={t('ops.release.confirm')}
-          onConfirm={run}
+          onConfirm={runTask}
           onCancel={() => setConfirming(false)}
         />
       )}

@@ -73,6 +73,8 @@ interface GitHubResult {
 
 /** 发布历史（/api/github-releases）：只挑界面用到的字段 */
 interface GitHubReleaseAsset {
+  /** 资产 ID：批量清理时按它删除 */
+  id: number;
   name: string;
   size: number;
   downloadCount: number;
@@ -160,10 +162,37 @@ const githubIdentityCache = new Map<string, { data: GitHubIdentityResult; at: nu
 const githubReleasesCache = new Map<string, { data: GitHubReleasesResult; at: number }>();
 const RELEASES_CACHE_TTL_MS = 5 * 60_000;
 
+/** 清空发布历史缓存——批量清理产物后调用，否则面板还会拿到旧 assets */
+export function clearGithubReleasesCache(): void {
+  githubReleasesCache.clear();
+}
+
 /** 清空身份缓存——凭据保存（/api/git-auth）后调用：**用户名不变只换 Token** 时缓存键不变，
  *  不清会拿旧身份顶最多 30 分钟（典型：换了个权限不同的 Token）。 */
 export function clearGithubIdentityCache(): void {
   githubIdentityCache.clear();
+}
+
+/** 批量清理预览：按发布时间倒序取 Release（含资产 id），供前端展示与删除使用 */
+async function releasesWithAssets(
+  owner: string,
+  repoName: string,
+  token: string,
+  signal: AbortSignal,
+): Promise<{ tagName: string; publishedAt: string; assets: { id: number; name: string; size: number }[] }[]> {
+  const raw = await githubFetch(`/repos/${owner}/${repoName}/releases?per_page=100`, signal, token);
+  const list = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+  return list
+    .map((o) => ({
+      tagName: String(o.tag_name ?? ''),
+      publishedAt: String(o.published_at ?? ''),
+      assets: (Array.isArray(o.assets) ? (o.assets as Record<string, unknown>[]) : []).map((a) => ({
+        id: Number(a.id ?? 0),
+        name: String(a.name ?? ''),
+        size: Number(a.size ?? 0),
+      })),
+    }))
+    .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
 }
 
 /** 调 GitHub 接口（读；Accept 用当前推荐的 vnd.github+json）。
@@ -481,6 +510,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             prerelease: o.prerelease === true,
             draft: o.draft === true,
             assets: assets.map((a) => ({
+              id: Number(a.id ?? 0),
               name: String(a.name ?? ''),
               size: Number(a.size ?? 0),
               downloadCount: Number(a.download_count ?? 0),
@@ -507,6 +537,106 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       (data.tags ?? []).some((x) => x.ci && (x.ci.status === 'queued' || x.ci.status === 'in_progress'));
     if (data.ok && !hasActiveCi) githubReleasesCache.set(key, { data, at: Date.now() });
     sendJson(res, 200, data);
+    return true;
+  }
+
+  if (p === '/api/github-release-cleanup' && req.method === 'GET') {
+    // 批量清理预览：保留最近 keep 个 Release，列出更早版本里可删除的产物
+    const { repo, vcs } = vcsOf();
+    if (repo.type !== 'git') {
+      sendJson(res, 400, { error: t('srv.githubGitOnly') });
+      return true;
+    }
+    let remoteUrl = '';
+    try {
+      remoteUrl = (await vcs.remote?.()) ?? '';
+    } catch {
+      /* 未配置 origin */
+    }
+    const github = parseGithub(remoteUrl);
+    if (!github) {
+      sendJson(res, 200, { ok: false, error: t('srv.githubNotGithub') });
+      return true;
+    }
+    const token = loadConfig().git?.password ?? '';
+    if (!token) {
+      // 批量清理需要写权限，匿名读不到
+      sendJson(res, 400, { error: t('srv.githubCleanupNeedToken') });
+      return true;
+    }
+    const keep = Math.min(Math.max(Number(url.searchParams.get('keep') ?? 3) || 3, 1), 50);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const list = await releasesWithAssets(github.owner, github.repo, token, ctl.signal);
+      const toClean = list.slice(keep).filter((r) => r.assets.length > 0);
+      const totalAssets = toClean.reduce((n, r) => n + r.assets.length, 0);
+      const totalSize = toClean.reduce((n, r) => n + r.assets.reduce((s, a) => s + a.size, 0), 0);
+      sendJson(res, 200, { ok: true, keep, releases: toClean, totalAssets, totalSize });
+    } catch (e) {
+      const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: FETCH_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      sendJson(res, 200, { ok: false, error: err });
+    } finally {
+      clearTimeout(timer);
+    }
+    return true;
+  }
+
+  if (p === '/api/github-release-cleanup' && req.method === 'POST') {
+    // 执行批量清理：只删旧 Release 的 assets，Release 说明和 tag 保留
+    const { repo, vcs } = vcsOf();
+    if (repo.type !== 'git') {
+      sendJson(res, 400, { error: t('srv.githubGitOnly') });
+      return true;
+    }
+    let remoteUrl = '';
+    try {
+      remoteUrl = (await vcs.remote?.()) ?? '';
+    } catch {
+      /* 未配置 origin */
+    }
+    const github = parseGithub(remoteUrl);
+    if (!github) {
+      sendJson(res, 200, { ok: false, error: t('srv.githubNotGithub') });
+      return true;
+    }
+    const token = loadConfig().git?.password ?? '';
+    if (!token) {
+      sendJson(res, 400, { error: t('srv.githubCleanupNeedToken') });
+      return true;
+    }
+    const body = await readBody(req);
+    const keep = Math.min(Math.max(Number(body.keep ?? 3) || 3, 1), 50);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 120_000);
+    try {
+      const list = await releasesWithAssets(github.owner, github.repo, token, ctl.signal);
+      const toClean = list.slice(keep).filter((r) => r.assets.length > 0);
+      let deleted = 0;
+      const failed: { name: string; error: string }[] = [];
+      for (const rel of toClean) {
+        for (const a of rel.assets) {
+          try {
+            const res = await fetch(`${GITHUB_API}/repos/${github.owner}/${github.repo}/releases/assets/${a.id}`, {
+              method: 'DELETE',
+              headers: { 'User-Agent': GITHUB_UA, Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}` },
+              signal: ctl.signal,
+            });
+            if (res.ok || res.status === 204) deleted++;
+            else failed.push({ name: `${rel.tagName}/${a.name}`, error: `HTTP ${res.status}` });
+          } catch (e) {
+            failed.push({ name: `${rel.tagName}/${a.name}`, error: (e as Error).message });
+          }
+        }
+      }
+      clearGithubReleasesCache();
+      sendJson(res, 200, { ok: failed.length === 0, deleted, failed });
+    } catch (e) {
+      const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: 120 }) : (e as Error).message;
+      sendJson(res, 200, { ok: false, error: err, deleted: 0, failed: [] });
+    } finally {
+      clearTimeout(timer);
+    }
     return true;
   }
 

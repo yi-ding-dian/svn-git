@@ -85,6 +85,8 @@ export const srv = {
   'srv.releaseUnsupported': '当前项目没有 deploy/release.mjs，不支持一键发版',
   'srv.releaseBadLevel': '版本级别无效（只能是 patch / minor / major）',
   'srv.releaseBadNote': '发布说明不能为空，不能换行，且不超过 200 字',
+  'srv.releaseNoGithub': '远程地址不是 GitHub，无法查询 CI 状态',
+  'srv.releaseBadTag': '版本标签格式无效',
   'srv.gitSshKeyInvalid': 'SSH 私钥路径不能包含换行或引号',
   'srv.gitSshKeyNotFound': '找不到私钥文件：{path}',
   'srv.remoteUrlEmpty': '远程地址不能为空',
@@ -219,6 +221,7 @@ export const srv = {
   'srv.githubRateLimited': 'GitHub 接口访问受限（匿名限流，稍后再试）',
   'srv.githubRateLimitedAuth': 'GitHub 接口限流（Token 配额），稍后再试',
   'srv.githubTimeout': '请求 GitHub 超时（{sec} 秒）',
+  'srv.githubCleanupNeedToken': '批量清理需要先配置 GitHub 凭据（Token）',
   // ---- GitHub 删除仓库 ----
   'srv.githubDeleteConfirmMismatch': '确认的仓库名不匹配（需输入 {name}）',
   'srv.githubDeleteNeedToken': '删除仓库需当场提供 Token（请在弹窗中填写）——不复用已保存凭据',

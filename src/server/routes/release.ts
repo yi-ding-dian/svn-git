@@ -7,9 +7,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { run } from '../../vcs/exec.js';
 import { sendJson, readBody, repoInfo, type Ctx } from './util.js';
+import { loadConfig } from '../../config.js';
 import { t } from '../../shared/i18n/index.js';
 
 const LEVELS = new Set(['patch', 'minor', 'major']);
+const GITHUB_API = 'https://api.github.com';
+/** 与 github.ts 同款中性 UA（含 "svn" 的产品名会被 GitHub WAF 403） */
+const GITHUB_UA = 'vcs-client/1.0 (+https://github.com/yi-ding-dian/svn-git)';
 
 async function gitOut(root: string, args: string[]): Promise<string> {
   const r = await run('git', args, { cwd: root, timeoutMs: 15_000 });
@@ -76,10 +80,82 @@ function bump(cur: string, level: 'patch' | 'minor' | 'major'): string {
   return `${a}.${b}.${c + 1}`;
 }
 
+/** 查某个 tag 对应的 CI 运行状态（供发布后台任务轮询） */
+async function releaseStatus(
+  root: string,
+  tag: string,
+): Promise<{
+  ok: boolean;
+  error?: string;
+  status: 'pending' | 'queued' | 'in_progress' | 'completed';
+  conclusion: string | null;
+  htmlUrl: string;
+  artifacts: { name: string; size: number }[];
+}> {
+  const remote = await gitOut(root, ['remote', 'get-url', 'origin']);
+  const m = /github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/.exec(remote);
+  if (!m) return { ok: false, error: t('srv.releaseNoGithub'), status: 'pending', conclusion: null, htmlUrl: '', artifacts: [] };
+  const token = loadConfig().git?.password ?? '';
+  const headers: Record<string, string> = {
+    'User-Agent': GITHUB_UA,
+    Accept: 'application/vnd.github+json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8_000);
+  try {
+    const res = await fetch(`${GITHUB_API}/repos/${m[1]}/${m[2]}/actions/runs?per_page=30`, { headers, signal: ctl.signal });
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${res.status}`, status: 'pending', conclusion: null, htmlUrl: '', artifacts: [] };
+    }
+    const data = (await res.json()) as { workflow_runs?: Record<string, unknown>[] };
+    const runInfo = (data.workflow_runs ?? []).find((r) => r.head_branch === tag);
+    if (!runInfo) {
+      // 还没排队：Actions 页面正常，几秒内会出现运行记录
+      return {
+        ok: true,
+        status: 'pending',
+        conclusion: null,
+        htmlUrl: `https://github.com/${m[1]}/${m[2]}/actions`,
+        artifacts: [],
+      };
+    }
+    const status = String(runInfo.status ?? 'pending') as 'queued' | 'in_progress' | 'completed';
+    const conclusion = (runInfo.conclusion as string | null) ?? null;
+    const htmlUrl = String(runInfo.html_url ?? '');
+    let artifacts: { name: string; size: number }[] = [];
+    if (status === 'completed' && conclusion === 'success') {
+      const ar = await fetch(`${GITHUB_API}/repos/${m[1]}/${m[2]}/actions/runs/${runInfo.id}/artifacts`, {
+        headers,
+        signal: ctl.signal,
+      });
+      if (ar.ok) {
+        const ad = (await ar.json()) as { artifacts?: Record<string, unknown>[] };
+        artifacts = (ad.artifacts ?? []).map((a) => ({
+          name: String(a.name ?? ''),
+          size: Number(a.size_in_bytes ?? 0),
+        }));
+      }
+    }
+    return { ok: true, status, conclusion, htmlUrl, artifacts };
+  } catch (e) {
+    return {
+      ok: false,
+      error: (e as Error).name === 'AbortError' ? 'timeout' : (e as Error).message,
+      status: 'pending',
+      conclusion: null,
+      htmlUrl: '',
+      artifacts: [],
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
   const p = url.pathname;
-  if (p !== '/api/release' && p !== '/api/release-run') return false;
+  if (p !== '/api/release' && p !== '/api/release-run' && p !== '/api/release-status') return false;
 
   const repo = repoInfo();
   if (!repo || repo.type !== 'git') {
@@ -124,6 +200,16 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       ciMissing: ci.missing,
       ciHasWorkflow: ci.hasWorkflow,
     });
+    return true;
+  }
+
+  if (p === '/api/release-status' && req.method === 'GET') {
+    const tag = String(url.searchParams.get('tag') ?? '').trim();
+    if (!/^v[0-9]/.test(tag) || tag.length > 100) {
+      sendJson(res, 400, { error: t('srv.releaseBadTag') });
+      return true;
+    }
+    sendJson(res, 200, await releaseStatus(repo.root, tag));
     return true;
   }
 
