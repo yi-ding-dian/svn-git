@@ -58,7 +58,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: svngit-${{ runner.os }}
-          path: deploy/release/*
+          # 只收最终产物：deploy/release/* 会把 linux-unpacked/win-unpacked 整个目录
+          # 递归传上去（Release 里混进几十个 dll/pak 就是这么来的）
+          path: |
+            deploy/release/*.AppImage
+            deploy/release/*.exe
+            deploy/release/*.tar.gz
           if-no-files-found: error
 
   # 两个平台都构建完后统一发布：避免两个 job 并发抢建同一个 Release。
