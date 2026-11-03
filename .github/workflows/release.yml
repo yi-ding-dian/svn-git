@@ -42,11 +42,18 @@ jobs:
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
-      - name: 打包 Windows 安装包
+      - name: 打包 Windows 安装包与免安装版
         if: runner.os == 'Windows'
-        run: npx electron-builder --win nsis -c.electronDist=
+        run: npx electron-builder --win nsis portable -c.electronDist=
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+
+      - name: 打包 WSL 压缩包（纯 Node + 内置 Node）
+        if: runner.os == 'Linux'
+        # 两个包：wsl（目标机自备 Node 20.11+，约 4MB）、wsl-node（内置 Linux x64 Node，约 46MB）
+        run: |
+          npm run dist:wsl
+          npm run dist:wsl-node
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
@@ -54,3 +61,25 @@ jobs:
           name: svngit-${{ runner.os }}
           path: deploy/release/*
           if-no-files-found: error
+
+  # 两个平台都构建完后统一发布：避免两个 job 并发抢建同一个 Release。
+  # 只有推 v* 标签才建 Release；手动触发只出 Artifact。
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 下载全部产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 发布到 Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes
+          find artifacts -type f -exec gh release upload "$GITHUB_REF_NAME" {} --clobber \;
