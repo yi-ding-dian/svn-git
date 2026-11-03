@@ -1,0 +1,9 @@
+{
+  "items": [
+    "svn-git-${version}.AppImage",
+    "svn-git-${version}-setup.exe",
+    "svn-git-${version}-portable.exe",
+    "svn-git-${version}-wsl.tar.gz",
+    "svn-git-${version}-wsl-node.tar.gz"
+  ]
+}

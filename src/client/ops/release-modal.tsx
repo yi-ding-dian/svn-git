@@ -1,7 +1,7 @@
 /** 发布新版本弹窗（⋯ 菜单；仅项目根带 deploy/release.mjs 的 git 项目可见）。
  *  只负责收集参数（升哪一位 + 发布说明），实际发版仍由 deploy/release.mjs 执行，
  *  避免两套流程分叉；发布后不盯 CI（去「发布历史」看产物）。 */
-import React, { useEffect, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import { ConfirmModal } from '../ui/prompt.js';
 import { ResultLine } from '../ui/result-line.js';
 import { get, post, type ReleaseInfo } from '../shared/api.js';
@@ -10,7 +10,15 @@ import { t } from '../../shared/i18n/index.js';
 
 type Level = 'patch' | 'minor' | 'major';
 
-export function ReleaseFormPanel() {
+/** 发布按钮由外层「发布」弹窗的 foot 渲染，面板只暴露执行入口 */
+export interface ReleaseFormHandle {
+  run: () => void;
+}
+
+export const ReleaseFormPanel = forwardRef<
+  ReleaseFormHandle,
+  { onStateChange: (s: { disabled: boolean; label: string }) => void }
+>(function ReleaseFormPanel({ onStateChange }, ref) {
   const [info, setInfo] = useState<ReleaseInfo | null>(null);
   const [error, setError] = useState('');
   const [level, setLevel] = useState<Level>('patch');
@@ -18,6 +26,10 @@ export function ReleaseFormPanel() {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  /** 非 main 分支时的切换确认 */
+  const [switchConfirm, setSwitchConfirm] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState('');
 
   useEffect(() => {
     get
@@ -31,7 +43,29 @@ export function ReleaseFormPanel() {
 
   const next = info?.next[level] ?? '';
   const tag = next ? `v${next}` : '';
-  const disabled = busy || !info || info.dirty || !note.trim() || !next;
+  const onMain = info?.branch === 'main';
+  const disabled = busy || !info || info.dirty || !note.trim() || !next || !onMain;
+
+  /** 非 main：用户确认后切到 main，再重新读取版本/说明 */
+  const switchToMain = () => {
+    setSwitchConfirm(false);
+    setSwitching(true);
+    setSwitchError('');
+    void post
+      .branchSwitch('main')
+      .then((r) => {
+        if (!r.ok) {
+          setSwitchError(t('ops.release.switchFailed', { msg: r.message }));
+          return;
+        }
+        return get.releaseInfo().then((fresh) => {
+          setInfo(fresh);
+          setNote(fresh.note);
+        });
+      })
+      .catch((e: Error) => setSwitchError(t('ops.release.switchFailed', { msg: e.message })))
+      .finally(() => setSwitching(false));
+  };
 
   const run = () => {
     setConfirming(false);
@@ -43,6 +77,16 @@ export function ReleaseFormPanel() {
       .catch((e: Error) => setResult({ ok: false, message: e.message }))
       .finally(() => setBusy(false));
   };
+
+  useImperativeHandle(ref, () => ({ run }));
+
+  // 把发布按钮的可用状态和文案上报给外层 foot；结果页禁用（用右上角关闭）
+  useEffect(() => {
+    onStateChange({
+      disabled: disabled || !!result,
+      label: busy ? t('ops.release.running') : t('ops.release.run', { tag }),
+    });
+  }, [disabled, busy, result, tag, onStateChange]);
 
   const levels: { key: Level; label: string }[] = [
     { key: 'patch', label: t('ops.release.levelPatch') },
@@ -138,6 +182,33 @@ export function ReleaseFormPanel() {
               // 工作区有未提交的改动，发布前请先提交或还原
               <div className="small" style={{ color: 'var(--warn)', marginTop: 8 }}>{t('ops.release.dirty')}</div>
             )}
+            {!onMain && (
+              // 当前不在 main：发版前必须由用户确认并切换
+              <div className="small" style={{ color: 'var(--warn)', marginTop: 8 }}>
+                {t('ops.release.notMain', { branch: info.branch })}
+                <button
+                  className="mini"
+                  style={{ marginLeft: 8 }}
+                  disabled={switching || info.dirty}
+                  onClick={() => setSwitchConfirm(true)}
+                >
+                  {switching ? t('ops.release.switching') : t('ops.release.switchMain')}
+                </button>
+              </div>
+            )}
+            {switchError && (
+              <div className="small" style={{ color: 'var(--err)', marginTop: 4 }}>{switchError}</div>
+            )}
+            {info.ciReady === false && (
+              // CI 文件没推到 origin/main：推 tag 也不会触发构建，只能打标签
+              <div className="small" style={{ color: 'var(--warn)', marginTop: 8, lineHeight: 1.6 }}>
+                {info.ciHasWorkflow
+                  ? t('ops.release.ciNotPushed', { files: (info.ciMissing ?? []).join('、') })
+                  : t('ops.release.ciNoWorkflow')}
+                <br />
+                {t('ops.release.ciOnlyTag')}
+              </div>
+            )}
             {/* 将执行：提交版本号 → 打 tag {tag} → 推送 → CI 出包 */}
             <div className="dim small" style={{ marginTop: 10, lineHeight: 1.8 }}>
               {t('ops.release.preview', { tag })}
@@ -167,34 +238,33 @@ export function ReleaseFormPanel() {
               )}
             </div>
 
-            {/* CI 将产出：带图标的小标签，发布前知道会出哪些包 */}
+            {/* CI 将产出：优先读项目自定义的 deploy/release-artifacts.json */}
             <div style={{ marginTop: 14 }}>
               <div className="dim small" style={{ marginBottom: 6 }}>{t('ops.release.assetsTitle')}</div>
-              <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-                {[
-                  `svn-git-${next}.AppImage`,
-                  `svn-git-${next}-setup.exe`,
-                  `svn-git-${next}-portable.exe`,
-                  `svn-git-${next}-wsl.tar.gz`,
-                  `svn-git-${next}-wsl-node.tar.gz`,
-                ].map((name) => (
-                  <span
-                    key={name}
-                    className="mono small"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      padding: '3px 8px',
-                      background: 'var(--panel2)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6,
-                    }}
-                  >
-                    <IconPackage size={12} /> {name}
-                  </span>
-                ))}
-              </div>
+              {(info.artifacts?.length ?? 0) > 0 ? (
+                <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                  {info.artifacts!.map((tpl) => (
+                    <span
+                      key={tpl}
+                      className="mono small"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '3px 8px',
+                        background: 'var(--panel2)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 6,
+                      }}
+                    >
+                      <IconPackage size={12} /> {tpl.replace(/\$\{version\}/g, next)}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                // 产物由项目的 CI 配置决定
+                <div className="dim small">{t('ops.release.assetsUnknown')}</div>
+              )}
             </div>
           </>
         )}
@@ -230,15 +300,6 @@ export function ReleaseFormPanel() {
           </>
         )}
 
-        {!result && (
-          <div className="row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
-            {/* 发布 {tag} */}
-            <button className="primary" disabled={disabled} onClick={() => setConfirming(true)}>
-              {busy ? t('ops.release.running') : t('ops.release.run', { tag })}
-            </button>
-          </div>
-        )}
-
       {confirming && (
         <ConfirmModal
           danger
@@ -249,6 +310,15 @@ export function ReleaseFormPanel() {
           onCancel={() => setConfirming(false)}
         />
       )}
+      {switchConfirm && (
+        <ConfirmModal
+          title={t('ops.release.switchConfirmTitle')}
+          message={t('ops.release.switchConfirmMsg', { branch: info?.branch ?? '' })}
+          confirmLabel={t('ops.release.switchMain')}
+          onConfirm={switchToMain}
+          onCancel={() => setSwitchConfirm(false)}
+        />
+      )}
     </>
   );
-}
+});

@@ -18,6 +18,8 @@ export function ModalShell(props: {
   bodyStyle?: React.CSSProperties;
   /** 底部操作区；不传时仅「关闭」按钮 */
   foot?: React.ReactNode;
+  /** 底部操作区额外样式（如压缩内边距） */
+  footStyle?: React.CSSProperties;
   /** 标题栏右上角显示 × 关闭按钮（选择型弹窗用，替代底部「关闭」） */
   closeIcon?: boolean;
   /** × 按钮的悬浮提示（默认「关闭」；两级视图的弹窗在"返回上级"时可传「返回」） */
@@ -78,7 +80,9 @@ export function ModalShell(props: {
         </h3>
         <div className="body" style={props.bodyStyle}>{props.children}</div>
         {/* 关闭 */}
-        {!props.hideFoot && <div className="foot">{props.foot ?? <button onClick={props.onClose}>{t('common.close')}</button>}</div>}
+        {!props.hideFoot && (
+          <div className="foot" style={props.footStyle}>{props.foot ?? <button onClick={props.onClose}>{t('common.close')}</button>}</div>
+        )}
       </ResizableModal>
     </div>
   );

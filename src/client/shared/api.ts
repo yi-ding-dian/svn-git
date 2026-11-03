@@ -119,6 +119,14 @@ export interface ReleaseInfo {
   note: string;
   /** 上个 tag 以来的提交主题（最多 8 条） */
   commits: string[];
+  /** 项目自定义的 CI 产物清单（deploy/release-artifacts.json），可含 ${version} 占位符 */
+  artifacts?: string[];
+  /** CI 文件是否已推送到 origin/main；false 时发布只能打标签，不会出包 */
+  ciReady?: boolean;
+  /** 未推送到 origin/main 的发版相关文件 */
+  ciMissing?: string[];
+  /** 项目是否存在 .github/workflows 发布工作流 */
+  ciHasWorkflow?: boolean;
   next: { patch: string; minor: string; major: string };
 }
 
