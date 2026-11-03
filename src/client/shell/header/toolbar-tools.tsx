@@ -10,7 +10,7 @@ import { launchMagicFlight } from '../../animations/index.js';
 import { baseName } from '../../shared/utils.js';
 import { parseGithub } from '../../../shared/github.js';
 import { t, type I18nKey } from '../../../shared/i18n/index.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconPackage, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconTerminal, IconGitHub, IconGitHubPlus, IconTrash, IconFork, IconStats } from '../../ui/icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconRelease, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconTerminal, IconGitHub, IconGitHubPlus, IconTrash, IconFork, IconStats } from '../../ui/icons.js';
 import { type Modal } from '../modal-types.js';
 
 /** 顶部工具按钮（图标 + 文字，统一样式；mousedown 可启动拖拽定制） */
@@ -78,6 +78,8 @@ export const isSepItem = (k: string) => k.startsWith('sep-');
 export type ToolCtx = {
   /** 当前仓库根（清理等任务标题里显示项目名用） */
   repoRoot?: string | null;
+  /** 项目根有 deploy/release.mjs：显示「发布新版本」菜单 */
+  canRelease?: boolean;
   repoType: 'git' | 'svn' | null;
   /** 当前仓库的远程地址（git；/api/info 带回）；GitHub 信息菜单的可见性判断用 */
   repoUrl?: string | null;
@@ -393,17 +395,18 @@ export const TOOLS: ToolDef[] = [
     }),
   },
   {
-    // GitHub 发布历史：与「GitHub 仓库信息」同条件（origin 指向 github.com 才出现）。
-    // 只读展示版本、更新说明和产物下载地址，不在应用内发版
-    key: 'githubReleases', zone: 'menu', menuLabelKey: 'shell.tool.githubReleases',
-    visible: (c) => c.repoType === 'git' && /github\.com/i.test(c.repoUrl ?? ''),
+    // 发布（整合发布历史 + 发布新版本）：GitHub 项目可看历史；项目根带 deploy/release.mjs
+    // 的还可发新版。两个能力都没有时整个菜单不出现。
+    // 弹窗只收集参数，实际发版流程交给 deploy/release.mjs（脚本仍是唯一实现）
+    key: 'release', zone: 'menu', menuLabelKey: 'shell.tool.release',
+    visible: (c) => c.repoType === 'git' && (/github\.com/i.test(c.repoUrl ?? '') || c.canRelease === true),
     render: (c) => ({
-      icon: <IconPackage />,
-      // 发布历史
-      label: t('shell.tool.githubReleases'),
-      // 查看 GitHub 发布历史与安装包下载地址
-      title: t('shell.tool.githubReleasesTitle'),
-      onClick: () => c.setModal({ type: 'github-releases' }),
+      icon: <IconRelease />,
+      // 发布
+      label: t('shell.tool.release'),
+      // 查看发布历史与产物下载地址，或发布新版本
+      title: t('shell.tool.releaseTitle'),
+      onClick: () => c.setModal({ type: 'release-hub' }),
     }),
   },
   {

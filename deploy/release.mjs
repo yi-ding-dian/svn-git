@@ -19,6 +19,7 @@
  *  选项：
  *    --patch | --minor | --major   直接指定升哪一位，跳过询问
  *    --yes                         跳过所有确认（需配合上面三者之一）
+ *    --note "一句话说明"            非交互时指定发布说明（缺省用默认值）
  *    --no-push                     提交 + 打 tag，但不 push、不盯 CI
  *    --no-watch                    正常 push，但不轮询 CI 状态
  *    --branch <名字>               允许在非 main 分支发版（默认拒绝）
@@ -45,6 +46,7 @@ const optVal = (name) => {
 
 const LEVEL = ['patch', 'minor', 'major'].find((l) => flag(`--${l}`)) ?? null;
 const YES = flag('--yes');
+const NOTE = optVal('--note')?.trim() ?? '';
 const NO_PUSH = flag('--no-push');
 const NO_WATCH = flag('--no-watch');
 const ALLOW_BRANCH = optVal('--branch') ?? 'main';
@@ -315,8 +317,9 @@ async function main() {
   console.log(`${OK} 版本 ${cur} → ${next}（tag ${tag}）`);
 
   // --- 发布说明（用于版本提交信息 + tag 说明）
-  //     默认取"自上个 tag 以来最新一条提交主题"（见 defaultReleaseNote）—— 省得每次手打
-  const note = await ask('\n这次发布了什么（一句话，进 commit 和 tag 信息）', defaultReleaseNote(tag));
+  //     默认取"自上个 tag 以来最新一条提交主题"（见 defaultReleaseNote）—— 省得每次手打；
+  //     --note 显式给了就优先用（应用弹窗走非交互模式）
+  const note = NOTE || (await ask('\n这次发布了什么（一句话，进 commit 和 tag 信息）', defaultReleaseNote(tag)));
   const message = `${tag}：${note}`;
 
   // --- 预览

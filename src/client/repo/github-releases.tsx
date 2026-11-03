@@ -1,11 +1,9 @@
-/** GitHub 发布历史弹窗（顶栏 ⋯ 菜单入口；仅 origin 指向 github.com 的项目可见）：
- *  卡片顶部的版本号本身就是下拉（默认最新），切换后下方只显示该版本的更新说明与产物。
- *  数据来自 /api/github-releases（服务端代问，5 分钟缓存，刷新可强制重拉）；
- *  没有 Release 的旧 tag 也在下拉里，可下载源码。下载/打开统一走 /api/open-url。 */
-import React, { useEffect, useState } from 'react';
-import { ModalShell } from '../shell/modal-shell.js';
+/** GitHub 发布历史面板（由「发布」弹窗的 tab 承载）：卡片顶部的版本号本身就是下拉
+ *  （默认最新），切换后下方只显示该版本的更新说明与产物。数据来自 /api/github-releases
+ *  （服务端代问，5 分钟缓存，刷新可强制重拉）；没有 Release 的旧 tag 也可选，可下载源码。 */
+import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import { get, post, type GitHubReleasesResult } from '../shared/api.js';
-import { IconRefresh, IconExternal, IconPackage, IconCopy } from '../ui/icons.js';
+import { IconExternal, IconPackage, IconCopy } from '../ui/icons.js';
 import { HelpNote } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
 import { relTime } from './github-repo.js';
@@ -23,7 +21,14 @@ function formatSize(n: number): string {
 
 const CARD: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 8, padding: 12 };
 
-export function GitHubReleasesModal(props: { onClose: () => void }) {
+/** 面板对外暴露的操作：底部 foot 由外层「发布」弹窗统一渲染 */
+export interface ReleasesPanelHandle {
+  refresh: () => void;
+  releasesUrl: () => string;
+}
+
+export const GitHubReleasesPanel = forwardRef<ReleasesPanelHandle, { onUrlChange: (url: string) => void }>(
+  function GitHubReleasesPanel({ onUrlChange }, ref) {
   const [data, setData] = useState<GitHubReleasesResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -59,6 +64,12 @@ export function GitHubReleasesModal(props: { onClose: () => void }) {
   useEffect(() => {
     load();
   }, []);
+
+  // 底部 foot 由外层弹窗渲染：把刷新操作和 Releases 页面地址暴露出去
+  useImperativeHandle(ref, () => ({ refresh: () => load(true), releasesUrl: () => data?.releasesUrl ?? '' }), [data]);
+  useEffect(() => {
+    onUrlChange(data?.releasesUrl ?? '');
+  }, [data, onUrlChange]);
 
   // 下载加速开关与地址（存在 config.json，跨弹窗/跨项目共用）
   useEffect(() => {
@@ -156,28 +167,7 @@ export function GitHubReleasesModal(props: { onClose: () => void }) {
   );
 
   return (
-    <ModalShell
-      title={t('repo.githubReleases.title')}
-      icon={<IconPackage size={18} />}
-      width={680}
-      minWidth={560}
-      closeIcon
-      onClose={props.onClose}
-      bodyStyle={{ maxHeight: '64vh', overflow: 'auto' }}
-      foot={
-        <>
-          {/* 刷新 */}
-          <button className="mini" disabled={loading} onClick={() => load(true)} title={t('repo.githubReleases.refresh')}>
-            <IconRefresh size={14} /> {t('repo.githubReleases.refresh')}
-          </button>
-          {data?.releasesUrl && (
-            <button className="mini" onClick={() => open(data.releasesUrl!)} title={data.releasesUrl}>
-              <IconExternal size={14} /> {t('repo.githubReleases.openGithub')}
-            </button>
-          )}
-        </>
-      }
-    >
+    <>
           {loading && <div className="loading">{t('repo.githubReleases.loading')}</div>}
           {!loading && error && <ResultLine msg={error} err />}
           {!loading && !error && !hasVersions && <HelpNote>{t('repo.githubReleases.empty')}</HelpNote>}
@@ -196,14 +186,24 @@ export function GitHubReleasesModal(props: { onClose: () => void }) {
               )}
 
               {rel.body && (
-                <details style={{ marginTop: 8 }}>
-                  <summary className="small" style={{ cursor: 'pointer' }}>{t('repo.githubReleases.changelog')}</summary>
-                  {/* 更新说明按 Markdown 渲染（标题/列表/代码块/链接），raw HTML 由 renderMarkdown 转义 */}
+                <div className="row small" style={{ gap: 8, marginTop: 8, alignItems: 'baseline' }}>
+                  <span className="dim" style={{ flexShrink: 0 }}>{t('repo.githubReleases.changelog')}</span>
+                  {/* 同一行显示：内容占剩余宽度、单行超出省略；悬浮 title 看完整说明 */}
                   <div
-                    className="md-render small"
+                    className="md-render small md-inline"
+                    title={rel.body}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      padding: 0,
+                      overflow: 'hidden',
+                      whiteSpace: 'nowrap',
+                      textOverflow: 'ellipsis',
+                      lineHeight: 1.6,
+                    }}
                     dangerouslySetInnerHTML={{ __html: renderMarkdown(rel.body, { breaks: true }) }}
                   />
-                </details>
+                </div>
               )}
 
               <div style={{ marginTop: 10 }}>
@@ -307,7 +307,7 @@ export function GitHubReleasesModal(props: { onClose: () => void }) {
                       }}
                     />
                   </div>
-                  {/* ⚠ 文件会经过第三方服务器，理论上它能看到下载内容；公开仓库没问题，私有仓库不要开启。 */}
+                  {/* ⚠ 文件会经过第三方服务器，理论上它能看到下载内容；公开仓库没问题，私有仓库请谨慎开启。 */}
                   <div className="small" style={{ color: 'var(--warn)', marginTop: 6, lineHeight: 1.6 }}>
                     {t('repo.githubReleases.proxyRisk')}
                   </div>
@@ -315,6 +315,6 @@ export function GitHubReleasesModal(props: { onClose: () => void }) {
               )}
             </div>
           )}
-    </ModalShell>
+    </>
   );
-}
+});

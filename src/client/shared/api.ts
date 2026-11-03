@@ -44,6 +44,8 @@ export interface RepoInfo {
   dirty?: boolean;
   /** 服务实例标识（进程重启即变）：前端用它判断服务是否重启过（终端历史据此作废，见 terminal.tsx） */
   instanceId?: string;
+  /** 项目根有 deploy/release.mjs：⋯ 菜单显示「发布新版本」 */
+  canRelease?: boolean;
 }
 
 /** GitHub 仓库信息（/api/github-repo；语言构成为"语言名 → 字节数"） */
@@ -104,6 +106,20 @@ export interface GitHubReleasesResult {
   releases?: GitHubRelease[];
   /** 没有对应 Release 的 tag（早期版本只有 tag、没有发布说明） */
   tags?: GitHubTag[];
+}
+
+/** 一键发版预检（/api/release） */
+export interface ReleaseInfo {
+  ok: boolean;
+  version: string;
+  branch: string;
+  /** 已跟踪文件有未提交改动（脚本会拒绝发版） */
+  dirty: boolean;
+  /** 默认发布说明（上个 tag 以来最新提交主题） */
+  note: string;
+  /** 上个 tag 以来的提交主题（最多 8 条） */
+  commits: string[];
+  next: { patch: string; minor: string; major: string };
 }
 
 /** 没有 Release 的版本标签 */
@@ -713,6 +729,8 @@ export const get = {
   githubRepo: (force?: boolean) => api<GitHubRepoResult>(`/api/github-repo${force ? '?force=1' : ''}`),
   /** 发布历史（版本 + 产物下载地址）；force=1 跳过 5 分钟缓存 */
   githubReleases: (force?: boolean) => api<GitHubReleasesResult>(`/api/github-releases${force ? '?force=1' : ''}`),
+  /** 一键发版预检：当前版本 / 默认说明 / 工作区状态 */
+  releaseInfo: () => api<ReleaseInfo>('/api/release'),
   /** origin 仓库的访问权限（推送失败后判「无写权限」用；纯读）。
    *  ok=false 查询失败（原因在 message）；canPush=null 表示无凭据查不了；isGithub=false 表示 origin 不是 GitHub。
    *  前端只在 canPush === false 时引导 Fork（宁可不引导，不误弹）。 */
@@ -1211,6 +1229,9 @@ export const post = {
   /** 开启/关闭 GitHub 下载加速（prefix 空 = 默认 gh-proxy.com） */
   gitDownloadProxySave: (enabled: boolean, prefix: string) =>
     api<{ ok: boolean; enabled: boolean; prefix: string }>('/api/git-download-proxy', json({ enabled, prefix })),
+  /** 执行一键发版（实际调用 deploy/release.mjs） */
+  releaseRun: (level: 'patch' | 'minor' | 'major', note: string) =>
+    api<{ ok: boolean; message: string; timedOut?: boolean }>('/api/release-run', json({ level, note })),
   /** 安全清理（离职/交接前）：按选项删除本机凭据与私钥配置 */
   secureClean: (opts: {
     removeKey: boolean;

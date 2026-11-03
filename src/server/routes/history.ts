@@ -49,7 +49,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const repo = repoInfo();
         if (!repo) {
-          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version, buildDate, commit, dirty, instanceId: INSTANCE_ID });
+          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version, buildDate, commit, dirty, instanceId: INSTANCE_ID, canRelease: false });
           return true;
         }
         const { vcs } = vcsOf();
@@ -82,6 +82,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           commit,
           dirty,
           instanceId: INSTANCE_ID,
+          // 一键发版入口：只对项目根自带 deploy/release.mjs 的 git 项目显示
+          canRelease:
+            repo.type === 'git' && fs.existsSync(path.join(repo.root, 'deploy', 'release.mjs')),
         });
         return true;
       }

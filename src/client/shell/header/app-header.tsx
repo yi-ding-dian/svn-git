@@ -205,6 +205,7 @@ export function AppHeader(props: {
   // 当前仓库类型下实际渲染的按钮定义
   const ctx: ToolCtx = {
     repoRoot: repo?.root ?? null,
+    canRelease: repo?.canRelease ?? false,
     repoType: repo?.type ?? null,
     repoUrl: repo?.url ?? null,
     conflictCount: props.conflictCount,

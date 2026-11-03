@@ -1634,6 +1634,9 @@ textarea { resize: vertical; font-family: inherit; }
 
 /* ---------- Markdown 渲染预览（marked 输出原生标签） ---------- */
 .md-render { padding: 8px 14px; line-height: 1.75; word-break: break-word; }
+/* 发布历史的「更新说明」单行显示：Markdown 渲染出的段落等块级元素改为内联，
+   父容器的 white-space: nowrap + text-overflow: ellipsis 才能生效 */
+.md-inline > * { display: inline; margin: 0; }
 /* 历史详情里的提交信息（md 渲染）：复用 .md-render 的元素样式，但去掉预览面板用的内边距
    （详情里要和上方的 rev/作者行左对齐）；折叠态只露一行 —— 首尾段的 margin 会把那一行顶掉，去掉 */
 .commit-msg-md { padding: 0; }

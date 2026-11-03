@@ -527,6 +527,23 @@ export function IconPackage({ size = 16 }: IconProps) {
   );
 }
 
+/** 发布新版本：蓝色渐变火箭 */
+export function IconRelease({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <defs>
+        <linearGradient id="ic-release" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#58a6ff" />
+          <stop offset="1" stopColor="#a371f7" />
+        </linearGradient>
+      </defs>
+      <path d="M12 2.5c3.4 1.9 5.4 5.3 5.4 9.2l-2.2 2.2H8.8l-2.2-2.2c0-3.9 2-7.3 5.4-9.2z" fill="url(#ic-release)" />
+      <circle cx="12" cy="9" r="1.8" fill="#ffffff" />
+      <path d="M8.8 14.5 6.5 19l3.5-1M15.2 14.5l2.3 4.5-3.5-1" stroke="#58a6ff" strokeWidth="1.6" strokeLinecap="round" fill="none" />
+    </svg>
+  );
+}
+
 /** 查看历史：蓝色时钟 */
 export function IconHistory({ size = 16 }: IconProps) {
   return (
