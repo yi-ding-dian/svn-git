@@ -38,15 +38,14 @@ jobs:
 
       - name: 打包 Linux AppImage
         if: runner.os == 'Linux'
-        run: npx electron-builder --linux AppImage -c.electronDist=
-        env:
-          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+        # 不覆盖 electronDist：用 npm ci 装好的 node_modules/electron/dist；
+        # --publish never：发布统一交给后面的 release job（tag 上 electron-builder
+        # 默认会自己往 GitHub 发，没有 GH_TOKEN 直接失败）
+        run: npx electron-builder --linux AppImage --publish never
 
       - name: 打包 Windows 安装包与免安装版
         if: runner.os == 'Windows'
-        run: npx electron-builder --win nsis portable -c.electronDist=
-        env:
-          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+        run: npx electron-builder --win nsis portable --publish never
 
       - name: 打包 WSL 压缩包（纯 Node + 内置 Node）
         if: runner.os == 'Linux'
