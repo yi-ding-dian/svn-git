@@ -87,6 +87,8 @@ export function secureClean(opts: SecureCleanOptions): SecureCleanResult {
       password: opts.clearGithubToken ? '' : (cfg.git?.password ?? ''),
       sshKeyPath: opts.removeKey ? '' : (cfg.git?.sshKeyPath ?? ''),
       sshUseForTerminal: opts.removeKey ? false : Boolean(cfg.git?.sshUseForTerminal),
+      githubDownloadProxy: Boolean(cfg.git?.githubDownloadProxy),
+      githubDownloadProxyUrl: cfg.git?.githubDownloadProxyUrl ?? '',
     };
     if (opts.clearGithubToken) removed.push('githubToken');
   }

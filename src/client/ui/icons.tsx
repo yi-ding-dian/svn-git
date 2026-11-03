@@ -510,6 +510,23 @@ export function IconDownload({ size = 16 }: IconProps) {
   );
 }
 
+/** 发布历史：蓝色渐变包裹盒（对应 GitHub Releases 的 package 语义） */
+export function IconPackage({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <defs>
+        <linearGradient id="ic-package" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#58a6ff" />
+          <stop offset="1" stopColor="#a371f7" />
+        </linearGradient>
+      </defs>
+      <path d="M12 2.8 20.8 7.5v9L12 21.2 3.2 16.5v-9z" fill="url(#ic-package)" />
+      <path d="M3.2 7.5 12 12.2l8.8-4.7M12 12.2v9" stroke="#ffffff" strokeOpacity="0.8" strokeWidth="1.3" fill="none" strokeLinejoin="round" />
+      <path d="M7.6 5.1l8.8 4.7" stroke="#ffffff" strokeOpacity="0.55" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /** 查看历史：蓝色时钟 */
 export function IconHistory({ size = 16 }: IconProps) {
   return (

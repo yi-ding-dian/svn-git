@@ -20,6 +20,7 @@ import { GitHubCreateModal } from '../repo/github-create-repo.js';
 import { GitHubDeleteModal } from '../repo/github-delete-repo.js';
 import { GitHubForkModal } from '../repo/github-fork.js';
 import { GitHubRepoModal } from '../repo/github-repo.js';
+import { GitHubReleasesModal } from '../repo/github-releases.js';
 import { GitHubMyReposModal } from '../repo/github-my-repos.js';
 import { GitIdentityModal } from '../ops/git-identity.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
@@ -521,6 +522,7 @@ export function ModalHost(props: ModalHostProps) {
         />
       )}
       {modal?.type === 'github-repo' && <GitHubRepoModal onClose={() => setModal(null)} />}
+      {modal?.type === 'github-releases' && <GitHubReleasesModal onClose={() => setModal(null)} />}
       {modal?.type === 'github-my-repos' && (
         <GitHubMyReposModal
           currentUrl={info?.url ?? ''}

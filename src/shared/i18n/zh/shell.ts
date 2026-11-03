@@ -99,6 +99,8 @@ export const shell = {
   // GitHub 仓库信息（⋯ 菜单；origin 指向 github.com 的 git 项目才出现）
   'shell.tool.githubRepo': 'GitHub 仓库信息',
   'shell.tool.githubRepoTitle': '查看远程 GitHub 仓库信息（描述、Star、语言构成等）',
+  'shell.tool.githubReleases': '发布历史',
+  'shell.tool.githubReleasesTitle': '查看 GitHub 发布历史与安装包下载地址',
   // GitHub 删除仓库（⋯ 菜单；与「GitHub 仓库信息」同条件显示）
   'shell.tool.githubDelete': 'GitHub 删除仓库',
   'shell.tool.githubDeleteTitle': '永久删除 origin 指向的 GitHub 远程仓库（不可恢复，需输入仓库名确认）',

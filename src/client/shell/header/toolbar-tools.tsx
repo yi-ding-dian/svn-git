@@ -10,7 +10,7 @@ import { launchMagicFlight } from '../../animations/index.js';
 import { baseName } from '../../shared/utils.js';
 import { parseGithub } from '../../../shared/github.js';
 import { t, type I18nKey } from '../../../shared/i18n/index.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconTerminal, IconGitHub, IconGitHubPlus, IconTrash, IconFork, IconStats } from '../../ui/icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconPackage, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconTerminal, IconGitHub, IconGitHubPlus, IconTrash, IconFork, IconStats } from '../../ui/icons.js';
 import { type Modal } from '../modal-types.js';
 
 /** 顶部工具按钮（图标 + 文字，统一样式；mousedown 可启动拖拽定制） */
@@ -390,6 +390,20 @@ export const TOOLS: ToolDef[] = [
       // 查看远程 GitHub 仓库信息（描述、Star、语言构成等）
       title: t('shell.tool.githubRepoTitle'),
       onClick: () => c.setModal({ type: 'github-repo' }),
+    }),
+  },
+  {
+    // GitHub 发布历史：与「GitHub 仓库信息」同条件（origin 指向 github.com 才出现）。
+    // 只读展示版本、更新说明和产物下载地址，不在应用内发版
+    key: 'githubReleases', zone: 'menu', menuLabelKey: 'shell.tool.githubReleases',
+    visible: (c) => c.repoType === 'git' && /github\.com/i.test(c.repoUrl ?? ''),
+    render: (c) => ({
+      icon: <IconPackage />,
+      // 发布历史
+      label: t('shell.tool.githubReleases'),
+      // 查看 GitHub 发布历史与安装包下载地址
+      title: t('shell.tool.githubReleasesTitle'),
+      onClick: () => c.setModal({ type: 'github-releases' }),
     }),
   },
   {

@@ -61,6 +61,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       password,
       sshKeyPath: cfg.git?.sshKeyPath ?? '',
       sshUseForTerminal: Boolean(cfg.git?.sshUseForTerminal),
+      githubDownloadProxy: Boolean(cfg.git?.githubDownloadProxy),
+      githubDownloadProxyUrl: cfg.git?.githubDownloadProxyUrl ?? '',
     };
     saveConfig(cfg);
     // 凭据变了，顶栏身份缓存作废（用户名不变只换 Token 时缓存键不变，不清会拿旧身份顶 30 分钟）
@@ -112,10 +114,44 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       password: cfg.git?.password ?? '',
       sshKeyPath: keyPath,
       sshUseForTerminal: useForTerminal,
+      githubDownloadProxy: Boolean(cfg.git?.githubDownloadProxy),
+      githubDownloadProxyUrl: cfg.git?.githubDownloadProxyUrl ?? '',
     };
     saveConfig(cfg);
     // 已保存，并写入 ~/.ssh/config / 已保存
     sendJson(res, 200, { ok: true, message: useForTerminal ? t('srv.gitSshKeySavedWithTerminal') : t('srv.gitSshKeySaved') });
+    return true;
+  }
+
+  if (p === '/api/git-download-proxy' && req.method === 'GET') {
+    // GitHub 下载加速（发布历史用）：enabled + 可配置的加速前缀（空 = 默认 gh-proxy.com）
+    const cfg = loadConfig();
+    sendJson(res, 200, {
+      enabled: Boolean(cfg.git?.githubDownloadProxy),
+      prefix: cfg.git?.githubDownloadProxyUrl ?? '',
+    });
+    return true;
+  }
+  if (p === '/api/git-download-proxy' && req.method === 'POST') {
+    const body = await readBody(req);
+    const enabled = Boolean(body.enabled);
+    const prefix = String(body.prefix ?? '').trim();
+    if (prefix && !/^https?:\/\/[^\s]+$/i.test(prefix)) {
+      // 加速地址必须以 http:// 或 https:// 开头
+      sendJson(res, 400, { error: t('srv.gitDownloadProxyBadPrefix') });
+      return true;
+    }
+    const cfg = loadConfig();
+    cfg.git = {
+      username: cfg.git?.username ?? '',
+      password: cfg.git?.password ?? '',
+      sshKeyPath: cfg.git?.sshKeyPath ?? '',
+      sshUseForTerminal: Boolean(cfg.git?.sshUseForTerminal),
+      githubDownloadProxy: enabled,
+      githubDownloadProxyUrl: prefix,
+    };
+    saveConfig(cfg);
+    sendJson(res, 200, { ok: true, enabled, prefix });
     return true;
   }
 

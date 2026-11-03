@@ -23,6 +23,7 @@ export type Modal =
   | { type: 'github-delete-repo' }
   | { type: 'github-fork' }
   | { type: 'github-repo' }
+  | { type: 'github-releases' }
   | { type: 'github-my-repos' }
   | { type: 'git-push-auth'; authType: 'github' | 'server' | 'ssh' }
   | { type: 'push-confirm' }

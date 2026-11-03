@@ -21,6 +21,10 @@ export interface AppConfig {
     sshKeyPath?: string;
     /** 终端 git 也使用该私钥：由应用维护 ~/.ssh/config 里的 GitHub 配置段（见 src/ssh-config.ts） */
     sshUseForTerminal?: boolean;
+    /** GitHub 下载加速：下载地址前加这个前缀（第三方中转，仅建议公开仓库）。
+     *  空串 = 用默认 https://gh-proxy.com/ */
+    githubDownloadProxy?: boolean;
+    githubDownloadProxyUrl?: string;
   };
   /** 界面语言。虽是「偏好」而非凭据，但 server / vcs / main 都要读它决定消息语言，
    *  而这三者与 config.json 同在主进程，故与凭据同放一处（本文件注释本就自称「全局配置 + 凭据」）。 */
@@ -35,7 +39,7 @@ const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
 const DEFAULTS: AppConfig = {
   svn: { username: '', password: '', trustServerCert: false },
-  git: { username: '', password: '', sshKeyPath: '', sshUseForTerminal: false },
+  git: { username: '', password: '', sshKeyPath: '', sshUseForTerminal: false, githubDownloadProxy: false, githubDownloadProxyUrl: '' },
   lang: DEFAULT_LANG,
   share: { ...DEFAULT_SHARE, allow: [] },
 };
@@ -85,6 +89,8 @@ export function loadConfig(): AppConfig {
         password: data?.git?.password ? decode(String(data.git.password)) : '',
         sshKeyPath: String(data?.git?.sshKeyPath ?? ''),
         sshUseForTerminal: Boolean(data?.git?.sshUseForTerminal),
+        githubDownloadProxy: Boolean(data?.git?.githubDownloadProxy),
+        githubDownloadProxyUrl: String(data?.git?.githubDownloadProxyUrl ?? ''),
       },
       // 非法值（手改 config.json）一律回退默认，不让脏数据把界面搞成未知语言
       lang: isLang(data?.lang) ? data.lang : DEFAULT_LANG,
@@ -109,6 +115,8 @@ export function saveConfig(cfg: AppConfig): void {
         password: cfg.git?.password ? encode(cfg.git.password) : '',
         sshKeyPath: cfg.git?.sshKeyPath ?? '',
         sshUseForTerminal: Boolean(cfg.git?.sshUseForTerminal),
+        githubDownloadProxy: Boolean(cfg.git?.githubDownloadProxy),
+        githubDownloadProxyUrl: cfg.git?.githubDownloadProxyUrl ?? '',
       },
       lang: isLang(cfg.lang) ? cfg.lang : DEFAULT_LANG,
       share: readShare(cfg.share),

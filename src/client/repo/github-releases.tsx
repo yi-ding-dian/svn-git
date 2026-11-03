@@ -1,0 +1,320 @@
+/** GitHub 发布历史弹窗（顶栏 ⋯ 菜单入口；仅 origin 指向 github.com 的项目可见）：
+ *  卡片顶部的版本号本身就是下拉（默认最新），切换后下方只显示该版本的更新说明与产物。
+ *  数据来自 /api/github-releases（服务端代问，5 分钟缓存，刷新可强制重拉）；
+ *  没有 Release 的旧 tag 也在下拉里，可下载源码。下载/打开统一走 /api/open-url。 */
+import React, { useEffect, useState } from 'react';
+import { ModalShell } from '../shell/modal-shell.js';
+import { get, post, type GitHubReleasesResult } from '../shared/api.js';
+import { IconRefresh, IconExternal, IconPackage, IconCopy } from '../ui/icons.js';
+import { HelpNote } from '../ui/ui.js';
+import { ResultLine } from '../ui/result-line.js';
+import { relTime } from './github-repo.js';
+import { renderMarkdown } from '../shared/markdown.js';
+import { t } from '../../shared/i18n/index.js';
+
+/** 字节数 → 易读大小（0/缺失返回空串，界面上不显示大小） */
+function formatSize(n: number): string {
+  if (!n || !Number.isFinite(n)) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+const CARD: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 8, padding: 12 };
+
+export function GitHubReleasesModal(props: { onClose: () => void }) {
+  const [data, setData] = useState<GitHubReleasesResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  /** 下拉选中值：`r:<tag>` = 有 Release，`t:<name>` = 只有 tag */
+  const [selected, setSelected] = useState('');
+  /** 刚复制过的地址：按钮短暂显示「已复制」 */
+  const [copiedUrl, setCopiedUrl] = useState('');
+  /** 下载加速开关 + 自定义加速前缀（空 = 默认 https://gh-proxy.com/） */
+  const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [proxyPrefix, setProxyPrefix] = useState('');
+  const [proxyBusy, setProxyBusy] = useState(false);
+
+  const load = (force = false) => {
+    setLoading(true);
+    get
+      .githubReleases(force)
+      .then((r) => {
+        setData(r);
+        setError(r.ok ? '' : (r.error ?? ''));
+        // 默认选最新 Release；没有 Release 就选最新的 tag。刷新后原选择仍有效则保留
+        const firstRelease = r.releases?.[0]?.tagName;
+        const firstTag = r.tags?.[0]?.name;
+        const fallback = firstRelease ? `r:${firstRelease}` : firstTag ? `t:${firstTag}` : '';
+        setSelected((prev) =>
+          prev && (r.releases?.some((x) => `r:${x.tagName}` === prev) || r.tags?.some((x) => `t:${x.name}` === prev))
+            ? prev
+            : fallback,
+        );
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  // 下载加速开关与地址（存在 config.json，跨弹窗/跨项目共用）
+  useEffect(() => {
+    get
+      .gitDownloadProxy()
+      .then((r) => {
+        setProxyEnabled(r.enabled);
+        setProxyPrefix(r.prefix);
+      })
+      .catch(() => {});
+  }, []);
+
+  const saveProxy = (enabled: boolean, prefix: string) => {
+    if (proxyBusy) return;
+    setProxyBusy(true);
+    setProxyEnabled(enabled);
+    void post
+      .gitDownloadProxySave(enabled, prefix)
+      .then((r) => {
+        setProxyEnabled(r.enabled);
+        setProxyPrefix(r.prefix);
+      })
+      .catch(() => {
+        /* 保存失败保持界面现状 */
+      })
+      .finally(() => setProxyBusy(false));
+  };
+
+  const toggleProxy = (checked: boolean) => saveProxy(checked, proxyPrefix);
+
+  const open = (url: string) => {
+    if (url) void post.openUrl(url).catch(() => {});
+  };
+
+  /** 实际使用的下载地址：开启加速且是 GitHub Release 产物时加自定义前缀
+   *  （空前缀回退到 https://gh-proxy.com/）。只给 releases/download 地址加。 */
+  const actualUrl = (url: string) => {
+    if (!proxyEnabled || !/^https:\/\/github\.com\/.*\/releases\/download\//.test(url)) return url;
+    const base = (proxyPrefix.trim() || 'https://gh-proxy.com/').replace(/\/+$/, '');
+    return `${base}/${url}`;
+  };
+
+  /** 下载：新标签打开（真实鼠标点击不会被弹窗拦截；隐藏 iframe 在 deepin 浏览器里会
+   *  一直卡在"等待响应"、不进下载列表，同页 <a> 又会把应用页面导航走）。
+   *  浏览器识别 GitHub 的 attachment 后直接进下载列表。 */
+  const download = (url: string) => {
+    if (!url) return;
+    window.open(actualUrl(url), '_blank', 'noopener');
+  };
+
+  const copyUrl = (url: string) => {
+    if (!url) return;
+    void navigator.clipboard?.writeText(actualUrl(url)).then(() => {
+      setCopiedUrl(url);
+      window.setTimeout(() => setCopiedUrl(''), 1500);
+    });
+  };
+
+  const releases = data?.releases ?? [];
+  const tags = data?.tags ?? [];
+  const hasVersions = releases.length > 0 || tags.length > 0;
+  const rel = releases.find((r) => `r:${r.tagName}` === selected);
+  const tag = tags.find((x) => `t:${x.name}` === selected);
+
+  /** 版本选择器：卡片顶部原来的版本号位置，默认最新 */
+  const versionSelect = (
+    <select
+      value={selected}
+      onChange={(e) => setSelected(e.target.value)}
+      title={t('repo.githubReleases.versionLabel')}
+      style={{
+        padding: '3px 8px',
+        background: 'var(--panel2)',
+        color: 'var(--text)',
+        border: '1px solid var(--border)',
+        borderRadius: 6,
+        fontSize: 13,
+        fontWeight: 700,
+        maxWidth: '70%',
+      }}
+    >
+      {releases.map((r, i) => (
+        <option key={`r:${r.tagName}`} value={`r:${r.tagName}`}>
+          {r.name || r.tagName}
+          {i === 0 && !r.prerelease && !r.draft ? `（${t('repo.githubReleases.latest')}）` : ''}
+          {r.prerelease ? `（${t('repo.githubReleases.prerelease')}）` : ''}
+        </option>
+      ))}
+      {tags.map((x) => (
+        <option key={`t:${x.name}`} value={`t:${x.name}`}>
+          {x.name}{t('repo.githubReleases.tagOnlySuffix')}
+        </option>
+      ))}
+    </select>
+  );
+
+  return (
+    <ModalShell
+      title={t('repo.githubReleases.title')}
+      icon={<IconPackage size={18} />}
+      width={680}
+      minWidth={560}
+      closeIcon
+      onClose={props.onClose}
+      bodyStyle={{ maxHeight: '64vh', overflow: 'auto' }}
+      foot={
+        <>
+          {/* 刷新 */}
+          <button className="mini" disabled={loading} onClick={() => load(true)} title={t('repo.githubReleases.refresh')}>
+            <IconRefresh size={14} /> {t('repo.githubReleases.refresh')}
+          </button>
+          {data?.releasesUrl && (
+            <button className="mini" onClick={() => open(data.releasesUrl!)} title={data.releasesUrl}>
+              <IconExternal size={14} /> {t('repo.githubReleases.openGithub')}
+            </button>
+          )}
+        </>
+      }
+    >
+          {loading && <div className="loading">{t('repo.githubReleases.loading')}</div>}
+          {!loading && error && <ResultLine msg={error} err />}
+          {!loading && !error && !hasVersions && <HelpNote>{t('repo.githubReleases.empty')}</HelpNote>}
+
+          {!loading && !error && rel && (
+            <div style={CARD}>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                {versionSelect}
+                <span className="dim small" style={{ whiteSpace: 'nowrap' }}>
+                  {rel.publishedAt ? relTime(rel.publishedAt) : ''}
+                </span>
+              </div>
+              {/* 版本名与 tag 不同名时才显示 tag（同名再写一遍纯属重复） */}
+              {rel.name && rel.name !== rel.tagName && (
+                <div className="dim small mono" style={{ marginTop: 2 }}>{rel.tagName}</div>
+              )}
+
+              {rel.body && (
+                <details style={{ marginTop: 8 }}>
+                  <summary className="small" style={{ cursor: 'pointer' }}>{t('repo.githubReleases.changelog')}</summary>
+                  {/* 更新说明按 Markdown 渲染（标题/列表/代码块/链接），raw HTML 由 renderMarkdown 转义 */}
+                  <div
+                    className="md-render small"
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(rel.body, { breaks: true }) }}
+                  />
+                </details>
+              )}
+
+              <div style={{ marginTop: 10 }}>
+                <div className="dim small">{t('repo.githubReleases.assets', { n: rel.assets.length })}</div>
+                {rel.assets.map((a) => (
+                  <div
+                    key={a.name}
+                    className="row"
+                    style={{ gap: 8, alignItems: 'center', padding: '6px 0', borderTop: '1px solid var(--border)' }}
+                  >
+                    <IconPackage size={14} />
+                    {/* 产物文件名 */}
+                    <span
+                      className="mono small"
+                      title={a.name}
+                      style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {a.name}
+                    </span>
+                    <span className="dim small" style={{ whiteSpace: 'nowrap' }}>{formatSize(a.size)}</span>
+                    <span className="dim small" style={{ whiteSpace: 'nowrap' }}>⬇ {a.downloadCount}</span>
+                    {/* 复制下载地址（短暂显示「已复制」） */}
+                    <button
+                      className="mini"
+                      onClick={() => copyUrl(a.downloadUrl)}
+                      title={`${t('repo.githubReleases.copyUrl')}\n${actualUrl(a.downloadUrl)}`}
+                    >
+                      <IconCopy size={14} /> {copiedUrl === a.downloadUrl ? t('repo.githubReleases.copied') : t('repo.githubReleases.copyUrl')}
+                    </button>
+                    {/* 下载：当前浏览器直接下载；悬浮显示完整地址 */}
+                    <button className="mini" onClick={() => download(a.downloadUrl)} title={actualUrl(a.downloadUrl)}>
+                      {t('repo.githubReleases.download')}
+                    </button>
+                  </div>
+                ))}
+                <div className="row" style={{ gap: 10, marginTop: 8 }}>
+                  {/* 源码 zip / 源码 tar.gz / Release 页面：源码走当前浏览器下载，页面走系统浏览器 */}
+                  <button className="mini" onClick={() => download(rel.zipballUrl)} title={actualUrl(rel.zipballUrl)}>{t('repo.githubReleases.sourceZip')}</button>
+                  <button className="mini" onClick={() => download(rel.tarballUrl)} title={actualUrl(rel.tarballUrl)}>{t('repo.githubReleases.sourceTar')}</button>
+                  <button className="mini" onClick={() => open(rel.htmlUrl)} title={rel.htmlUrl}>
+                    <IconExternal size={14} /> GitHub
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!loading && !error && tag && (
+            <div style={CARD}>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                {versionSelect}
+                <span className="dim small mono">{tag.sha.slice(0, 7)}</span>
+              </div>
+              {/* 该版本只打了标签，没有 Release 说明和安装包；可下载源码。 */}
+              <div className="dim small" style={{ marginTop: 8 }}>{t('repo.githubReleases.tagOnly')}</div>
+              <div className="row" style={{ gap: 10, marginTop: 10 }}>
+                <button className="mini" onClick={() => open(tag.commitUrl)} title={tag.commitUrl}>
+                  <IconExternal size={14} /> GitHub
+                </button>
+                <button className="mini" onClick={() => download(tag.zipballUrl)} title={actualUrl(tag.zipballUrl)}>{t('repo.githubReleases.sourceZip')}</button>
+                <button className="mini" onClick={() => download(tag.tarballUrl)} title={actualUrl(tag.tarballUrl)}>{t('repo.githubReleases.sourceTar')}</button>
+              </div>
+            </div>
+          )}
+
+          {!loading && !error && hasVersions && (
+            <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+              <label className="row small" style={{ gap: 6, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={proxyEnabled}
+                  disabled={proxyBusy}
+                  onChange={(e) => toggleProxy(e.target.checked)}
+                />
+                {/* 下载加速 */}
+                {t('repo.githubReleases.proxy')}
+              </label>
+              {proxyEnabled && (
+                <>
+                  <div className="row" style={{ gap: 8, marginTop: 6 }}>
+                    {/* 加速地址前缀：空 = 默认 https://gh-proxy.com/ */}
+                    <input
+                      type="text"
+                      value={proxyPrefix}
+                      placeholder={t('repo.githubReleases.proxyPlaceholder')}
+                      onChange={(e) => setProxyPrefix(e.target.value)}
+                      onBlur={() => saveProxy(proxyEnabled, proxyPrefix)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                      }}
+                      disabled={proxyBusy}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        padding: '4px 8px',
+                        background: 'var(--panel2)',
+                        color: 'var(--text)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 6,
+                        fontSize: 12,
+                      }}
+                    />
+                  </div>
+                  {/* ⚠ 文件会经过第三方服务器，理论上它能看到下载内容；公开仓库没问题，私有仓库不要开启。 */}
+                  <div className="small" style={{ color: 'var(--warn)', marginTop: 6, lineHeight: 1.6 }}>
+                    {t('repo.githubReleases.proxyRisk')}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+    </ModalShell>
+  );
+}

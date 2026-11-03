@@ -71,8 +71,52 @@ interface GitHubResult {
   repo?: GitHubMeta;
 }
 
-/** 顶栏 GitHub 身份（/api/github-identity；只挑徽标用到的字段） */
-interface GitHubIdentityResult {
+/** 发布历史（/api/github-releases）：只挑界面用到的字段 */
+interface GitHubReleaseAsset {
+  name: string;
+  size: number;
+  downloadCount: number;
+  /** GitHub 的 browser_download_url：点「下载」用系统浏览器打开 */
+  downloadUrl: string;
+  createdAt: string | null;
+}
+
+interface GitHubRelease {
+  tagName: string;
+  name: string;
+  publishedAt: string | null;
+  /** Release 页面地址（点版本标题打开） */
+  htmlUrl: string;
+  /** 更新说明（Markdown 原文，前端按纯文本折叠显示） */
+  body: string;
+  prerelease: boolean;
+  draft: boolean;
+  assets: GitHubReleaseAsset[];
+  zipballUrl: string;
+  tarballUrl: string;
+}
+
+interface GitHubReleasesResult {
+  ok: boolean;
+  error?: string;
+  remote?: string;
+  /** 仓库的 Releases 页面（「在 GitHub 打开」用） */
+  releasesUrl?: string;
+  releases?: GitHubRelease[];
+  /** 没有对应 Release 的 tag（早期版本只打了 tag、没写发布说明）：补在列表后面，历史版本不丢 */
+  tags?: GitHubTag[];
+}
+
+interface GitHubTag {
+  name: string;
+  sha: string;
+  /** 打开该提交的 GitHub 页面 */
+  commitUrl: string;
+  zipballUrl: string;
+  tarballUrl: string;
+}
+
+/** 顶栏 GitHub 身份（/api/github-identity；只挑徽标用到的字段） */interface GitHubIdentityResult {
   /** 查到了仓库数据（false 时看 blocked：404 = 不存在或凭据对它没有权限） */
   ok: boolean;
   /** origin 是否指向 github.com（false 时其余字段无意义，前端不显示任何标识） */
@@ -100,6 +144,10 @@ const githubCache = new Map<string, { data: GitHubResult; at: number }>();
 /** 顶栏身份查询缓存：key = `owner/repo::凭据用户名`（同一仓库换账号即失效），TTL 同上。
  *  与 githubCache 分开存：两者响应形状不同，混一个 Map 里类型对不上。 */
 const githubIdentityCache = new Map<string, { data: GitHubIdentityResult; at: number }>();
+
+/** 发布历史缓存：发完版要能很快看到，TTL 比仓库元信息短。key 含 auth 标记（换 Token 可能改变可见性）。 */
+const githubReleasesCache = new Map<string, { data: GitHubReleasesResult; at: number }>();
+const RELEASES_CACHE_TTL_MS = 5 * 60_000;
 
 /** 清空身份缓存——凭据保存（/api/git-auth）后调用：**用户名不变只换 Token** 时缓存键不变，
  *  不清会拿旧身份顶最多 30 分钟（典型：换了个权限不同的 Token）。 */
@@ -324,6 +372,103 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     }
     if (res.destroyed || res.writableEnded) return true; // 前端已断开：响应没处发
     if (data.source === 'api') githubCache.set(key, { data, at: Date.now() });
+    sendJson(res, 200, data);
+    return true;
+  }
+
+  if (p === '/api/github-releases' && req.method === 'GET') {
+    // 发布历史：列出 origin 仓库的 Release（版本 / 时间 / 更新说明 / 产物下载地址）。
+    // 有已存凭据就带上（私有仓库也能看）；匿名只能读公开仓库。
+    const { repo, vcs } = vcsOf();
+    if (repo.type !== 'git') {
+      sendJson(res, 400, { error: t('srv.githubGitOnly') });
+      return true;
+    }
+    let remoteUrl = '';
+    try {
+      remoteUrl = (await vcs.remote?.()) ?? '';
+    } catch {
+      /* 未配置 origin：按"不是 GitHub"处理 */
+    }
+    const github = parseGithub(remoteUrl);
+    if (!github) {
+      sendJson(res, 200, { ok: false, error: t('srv.githubNotGithub'), remote: remoteUrl });
+      return true;
+    }
+    const token = loadConfig().git?.password ?? '';
+    // key 带 auth 标记：换 Token 后可见性可能变化，不和匿名结果混用
+    const key = `${github.owner}/${github.repo}`.toLowerCase() + (token ? '::auth' : '::anon');
+    const force = url.searchParams.get('force') === '1';
+    if (!force) {
+      const hit = githubReleasesCache.get(key);
+      if (hit && Date.now() - hit.at < RELEASES_CACHE_TTL_MS) {
+        sendJson(res, 200, hit.data);
+        return true;
+      }
+    }
+    // 前端断开（关弹窗/切项目）→ 中止；超时同样兜底
+    const ctl = new AbortController();
+    const onClose = () => ctl.abort();
+    res.on('close', onClose);
+    const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+    let data: GitHubReleasesResult;
+    try {
+      // tags 与 releases 并行：tags 失败不影响主列表（拿不到就只显示 Release）
+      const [raw, tagsRaw] = await Promise.all([
+        githubFetch(`/repos/${github.owner}/${github.repo}/releases?per_page=10`, ctl.signal, token),
+        githubFetch(`/repos/${github.owner}/${github.repo}/tags?per_page=30`, ctl.signal, token).catch(() => []),
+      ]);
+      const list = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+      const releasedTags = new Set(list.map((o) => String(o.tag_name ?? '')));
+      const tagList = Array.isArray(tagsRaw) ? (tagsRaw as Record<string, unknown>[]) : [];
+      data = {
+        ok: true,
+        remote: remoteUrl,
+        releasesUrl: `https://github.com/${github.owner}/${github.repo}/releases`,
+        tags: tagList
+          .filter((t) => !releasedTags.has(String(t.name ?? '')))
+          .map((t) => {
+            const sha = String((t.commit as Record<string, unknown> | undefined)?.sha ?? '');
+            return {
+              name: String(t.name ?? ''),
+              sha,
+              commitUrl: `https://github.com/${github.owner}/${github.repo}/commit/${sha}`,
+              zipballUrl: String(t.zipball_url ?? ''),
+              tarballUrl: String(t.tarball_url ?? ''),
+            };
+          }),
+        releases: list.map((o) => {
+          const assets = Array.isArray(o.assets) ? (o.assets as Record<string, unknown>[]) : [];
+          return {
+            tagName: String(o.tag_name ?? ''),
+            name: String(o.name ?? o.tag_name ?? ''),
+            publishedAt: (o.published_at as string | null) ?? null,
+            htmlUrl: String(o.html_url ?? ''),
+            body: String(o.body ?? ''),
+            prerelease: o.prerelease === true,
+            draft: o.draft === true,
+            assets: assets.map((a) => ({
+              name: String(a.name ?? ''),
+              size: Number(a.size ?? 0),
+              downloadCount: Number(a.download_count ?? 0),
+              downloadUrl: String(a.browser_download_url ?? ''),
+              createdAt: (a.created_at as string | null) ?? null,
+            })),
+            zipballUrl: String(o.zipball_url ?? ''),
+            tarballUrl: String(o.tarball_url ?? ''),
+          };
+        }),
+      };
+    } catch (e) {
+      // 超时/断网/404/限流：githubFetch 已把常见状态转成中文文案
+      const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: FETCH_TIMEOUT_MS / 1000 }) : (e as Error).message;
+      data = { ok: false, error: err, remote: remoteUrl };
+    } finally {
+      clearTimeout(timer);
+      res.off('close', onClose);
+    }
+    if (res.destroyed || res.writableEnded) return true;
+    if (data.ok) githubReleasesCache.set(key, { data, at: Date.now() });
     sendJson(res, 200, data);
     return true;
   }

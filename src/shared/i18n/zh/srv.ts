@@ -80,6 +80,7 @@ export const srv = {
   'srv.gitGithubSshOn': 'GitHub 地址自动走 SSH 已开启',
   'srv.gitGithubSshOff': 'GitHub 地址自动走 SSH 已关闭',
   'srv.gitGithubSshFailed': '写入全局 git 配置失败：{msg}',
+  'srv.gitDownloadProxyBadPrefix': '加速地址必须以 http:// 或 https:// 开头',
   'srv.gitSshKeyInvalid': 'SSH 私钥路径不能包含换行或引号',
   'srv.gitSshKeyNotFound': '找不到私钥文件：{path}',
   'srv.remoteUrlEmpty': '远程地址不能为空',

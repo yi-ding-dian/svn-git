@@ -97,6 +97,8 @@ export const shell = {
   // GitHub repository info (⋯ menu; only for git projects whose origin points to github.com)
   'shell.tool.githubRepo': 'GitHub Repo Info',
   'shell.tool.githubRepoTitle': 'View remote GitHub repository info (description, stars, languages, …)',
+  'shell.tool.githubReleases': 'Releases',
+  'shell.tool.githubReleasesTitle': 'View GitHub release history and download links',
   // Delete GitHub repository (⋯ menu; same condition as Repo Info)
   'shell.tool.githubDelete': 'Delete GitHub Repo',
   'shell.tool.githubDeleteTitle': 'Permanently delete the GitHub repository origin points to (irreversible; type the repo name to confirm)',

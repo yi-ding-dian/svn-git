@@ -72,6 +72,49 @@ export interface GitHubRepoResult {
   };
 }
 
+/** GitHub 发布历史（/api/github-releases） */
+export interface GitHubReleaseAsset {
+  name: string;
+  size: number;
+  downloadCount: number;
+  /** browser_download_url：点「下载」用系统浏览器打开 */
+  downloadUrl: string;
+  createdAt: string | null;
+}
+
+export interface GitHubRelease {
+  tagName: string;
+  name: string;
+  publishedAt: string | null;
+  htmlUrl: string;
+  body: string;
+  prerelease: boolean;
+  draft: boolean;
+  assets: GitHubReleaseAsset[];
+  zipballUrl: string;
+  tarballUrl: string;
+}
+
+export interface GitHubReleasesResult {
+  ok: boolean;
+  error?: string;
+  remote?: string;
+  /** 仓库 Releases 页面（「在 GitHub 打开」用） */
+  releasesUrl?: string;
+  releases?: GitHubRelease[];
+  /** 没有对应 Release 的 tag（早期版本只有 tag、没有发布说明） */
+  tags?: GitHubTag[];
+}
+
+/** 没有 Release 的版本标签 */
+export interface GitHubTag {
+  name: string;
+  sha: string;
+  commitUrl: string;
+  zipballUrl: string;
+  tarballUrl: string;
+}
+
 /** GitHub 新建仓库（/api/github-create-repo）：ok 时 origin 已指向新仓库。
  *  hasCommit=本地当前分支已有提交（前端据此决定创建后是否立即推送）；
  *  remoteSet=false 时 remoteMsg 带原因（仓库已建成，仅 origin 没设上，前端提示手动处理）。 */
@@ -668,6 +711,8 @@ export const get = {
    *  source='api' 为 GitHub 官方数据；'local' 为降级本地统计（此时 error 带原因）；
    *  force 跳过服务端 30 分钟缓存重新拉 */
   githubRepo: (force?: boolean) => api<GitHubRepoResult>(`/api/github-repo${force ? '?force=1' : ''}`),
+  /** 发布历史（版本 + 产物下载地址）；force=1 跳过 5 分钟缓存 */
+  githubReleases: (force?: boolean) => api<GitHubReleasesResult>(`/api/github-releases${force ? '?force=1' : ''}`),
   /** origin 仓库的访问权限（推送失败后判「无写权限」用；纯读）。
    *  ok=false 查询失败（原因在 message）；canPush=null 表示无凭据查不了；isGithub=false 表示 origin 不是 GitHub。
    *  前端只在 canPush === false 时引导 Fork（宁可不引导，不误弹）。 */
@@ -713,6 +758,8 @@ export const get = {
   gitSshKey: () => api<{ path: string; useForTerminal: boolean }>('/api/git-ssh-key'),
   /** GitHub 地址自动走 SSH 的开关状态（全局 git 配置 url.insteadOf） */
   gitGithubSsh: () => api<{ enabled: boolean }>('/api/git-github-ssh'),
+  /** GitHub 下载加速开关 + 自定义加速前缀（发布历史用） */
+  gitDownloadProxy: () => api<{ enabled: boolean; prefix: string }>('/api/git-download-proxy'),
   /** git 身份（user.name / user.email 的有效值 + 作用域）：提交失败弹「设置身份」窗与 Git 信息弹窗回显用 */
   gitIdentity: () => api<{ name: string; email: string; scope: 'repo' | 'global' | '' }>('/api/git-identity'),
   /** 提交完整说明（标题+正文）：改注释弹窗回显用（列表接口只带 %s 标题，不含正文） */
@@ -1161,6 +1208,9 @@ export const post = {
     api<VcsResult>('/api/git-ssh-key', json({ path, useForTerminal })),
   /** 开启/关闭「GitHub 地址自动走 SSH」（写全局 git 配置 url.insteadOf） */
   gitGithubSshSave: (enabled: boolean) => api<VcsResult & { enabled?: boolean }>('/api/git-github-ssh', json({ enabled })),
+  /** 开启/关闭 GitHub 下载加速（prefix 空 = 默认 gh-proxy.com） */
+  gitDownloadProxySave: (enabled: boolean, prefix: string) =>
+    api<{ ok: boolean; enabled: boolean; prefix: string }>('/api/git-download-proxy', json({ enabled, prefix })),
   /** 安全清理（离职/交接前）：按选项删除本机凭据与私钥配置 */
   secureClean: (opts: {
     removeKey: boolean;

@@ -66,6 +66,7 @@ export const srv = {
   'srv.gitGithubSshOn': 'GitHub URLs now use SSH automatically',
   'srv.gitGithubSshOff': 'GitHub automatic SSH disabled',
   'srv.gitGithubSshFailed': 'Failed to write the global git config: {msg}',
+  'srv.gitDownloadProxyBadPrefix': 'The acceleration URL must start with http:// or https://',
   'srv.gitSshKeyInvalid': 'The SSH private key path cannot contain line breaks or quotes',
   'srv.gitSshKeyNotFound': 'Private key file not found: {path}',
   'srv.remoteUrlEmpty': 'Remote URL is required',
