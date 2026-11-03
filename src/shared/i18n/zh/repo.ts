@@ -51,6 +51,7 @@ export const repo = {
   'repo.github.identityBlocked': '无法访问（仓库不存在，或当前凭据没有权限）',
   'repo.github.identityNoAuth': '未配置凭据——只能看到公开信息',
   'repo.github.openInBrowser': '在浏览器打开',
+  'repo.github.deleteButton': '删除仓库…',
 
   // ---- GitHub 发布历史（⋯ 菜单；仅 origin 指向 github.com 的项目）----
   'repo.githubReleases.title': '发布历史',

@@ -7,7 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { ModalShell } from '../shell/modal-shell.js';
 import { get, post, type GitHubRepoResult, type GitHubIdentityResult } from '../shared/api.js';
-import { IconGitHub, IconStar, IconClock, IconEye, IconRefresh, IconExternal } from '../ui/icons.js';
+import { IconGitHub, IconStar, IconClock, IconEye, IconRefresh, IconExternal, IconTrash } from '../ui/icons.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** GitHub 官方语言配色（常见子集）；未收录的语言按兜底色板轮转（顺序稳定） */
@@ -96,7 +96,7 @@ function identityText(id: GitHubIdentityResult | null): string {
   return id.canPush ? t('repo.github.identityCollaborator', { login }) : t('repo.github.identityReadOnly', { login });
 }
 
-export function GitHubRepoModal(props: { onClose: () => void }) {
+export function GitHubRepoModal(props: { onClose: () => void; onDelete: () => void }) {
   const [data, setData] = useState<GitHubRepoResult | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(true);
@@ -137,7 +137,15 @@ export function GitHubRepoModal(props: { onClose: () => void }) {
       width={560}
       onClose={props.onClose}
       closeIcon
-      hideFoot
+      // 删除仓库是低频危险操作：放到弹窗底部左侧，和正常操作分开
+      foot={
+        <>
+          <button className="mini danger" onClick={props.onDelete} style={{ marginRight: 'auto' }}>
+            <IconTrash size={14} /> {t('repo.github.deleteButton')}
+          </button>
+          <button onClick={props.onClose}>{t('common.close')}</button>
+        </>
+      }
       titleExtra={
         // 操作按钮固定在**标题栏右侧**（✕ 左侧，✕ 占 right 14~42px，这里接在 48px 处）。
         // 注意：ModalShell 的 titleExtra 是内联在标题文字之后渲染的，直接放会跟着标题流式排——

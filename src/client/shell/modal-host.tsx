@@ -504,7 +504,8 @@ export function ModalHost(props: ModalHostProps) {
       )}
       {modal?.type === 'github-delete-repo' && (
         <GitHubDeleteModal
-          onClose={() => setModal(null)}
+          // 删除入口已移到「GitHub 仓库信息」底部：取消时回信息弹窗
+          onClose={() => setModal({ type: 'github-repo' })}
           onDeleted={(name) => {
             setModal(null);
             showToast(t('repo.githubDelete.done', { name }));
@@ -521,7 +522,12 @@ export function ModalHost(props: ModalHostProps) {
           onRemoteChanged={refreshInfo}
         />
       )}
-      {modal?.type === 'github-repo' && <GitHubRepoModal onClose={() => setModal(null)} />}
+      {modal?.type === 'github-repo' && (
+        <GitHubRepoModal
+          onClose={() => setModal(null)}
+          onDelete={() => setModal({ type: 'github-delete-repo' })}
+        />
+      )}
       {modal?.type === 'release-hub' && (
         <ReleaseHubModal
           canRelease={info?.canRelease === true}

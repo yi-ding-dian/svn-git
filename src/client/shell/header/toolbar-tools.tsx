@@ -10,7 +10,7 @@ import { launchMagicFlight } from '../../animations/index.js';
 import { baseName } from '../../shared/utils.js';
 import { parseGithub } from '../../../shared/github.js';
 import { t, type I18nKey } from '../../../shared/i18n/index.js';
-import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconRelease, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconTerminal, IconGitHub, IconGitHubPlus, IconTrash, IconFork, IconStats } from '../../ui/icons.js';
+import { IconBranch, IconGear, IconTag, IconStash, IconPlus, IconDownload, IconRelease, IconClean, IconFolder, IconRefresh, IconLogin, IconExit, IconCommit, IconFont, IconTerminal, IconGitHub, IconGitHubPlus, IconFork, IconStats } from '../../ui/icons.js';
 import { type Modal } from '../modal-types.js';
 
 /** 顶部工具按钮（图标 + 文字，统一样式；mousedown 可启动拖拽定制） */
@@ -407,20 +407,6 @@ export const TOOLS: ToolDef[] = [
       // 查看发布历史与产物下载地址，或发布新版本
       title: t('shell.tool.releaseTitle'),
       onClick: () => c.setModal({ type: 'release-hub' }),
-    }),
-  },
-  {
-    // GitHub 删除仓库：与「GitHub 仓库信息」同条件（origin 指向 github.com 才出现）。
-    // 危险操作：远程仓库删除不可恢复，弹窗里要求输入完整仓库名才解锁删除按钮
-    key: 'githubDelete', zone: 'menu', menuLabelKey: 'shell.tool.githubDelete',
-    visible: (c) => c.repoType === 'git' && /github\.com/i.test(c.repoUrl ?? ''),
-    render: (c) => ({
-      icon: <IconTrash />,
-      // GitHub 删除仓库
-      label: t('shell.tool.githubDelete'),
-      // 永久删除 origin 指向的 GitHub 远程仓库（不可恢复，需输入仓库名确认）
-      title: t('shell.tool.githubDeleteTitle'),
-      onClick: () => c.setModal({ type: 'github-delete-repo' }),
     }),
   },
   {

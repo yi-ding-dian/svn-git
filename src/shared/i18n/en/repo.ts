@@ -47,6 +47,7 @@ export const repo = {
   'repo.github.identityBlocked': 'No access (repository missing, or the current credential has no permission)',
   'repo.github.identityNoAuth': 'No credential configured — public information only',
   'repo.github.openInBrowser': 'Open in Browser',
+  'repo.github.deleteButton': 'Delete repository…',
 
   // ---- GitHub releases (⋯ menu; only when origin points to github.com) ----
   'repo.githubReleases.title': 'Releases',

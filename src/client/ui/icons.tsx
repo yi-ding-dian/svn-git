@@ -196,13 +196,14 @@ export function IconClean({ size = 16 }: IconProps) {
 }
 
 /** 垃圾桶（移到回收站）：盖 + 桶身 + 竖纹，蓝色系表「可恢复」 */
+/** 删除：红色垃圾桶（危险操作统一用红色，避免和普通蓝色操作混淆） */
 export function IconTrash({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
       <defs>
         <linearGradient id="ic-trash" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#58a6ff" />
-          <stop offset="1" stopColor="#1f6feb" />
+          <stop offset="0" stopColor="#f85149" />
+          <stop offset="1" stopColor="#da3633" />
         </linearGradient>
       </defs>
       <path d="M8.5 3h7l.8 2H20v2H4V5h3.7z" fill="url(#ic-trash)" />
