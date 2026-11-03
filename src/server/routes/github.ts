@@ -114,6 +114,17 @@ interface GitHubTag {
   commitUrl: string;
   zipballUrl: string;
   tarballUrl: string;
+  /** 该 tag 的 CI 状态：没有 Release 时用来区分「构建中 / 构建失败 / 仅标签」 */
+  ci?: GitHubTagCi;
+}
+
+interface GitHubTagCi {
+  /** queued | in_progress | completed */
+  status: string;
+  /** completed 时：success / failure / cancelled … */
+  conclusion: string | null;
+  htmlUrl: string;
+  createdAt: string;
 }
 
 /** 顶栏 GitHub 身份（/api/github-identity；只挑徽标用到的字段） */interface GitHubIdentityResult {
@@ -413,14 +424,35 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
     let data: GitHubReleasesResult;
     try {
-      // tags 与 releases 并行：tags 失败不影响主列表（拿不到就只显示 Release）
-      const [raw, tagsRaw] = await Promise.all([
+      // tags / releases / Actions 运行记录并行：后两者失败不影响主列表
+      const [raw, tagsRaw, runsRaw] = await Promise.all([
         githubFetch(`/repos/${github.owner}/${github.repo}/releases?per_page=10`, ctl.signal, token),
         githubFetch(`/repos/${github.owner}/${github.repo}/tags?per_page=30`, ctl.signal, token).catch(() => []),
+        githubFetch(`/repos/${github.owner}/${github.repo}/actions/runs?per_page=30`, ctl.signal, token).catch(() => []),
       ]);
       const list = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
       const releasedTags = new Set(list.map((o) => String(o.tag_name ?? '')));
       const tagList = Array.isArray(tagsRaw) ? (tagsRaw as Record<string, unknown>[]) : [];
+      // tag → 最近一次 CI 运行（同一 tag 重跑时保留 createdAt 最新的那条）
+      const ciByTag = new Map<string, GitHubTagCi>();
+      const runList = Array.isArray(runsRaw)
+        ? []
+        : (((runsRaw as Record<string, unknown>)?.workflow_runs as Record<string, unknown>[] | undefined) ?? []);
+      for (const r of runList) {
+        const tag = String(r.head_branch ?? '');
+        const status = String(r.status ?? '');
+        if (!tag || !status) continue;
+        const createdAt = String(r.created_at ?? '');
+        const prev = ciByTag.get(tag);
+        if (!prev || createdAt > prev.createdAt) {
+          ciByTag.set(tag, {
+            status,
+            conclusion: (r.conclusion as string | null) ?? null,
+            htmlUrl: String(r.html_url ?? ''),
+            createdAt,
+          });
+        }
+      }
       data = {
         ok: true,
         remote: remoteUrl,
@@ -435,6 +467,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               commitUrl: `https://github.com/${github.owner}/${github.repo}/commit/${sha}`,
               zipballUrl: String(t.zipball_url ?? ''),
               tarballUrl: String(t.tarball_url ?? ''),
+              ci: ciByTag.get(String(t.name ?? '')),
             };
           }),
         releases: list.map((o) => {
@@ -468,7 +501,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       res.off('close', onClose);
     }
     if (res.destroyed || res.writableEnded) return true;
-    if (data.ok) githubReleasesCache.set(key, { data, at: Date.now() });
+    // 有构建中的 tag 时不缓存：否则刷新后还会拿 5 分钟前的"构建中/仅标签"状态
+    const hasActiveCi =
+      data.ok &&
+      (data.tags ?? []).some((x) => x.ci && (x.ci.status === 'queued' || x.ci.status === 'in_progress'));
+    if (data.ok && !hasActiveCi) githubReleasesCache.set(key, { data, at: Date.now() });
     sendJson(res, 200, data);
     return true;
   }

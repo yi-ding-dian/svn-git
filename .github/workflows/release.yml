@@ -75,6 +75,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # 读 tag 注释（发布说明写在 annotated tag 里），需要完整 tag 对象
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: 下载全部产物
         uses: actions/download-artifact@v4
         with:
@@ -84,7 +89,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 这里没有 checkout，gh 推断不出仓库，必须显式 --repo
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes
+          # 发布说明取自 tag 注释（release.mjs 用 npm version -m 写入），去掉 vX.Y.Z： 前缀；
+          # 没有注释的 tag 回退到 GitHub 自动生成
+          NOTES="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME" \
+            | sed -E 's/^v[0-9]+\.[0-9]+\.[0-9]+：//')"
+          if [ -n "$NOTES" ]; then
+            if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes "$NOTES"
+            else
+              gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes "$NOTES"
+            fi
+          else
+            # 没有 tag 注释：保持原来的自动生成
+            gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+              || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes
+          fi
           find artifacts -type f -exec gh release upload "$GITHUB_REF_NAME" {} --repo "$GITHUB_REPOSITORY" --clobber \;

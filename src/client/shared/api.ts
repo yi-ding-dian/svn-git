@@ -129,6 +129,14 @@ export interface GitHubTag {
   commitUrl: string;
   zipballUrl: string;
   tarballUrl: string;
+  /** 该 tag 的 CI 状态：区分「构建中 / 构建失败 / 仅标签」 */
+  ci?: {
+    /** queued | in_progress | completed */
+    status: string;
+    conclusion: string | null;
+    htmlUrl: string;
+    createdAt: string;
+  };
 }
 
 /** GitHub 新建仓库（/api/github-create-repo）：ok 时 origin 已指向新仓库。

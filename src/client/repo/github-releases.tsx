@@ -2,12 +2,11 @@
  *  （默认最新），切换后下方只显示该版本的更新说明与产物。数据来自 /api/github-releases
  *  （服务端代问，5 分钟缓存，刷新可强制重拉）；没有 Release 的旧 tag 也可选，可下载源码。 */
 import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
-import { get, post, type GitHubReleasesResult } from '../shared/api.js';
+import { get, post, type GitHubReleasesResult, type GitHubTag } from '../shared/api.js';
 import { IconExternal, IconPackage, IconCopy } from '../ui/icons.js';
 import { HelpNote } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
 import { relTime } from './github-repo.js';
-import { renderMarkdown } from '../shared/markdown.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 字节数 → 易读大小（0/缺失返回空串，界面上不显示大小） */
@@ -20,6 +19,15 @@ function formatSize(n: number): string {
 }
 
 const CARD: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 8, padding: 12 };
+
+/** Release 正文第一行作为下拉说明（过长截断）；没有正文返回空串 */
+function noteOf(body: string): string {
+  const first = (body || '')
+    .split('\n')
+    .map((s) => s.trim())
+    .find(Boolean) ?? '';
+  return first.length > 40 ? `${first.slice(0, 40)}…` : first;
+}
 
 /** 面板对外暴露的操作：底部 foot 由外层「发布」弹窗统一渲染 */
 export interface ReleasesPanelHandle {
@@ -134,6 +142,18 @@ export const GitHubReleasesPanel = forwardRef<ReleasesPanelHandle, { onUrlChange
   const rel = releases.find((r) => `r:${r.tagName}` === selected);
   const tag = tags.find((x) => `t:${x.name}` === selected);
 
+  /** tag 下拉后缀：按 CI 状态区分构建中 / 构建失败 / 已完成待同步 / 仅标签 */
+  const tagSuffix = (tag: GitHubTag) => {
+    const ci = tag.ci;
+    if (ci?.status === 'queued') return t('repo.githubReleases.tagQueued');
+    if (ci?.status === 'in_progress') return t('repo.githubReleases.tagBuilding');
+    if (ci?.status === 'completed') {
+      if (ci.conclusion === 'success') return t('repo.githubReleases.tagSyncing');
+      if (ci.conclusion) return t('repo.githubReleases.tagFailed');
+    }
+    return t('repo.githubReleases.tagOnlySuffix');
+  };
+
   /** 版本选择器：卡片顶部原来的版本号位置，默认最新 */
   const versionSelect = (
     <select
@@ -148,7 +168,8 @@ export const GitHubReleasesPanel = forwardRef<ReleasesPanelHandle, { onUrlChange
         borderRadius: 6,
         fontSize: 13,
         fontWeight: 700,
-        maxWidth: '70%',
+        minWidth: 360,
+        maxWidth: '80%',
       }}
     >
       {releases.map((r, i) => (
@@ -156,11 +177,12 @@ export const GitHubReleasesPanel = forwardRef<ReleasesPanelHandle, { onUrlChange
           {r.name || r.tagName}
           {i === 0 && !r.prerelease && !r.draft ? `（${t('repo.githubReleases.latest')}）` : ''}
           {r.prerelease ? `（${t('repo.githubReleases.prerelease')}）` : ''}
+          {noteOf(r.body) ? ` · ${noteOf(r.body)}` : ''}
         </option>
       ))}
       {tags.map((x) => (
         <option key={`t:${x.name}`} value={`t:${x.name}`}>
-          {x.name}{t('repo.githubReleases.tagOnlySuffix')}
+          {x.name}{tagSuffix(x)}
         </option>
       ))}
     </select>
@@ -183,27 +205,6 @@ export const GitHubReleasesPanel = forwardRef<ReleasesPanelHandle, { onUrlChange
               {/* 版本名与 tag 不同名时才显示 tag（同名再写一遍纯属重复） */}
               {rel.name && rel.name !== rel.tagName && (
                 <div className="dim small mono" style={{ marginTop: 2 }}>{rel.tagName}</div>
-              )}
-
-              {rel.body && (
-                <div className="row small" style={{ gap: 8, marginTop: 8, alignItems: 'baseline' }}>
-                  <span className="dim" style={{ flexShrink: 0 }}>{t('repo.githubReleases.changelog')}</span>
-                  {/* 同一行显示：内容占剩余宽度、单行超出省略；悬浮 title 看完整说明 */}
-                  <div
-                    className="md-render small md-inline"
-                    title={rel.body}
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      padding: 0,
-                      overflow: 'hidden',
-                      whiteSpace: 'nowrap',
-                      textOverflow: 'ellipsis',
-                      lineHeight: 1.6,
-                    }}
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(rel.body, { breaks: true }) }}
-                  />
-                </div>
               )}
 
               <div style={{ marginTop: 10 }}>
@@ -257,12 +258,31 @@ export const GitHubReleasesPanel = forwardRef<ReleasesPanelHandle, { onUrlChange
                 {versionSelect}
                 <span className="dim small mono">{tag.sha.slice(0, 7)}</span>
               </div>
-              {/* 该版本只打了标签，没有 Release 说明和安装包；可下载源码。 */}
-              <div className="dim small" style={{ marginTop: 8 }}>{t('repo.githubReleases.tagOnly')}</div>
+              {/* 根据 CI 状态说明为什么还没有产物：构建中 / 构建失败 / 已完成待同步 / 仅标签 */}
+              {tag.ci && (tag.ci.status === 'queued' || tag.ci.status === 'in_progress') ? (
+                <div className="small" style={{ color: 'var(--warn)', marginTop: 8 }}>
+                  {t('repo.githubReleases.ciBuilding')}
+                </div>
+              ) : tag.ci?.status === 'completed' && tag.ci.conclusion === 'success' ? (
+                <div className="small" style={{ color: 'var(--warn)', marginTop: 8 }}>
+                  {t('repo.githubReleases.ciSyncing')}
+                </div>
+              ) : tag.ci?.status === 'completed' && tag.ci.conclusion ? (
+                <div className="small" style={{ color: 'var(--err)', marginTop: 8 }}>
+                  {t('repo.githubReleases.ciFailed')}
+                </div>
+              ) : (
+                <div className="dim small" style={{ marginTop: 8 }}>{t('repo.githubReleases.tagOnly')}</div>
+              )}
               <div className="row" style={{ gap: 10, marginTop: 10 }}>
                 <button className="mini" onClick={() => open(tag.commitUrl)} title={tag.commitUrl}>
                   <IconExternal size={14} /> GitHub
                 </button>
+                {tag.ci?.htmlUrl && (
+                  <button className="mini" onClick={() => open(tag.ci!.htmlUrl)} title={tag.ci!.htmlUrl}>
+                    {t('repo.githubReleases.viewCi')}
+                  </button>
+                )}
                 <button className="mini" onClick={() => download(tag.zipballUrl)} title={actualUrl(tag.zipballUrl)}>{t('repo.githubReleases.sourceZip')}</button>
                 <button className="mini" onClick={() => download(tag.tarballUrl)} title={actualUrl(tag.tarballUrl)}>{t('repo.githubReleases.sourceTar')}</button>
               </div>
