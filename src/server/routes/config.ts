@@ -3,6 +3,9 @@
  * lang 放在本域：它就是 config.json 的一个字段，且改完要立刻生效（setLang 直接改主进程变量，server/vcs/main 同时切）。 */
 import { sendJson, readBody, vcsOf, MSG_UNSUPPORTED_OP } from './util.js';
 import { loadConfig, saveConfig } from '../../config.js';
+import { syncTerminalSshConfig } from '../../ssh-config.js';
+import { getGithubInsteadOf, setGithubInsteadOf } from '../../git-config.js';
+import { secureClean } from '../../secure-clean.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,7 +55,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       return true;
     }
     const cfg = loadConfig();
-    cfg.git = { username, password };
+    // 保留 SSH 私钥配置：这里只换推送凭据，不能把用户配好的私钥路径顺手抹掉
+    cfg.git = {
+      username,
+      password,
+      sshKeyPath: cfg.git?.sshKeyPath ?? '',
+      sshUseForTerminal: Boolean(cfg.git?.sshUseForTerminal),
+    };
     saveConfig(cfg);
     // 凭据变了，顶栏身份缓存作废（用户名不变只换 Token 时缓存键不变，不清会拿旧身份顶 30 分钟）
     clearGithubIdentityCache();
@@ -61,16 +70,18 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     return true;
   }
   if (p === '/api/git-ssh-key' && req.method === 'GET') {
-    // SSH 私钥路径（不进凭据弹窗：它是本机文件路径，不是账号密码）
+    // SSH 私钥路径 + 是否同时用于终端 git（不进凭据弹窗：它是本机文件路径，不是账号密码）
     const cfg = loadConfig();
-    sendJson(res, 200, { path: cfg.git?.sshKeyPath ?? '' });
+    sendJson(res, 200, { path: cfg.git?.sshKeyPath ?? '', useForTerminal: Boolean(cfg.git?.sshUseForTerminal) });
     return true;
   }
   if (p === '/api/git-ssh-key' && req.method === 'POST') {
     // 保存 SSH 私钥路径：空串 = 清除（走系统默认 ~/.ssh）；非空必须是存在的文件。
     // 路径会拼进 GIT_SSH_COMMAND，换行/引号一律拒绝，避免被当成额外的 ssh 参数。
+    // useForTerminal：同时写入 ~/.ssh/config 的受管段，让终端 git 也能用这把私钥。
     const body = await readBody(req);
     const raw = String(body.path ?? '').trim();
+    const useForTerminal = Boolean(body.useForTerminal);
     let keyPath = raw;
     if (keyPath.startsWith('~')) keyPath = path.join(os.homedir(), keyPath.slice(1));
     if (keyPath && /[\r\n"]/.test(keyPath)) {
@@ -83,11 +94,67 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       sendJson(res, 400, { error: t('srv.gitSshKeyNotFound', { path: keyPath }) });
       return true;
     }
+    if (!keyPath && useForTerminal) {
+      // 请先填写 SSH 私钥路径，再开启「终端 git 也使用此私钥」
+      sendJson(res, 400, { error: t('srv.gitSshKeyNoPath') });
+      return true;
+    }
+    // 先同步终端配置：写失败就不保存，避免应用内显示已开启但终端实际没生效
+    const sync = syncTerminalSshConfig(keyPath, useForTerminal);
+    if (!sync.ok) {
+      // 写入 ~/.ssh/config 失败：{msg}
+      sendJson(res, 500, { error: t('srv.gitSshKeySyncFailed', { msg: sync.error ?? '' }) });
+      return true;
+    }
     const cfg = loadConfig();
-    cfg.git = { username: cfg.git?.username ?? '', password: cfg.git?.password ?? '', sshKeyPath: keyPath };
+    cfg.git = {
+      username: cfg.git?.username ?? '',
+      password: cfg.git?.password ?? '',
+      sshKeyPath: keyPath,
+      sshUseForTerminal: useForTerminal,
+    };
     saveConfig(cfg);
-    // SSH 私钥路径已保存
-    sendJson(res, 200, { ok: true, message: t('srv.gitSshKeySaved') });
+    // 已保存，并写入 ~/.ssh/config / 已保存
+    sendJson(res, 200, { ok: true, message: useForTerminal ? t('srv.gitSshKeySavedWithTerminal') : t('srv.gitSshKeySaved') });
+    return true;
+  }
+
+  if (p === '/api/git-github-ssh' && req.method === 'GET') {
+    // GitHub 地址自动走 SSH 的开关状态（直接读全局 git 配置）
+    sendJson(res, 200, { enabled: getGithubInsteadOf() });
+    return true;
+  }
+  if (p === '/api/git-github-ssh' && req.method === 'POST') {
+    // 开关：写入/删除全局 url.git@github.com:.insteadOf，所有 GitHub 项目自动走 SSH
+    const body = await readBody(req);
+    const enabled = Boolean(body.enabled);
+    const r = setGithubInsteadOf(enabled);
+    if (!r.ok) {
+      // 写入全局 git 配置失败：{msg}
+      sendJson(res, 500, { error: t('srv.gitGithubSshFailed', { msg: r.error ?? '' }) });
+      return true;
+    }
+    // GitHub 地址自动走 SSH 已开启 / 已关闭
+    sendJson(res, 200, { ok: true, enabled, message: enabled ? t('srv.gitGithubSshOn') : t('srv.gitGithubSshOff') });
+    return true;
+  }
+
+  if (p === '/api/secure-clean' && req.method === 'POST') {
+    // 安全清理（离职/交接前）：按勾选项删除本机凭据与私钥配置，不可恢复。
+    // 结果里的 publicKey 供前端提示用户去 GitHub 手动删对应公钥。
+    const body = await readBody(req);
+    sendJson(
+      res,
+      200,
+      secureClean({
+        removeKey: Boolean(body.removeKey),
+        removeSshConfig: Boolean(body.removeSshConfig),
+        removeInsteadOf: Boolean(body.removeInsteadOf),
+        clearGithubToken: Boolean(body.clearGithubToken),
+        clearSvnPassword: Boolean(body.clearSvnPassword),
+        clearHistory: Boolean(body.clearHistory),
+      }),
+    );
     return true;
   }
 

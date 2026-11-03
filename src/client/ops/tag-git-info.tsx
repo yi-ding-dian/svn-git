@@ -11,6 +11,7 @@ import { runAction } from '../shared/vcs-action.js';
 import { ResultLine } from '../ui/result-line.js';
 import { t } from '../../shared/i18n/index.js';
 import { LayoutNote } from './layout-note.js';
+import { SecureCleanModal } from './secure-clean.js';
 // ==================== 标签管理 ====================
 
 /** 标签行数据：点「检出」时交给 shell 层（SVN 用标签目录 URL；Git 用克隆来源 + ref） */
@@ -319,7 +320,14 @@ export function GitInfoModal(props: {
   const [busy, setBusy] = useState(false);
   /** SSH 私钥路径：配置后 GitHub 的 SSH 传输用它；空 = 系统默认 ~/.ssh */
   const [sshKey, setSshKey] = useState('');
+  /** 同时写入 ~/.ssh/config，让终端里的 git 也能用这把私钥 */
+  const [sshTerminal, setSshTerminal] = useState(false);
   const [sshBusy, setSshBusy] = useState(false);
+  /** GitHub 地址自动走 SSH（全局 git 配置 url.insteadOf）：新项目不用逐个改 remote */
+  const [githubSsh, setGithubSsh] = useState(false);
+  const [githubSshBusy, setGithubSshBusy] = useState(false);
+  /** 安全清理弹窗（离职/交接前） */
+  const [cleanOpen, setCleanOpen] = useState(false);
 
   const load = () => {
     get
@@ -335,7 +343,14 @@ export function GitInfoModal(props: {
       .catch(() => {});
     get
       .gitSshKey()
-      .then((r) => setSshKey(r.path))
+      .then((r) => {
+        setSshKey(r.path);
+        setSshTerminal(r.useForTerminal);
+      })
+      .catch(() => {});
+    get
+      .gitGithubSsh()
+      .then((r) => setGithubSsh(r.enabled))
       .catch(() => {});
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -361,17 +376,39 @@ export function GitInfoModal(props: {
       .finally(() => setBusy(false));
   };
 
-  const saveSshKey = () => {
-    setSshBusy(true);
+  /** 即时保存「GitHub 自动 SSH」开关：失败时把复选框回滚到原状态 */
+  const toggleGithubSsh = (checked: boolean) => {
+    if (githubSshBusy) return;
+    setGithubSshBusy(true);
+    setGithubSsh(checked);
     void post
-      .gitSshKeySave(sshKey.trim())
+      .gitGithubSshSave(checked)
+      .then((r) => {
+        props.onToast(r.message, !r.ok);
+        if (r.ok) setGithubSsh(Boolean(r.enabled));
+        else setGithubSsh(!checked);
+      })
+      // 切换 GitHub 自动 SSH 失败: {msg}
+      .catch((e: Error) => {
+        props.onToast(t('ops.gitInfo.githubSshErr', { msg: (e as Error).message }), true);
+        setGithubSsh(!checked);
+      })
+      .finally(() => setGithubSshBusy(false));
+  };
+
+  const saveSshKey = () => {    setSshBusy(true);
+    void post
+      .gitSshKeySave(sshKey.trim(), sshTerminal)
       .then((r) => {
         props.onToast(r.message, !r.ok);
         // 服务端会把 ~ 展开成绝对路径：保存成功后回显规范化后的值
         if (r.ok) {
           get
             .gitSshKey()
-            .then((v) => setSshKey(v.path))
+            .then((v) => {
+              setSshKey(v.path);
+              setSshTerminal(v.useForTerminal);
+            })
             .catch(() => {});
         }
       })
@@ -475,15 +512,48 @@ export function GitInfoModal(props: {
                 </div>
                 {/* 仅对 github.com 的 SSH 连接生效；可在项目根运行 gen-ssh-key.sh 生成项目内私钥 */}
                 <div className="dim small" style={{ marginTop: 6 }}>{t('ops.gitInfo.sshKeyHint')}</div>
+                <label className="row small" style={{ gap: 6, marginTop: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={sshTerminal} onChange={(e) => setSshTerminal(e.target.checked)} />
+                  {/* 终端 git 也使用此私钥 */}
+                  {t('ops.gitInfo.sshTerminal')}
+                </label>
+                {sshTerminal && (
+                  // 保存后应用自动写入 ~/.ssh/config（仅 github.com），终端里直接 git 也能用；不会改动其他配置
+                  <div className="dim small" style={{ marginTop: 4 }}>{t('ops.gitInfo.sshTerminalHint')}</div>
+                )}
+                <label className="row small" style={{ gap: 6, marginTop: 8, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={githubSsh}
+                    disabled={githubSshBusy}
+                    onChange={(e) => toggleGithubSsh(e.target.checked)}
+                  />
+                  {/* GitHub 地址自动走 SSH（新项目不用逐个改） */}
+                  {t('ops.gitInfo.githubSsh')}
+                </label>
+                {githubSsh && (
+                  // 写入全局 git 配置（url.insteadOf）：remote 仍显示 https，实际拉取/推送走 SSH；取消勾选只删除这一条
+                  <div className="dim small" style={{ marginTop: 4 }}>{t('ops.gitInfo.githubSshHint')}</div>
+                )}
               </FormRow>
             </>
           )}
         </div>
         <div className="foot">
+          {/* 🧹 安全清理 */}
+          <button className="mini danger" onClick={() => setCleanOpen(true)}>{t('ops.gitInfo.secureClean')}</button>
           {/* 关闭 */}
           <button onClick={props.onClose}>{t('common.close')}</button>
         </div>
       </ResizableModal>
+      {cleanOpen && (
+        <SecureCleanModal
+          keyPath={sshKey}
+          onClose={() => setCleanOpen(false)}
+          onDone={load}
+          onToast={props.onToast}
+        />
+      )}
     </div>
   );
 }

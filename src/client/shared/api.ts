@@ -709,8 +709,10 @@ export const get = {
       '/api/git-info',
     ),
   gitAuth: () => api<{ username: string; hasPassword: boolean }>('/api/git-auth'),
-  /** SSH 私钥路径（Git 信息弹窗回显用）：空串 = 用系统默认 ~/.ssh */
-  gitSshKey: () => api<{ path: string }>('/api/git-ssh-key'),
+  /** SSH 私钥路径 + 是否同时用于终端 git（Git 信息弹窗回显用）：空串 = 用系统默认 ~/.ssh */
+  gitSshKey: () => api<{ path: string; useForTerminal: boolean }>('/api/git-ssh-key'),
+  /** GitHub 地址自动走 SSH 的开关状态（全局 git 配置 url.insteadOf） */
+  gitGithubSsh: () => api<{ enabled: boolean }>('/api/git-github-ssh'),
   /** git 身份（user.name / user.email 的有效值 + 作用域）：提交失败弹「设置身份」窗与 Git 信息弹窗回显用 */
   gitIdentity: () => api<{ name: string; email: string; scope: 'repo' | 'global' | '' }>('/api/git-identity'),
   /** 提交完整说明（标题+正文）：改注释弹窗回显用（列表接口只带 %s 标题，不含正文） */
@@ -1154,8 +1156,26 @@ export const post = {
   gitIdentitySave: (name: string, email: string, scope: 'repo' | 'global') =>
     api<VcsResult>('/api/git-identity', json({ name, email, scope })),
   gitAuthSave: (username: string, password: string) => api<VcsResult>('/api/git-auth', json({ username, password })),
-  /** 保存 SSH 私钥路径（空串 = 恢复系统默认） */
-  gitSshKeySave: (path: string) => api<VcsResult>('/api/git-ssh-key', json({ path })),
+  /** 保存 SSH 私钥路径（空串 = 恢复系统默认）；useForTerminal = 同时写入 ~/.ssh/config */
+  gitSshKeySave: (path: string, useForTerminal: boolean) =>
+    api<VcsResult>('/api/git-ssh-key', json({ path, useForTerminal })),
+  /** 开启/关闭「GitHub 地址自动走 SSH」（写全局 git 配置 url.insteadOf） */
+  gitGithubSshSave: (enabled: boolean) => api<VcsResult & { enabled?: boolean }>('/api/git-github-ssh', json({ enabled })),
+  /** 安全清理（离职/交接前）：按选项删除本机凭据与私钥配置 */
+  secureClean: (opts: {
+    removeKey: boolean;
+    removeSshConfig: boolean;
+    removeInsteadOf: boolean;
+    clearGithubToken: boolean;
+    clearSvnPassword: boolean;
+    clearHistory: boolean;
+  }) =>
+    api<{
+      ok: boolean;
+      removed: string[];
+      failed: { item: string; error: string }[];
+      publicKey: string;
+    }>('/api/secure-clean', json(opts)),
   gitAmend: (message: string) => api<VcsResult>('/api/git-amend', json({ message })),
   /** 批量提交完整说明（rev → 标题+正文）：提交列表悬浮提示用 */
   commitMessages: (revs: string[]) => api<{ messages: Record<string, string> }>('/api/commit-messages', json({ revs })),

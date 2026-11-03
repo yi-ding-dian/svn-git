@@ -63,8 +63,10 @@ show_guide() {
   echo
   echo "下一步："
   echo "  1. 在 GitHub 添加上面的公钥（已打开页面则直接粘贴）"
-  echo "  2. 在本应用「Git 信息与配置」的「SSH 私钥」填上面的私钥路径"
-  echo "  3. 远程地址改成 git@github.com:用户名/仓库.git"
+  echo "  2. 在本应用「Git 信息与配置」的「SSH 私钥」填上面的私钥路径，"
+  echo "     并勾选「终端 git 也使用此私钥」——应用会写入 ~/.ssh/config，终端里也能用"
+  echo "  3. 勾选「GitHub 地址自动走 SSH」——以后添加的 GitHub 项目不用逐个改 remote"
+  echo "  4. 单个项目也可以把远程地址改成 git@github.com:用户名/仓库.git"
 }
 
 if [ -f "$KEY" ]; then
