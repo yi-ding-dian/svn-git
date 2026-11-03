@@ -79,6 +79,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --generate-notes
-          find artifacts -type f -exec gh release upload "$GITHUB_REF_NAME" {} --clobber \;
+          # 这里没有 checkout，gh 推断不出仓库，必须显式 --repo
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes
+          find artifacts -type f -exec gh release upload "$GITHUB_REF_NAME" {} --repo "$GITHUB_REPOSITORY" --clobber \;
