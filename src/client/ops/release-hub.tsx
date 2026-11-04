@@ -6,7 +6,7 @@
 import React, { useRef, useState } from 'react';
 import { ModalShell } from '../shell/modal-shell.js';
 import { IconRelease, IconRefresh, IconExternal } from '../ui/icons.js';
-import { GitHubReleasesPanel, type ReleasesPanelHandle } from '../repo/github-releases.js';
+import { GitHubReleasesPanel, type ReleasesPanelHandle } from './github-releases.js';
 import { ReleaseFormPanel, type ReleaseFormHandle } from './release-modal.js';
 import { ReleaseCleanupModal } from './release-cleanup.js';
 import { post } from '../shared/api.js';

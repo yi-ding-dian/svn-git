@@ -84,6 +84,26 @@ export interface GitHubReleaseAsset {
   createdAt: string | null;
 }
 
+/** 发布产物：Docker 项目的镜像地址（/api/release、/api/github-releases） */
+export interface ReleaseDockerImage {
+  /** 服务名（与 workflow matrix 的 name 一致） */
+  name: string;
+  /** 镜像地址，展示时拼上 `:<版本>` */
+  image: string;
+}
+
+/** 镜像压缩后大小（/api/docker-image-sizes），0 = 查询失败不显示 */
+export interface DockerImageSize {
+  name: string;
+  image: string;
+  size: number;
+}
+
+export interface DockerImageSizesResult {
+  ok: boolean;
+  sizes?: DockerImageSize[];
+}
+
 export interface GitHubRelease {
   tagName: string;
   name: string;
@@ -95,6 +115,17 @@ export interface GitHubRelease {
   assets: GitHubReleaseAsset[];
   zipballUrl: string;
   tarballUrl: string;
+  /** 该 tag 的 CI 状态（Docker 镜像没有 Release assets，靠它显示进度） */
+  ci?: GitHubReleaseCi;
+}
+
+/** CI 运行状态（Release 与 tag 共用） */
+export interface GitHubReleaseCi {
+  /** queued | in_progress | completed */
+  status: string;
+  conclusion: string | null;
+  htmlUrl: string;
+  createdAt: string;
 }
 
 export interface GitHubReleasesResult {
@@ -103,9 +134,14 @@ export interface GitHubReleasesResult {
   remote?: string;
   /** 仓库 Releases 页面（「在 GitHub 打开」用） */
   releasesUrl?: string;
+  /** origin 的 owner/repo（拼 GHCR 包地址用） */
+  owner?: string;
+  repo?: string;
   releases?: GitHubRelease[];
   /** 没有对应 Release 的 tag（早期版本只有 tag、没有发布说明） */
   tags?: GitHubTag[];
+  /** 项目声明为 Docker 发布时的镜像清单；空数组/缺省表示安装包型项目 */
+  dockerImages?: ReleaseDockerImage[];
 }
 
 /** 批量清理：保留最近 N 个版本后，更早版本里可删除的产物 */
@@ -137,6 +173,10 @@ export interface ReleaseInfo {
   commits: string[];
   /** 项目自定义的 CI 产物清单（deploy/release-artifacts.json），可含 ${version} 占位符 */
   artifacts?: string[];
+  /** 发布类型：package = 安装包，docker = 容器镜像 */
+  kind?: 'package' | 'docker';
+  /** Docker 项目的镜像清单（${owner}/${repo} 已由服务端替换，${version} 由前端替换） */
+  images?: ReleaseDockerImage[];
   /** CI 文件是否已推送到 origin/main；false 时发布只能打标签，不会出包 */
   ciReady?: boolean;
   /** 未推送到 origin/main 的发版相关文件 */
@@ -154,13 +194,7 @@ export interface GitHubTag {
   zipballUrl: string;
   tarballUrl: string;
   /** 该 tag 的 CI 状态：区分「构建中 / 构建失败 / 仅标签」 */
-  ci?: {
-    /** queued | in_progress | completed */
-    status: string;
-    conclusion: string | null;
-    htmlUrl: string;
-    createdAt: string;
-  };
+  ci?: GitHubReleaseCi;
 }
 
 /** GitHub 新建仓库（/api/github-create-repo）：ok 时 origin 已指向新仓库。
@@ -766,6 +800,8 @@ export const get = {
     api<ReleaseCleanupPreview>(`/api/github-release-cleanup?keep=${keep}`),
   /** 一键发版预检：当前版本 / 默认说明 / 工作区状态 */
   releaseInfo: () => api<ReleaseInfo>('/api/release'),
+  dockerImageSizes: (tag: string) =>
+    api<DockerImageSizesResult>(`/api/docker-image-sizes?tag=${encodeURIComponent(tag)}`),
   /** 查某个 tag 的 CI 运行状态（发布后台任务轮询） */
   releaseStatus: (tag: string) =>
     api<{

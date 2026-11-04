@@ -9,6 +9,8 @@ import { run } from '../../vcs/exec.js';
 import { sendJson, readBody, repoInfo, type Ctx } from './util.js';
 import { loadConfig } from '../../config.js';
 import { t } from '../../shared/i18n/index.js';
+import { readReleaseArtifacts, resolveDockerImages } from '../release-artifacts.js';
+import { dockerImageSize } from '../docker-registry.js';
 
 const LEVELS = new Set(['patch', 'minor', 'major']);
 const GITHUB_API = 'https://api.github.com';
@@ -20,9 +22,13 @@ async function gitOut(root: string, args: string[]): Promise<string> {
   return r.code === 0 ? r.stdout.trim() : '';
 }
 
-/** 发布相关文件是否已经在 origin/main 上：CI 工作流、根 package.json、发版脚本缺一不可。
+/** 发布相关文件是否已经在 origin/main 上：安装包型要求 CI 工作流、根 package.json、
+ *  发版脚本缺一不可；Docker 型只要求工作流（镜像由 workflow 直接构建，不经过 release.mjs）。
  *  缺了推 tag 也不会触发构建，界面要提前提示"只能打标签"。 */
-async function checkCiReady(root: string): Promise<{ ready: boolean; missing: string[]; hasWorkflow: boolean }> {
+async function checkCiReady(
+  root: string,
+  docker: boolean,
+): Promise<{ ready: boolean; missing: string[]; hasWorkflow: boolean }> {
   let workflows: string[] = [];
   try {
     workflows = fs
@@ -32,7 +38,7 @@ async function checkCiReady(root: string): Promise<{ ready: boolean; missing: st
   } catch {
     /* 没有 workflows 目录 */
   }
-  const required = ['package.json', 'deploy/release.mjs', ...workflows];
+  const required = docker ? workflows : ['package.json', 'deploy/release.mjs', ...workflows];
   const remote = await gitOut(root, ['ls-tree', '-r', '--name-only', 'origin/main']);
   const remoteSet = new Set(remote.split('\n').map((s) => s.trim()).filter(Boolean));
   const missing = required.filter((f) => !remoteSet.has(f));
@@ -57,20 +63,13 @@ async function commitsSinceLastTag(root: string): Promise<string[]> {
     .filter(Boolean);
 }
 
-/** 项目自定义的 CI 产物清单（deploy/release-artifacts.json，可选）：
- *  { "items": ["项目-${version}-linux.tar.gz", ...] }，${version} 由前端按当前选择的版本替换。 */
-function readArtifacts(root: string): string[] {
-  try {
-    const raw = fs.readFileSync(path.join(root, 'deploy', 'release-artifacts.json'), 'utf8');
-    const data = JSON.parse(raw) as { items?: unknown };
-    if (!Array.isArray(data.items)) return [];
-    return data.items
-      .filter((x): x is string => typeof x === 'string')
-      .slice(0, 50)
-      .map((x) => x.slice(0, 200));
-  } catch {
-    return [];
-  }
+/** origin 是否指向 GitHub，返回 owner/repo（发布镜像地址替换用）。 */
+async function githubOwnerRepo(root: string): Promise<{ owner: string; repo: string } | null> {
+  const remote = await gitOut(root, ['remote', 'get-url', 'origin']);
+  const m = /github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/.exec(remote);
+  const owner = m?.[1];
+  const repo = m?.[2];
+  return owner && repo ? { owner, repo } : null;
 }
 
 function bump(cur: string, level: 'patch' | 'minor' | 'major'): string {
@@ -101,6 +100,9 @@ async function releaseStatus(
     Accept: 'application/vnd.github+json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+  // Docker 项目同时有 ci.yml 和 docker.yml：只认 docker.yml 的 run，
+  // 否则可能把普通 CI 跑完误判成"镜像发布成功"。
+  const docker = readReleaseArtifacts(root).kind === 'docker';
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 8_000);
   try {
@@ -109,7 +111,11 @@ async function releaseStatus(
       return { ok: false, error: `HTTP ${res.status}`, status: 'pending', conclusion: null, htmlUrl: '', artifacts: [] };
     }
     const data = (await res.json()) as { workflow_runs?: Record<string, unknown>[] };
-    const runInfo = (data.workflow_runs ?? []).find((r) => r.head_branch === tag);
+    const runInfo = (data.workflow_runs ?? []).find(
+      (r) =>
+        r.head_branch === tag &&
+        (!docker || String(r.path ?? '') === '.github/workflows/docker.yml'),
+    );
     if (!runInfo) {
       // 还没排队：Actions 页面正常，几秒内会出现运行记录
       return {
@@ -155,7 +161,7 @@ async function releaseStatus(
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
   const p = url.pathname;
-  if (p !== '/api/release' && p !== '/api/release-run' && p !== '/api/release-status') return false;
+  if (p !== '/api/release' && p !== '/api/release-run' && p !== '/api/release-status' && p !== '/api/docker-image-sizes') return false;
 
   const repo = repoInfo();
   if (!repo || repo.type !== 'git') {
@@ -163,7 +169,16 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     return true;
   }
   const script = path.join(repo.root, 'deploy', 'release.mjs');
-  if (!fs.existsSync(script)) {
+  const artifacts = readReleaseArtifacts(repo.root);
+  const isDocker = artifacts.kind === 'docker';
+  const hasScript = fs.existsSync(script);
+  // Docker 项目可以没有 release.mjs（镜像由 workflow 构建），发布历史/状态查询仍可用；
+  // 但「发布新版本」目前仍要求脚本，避免界面按安装包流程误操作。
+  if (!hasScript && !isDocker) {
+    sendJson(res, 400, { error: t('srv.releaseUnsupported') });
+    return true;
+  }
+  if (p === '/api/release-run' && !hasScript) {
     sendJson(res, 400, { error: t('srv.releaseUnsupported') });
     return true;
   }
@@ -178,12 +193,15 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const branch = await gitOut(repo.root, ['rev-parse', '--abbrev-ref', 'HEAD']);
     // 只看已跟踪文件（未跟踪文件不影响 npm version，见 release.mjs 的同款判断）
     const dirty = (await gitOut(repo.root, ['status', '--porcelain', '--untracked-files=no'])) !== '';
-    const ci = await checkCiReady(repo.root);
+    const ci = await checkCiReady(repo.root, isDocker);
     const next = {
       patch: bump(version, 'patch'),
       minor: bump(version, 'minor'),
       major: bump(version, 'major'),
     };
+    // 镜像地址里的 ${owner}/${repo} 按 origin 替换；${version} 留给前端
+    const gh = await githubOwnerRepo(repo.root);
+    const images = gh ? resolveDockerImages(artifacts.images, gh.owner, gh.repo) : artifacts.images;
     sendJson(res, 200, {
       ok: true,
       version,
@@ -193,13 +211,40 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       next,
       // 本次发布包含的提交（上个 tag 之后），发版前确认用
       commits: await commitsSinceLastTag(repo.root),
-      // 项目自定义的产物清单（没有配置时为空，前端显示通用提示）
-      artifacts: readArtifacts(repo.root),
+      // 项目自定义的产物清单：Docker 项目展示镜像，安装包项目展示文件名
+      kind: artifacts.kind,
+      images,
+      artifacts: artifacts.items,
       // CI 文件是否已推送到 origin/main：没推送只能打标签，不会出包
       ciReady: ci.ready,
       ciMissing: ci.missing,
       ciHasWorkflow: ci.hasWorkflow,
     });
+    return true;
+  }
+
+  if (p === '/api/docker-image-sizes' && req.method === 'GET') {
+    const tag = String(url.searchParams.get('tag') ?? '').trim();
+    if (!/^v[0-9]/.test(tag) || tag.length > 100) {
+      sendJson(res, 400, { error: t('srv.releaseBadTag') });
+      return true;
+    }
+    // 只有 Docker 项目有镜像；安装包项目返回空数组
+    if (artifacts.kind !== 'docker' || artifacts.images.length === 0) {
+      sendJson(res, 200, { ok: true, sizes: [] });
+      return true;
+    }
+    const gh = await githubOwnerRepo(repo.root);
+    const images = gh ? resolveDockerImages(artifacts.images, gh.owner, gh.repo) : artifacts.images;
+    // 每个镜像单独查 GHCR manifest；失败返回 0，前端不显示大小
+    const sizes = await Promise.all(
+      images.map(async (x) => ({
+        name: x.name,
+        image: x.image,
+        size: await dockerImageSize(x.image, tag),
+      })),
+    );
+    sendJson(res, 200, { ok: true, sizes });
     return true;
   }
 

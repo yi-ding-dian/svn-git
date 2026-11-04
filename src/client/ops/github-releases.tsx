@@ -6,17 +6,10 @@ import { get, post, type GitHubReleasesResult, type GitHubTag } from '../shared/
 import { IconExternal, IconPackage, IconCopy } from '../ui/icons.js';
 import { HelpNote } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
-import { relTime } from './github-repo.js';
+import { formatSize } from '../shared/format-size.js';
+import { DockerImagesSection } from './docker-images.js';
+import { relTime } from '../shared/relative-time.js';
 import { t } from '../../shared/i18n/index.js';
-
-/** 字节数 → 易读大小（0/缺失返回空串，界面上不显示大小） */
-function formatSize(n: number): string {
-  if (!n || !Number.isFinite(n)) return '';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
 
 const CARD: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 8, padding: 12 };
 
@@ -140,7 +133,10 @@ export const GitHubReleasesPanel = forwardRef<
 
   const releases = data?.releases ?? [];
   const tags = data?.tags ?? [];
+  const dockerImages = data?.dockerImages ?? [];
   const hasVersions = releases.length > 0 || tags.length > 0;
+  /** 有 Release assets 才需要「下载加速」（只作用于 releases/download 地址） */
+  const hasDownloadableAssets = releases.some((r) => r.assets.length > 0);
   const rel = releases.find((r) => `r:${r.tagName}` === selected);
   const tag = tags.find((x) => `t:${x.name}` === selected);
 
@@ -150,7 +146,12 @@ export const GitHubReleasesPanel = forwardRef<
     if (ci?.status === 'queued') return t('repo.githubReleases.tagQueued');
     if (ci?.status === 'in_progress') return t('repo.githubReleases.tagBuilding');
     if (ci?.status === 'completed') {
-      if (ci.conclusion === 'success') return t('repo.githubReleases.tagSyncing');
+      if (ci.conclusion === 'success') {
+        // Docker 项目没有 Release assets，成功即镜像可拉取，不提示"同步中"
+        return dockerImages.length > 0
+          ? t('repo.githubReleases.tagBuilt')
+          : t('repo.githubReleases.tagSyncing');
+      }
       if (ci.conclusion) return t('repo.githubReleases.tagFailed');
     }
     return t('repo.githubReleases.tagOnlySuffix');
@@ -257,6 +258,15 @@ export const GitHubReleasesPanel = forwardRef<
                   )}
                 </div>
               </div>
+              {/* Docker 项目：产物是 GHCR 镜像，按当前版本拼镜像地址 */}
+              <DockerImagesSection
+                images={dockerImages}
+                version={rel.tagName}
+                owner={data?.owner}
+                repo={data?.repo}
+                ci={rel.ci}
+                onOpen={open}
+              />
             </div>
           )}
 
@@ -272,8 +282,13 @@ export const GitHubReleasesPanel = forwardRef<
                   {t('repo.githubReleases.ciBuilding')}
                 </div>
               ) : tag.ci?.status === 'completed' && tag.ci.conclusion === 'success' ? (
-                <div className="small" style={{ color: 'var(--warn)', marginTop: 8 }}>
-                  {t('repo.githubReleases.ciSyncing')}
+                <div
+                  className="small"
+                  style={{ color: dockerImages.length > 0 ? 'var(--ok)' : 'var(--warn)', marginTop: 8 }}
+                >
+                  {dockerImages.length > 0
+                    ? t('repo.githubReleases.dockerBuilt')
+                    : t('repo.githubReleases.ciSyncing')}
                 </div>
               ) : tag.ci?.status === 'completed' && tag.ci.conclusion ? (
                 <div className="small" style={{ color: 'var(--err)', marginTop: 8 }}>
@@ -294,10 +309,18 @@ export const GitHubReleasesPanel = forwardRef<
                 <button className="mini" onClick={() => download(tag.zipballUrl)} title={actualUrl(tag.zipballUrl)}>{t('repo.githubReleases.sourceZip')}</button>
                 <button className="mini" onClick={() => download(tag.tarballUrl)} title={actualUrl(tag.tarballUrl)}>{t('repo.githubReleases.sourceTar')}</button>
               </div>
+              {/* 仅标签的 Docker 项目：CI 成功后镜像可用，状态提示在上面统一显示 */}
+              <DockerImagesSection
+                images={dockerImages}
+                version={tag.name}
+                owner={data?.owner}
+                repo={data?.repo}
+                onOpen={open}
+              />
             </div>
           )}
 
-          {!loading && !error && hasVersions && (
+          {!loading && !error && hasDownloadableAssets && (
             <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
               <label className="row small" style={{ gap: 6, cursor: 'pointer' }}>
                 <input

@@ -28,6 +28,7 @@ import path from 'node:path';
 import { run } from '../../vcs/exec.js';
 import { sendJson, readBody, vcsOf, type Ctx } from './util.js';
 import { loadHistory } from './recent.js';
+import { readReleaseArtifacts, resolveDockerImages, type ReleaseDockerImage } from '../release-artifacts.js';
 import { t } from '../../shared/i18n/index.js';
 import { loadConfig } from '../../config.js';
 import { normalizeGhRepoName, parseGithub } from '../../shared/github.js';
@@ -96,6 +97,8 @@ interface GitHubRelease {
   assets: GitHubReleaseAsset[];
   zipballUrl: string;
   tarballUrl: string;
+  /** 该 tag 的 CI 状态（Docker 镜像没有 Release assets，靠它显示进度） */
+  ci?: GitHubTagCi;
 }
 
 interface GitHubReleasesResult {
@@ -104,9 +107,14 @@ interface GitHubReleasesResult {
   remote?: string;
   /** 仓库的 Releases 页面（「在 GitHub 打开」用） */
   releasesUrl?: string;
+  /** origin 的 owner/repo（前端拼 GHCR 包地址用） */
+  owner?: string;
+  repo?: string;
   releases?: GitHubRelease[];
   /** 没有对应 Release 的 tag（早期版本只打了 tag、没写发布说明）：补在列表后面，历史版本不丢 */
   tags?: GitHubTag[];
+  /** 项目声明为 Docker 发布时的镜像清单；空数组/undefined 表示安装包型项目 */
+  dockerImages?: ReleaseDockerImage[];
 }
 
 interface GitHubTag {
@@ -482,10 +490,18 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           });
         }
       }
+      const artifacts = readReleaseArtifacts(repo.root);
       data = {
         ok: true,
         remote: remoteUrl,
         releasesUrl: `https://github.com/${github.owner}/${github.repo}/releases`,
+        owner: github.owner,
+        repo: github.repo,
+        // Docker 项目：发布历史里直接列出该版本的镜像地址（版本号由前端拼）
+        dockerImages:
+          artifacts.kind === 'docker'
+            ? resolveDockerImages(artifacts.images, github.owner, github.repo)
+            : [],
         tags: tagList
           .filter((t) => !releasedTags.has(String(t.name ?? '')))
           .map((t) => {
@@ -519,6 +535,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             })),
             zipballUrl: String(o.zipball_url ?? ''),
             tarballUrl: String(o.tarball_url ?? ''),
+            ci: ciByTag.get(String(o.tag_name ?? '')),
           };
         }),
       };

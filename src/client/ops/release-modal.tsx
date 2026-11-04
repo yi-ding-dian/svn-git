@@ -77,6 +77,7 @@ export const ReleaseFormPanel = forwardRef<
     const taskTag = tag;
     const taskLevel = level;
     const taskNote = note.trim();
+    const taskKind = info?.kind ?? 'package';
     onClose();
     startTask({
       kind: 'release',
@@ -84,21 +85,33 @@ export const ReleaseFormPanel = forwardRef<
       run: async (signal) => {
         const r = await post.releaseRun(taskLevel, taskNote);
         if (!r.ok) return { ok: false, message: r.message };
-        return watchTag(taskTag, signal);
+        return watchTag(taskTag, taskKind, signal);
       },
     });
   };
 
   /** 轮询该 tag 的 CI 状态，直到完成/失败/超时 */
-  const watchTag = async (taskTag: string, signal: AbortSignal): Promise<{ ok: boolean; message: string }> => {
+  const watchTag = async (
+    taskTag: string,
+    taskKind: 'package' | 'docker',
+    signal: AbortSignal,
+  ): Promise<{ ok: boolean; message: string }> => {
     for (let i = 0; i < 120; i++) {
       if (signal.aborted) return { ok: false, message: t('ops.release.taskCancelled') };
       try {
         const s = await get.releaseStatus(taskTag);
         if (s.ok && s.status === 'completed') {
-          return s.conclusion === 'success'
-            ? { ok: true, message: t('ops.release.taskDone', { tag: taskTag, n: s.artifacts.length }) }
-            : { ok: false, message: t('ops.release.taskFailed', { tag: taskTag }) };
+          if (s.conclusion !== 'success') {
+            return { ok: false, message: t('ops.release.taskFailed', { tag: taskTag }) };
+          }
+          // Docker 项目没有 Actions artifacts，产物是已经推送到 GHCR 的镜像
+          return {
+            ok: true,
+            message:
+              taskKind === 'docker'
+                ? t('ops.release.taskDoneDocker', { tag: taskTag })
+                : t('ops.release.taskDone', { tag: taskTag, n: s.artifacts.length }),
+          };
         }
       } catch {
         /* 网络抖动：继续等 */
@@ -234,9 +247,11 @@ export const ReleaseFormPanel = forwardRef<
                 {t('ops.release.ciOnlyTag')}
               </div>
             )}
-            {/* 将执行：提交版本号 → 打 tag {tag} → 推送 → CI 出包 */}
+            {/* 将执行：安装包出包 / Docker 构建镜像 */}
             <div className="dim small" style={{ marginTop: 10, lineHeight: 1.8 }}>
-              {t('ops.release.preview', { tag })}
+              {info.kind === 'docker'
+                ? t('ops.release.previewDocker', { tag })
+                : t('ops.release.preview', { tag })}
             </div>
 
             {/* 本次发布包含：上个 tag 之后的提交主题 */}
@@ -263,10 +278,30 @@ export const ReleaseFormPanel = forwardRef<
               )}
             </div>
 
-            {/* CI 将产出：优先读项目自定义的 deploy/release-artifacts.json */}
+            {/* CI 将产出：Docker 项目显示镜像地址，安装包项目读 release-artifacts.json */}
             <div style={{ marginTop: 14 }}>
               <div className="dim small" style={{ marginBottom: 6 }}>{t('ops.release.assetsTitle')}</div>
-              {(info.artifacts?.length ?? 0) > 0 ? (
+              {info.kind === 'docker' && (info.images?.length ?? 0) > 0 ? (
+                <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                  {info.images!.map((x) => (
+                    <span
+                      key={x.name}
+                      className="mono small"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '3px 8px',
+                        background: 'var(--panel2)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 6,
+                      }}
+                    >
+                      <IconPackage size={12} /> {x.image}:{tag}
+                    </span>
+                  ))}
+                </div>
+              ) : (info.artifacts?.length ?? 0) > 0 ? (
                 <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                   {info.artifacts!.map((tpl) => (
                     <span
