@@ -113,7 +113,11 @@ export const shell = {
 
   // ---- 后台任务（顶栏沙漏指示器：**仅运行中显示**，进行中列表 + 取消；完成结果归铃铛通知）----
   'shell.tasks.indicatorTip': '后台任务：{n} 个进行中（点击查看）',
+  'shell.tasks.indicatorDoneTip': '已完成任务：{n} 个（点击查看）',
   'shell.tasks.running': '进行中',
+  'shell.tasks.finished': '已完成',
+  'shell.tasks.clearFinished': '清除已完成',
+  'shell.tasks.totalTime': '总耗时 {time}',
   'shell.tasks.elapsed': '已用 {n} 秒',
   // —— 任务详情弹窗与检出进度 ——
   'shell.tasks.clickDetail': '点击查看任务详情',

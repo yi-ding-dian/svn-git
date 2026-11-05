@@ -42,6 +42,8 @@ export interface TransferProgress {
   steps?: string[];
   /** 当前进行中的阶段索引（0-based；= steps.length 表示已全部完成） */
   currentStep?: number;
+  /** 每个阶段的开始时间戳（与 steps 对齐；多一项表示完成时间） */
+  stepStartedAt?: number[];
 }
 
 /** 通道名 → 进度。通道是"哪一次传输"：获取用目标目录（可并发多个），

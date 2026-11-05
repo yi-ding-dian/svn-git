@@ -90,6 +90,8 @@ export function AppHeader(props: {
   // 后台任务：指示器 + 面板（进行中列表 + 取消；完成结果归铃铛——见下方 notices）
   const bgTasks = useTasks();
   const runningCount = bgTasks.filter((tk) => tk.status === 'running').length;
+  const finishedCount = bgTasks.filter((tk) => tk.status !== 'running').length;
+  const hasRunning = runningCount > 0;
   const [taskPop, setTaskPop] = useState<{ x: number; y: number } | null>(null);
   /** 打开中的任务详情弹窗（点任务面板条目；面板先关再去开它） */
   const [taskDetailId, setTaskDetailId] = useState<number | null>(null);
@@ -274,11 +276,17 @@ export function AppHeader(props: {
           </button>
         </Tooltip>
       )}
-      {/* 后台任务指示器：**仅运行中显示**（后台没有任务时不存在——用户定稿）：流沙动画沙漏 + 数量。
-          点击展开任务面板（进行中 + 取消）。data-task-anchor：魔法飞行线的落点锚
+      {/* 后台任务指示器：有任务就显示（运行中沙漏 + 数量；全部完成显示 ✓ + 已完成数量），
+          点击展开任务面板（进行中 + 已完成 + 清除）。data-task-anchor：魔法飞行线的落点锚
           （锚点随按钮生灭——magic-flight 启动时轮询等它出现） */}
-      {runningCount > 0 && (
-        <Tooltip content={t('shell.tasks.indicatorTip', { n: runningCount })}>
+      {bgTasks.length > 0 && (
+        <Tooltip
+          content={
+            hasRunning
+              ? t('shell.tasks.indicatorTip', { n: runningCount })
+              : t('shell.tasks.indicatorDoneTip', { n: finishedCount })
+          }
+        >
           <button
             ref={taskBtnRef}
             data-task-anchor
@@ -286,8 +294,10 @@ export function AppHeader(props: {
             onClick={() => (taskPop ? setTaskPop(null) : openTaskPop())}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              <IconHourglassRun size={15} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>{runningCount}</span>
+              {hasRunning ? <IconHourglassRun size={15} /> : <IconOk size={15} />}
+              <span style={{ fontSize: 11, fontWeight: 600, color: hasRunning ? 'var(--accent)' : 'var(--ok)' }}>
+                {hasRunning ? runningCount : finishedCount}
+              </span>
             </span>
           </button>
         </Tooltip>

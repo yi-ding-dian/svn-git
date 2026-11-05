@@ -13,6 +13,9 @@ import { t } from '../../shared/i18n/index.js';
 
 const CARD: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 8, padding: 12 };
 
+/** 打开弹窗后的后台静默刷新节流：频繁开关不重复消耗 GitHub 配额（跨组件挂载共享） */
+let lastBackgroundRefresh = 0;
+
 /** Release 正文第一行作为下拉说明（过长截断）；没有正文返回空串 */
 function noteOf(body: string): string {
   const first = (body || '')
@@ -44,11 +47,13 @@ export const GitHubReleasesPanel = forwardRef<
   const [proxyPrefix, setProxyPrefix] = useState('');
   const [proxyBusy, setProxyBusy] = useState(false);
 
-  const load = (force = false) => {
-    setLoading(true);
+  const load = (force = false, silent = false) => {
+    if (!silent) setLoading(true);
     get
       .githubReleases(force)
       .then((r) => {
+        // 后台静默刷新失败时保留缓存，不覆盖界面、不弹错误
+        if (silent && !r.ok) return;
         setData(r);
         setError(r.ok ? '' : (r.error ?? ''));
         // 默认选最新 Release；没有 Release 就选最新的 tag。刷新后原选择仍有效则保留
@@ -61,11 +66,21 @@ export const GitHubReleasesPanel = forwardRef<
             : fallback,
         );
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e: Error) => {
+        if (!silent) setError(e.message);
+      })
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   };
   useEffect(() => {
+    // 先显示缓存（秒开），300ms 后后台强制刷新一次；60 秒内不重复
     load();
+    if (Date.now() - lastBackgroundRefresh > 60_000) {
+      lastBackgroundRefresh = Date.now();
+      const timer = window.setTimeout(() => load(true, true), 300);
+      return () => window.clearTimeout(timer);
+    }
   }, []);
 
   // 底部 foot 由外层弹窗渲染：把刷新操作和 Releases 页面地址暴露出去

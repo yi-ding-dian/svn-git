@@ -117,6 +117,8 @@ async function releaseStatus(
   conclusion: string | null;
   htmlUrl: string;
   artifacts: { name: string; size: number }[];
+  /** Release 上的产物数量（用户能下载的 assets）；undefined = 还没查到/没有 Release */
+  releaseAssets?: number;
 }> {
   const remote = await gitOut(root, ['remote', 'get-url', 'origin']);
   const m = /github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/.exec(remote);
@@ -157,6 +159,7 @@ async function releaseStatus(
     const conclusion = (runInfo.conclusion as string | null) ?? null;
     const htmlUrl = String(runInfo.html_url ?? '');
     let artifacts: { name: string; size: number }[] = [];
+    let releaseAssets: number | undefined;
     if (status === 'completed' && conclusion === 'success') {
       const ar = await fetch(`${GITHUB_API}/repos/${m[1]}/${m[2]}/actions/runs/${runInfo.id}/artifacts`, {
         headers,
@@ -169,8 +172,22 @@ async function releaseStatus(
           size: Number(a.size_in_bytes ?? 0),
         }));
       }
+      // Release assets 才是用户能下载的产物：有些项目不传 Actions artifacts，
+      // 直接 gh release upload（my-Agent 这类），只看 artifacts 会误报 0 个产物
+      try {
+        const rr = await fetch(
+          `${GITHUB_API}/repos/${m[1]}/${m[2]}/releases/tags/${encodeURIComponent(tag)}`,
+          { headers, signal: ctl.signal },
+        );
+        if (rr.ok) {
+          const rd = (await rr.json()) as { assets?: unknown };
+          releaseAssets = Array.isArray(rd.assets) ? rd.assets.length : 0;
+        }
+      } catch {
+        /* Release 同步延迟/网络失败：保持 undefined，前端回退到 artifacts */
+      }
     }
-    return { ok: true, status, conclusion, htmlUrl, artifacts };
+    return { ok: true, status, conclusion, htmlUrl, artifacts, releaseAssets };
   } catch (e) {
     return {
       ok: false,

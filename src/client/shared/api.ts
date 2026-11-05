@@ -826,6 +826,8 @@ export const get = {
       conclusion: string | null;
       htmlUrl: string;
       artifacts: { name: string; size: number }[];
+      /** Release 上的产物数量（用户能下载的 assets）；缺省 = 还没查到/没有 Release */
+      releaseAssets?: number;
     }>(`/api/release-status?tag=${encodeURIComponent(tag)}`),
   /** origin 仓库的访问权限（推送失败后判「无写权限」用；纯读）。
    *  ok=false 查询失败（原因在 message）；canPush=null 表示无凭据查不了；isGithub=false 表示 origin 不是 GitHub。

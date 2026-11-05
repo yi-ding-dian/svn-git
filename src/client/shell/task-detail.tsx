@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { ModalShell } from './modal-shell.js';
 import { get } from '../shared/api.js';
 import { useTasks, cancelTask, type TaskProgress as TaskProgressInfo } from '../shared/tasks.js';
-import { TaskProgress } from './task-progress.js';
+import { TaskProgress, formatDuration } from './task-progress.js';
 import { CancelCheckoutConfirm } from '../repo/checkout-task.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -120,6 +120,12 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
       {progress && (
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
           <TaskProgress p={progress} completed={!running} />
+          {/* 总耗时放底部：完成/失败后定格 */}
+          <div className="dim small" style={{ marginTop: 6 }}>
+            {t('shell.tasks.totalTime', {
+              time: formatDuration((task.endedAt ?? Date.now()) - task.startedAt),
+            })}
+          </div>
         </div>
       )}
       {/* 检出文件清单（像「更新结果」窗：状态字母 + 路径；超 2000 条只显示前段） */}

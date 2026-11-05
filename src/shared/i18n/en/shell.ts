@@ -111,7 +111,11 @@ export const shell = {
 
   // ---- Background tasks (header hourglass indicator: shown only while running; results go to the bell) ----
   'shell.tasks.indicatorTip': 'Background tasks: {n} running (click to view)',
+  'shell.tasks.indicatorDoneTip': 'Completed tasks: {n} (click to view)',
   'shell.tasks.running': 'Running',
+  'shell.tasks.finished': 'Completed',
+  'shell.tasks.clearFinished': 'Clear completed',
+  'shell.tasks.totalTime': 'Total {time}',
   'shell.tasks.elapsed': '{n}s elapsed',
   // —— Task detail modal & checkout progress ——
   'shell.tasks.clickDetail': 'Click to view task details',

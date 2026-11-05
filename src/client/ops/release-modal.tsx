@@ -5,7 +5,7 @@ import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useStat
 import { ConfirmModal } from '../ui/prompt.js';
 import { ResultLine } from '../ui/result-line.js';
 import { get, post, type ReleaseInfo } from '../shared/api.js';
-import { startTask } from '../shared/tasks.js';
+import { startTask, setTaskProgress } from '../shared/tasks.js';
 import { launchMagicFlight } from '../animations/index.js';
 import { IconPackage } from '../ui/icons.js';
 import { ReleaseGuidePanel } from './release-guide.js';
@@ -87,45 +87,95 @@ export const ReleaseFormPanel = forwardRef<
     const taskNote = note.trim();
     const taskKind = info?.kind ?? 'package';
     const taskGithub = info?.isGithub !== false;
+    // 阶段：脚本执行 → 等待 CI 启动 → 构建中 → 完成
+    const steps = [
+      t('ops.release.stepPublish'),
+      t('ops.release.stepWaitCi'),
+      t('ops.release.stepBuild'),
+      t('ops.release.stepDone'),
+    ];
     onClose();
-    startTask({
+    let taskId = 0;
+    // 每个阶段的开始时间（多一项 = 全部完成时间），供任务面板显示阶段耗时
+    const stepStartedAt = [Date.now()];
+    const setStep = (n: number) => {
+      while (stepStartedAt.length <= n) stepStartedAt.push(Date.now());
+      setTaskProgress(taskId, {
+        phase: 'waiting',
+        bytes: 0,
+        speed: 0,
+        total: 0,
+        steps,
+        currentStep: n,
+        stepStartedAt: [...stepStartedAt],
+      });
+    };
+    taskId = startTask({
       kind: 'release',
       title: t('ops.release.taskTitle', { tag: taskTag }),
       run: async (signal) => {
         const r = await post.releaseRun(taskLevel, taskNote);
         if (!r.ok) return { ok: false, message: r.message };
-        return watchTag(taskTag, taskKind, taskGithub, signal);
+        // 非 GitHub 项目没有 Actions：推送成功后直接结束，不空等
+        if (!taskGithub) {
+          setStep(steps.length);
+          return { ok: true, message: t('ops.release.taskDoneNoCi', { tag: taskTag }) };
+        }
+        return watchTag(taskTag, taskKind, setStep, steps.length, signal);
       },
     });
+    // startTask 已返回 id；run 在第一个 await 之后才会用到它
+    setStep(0);
   };
 
   /** 轮询该 tag 的 CI 状态，直到完成/失败/超时 */
   const watchTag = async (
     taskTag: string,
     taskKind: 'package' | 'docker',
-    isGithub: boolean,
+    setStep: (n: number) => void,
+    doneStep: number,
     signal: AbortSignal,
   ): Promise<{ ok: boolean; message: string }> => {
-    // 非 GitHub 项目没有 Actions：推送成功后直接结束，不空等 30 分钟
-    if (!isGithub) {
-      return { ok: true, message: t('ops.release.taskDoneNoCi', { tag: taskTag }) };
-    }
-    for (let i = 0; i < 120; i++) {
+    setStep(1);
+    let noRun = 0;
+    let sawRun = false;
+    // 前 2 分钟等 run 出现；run 出现后最多等 60 分钟
+    // （Electron 首次构建含 npm ci + electron-builder，常见 6–12 分钟，不能按 10 分钟掐）
+    for (let i = 0; i < 240; i++) {
       if (signal.aborted) return { ok: false, message: t('ops.release.taskCancelled') };
       try {
         const s = await get.releaseStatus(taskTag);
-        if (s.ok && s.status === 'completed') {
-          if (s.conclusion !== 'success') {
-            return { ok: false, message: t('ops.release.taskFailed', { tag: taskTag }) };
+        if (s.ok) {
+          if (s.status === 'pending') {
+            noRun++;
+            // 2 分钟还看不到任何 run：workflow 未推送/未触发/被禁用，直接失败并说明原因
+            if (!sawRun && noRun >= 8) {
+              return { ok: false, message: t('ops.release.taskNoRun', { tag: taskTag }) };
+            }
+          } else {
+            sawRun = true;
+            noRun = 0;
+            if (s.status === 'queued' || s.status === 'in_progress') {
+              setStep(2);
+            }
           }
-          // Docker 项目没有 Actions artifacts，产物是已经推送到 GHCR 的镜像
-          return {
-            ok: true,
-            message:
-              taskKind === 'docker'
-                ? t('ops.release.taskDoneDocker', { tag: taskTag })
-                : t('ops.release.taskDone', { tag: taskTag, n: s.artifacts.length }),
-          };
+          if (s.status === 'completed') {
+            setStep(doneStep);
+            if (s.conclusion !== 'success') {
+              return { ok: false, message: t('ops.release.taskFailed', { tag: taskTag }) };
+            }
+            // Docker 项目没有 Actions artifacts，产物是已经推送到 GHCR 的镜像
+            const n = s.releaseAssets ?? s.artifacts.length;
+            return {
+              ok: true,
+              message:
+                taskKind === 'docker'
+                  ? t('ops.release.taskDoneDocker', { tag: taskTag })
+                  : n > 0
+                    ? t('ops.release.taskDone', { tag: taskTag, n })
+                    : t('ops.release.taskDoneNoCount', { tag: taskTag }),
+            };
+          }
         }
       } catch {
         /* 网络抖动：继续等 */
