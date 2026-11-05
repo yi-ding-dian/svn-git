@@ -3,7 +3,7 @@
  *  铃铛通知仍单独保留。 */
 import React, { useEffect, useState } from 'react';
 import { useTasks, cancelTask, removeTask, type BgTask } from '../../shared/tasks.js';
-import { TaskProgress, formatDuration } from '../task-progress.js';
+import { TaskProgress, formatDuration, formatClock } from '../task-progress.js';
 import { t } from '../../../shared/i18n/index.js';
 import { IconHourglassRun } from '../../ui/icons.js';
 
@@ -15,7 +15,12 @@ export function TaskPopover(props: { x: number; y: number; onClose: () => void; 
     return () => window.clearInterval(h);
   }, []);
   const running = tasks.filter((tk) => tk.status === 'running');
-  const finished = tasks.filter((tk) => tk.status !== 'running');
+  // 已完成按结束时间倒序（最近完成的在上）；少于 3 个时默认展开阶段
+  const finished = tasks
+    .filter((tk) => tk.status !== 'running')
+    .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
+  const defaultExpanded = finished.length < 3;
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const now = Date.now();
 
   const statusIcon = (tk: BgTask) => {
@@ -25,43 +30,79 @@ export function TaskPopover(props: { x: number; y: number; onClose: () => void; 
     return <span className="dim">—</span>;
   };
 
-  const row = (tk: BgTask) => (
-    <div
-      key={tk.id}
-      className="row"
-      style={{ gap: 8, padding: 6, alignItems: 'center', cursor: 'pointer' }}
-      // 点击查看任务详情
-      title={t('shell.tasks.clickDetail')}
-      onClick={() => props.onOpenDetail(tk.id)}
-    >
-      {statusIcon(tk)}
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.title}>{tk.title}</div>
-        {tk.message && (
-          <div className="dim small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.message}>
-            {tk.message}
+  const row = (tk: BgTask) => {
+    const open = tk.status !== 'running' && (expanded[tk.id] ?? defaultExpanded);
+    const toggle = () => {
+      if (tk.status === 'running') {
+        props.onOpenDetail(tk.id);
+        return;
+      }
+      setExpanded((prev) => ({ ...prev, [tk.id]: !(prev[tk.id] ?? defaultExpanded) }));
+    };
+    return (
+      <div
+        key={tk.id}
+        className="row"
+        style={{ gap: 8, padding: 6, alignItems: 'center', cursor: 'pointer' }}
+        title={
+          tk.status === 'running'
+            ? t('shell.tasks.clickDetail')
+            : open
+              ? t('shell.tasks.collapseSteps')
+              : t('shell.tasks.expandSteps')
+        }
+        onClick={toggle}
+      >
+        {statusIcon(tk)}
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.title}>
+            {tk.status !== 'running' && (
+              <span className="dim" style={{ marginRight: 4 }}>{open ? '▾' : '▸'}</span>
+            )}
+            {tk.title}
           </div>
+          {tk.message && (
+            <div className="dim small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.message}>
+              {tk.message}
+            </div>
+          )}
+          {/* 运行中始终展开；已完成少于 3 个默认展开，否则点击任务行展开 */}
+          {tk.progress && (tk.status === 'running' || open) && (
+            <TaskProgress p={tk.progress} compact={!tk.progress.steps} completed={tk.status !== 'running'} />
+          )}
+          {/* 总耗时：运行中实时递增，完成后定格；已完成再补完成时间 */}
+          <div className="dim small" style={{ marginTop: 2 }}>
+            {t('shell.tasks.totalTime', { time: formatDuration((tk.endedAt ?? now) - tk.startedAt) })}
+            {tk.endedAt && (
+              <span> · {t('shell.tasks.completedAt', { time: formatClock(tk.endedAt) })}</span>
+            )}
+          </div>
+        </span>
+        {tk.status === 'running' ? (
+          <button
+            className="mini"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (tk.kind === 'checkout') props.onRequestCancel(tk.id);
+              else cancelTask(tk.id);
+            }}
+          >
+            {t('common.cancel')}
+          </button>
+        ) : (
+          <button
+            className="mini"
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onOpenDetail(tk.id);
+            }}
+          >
+            {t('shell.tasks.detail')}
+          </button>
         )}
-        {tk.progress && <TaskProgress p={tk.progress} compact={!tk.progress.steps} completed={tk.status !== 'running'} />}
-        {/* 总耗时：运行中实时递增，完成后定格 */}
-        <div className="dim small" style={{ marginTop: 2 }}>
-          {t('shell.tasks.totalTime', { time: formatDuration((tk.endedAt ?? now) - tk.startedAt) })}
-        </div>
-      </span>
-      {tk.status === 'running' && (
-        <button
-          className="mini"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (tk.kind === 'checkout') props.onRequestCancel(tk.id);
-            else cancelTask(tk.id);
-          }}
-        >
-          {t('common.cancel')}
-        </button>
-      )}
-    </div>
-  );
+      </div>
+    );
+  };
 
   return (
     <>

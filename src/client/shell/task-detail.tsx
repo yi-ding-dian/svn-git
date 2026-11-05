@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { ModalShell } from './modal-shell.js';
 import { get } from '../shared/api.js';
 import { useTasks, cancelTask, type TaskProgress as TaskProgressInfo } from '../shared/tasks.js';
-import { TaskProgress, formatDuration } from './task-progress.js';
+import { TaskProgress, formatDuration, formatClock } from './task-progress.js';
 import { CancelCheckoutConfirm } from '../repo/checkout-task.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -120,11 +120,14 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
       {progress && (
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
           <TaskProgress p={progress} completed={!running} />
-          {/* 总耗时放底部：完成/失败后定格 */}
+          {/* 总耗时放底部：完成/失败后定格；已完成显示完成时间 */}
           <div className="dim small" style={{ marginTop: 6 }}>
             {t('shell.tasks.totalTime', {
               time: formatDuration((task.endedAt ?? Date.now()) - task.startedAt),
             })}
+            {task.endedAt && (
+              <span> · {t('shell.tasks.completedAt', { time: formatClock(task.endedAt) })}</span>
+            )}
           </div>
         </div>
       )}

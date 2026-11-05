@@ -18,6 +18,32 @@ export function formatDuration(ms: number): string {
   return `${h}h ${m % 60}m`;
 }
 
+/** 时间戳 → 14:05 / 昨天 14:05 / 11-05 14:05（任务完成时间） */
+export function formatClock(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) return `${hh}:${mm}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (
+    d.getFullYear() === yesterday.getFullYear() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getDate() === yesterday.getDate()
+  ) {
+    return `昨天 ${hh}:${mm}`;
+  }
+  if (d.getFullYear() === now.getFullYear()) {
+    return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')} ${hh}:${mm}`;
+  }
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hh}:${mm}`;
+}
+
 /** 旋转的 ⟳（用全局 spin 关键帧；static 显示会让人以为卡住） */
 function Spinner() {
   return <span style={{ display: 'inline-block', animation: 'spin .8s linear infinite' }}>⟳</span>;

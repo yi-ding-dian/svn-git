@@ -116,6 +116,10 @@ export const shell = {
   'shell.tasks.finished': 'Completed',
   'shell.tasks.clearFinished': 'Clear completed',
   'shell.tasks.totalTime': 'Total {time}',
+  'shell.tasks.completedAt': 'Completed {time}',
+  'shell.tasks.detail': 'Details',
+  'shell.tasks.expandSteps': 'Expand steps',
+  'shell.tasks.collapseSteps': 'Collapse steps',
   'shell.tasks.elapsed': '{n}s elapsed',
   // —— Task detail modal & checkout progress ——
   'shell.tasks.clickDetail': 'Click to view task details',

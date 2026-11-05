@@ -118,6 +118,10 @@ export const shell = {
   'shell.tasks.finished': '已完成',
   'shell.tasks.clearFinished': '清除已完成',
   'shell.tasks.totalTime': '总耗时 {time}',
+  'shell.tasks.completedAt': '完成于 {time}',
+  'shell.tasks.detail': '详情',
+  'shell.tasks.expandSteps': '展开阶段',
+  'shell.tasks.collapseSteps': '收起阶段',
   'shell.tasks.elapsed': '已用 {n} 秒',
   // —— 任务详情弹窗与检出进度 ——
   'shell.tasks.clickDetail': '点击查看任务详情',
