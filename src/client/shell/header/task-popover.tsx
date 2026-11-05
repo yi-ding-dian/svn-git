@@ -31,9 +31,11 @@ export function TaskPopover(props: { x: number; y: number; onClose: () => void; 
   };
 
   const row = (tk: BgTask) => {
-    const open = tk.status !== 'running' && (expanded[tk.id] ?? defaultExpanded);
+    // 只有带阶段的任务（发布）才有折叠/展开；推送/拉取只有一行传输进度，不显示箭头
+    const collapsible = !!tk.progress?.steps;
+    const open = tk.status !== 'running' && collapsible && (expanded[tk.id] ?? defaultExpanded);
     const toggle = () => {
-      if (tk.status === 'running') {
+      if (tk.status === 'running' || !collapsible) {
         props.onOpenDetail(tk.id);
         return;
       }
@@ -45,7 +47,7 @@ export function TaskPopover(props: { x: number; y: number; onClose: () => void; 
         className="row"
         style={{ gap: 8, padding: 6, alignItems: 'center', cursor: 'pointer' }}
         title={
-          tk.status === 'running'
+          tk.status === 'running' || !collapsible
             ? t('shell.tasks.clickDetail')
             : open
               ? t('shell.tasks.collapseSteps')
@@ -56,7 +58,7 @@ export function TaskPopover(props: { x: number; y: number; onClose: () => void; 
         {statusIcon(tk)}
         <span style={{ flex: 1, minWidth: 0 }}>
           <div className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tk.title}>
-            {tk.status !== 'running' && (
+            {tk.status !== 'running' && collapsible && (
               <span className="dim" style={{ marginRight: 4 }}>{open ? '▾' : '▸'}</span>
             )}
             {tk.title}
@@ -66,9 +68,10 @@ export function TaskPopover(props: { x: number; y: number; onClose: () => void; 
               {tk.message}
             </div>
           )}
-          {/* 运行中始终展开；已完成少于 3 个默认展开，否则点击任务行展开 */}
-          {tk.progress && (tk.status === 'running' || open) && (
-            <TaskProgress p={tk.progress} compact={!tk.progress.steps} completed={tk.status !== 'running'} />
+          {/* 运行中始终展开；有阶段的任务折叠时隐藏阶段，
+              无阶段的任务（推送/拉取）始终显示一行传输进度 */}
+          {tk.progress && (tk.status === 'running' || !collapsible || open) && (
+            <TaskProgress p={tk.progress} compact={!collapsible} completed={tk.status !== 'running'} />
           )}
           {/* 总耗时：运行中实时递增，完成后定格；已完成再补完成时间 */}
           <div className="dim small" style={{ marginTop: 2 }}>
