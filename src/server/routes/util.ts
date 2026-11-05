@@ -77,22 +77,38 @@ export function authErrorOf(r: { code?: string; message: string }): boolean {
   return r.code === 'AUTH' || isAuthError(new Error(r.message));
 }
 
-/** 请求来源校验（CSRF 防护）:跨站页面请求一律拒绝。
- * 同源页面（Electron 窗口 / --browser 模式）/ 本地脚本（curl 等）不带 Origin 或 Origin 为 127.0.0.1;
- * 浏览器任意网页发起的跨站请求必带站点 Origin。 */
-export function  isSafeOrigin(req: http.IncomingMessage): boolean {
+/** 本机或私网地址：DNS rebinding 的 Host/Origin 是攻击者域名（evil.com），会被拒绝；
+ *  局域网共享用的 192.168.x.x / 10.x / 172.16-31.x / IPv6 ULA 仍放行。 */
+function isLocalOrPrivateHost(hostname: string): boolean {
+  const host = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+  if (/^10\./.test(host)) return true;
+  if (/^192\.168\./.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
+  if (/^169\.254\./.test(host)) return true;
+  if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host)) return true;
+  if (/^f[cd][0-9a-f]{2}:/i.test(host)) return true; // IPv6 ULA fc00::/7
+  if (/^fe[89ab][0-9a-f]:/i.test(host)) return true; // IPv6 link-local fe80::/10
+  return false;
+}
+
+/** 请求来源校验（CSRF / DNS rebinding 防护）：跨站页面请求一律拒绝。
+ *  - Electron 窗口 / --browser 页面 / 本地脚本：Origin 为空或本机地址；
+ *  - 局域网共享：Origin 与 Host 同源，且 Host 必须是本机或私网地址；
+ *  - 攻击者域名解析到 127.0.0.1 时，Origin/Host 是 evil.com，不是 IP，直接拒绝。 */
+export function isSafeOrigin(req: http.IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (!origin) return true;
-  // 127.0.0.1 / localhost / [::1] 均视为本机来源（用户手输 localhost 地址打开页面时同源请求也带 Origin）
-  if (/^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(origin)) return true;
-  // 局域网共享：允许与本请求 Host 完全同源的页面（远程同事用 http://192.168.x.x:23456 打开）。
-  // 跨站网页的 Origin 是自己的域名，不会等于目标 Host，因此 CSRF 防护仍然成立。
   try {
-    if (req.headers.host && new URL(origin).host === req.headers.host) return true;
+    const originUrl = new URL(origin);
+    const host = req.headers.host ?? '';
+    if (!host || originUrl.host !== host) return false;
+    if (!isLocalOrPrivateHost(originUrl.hostname)) return false;
+    return isLocalOrPrivateHost(new URL(`http://${host}`).hostname);
   } catch {
     /* 非法 Origin 按跨站处理 */
+    return false;
   }
-  return false;
 }
 
 export function  sendJson(res: http.ServerResponse, code: number, data: unknown) {
