@@ -9,6 +9,21 @@ import type { Lang } from '../../shared/i18n/index.js';
 import type { ShareAccess, ShareConfig, ShareEvent, ShareSettings } from '../../shared/share.js';
 export type { ParsedDiff };
 
+/** 非空目录的文件预览（新建仓库二次确认用） */
+export interface RepoPreview {
+  /** 参与提交的文件数（已排除常见依赖/构建目录） */
+  files: number;
+  bytes: number;
+  /** 匹配敏感文件名的相对路径（最多 20 个） */
+  sensitive: string[];
+  /** 超过 50MB 的文件（最多 10 个） */
+  large: string[];
+  /** 目标是否已有 .gitignore */
+  hasGitignore: boolean;
+  /** 目标已有 .git 且有提交 */
+  hasCommit: boolean;
+}
+
 export interface RepoCheck {
   /** 目标完整路径（dir/name） */
   target: string;
@@ -22,6 +37,8 @@ export interface RepoCheck {
   onlyGit: boolean;
   /** 目标位于已有仓库/工作副本内（向上查找 .git/.svn 命中） */
   inRepo: { type: 'git' | 'svn'; root: string } | null;
+  /** 非空目录的文件预览；空/不存在目录为 null */
+  preview?: RepoPreview | null;
 }
 
 export interface RepoInfo {
@@ -1252,6 +1269,10 @@ export const post = {
       checkout?: 'detach' | 'branch';
       mode?: 'clone' | 'worktree';
       repoRoot?: string;
+      /** 把目标目录现有文件提交到新仓库（仅 fresh init 生效） */
+      commitExisting?: boolean;
+      /** commitExisting 时自动生成 .gitignore（目标没有才写） */
+      writeGitignore?: boolean;
       /** SVN 本次临时凭据（获取前/认证失败后弹框填写；后端只本次用、不落盘） */
       username?: string;
       password?: string;
@@ -1263,6 +1284,9 @@ export const post = {
         authError?: boolean;
         /** SVN 认证失败时本次实际使用的账号（空串 = 匿名） */
         user?: string;
+        committed?: boolean;
+        commitError?: string;
+        gitignoreWritten?: boolean;
       }
     >(
       '/api/repo-create',

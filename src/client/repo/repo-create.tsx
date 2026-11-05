@@ -13,6 +13,7 @@ import { runAction } from '../shared/vcs-action.js';
 import { ResultLine } from '../ui/result-line.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { joinPath, isImeComposing } from '../shared/utils.js';
+import { formatSize } from '../shared/format-size.js';
 import { t } from '../../shared/i18n/index.js';
 import { useGitHubCred, GitHubCredBox } from './github-cred.js';
 // ==================== 创建 / 克隆仓库 ====================
@@ -47,6 +48,25 @@ export function CreateRepoDialog(props: {
   const [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState(false); // 文件夹浏览选择器
   const [pending, setPending] = useState<RepoCheck | null>(null); // 二次确认数据（打开确认框）
+  // 非空目录：默认只初始化，不自动提交现有文件（避免误传 41MB/敏感内容）；用户主动勾选才提交
+  const [commitExisting, setCommitExisting] = useState(false);
+  const [writeGitignore, setWriteGitignore] = useState(true);
+
+  /** 浏览：以当前目录输入框为起点；路径不存在时提示，不打开浏览窗 */
+  const openPicker = () => {
+    const p = dir.trim();
+    if (!p) {
+      setPicker(true);
+      return;
+    }
+    void get
+      .browse(p)
+      .then(() => setPicker(true))
+      .catch(() => {
+        setMsg(t('repo.pathNotExist', { path: p }));
+        setMsgErr(true);
+      });
+  };
 
   const submit = () => {
     if (!dir.trim() || !name.trim()) {
@@ -80,7 +100,11 @@ export function CreateRepoDialog(props: {
     setBusy(true);
     void runAction(
       // GitHub 类型的本地部分与 git 相同（git init）；远程仓库由宿主在项目打开后继续创建
-      () => post.repoCreate(type === 'svn' ? 'svn' : 'git', dir.trim(), name.trim(), '', standard),
+      () =>
+        post.repoCreate(type === 'svn' ? 'svn' : 'git', dir.trim(), name.trim(), '', standard, undefined, '', 0, {
+          commitExisting: type !== 'svn' && commitExisting,
+          writeGitignore,
+        }),
       (m, err) => {
         setMsg(m);
         setMsgErr(Boolean(err));
@@ -170,7 +194,7 @@ export function CreateRepoDialog(props: {
           <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} />
           {/* 打开文件夹浏览（可新建/重命名文件夹） */}
           <Tooltip content={t('repo.browseTip')}>
-            <button className="mini tool-btn" onClick={() => setPicker(true)}>
+            <button className="mini tool-btn" onClick={openPicker}>
               {/* 📂 浏览 */}
               {t('repo.browse')}
             </button>
@@ -276,6 +300,60 @@ export function CreateRepoDialog(props: {
                   {t('repo.create.existsTip', { target: pending.target })}
                 </div>
               )}
+              {pending.preview && (
+                <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                  <div className="small">
+                    {t('repo.create.previewFiles', {
+                      n: pending.preview.files,
+                      size: formatSize(pending.preview.bytes) || '0 B',
+                    })}
+                  </div>
+                  {pending.preview.sensitive.length > 0 && (
+                    <div className="small" style={{ color: 'var(--err)', marginTop: 4 }}>
+                      {t('repo.create.previewSensitive', {
+                        items: pending.preview.sensitive.join('、'),
+                      })}
+                    </div>
+                  )}
+                  {pending.preview.large.length > 0 && (
+                    <div className="small" style={{ color: 'var(--warn)', marginTop: 4 }}>
+                      {t('repo.create.previewLarge', {
+                        items: pending.preview.large.join('、'),
+                      })}
+                    </div>
+                  )}
+                  {pending.preview.hasCommit ? (
+                    <div className="small" style={{ color: 'var(--warn)', marginTop: 6 }}>
+                      {t('repo.create.hasCommit')}
+                    </div>
+                  ) : (
+                    type !== 'svn' &&
+                    !pending.onlyGit &&
+                    pending.preview.files > 0 && (
+                      <>
+                        <label className="row small" style={{ gap: 6, marginTop: 6, cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={commitExisting}
+                            onChange={(e) => setCommitExisting(e.target.checked)}
+                          />
+                          {t('repo.create.commitExisting')}
+                        </label>
+                        {commitExisting && !pending.preview.hasGitignore && (
+                          <label className="row small" style={{ gap: 6, marginTop: 4, cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={writeGitignore}
+                              onChange={(e) => setWriteGitignore(e.target.checked)}
+                            />
+                            {t('repo.create.writeGitignore')}
+                          </label>
+                        )}
+                      </>
+                    )
+                  )}
+                </div>
+              )}
             </>
           }
           // 确认创建
@@ -294,7 +372,7 @@ export function CreateRepoDialog(props: {
         <PickDirModal
           // 📂 选择所在目录
           title={t('repo.pickDirTitle')}
-          startDir={props.home ?? ''}
+          startDir={dir.trim() || props.home || ''}
           onPick={(p) => {
             setDir(p);
             setPicker(false);
@@ -357,6 +435,22 @@ export function GetRepoDialog(props: {
   >(null);
   /** SVN 账号预弹框：工具配置和系统凭据缓存都没有账号时弹出（认证失败后的重试框在任务侧，见 get-repo-task） */
   const [svnAsk, setSvnAsk] = useState<{ user: string } | null>(null);
+
+  /** 浏览：以当前目录输入框为起点；路径不存在时提示，不打开浏览窗 */
+  const openPicker = () => {
+    const p = dir.trim();
+    if (!p) {
+      setPicker(true);
+      return;
+    }
+    void get
+      .browse(p)
+      .then(() => setPicker(true))
+      .catch(() => {
+        setMsg(t('repo.pathNotExist', { path: p }));
+        setMsgErr(true);
+      });
+  };
 
   /** 前置风险检测 → 二次确认；cred/save 是 SVN 弹框里填的账号与「保存为默认」勾选 */
   const checkAndConfirm = (cred?: { username: string; password: string }, save = false) => {
@@ -493,7 +587,7 @@ export function GetRepoDialog(props: {
           <input type="text" placeholder="/home/me/projects" value={dir} onChange={(e) => setDir(e.target.value)} style={{ flex: 1 }} />
           {/* 打开文件夹浏览（可新建/重命名文件夹） */}
           <Tooltip content={t('repo.browseTip')}>
-            <button className="mini tool-btn" onClick={() => setPicker(true)}>
+            <button className="mini tool-btn" onClick={openPicker}>
               {/* 📂 浏览 */}
               {t('repo.browse')}
             </button>
@@ -587,7 +681,7 @@ export function GetRepoDialog(props: {
         <PickDirModal
           // 📂 选择所在目录
           title={t('repo.pickDirTitle')}
-          startDir={props.home ?? ''}
+          startDir={dir.trim() || props.home || ''}
           onPick={(p) => {
             setDir(p);
             setPicker(false);

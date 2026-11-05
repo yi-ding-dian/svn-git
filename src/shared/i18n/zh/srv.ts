@@ -57,6 +57,7 @@ export const srv = {
   'srv.remnantCleaned': '（已清理上次中断残留的目录）',
   'srv.cloneFailed': '克隆失败',
   'srv.initedRepo': '已初始化仓库 {path}',
+  'srv.initCommitFailed': '（仓库已创建，但提交现有文件失败：{msg}）',
   'srv.gitInitFailed': 'git init 失败',
   'srv.svnCheckedOut': '已检出 SVN 工作副本 {path}（已加入最近项目）',
   'srv.svnCheckedOutExternals': '已检出 SVN 工作副本 {path}（已加入最近项目；外部引用处理失败，见详情警告）',

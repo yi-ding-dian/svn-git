@@ -365,7 +365,14 @@ export const repo = {
   'repo.create.inRepoTip':
     '⚠ The target is inside the {type} repository ({root}) — creating there makes it unversioned content of the outer repository; status/data may get mixed up',
   'repo.create.existsTip':
-    '⚠ The target directory already exists and is not empty ({target}) — it may already contain a repository/files; continuing may fail or nest',
+    '⚠ The target directory already exists and is not empty ({target}) — existing files are kept; with an existing .git, GitHub projects replace origin and may push existing commits; creating inside another repository creates a nested repository',
+  'repo.pathNotExist': 'Directory not found: {path}',
+  'repo.create.previewFiles': 'Existing files: {n}, {size}',
+  'repo.create.previewSensitive': '⚠ Sensitive files: {items}',
+  'repo.create.previewLarge': '⚠ Large files (>50MB): {items}',
+  'repo.create.commitExisting': 'Commit existing files (GitHub projects will push afterwards)',
+  'repo.create.writeGitignore': 'Generate .gitignore (dependencies, build output, secrets)',
+  'repo.create.hasCommit': 'The target already has commits; it will not auto-commit, and its origin will be replaced by the new repository',
 
   // ---- 获取仓库 ----
   'repo.get.title': 'Get Repository',

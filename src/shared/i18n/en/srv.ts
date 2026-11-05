@@ -42,6 +42,7 @@ export const srv = {
   'srv.remnantCleaned': ' (cleaned up the leftover directory from the interrupted fetch)',
   'srv.cloneFailed': 'Clone failed',
   'srv.initedRepo': 'Initialized repository {path}',
+  'srv.initCommitFailed': ' (repository created, but committing existing files failed: {msg})',
   'srv.gitInitFailed': 'git init failed',
   'srv.svnCheckedOut': 'Checked out SVN working copy {path} (added to Recent Projects)',
   'srv.svnCheckedOutExternals':

@@ -367,7 +367,15 @@ export const repo = {
   'repo.create.willRunSvn': '将执行：svnadmin create 创建版本库 + 检出工作副本（命令预览见按钮）',
   'repo.create.inRepoTip':
     '⚠ 目标位于 {type} 仓库内（{root}）——在其内部创建会成为外层仓库的未版本化内容，状态/数据可能错乱',
-  'repo.create.existsTip': '⚠ 目标目录已存在且非空（{target}）——可能已有仓库/文件，继续创建可能失败或产生嵌套',
+  'repo.create.existsTip':
+    '⚠ 目标目录已存在且非空（{target}）——现有文件会保留，不会自动删除；已有 .git 时，GitHub 类型会覆盖 origin 并可能推送已有提交；位于其他仓库内部会产生嵌套仓库',
+  'repo.pathNotExist': '目录不存在：{path}',
+  'repo.create.previewFiles': '现有文件：{n} 个，{size}',
+  'repo.create.previewSensitive': '⚠ 敏感文件：{items}',
+  'repo.create.previewLarge': '⚠ 大文件（>50MB）：{items}',
+  'repo.create.commitExisting': '提交现有文件（GitHub 类型会随后推送）',
+  'repo.create.writeGitignore': '生成 .gitignore（排除依赖、构建产物和密钥）',
+  'repo.create.hasCommit': '目标已有提交，不会自动提交；创建后 origin 会被新仓库覆盖',
 
   // ---- 获取仓库（GetRepoDialog）----
   'repo.get.title': '获取仓库',

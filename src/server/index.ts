@@ -192,6 +192,82 @@ export function startServer(): Promise<ServerHandle> {
         }
         // 位于仓库/工作副本内（目标自身是已存在的仓库也算，向上查找命中）
         const inRepo = detectRepo(dir) ?? (exists ? detectRepo(target) : null);
+        // 非空目录：给二次确认提供文件预览（敏感/大文件警告），不在这一步做任何写操作
+        let preview: {
+          files: number;
+          bytes: number;
+          sensitive: string[];
+          large: string[];
+          hasGitignore: boolean;
+          hasCommit: boolean;
+        } | null = null;
+        if (exists && existsNonEmpty) {
+          let files = 0;
+          let bytes = 0;
+          const sensitive: string[] = [];
+          const large: string[] = [];
+          const sensitiveRe =
+            /(^|\/)(\.env|\.env\.local|\.env\.[^/]+\.local|.*\.(pem|key|p12|pfx)|id_rsa|id_ed25519|credentials.*|secrets.*)$/i;
+          // 常见依赖/构建目录不参与统计（.gitignore 模板也会排除）
+          const skipDirs = new Set([
+            '.git',
+            '.svn',
+            'node_modules',
+            '.venv',
+            'venv',
+            '__pycache__',
+            '.pytest_cache',
+            'dist',
+            'build',
+            'target',
+          ]);
+          const stack: { dir: string; rel: string; depth: number }[] = [
+            { dir: target, rel: '', depth: 0 },
+          ];
+          while (stack.length > 0 && files < 2000) {
+            const cur = stack.pop()!;
+            let entries: fs.Dirent[] = [];
+            try {
+              entries = fs.readdirSync(cur.dir, { withFileTypes: true });
+            } catch {
+              continue;
+            }
+            for (const e of entries) {
+              if (files >= 2000) break;
+              const rel = cur.rel ? `${cur.rel}/${e.name}` : e.name;
+              if (e.isDirectory()) {
+                if (!skipDirs.has(e.name) && cur.depth < 8) {
+                  stack.push({ dir: path.join(cur.dir, e.name), rel, depth: cur.depth + 1 });
+                }
+              } else if (e.isFile()) {
+                files++;
+                try {
+                  const st = fs.statSync(path.join(cur.dir, e.name));
+                  bytes += st.size;
+                  if (st.size > 50 * 1024 * 1024) large.push(rel);
+                } catch {
+                  /* 读不到大小：只计数 */
+                }
+                if (sensitiveRe.test(rel)) sensitive.push(rel);
+              }
+            }
+          }
+          let hasCommit = false;
+          if (fs.existsSync(path.join(target, '.git'))) {
+            const rr = await run('git', ['-C', target, 'rev-parse', '--verify', 'HEAD'], {
+              timeoutMs: 5_000,
+            });
+            hasCommit = rr.code === 0;
+          }
+          preview = {
+            files,
+            bytes,
+            sensitive: sensitive.slice(0, 20),
+            large: large.slice(0, 10),
+            hasGitignore: fs.existsSync(path.join(target, '.gitignore')),
+            hasCommit,
+          };
+        }
         sendJson(res, 200, {
           target,
           exists,
@@ -199,6 +275,7 @@ export function startServer(): Promise<ServerHandle> {
           onlySvn,
           onlyGit,
           inRepo: inRepo ? { type: inRepo.type, root: inRepo.root } : null,
+          preview,
         });
         return;
       }
@@ -266,6 +343,12 @@ export function startServer(): Promise<ServerHandle> {
           authError?: boolean;
           authType?: 'github' | 'server' | 'ssh' | 'svn';
           user?: string;
+          /** commitExisting：是否已把目标目录的现有文件提交到新仓库 */
+          committed?: boolean;
+          /** 提交现有文件失败的原因（仓库本身仍创建成功） */
+          commitError?: string;
+          /** 是否自动生成了 .gitignore */
+          gitignoreWritten?: boolean;
         };
         if (type === 'git') {
           if (mode === 'worktree' && ref) {
@@ -430,12 +513,100 @@ export function startServer(): Promise<ServerHandle> {
             const freshInit = !fs.existsSync(path.join(target, '.git'));
             fs.mkdirSync(target, { recursive: true });
             const r = await run('git', ['init', target], { timeoutMs: 60_000 });
+            const DEFAULT_GITIGNORE = [
+              '# 依赖',
+              'node_modules/',
+              '.venv/',
+              'venv/',
+              '__pycache__/',
+              '*.py[cod]',
+              '',
+              '# 构建产物',
+              'dist/',
+              'build/',
+              '*.log',
+              '',
+              '# 环境与密钥',
+              '.env',
+              '.env.local',
+              '.env.*.local',
+              '*.pem',
+              '*.key',
+              '*.p12',
+              '*.pfx',
+              'id_rsa',
+              'id_ed25519',
+              '',
+              '# 系统',
+              '.DS_Store',
+              'Thumbs.db',
+              '',
+            ].join('\n');
             if (r.code === 0 && freshInit) {
               // 失败不回滚（仓库已建好，最多退回 master 的旧行为），不值得让创建整体失败
               await run('git', ['-C', target, 'symbolic-ref', 'HEAD', 'refs/heads/main'], { timeoutMs: 15_000 });
             }
+            // 把目标目录的现有文件提交到新仓库（非空目录直接建 GitHub/Git 仓库时用）。
+            // 只在 freshInit（目标原本没有 .git）时做：已有仓库的重初始化不能替用户提交/推历史。
+            let committed = false;
+            let commitError = '';
+            let gitignoreWritten = false;
+            if (r.code === 0 && freshInit && body.commitExisting === true) {
+              try {
+                const gi = path.join(target, '.gitignore');
+                if (body.writeGitignore !== false && !fs.existsSync(gi)) {
+                  fs.writeFileSync(gi, DEFAULT_GITIGNORE);
+                  gitignoreWritten = true;
+                }
+                const add = await run('git', ['-C', target, 'add', '-A'], { timeoutMs: 120_000 });
+                if (add.code !== 0) throw new Error(add.stderr.trim() || 'git add failed');
+                const status = await run('git', ['-C', target, 'status', '--porcelain'], {
+                  timeoutMs: 15_000,
+                });
+                // 全部被 .gitignore 排除时没有可提交内容：不算失败
+                if (status.stdout.trim()) {
+                  const uname = (
+                    await run('git', ['-C', target, 'config', 'user.name'], { timeoutMs: 5_000 })
+                  ).stdout.trim();
+                  const uemail = (
+                    await run('git', ['-C', target, 'config', 'user.email'], { timeoutMs: 5_000 })
+                  ).stdout.trim();
+                  const commit = await run(
+                    'git',
+                    [
+                      '-C',
+                      target,
+                      '-c',
+                      `user.name=${uname || 'svn-git'}`,
+                      '-c',
+                      `user.email=${uemail || 'svn-git@localhost'}`,
+                      'commit',
+                      '-m',
+                      '初始化仓库',
+                    ],
+                    { timeoutMs: 120_000 },
+                  );
+                  if (commit.code !== 0) throw new Error(commit.stderr.trim() || 'git commit failed');
+                  committed = true;
+                }
+              } catch (e) {
+                commitError = (e as Error).message;
+              }
+            }
             // 已初始化仓库 {path} / git init 失败
-            result = r.code === 0 ? { ok: true, message: t('srv.initedRepo', { path: target }), repoDir: target } : { ok: false, message: r.stderr.trim() || t('srv.gitInitFailed') };
+            result =
+              r.code === 0
+                ? {
+                    ok: true,
+                    message:
+                      t('srv.initedRepo', { path: target }) +
+                      (commitError ? t('srv.initCommitFailed', { msg: commitError }) : ''),
+                    repoDir: target,
+                    committed,
+                    commitError: commitError || undefined,
+                    gitignoreWritten,
+                  }
+                : { ok: false, message: r.stderr.trim() || t('srv.gitInitFailed') };
           }
         } else if (type === 'svn') {
           if (url) {
