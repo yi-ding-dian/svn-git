@@ -12,7 +12,13 @@ import { ReleaseCleanupModal } from './release-cleanup.js';
 import { post } from '../shared/api.js';
 import { t } from '../../shared/i18n/index.js';
 
-export function ReleaseHubModal(props: { canRelease: boolean; isGithub: boolean; onClose: () => void }) {
+export function ReleaseHubModal(props: {
+  canRelease: boolean;
+  isGithub: boolean;
+  /** 有远程仓库：非 GitHub 项目也能发版（只是没有发布历史 tab） */
+  hasRemote: boolean;
+  onClose: () => void;
+}) {
   const [tab, setTab] = useState<'history' | 'form'>(props.isGithub ? 'history' : 'form');
   const releasesRef = useRef<ReleasesPanelHandle>(null);
   const formRef = useRef<ReleaseFormHandle>(null);
@@ -86,7 +92,7 @@ export function ReleaseHubModal(props: { canRelease: boolean; isGithub: boolean;
             {t('ops.releaseHub.history')}
           </button>
         )}
-        {(props.canRelease || props.isGithub) && (
+        {(props.canRelease || props.hasRemote) && (
           <button className={tab === 'form' ? 'mini primary' : 'mini'} onClick={() => setTab('form')}>
             {t('ops.releaseHub.form')}
           </button>
@@ -100,7 +106,7 @@ export function ReleaseHubModal(props: { canRelease: boolean; isGithub: boolean;
           onCleanup={() => setCleanupOpen(true)}
         />
       )}
-      {tab === 'form' && (props.canRelease || props.isGithub) && (
+      {tab === 'form' && (props.canRelease || props.hasRemote) && (
         <ReleaseFormPanel ref={formRef} onStateChange={setFormState} onClose={props.onClose} />
       )}
     </ModalShell>

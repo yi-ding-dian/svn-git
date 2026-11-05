@@ -395,11 +395,10 @@ export const TOOLS: ToolDef[] = [
     }),
   },
   {
-    // 发布（整合发布历史 + 发布新版本）：GitHub 项目可看历史；项目根带 deploy/release.mjs
-    // 的还可发新版。两个能力都没有时整个菜单不出现。
-    // 弹窗只收集参数，实际发版流程交给 deploy/release.mjs（脚本仍是唯一实现）
+    // 发布（整合发布历史 + 发布新版本）：有远程仓库的 git 项目都能发版；
+    // GitHub 项目额外显示发布历史。实际发版交给 deploy/release.mjs（脚本仍是唯一实现）
     key: 'release', zone: 'menu', menuLabelKey: 'shell.tool.release',
-    visible: (c) => c.repoType === 'git' && (/github\.com/i.test(c.repoUrl ?? '') || c.canRelease === true),
+    visible: (c) => c.repoType === 'git' && (!!c.repoUrl || c.canRelease === true),
     render: (c) => ({
       icon: <IconRelease />,
       // 发布

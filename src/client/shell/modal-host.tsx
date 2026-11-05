@@ -532,6 +532,7 @@ export function ModalHost(props: ModalHostProps) {
         <ReleaseHubModal
           canRelease={info?.canRelease === true}
           isGithub={/github\.com/i.test(info?.url ?? '')}
+          hasRemote={!!info?.url}
           onClose={() => setModal(null)}
         />
       )}

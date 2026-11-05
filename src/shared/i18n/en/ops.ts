@@ -224,6 +224,7 @@ export const ops = {
   'ops.release.taskTitle': 'Release {tag}',
   'ops.release.taskDone': '{tag} build complete, {n} artifacts published',
   'ops.release.taskDoneDocker': '{tag} images built and pushed to GHCR',
+  'ops.release.taskDoneNoCi': '{tag} pushed; check the CI status on your remote',
   'ops.release.taskFailed': '{tag} build failed; check the GitHub Actions log',
   'ops.release.taskTimeout': '{tag} is taking too long; check the release history',
   'ops.release.taskCancelled': 'Release cancelled',

@@ -175,6 +175,8 @@ export interface ReleaseInfo {
   artifacts?: string[];
   /** 是否已接入一键发版（本地有 deploy/release.mjs）；false 时显示引导页 */
   supported?: boolean;
+  /** origin 是否 GitHub：非 GitHub 也能发版，只是不轮询 Actions */
+  isGithub?: boolean;
   /** 发布类型：package = 安装包，docker = 容器镜像 */
   kind?: 'package' | 'docker';
   /** 类型来源：config = release-artifacts.json；heuristic = 文件特征推荐；none = 无法判断 */

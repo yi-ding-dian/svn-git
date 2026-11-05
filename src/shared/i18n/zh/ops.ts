@@ -225,6 +225,7 @@ export const ops = {
   'ops.release.taskTitle': '发布 {tag}',
   'ops.release.taskDone': '{tag} 构建完成，{n} 个产物已发布',
   'ops.release.taskDoneDocker': '{tag} 镜像构建完成，已推送到 GHCR',
+  'ops.release.taskDoneNoCi': '{tag} 已推送，CI 状态请到远程仓库查看',
   'ops.release.taskFailed': '{tag} 构建失败，请到 GitHub Actions 查看日志',
   'ops.release.taskTimeout': '{tag} 构建时间过长，请到发布历史查看',
   'ops.release.taskCancelled': '发布已取消',

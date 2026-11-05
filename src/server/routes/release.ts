@@ -40,12 +40,13 @@ async function gitOut(root: string, args: string[]): Promise<string> {
   return r.code === 0 ? r.stdout.trim() : '';
 }
 
-/** 发布相关文件是否已经在 origin/main 上：根 package.json、发版脚本、CI 工作流，
- *  Docker 项目还要 release-artifacts.json。缺了推 tag 也不会触发构建，
- *  界面要提前提示"只能打标签"或"还没接入发版"。 */
+/** 发布相关文件是否已经在 origin/main 上：根 package.json、发版脚本，
+ *  Docker 项目还要 release-artifacts.json；GitHub 项目还要求 CI 工作流。
+ *  非 GitHub 项目没有 Actions，不把 workflow 当必需项。 */
 async function checkCiReady(
   root: string,
   kind: 'package' | 'docker',
+  isGithub: boolean,
 ): Promise<{ ready: boolean; missing: string[]; hasWorkflow: boolean }> {
   let workflows: string[] = [];
   try {
@@ -56,14 +57,19 @@ async function checkCiReady(
   } catch {
     /* 没有 workflows 目录 */
   }
-  const required =
+  const base =
     kind === 'docker'
-      ? ['package.json', 'deploy/release.mjs', 'deploy/release-artifacts.json', ...workflows]
-      : ['package.json', 'deploy/release.mjs', ...workflows];
+      ? ['package.json', 'deploy/release.mjs', 'deploy/release-artifacts.json']
+      : ['package.json', 'deploy/release.mjs'];
+  const required = isGithub ? [...base, ...workflows] : base;
   const remote = await gitOut(root, ['ls-tree', '-r', '--name-only', 'origin/main']);
   const remoteSet = new Set(remote.split('\n').map((s) => s.trim()).filter(Boolean));
   const missing = required.filter((f) => !remoteSet.has(f));
-  return { ready: workflows.length > 0 && missing.length === 0, missing, hasWorkflow: workflows.length > 0 };
+  return {
+    ready: missing.length === 0 && (!isGithub || workflows.length > 0),
+    missing,
+    hasWorkflow: workflows.length > 0,
+  };
 }
 
 /** 默认发布说明：上个 tag 以来最新一条提交主题（与 release.mjs 的 defaultReleaseNote 同逻辑） */
@@ -272,19 +278,23 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const branch = await gitOut(repo.root, ['rev-parse', '--abbrev-ref', 'HEAD']);
     // 只看已跟踪文件（未跟踪文件不影响 npm version，见 release.mjs 的同款判断）
     const dirty = (await gitOut(repo.root, ['status', '--porcelain', '--untracked-files=no'])) !== '';
-    const ci = await checkCiReady(repo.root, kindInfo.kind);
+    // origin 是否 GitHub：决定发布历史/CI 轮询是否可用；发版本身不依赖 GitHub
+    const gh = await githubOwnerRepo(repo.root);
+    const isGithub = gh !== null;
+    const ci = await checkCiReady(repo.root, kindInfo.kind, isGithub);
     const next = {
       patch: bump(version, 'patch'),
       minor: bump(version, 'minor'),
       major: bump(version, 'major'),
     };
     // 镜像地址里的 ${owner}/${repo} 按 origin 替换；${version} 留给前端
-    const gh = await githubOwnerRepo(repo.root);
     const images = gh ? resolveDockerImages(artifacts.images, gh.owner, gh.repo) : artifacts.images;
     sendJson(res, 200, {
       ok: true,
       // 是否已接入一键发版（本地有 deploy/release.mjs）；false 时前端显示引导页
       supported: hasScript,
+      // origin 是否 GitHub：非 GitHub 也能发版，只是不轮询 Actions
+      isGithub,
       version,
       branch,
       dirty,

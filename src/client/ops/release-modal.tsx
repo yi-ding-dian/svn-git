@@ -86,6 +86,7 @@ export const ReleaseFormPanel = forwardRef<
     const taskLevel = level;
     const taskNote = note.trim();
     const taskKind = info?.kind ?? 'package';
+    const taskGithub = info?.isGithub !== false;
     onClose();
     startTask({
       kind: 'release',
@@ -93,7 +94,7 @@ export const ReleaseFormPanel = forwardRef<
       run: async (signal) => {
         const r = await post.releaseRun(taskLevel, taskNote);
         if (!r.ok) return { ok: false, message: r.message };
-        return watchTag(taskTag, taskKind, signal);
+        return watchTag(taskTag, taskKind, taskGithub, signal);
       },
     });
   };
@@ -102,8 +103,13 @@ export const ReleaseFormPanel = forwardRef<
   const watchTag = async (
     taskTag: string,
     taskKind: 'package' | 'docker',
+    isGithub: boolean,
     signal: AbortSignal,
   ): Promise<{ ok: boolean; message: string }> => {
+    // 非 GitHub 项目没有 Actions：推送成功后直接结束，不空等 30 分钟
+    if (!isGithub) {
+      return { ok: true, message: t('ops.release.taskDoneNoCi', { tag: taskTag }) };
+    }
     for (let i = 0; i < 120; i++) {
       if (signal.aborted) return { ok: false, message: t('ops.release.taskCancelled') };
       try {
