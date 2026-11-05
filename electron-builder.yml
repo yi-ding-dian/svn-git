@@ -16,6 +16,8 @@ directories:
   buildResources: build
 files:
   - dist/**/*
+  # 应用内「复制 AI 提示词」读取的指南；不带进包会提示指南文件不存在
+  - docs/发版脚本生成指南.md
 asar: true
 npmRebuild: false
 linux:

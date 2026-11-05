@@ -71,3 +71,81 @@ export function resolveDockerImages(
     image: x.image.replace(/\$\{owner\}/g, o).replace(/\$\{repo\}/g, r),
   }));
 }
+
+export interface ReleaseKindInfo {
+  kind: 'package' | 'docker';
+  /** config = 项目明确声明；heuristic = 按文件特征推荐；none = 无法判断 */
+  source: 'config' | 'heuristic' | 'none';
+  /** 判断依据（给界面展示） */
+  evidence: string[];
+}
+
+/** 判断项目的发布方式：配置优先，没有配置时才按文件特征推荐。
+ *  **实际发版只认 release-artifacts.json 的 kind**；heuristic 仅用于引导用户
+ *  下载对应的指南，不能用于决定发版流程。 */
+export function detectReleaseKind(root: string): ReleaseKindInfo {
+  const configPath = path.join(root, 'deploy', 'release-artifacts.json');
+  if (fs.existsSync(configPath)) {
+    return {
+      kind: readReleaseArtifacts(root).kind,
+      source: 'config',
+      evidence: ['deploy/release-artifacts.json'],
+    };
+  }
+
+  const has = (rel: string) => fs.existsSync(path.join(root, rel));
+  const dockerEvidence: string[] = [];
+  const packageEvidence: string[] = [];
+
+  for (const f of [
+    '.github/workflows/docker.yml',
+    '.github/workflows/docker.yaml',
+    'Dockerfile',
+    'docker-compose.yml',
+    'docker-compose.release.yml',
+  ]) {
+    if (has(f)) dockerEvidence.push(f);
+  }
+  try {
+    const dockerDir = path.join(root, 'docker');
+    for (const entry of fs.readdirSync(dockerDir, { withFileTypes: true })) {
+      if (entry.isFile() && /\.Dockerfile$/i.test(entry.name)) {
+        dockerEvidence.push(`docker/${entry.name}`);
+      } else if (entry.isDirectory() && has(`docker/${entry.name}/Dockerfile`)) {
+        dockerEvidence.push(`docker/${entry.name}/Dockerfile`);
+      }
+    }
+  } catch {
+    /* 没有 docker 目录 */
+  }
+
+  for (const f of [
+    '.github/workflows/release.yml',
+    '.github/workflows/release.yaml',
+    'electron-builder.yml',
+    'electron-builder.yaml',
+    'electron-builder.json',
+  ]) {
+    if (has(f)) packageEvidence.push(f);
+  }
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as {
+      build?: unknown;
+    };
+    if (pkg.build) packageEvidence.push('package.json#build');
+  } catch {
+    /* 没有 package.json 或不是 JSON */
+  }
+
+  if (dockerEvidence.length > 0 && packageEvidence.length === 0) {
+    return { kind: 'docker', source: 'heuristic', evidence: dockerEvidence.slice(0, 6) };
+  }
+  if (packageEvidence.length > 0 && dockerEvidence.length === 0) {
+    return { kind: 'package', source: 'heuristic', evidence: packageEvidence.slice(0, 6) };
+  }
+  return {
+    kind: 'package',
+    source: 'none',
+    evidence: [...dockerEvidence, ...packageEvidence].slice(0, 6),
+  };
+}

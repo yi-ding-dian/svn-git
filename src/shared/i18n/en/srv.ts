@@ -73,6 +73,8 @@ export const srv = {
   'srv.releaseBadNote': 'The release note cannot be empty, contain line breaks, or exceed 200 characters',
   'srv.releaseNoGithub': 'The remote is not GitHub, so CI status cannot be queried',
   'srv.releaseBadTag': 'Invalid version tag format',
+  'srv.releaseBadGuide': 'Unknown guide',
+  'srv.releaseGuideMissing': 'Guide file not found; reinstall the app or get it from GitHub',
   'srv.gitSshKeyInvalid': 'The SSH private key path cannot contain line breaks or quotes',
   'srv.gitSshKeyNotFound': 'Private key file not found: {path}',
   'srv.remoteUrlEmpty': 'Remote URL is required',

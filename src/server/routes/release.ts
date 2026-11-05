@@ -5,11 +5,16 @@
  *  避免"脚本一份、界面一份"两套实现分叉。 */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { run } from '../../vcs/exec.js';
 import { sendJson, readBody, repoInfo, type Ctx } from './util.js';
 import { loadConfig } from '../../config.js';
 import { t } from '../../shared/i18n/index.js';
-import { readReleaseArtifacts, resolveDockerImages } from '../release-artifacts.js';
+import {
+  readReleaseArtifacts,
+  resolveDockerImages,
+  detectReleaseKind,
+} from '../release-artifacts.js';
 import { dockerImageSize } from '../docker-registry.js';
 
 const LEVELS = new Set(['patch', 'minor', 'major']);
@@ -17,17 +22,30 @@ const GITHUB_API = 'https://api.github.com';
 /** 与 github.ts 同款中性 UA（含 "svn" 的产品名会被 GitHub WAF 403） */
 const GITHUB_UA = 'vcs-client/1.0 (+https://github.com/yi-ding-dian/svn-git)';
 
+/** 应用自身根目录：dist/server/routes → 项目根（开发与打包结构一致） */
+const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+/** 发版指南文件名（固定，不允许客户端指定路径） */
+const GUIDE_FILE = '发版脚本生成指南.md';
+/** 指南下载：合并为一份，AI 自行判断发布方式；旧参数保留兼容 */
+const GUIDE_FILES: Record<string, string> = {
+  all: GUIDE_FILE,
+  package: GUIDE_FILE,
+  docker: GUIDE_FILE,
+};
+/** 打包版没带 docs 时的回退地址 */
+const GUIDE_RAW = 'https://raw.githubusercontent.com/yi-ding-dian/svn-git/main/docs/';
+
 async function gitOut(root: string, args: string[]): Promise<string> {
   const r = await run('git', args, { cwd: root, timeoutMs: 15_000 });
   return r.code === 0 ? r.stdout.trim() : '';
 }
 
-/** 发布相关文件是否已经在 origin/main 上：安装包型要求 CI 工作流、根 package.json、
- *  发版脚本缺一不可；Docker 型只要求工作流（镜像由 workflow 直接构建，不经过 release.mjs）。
- *  缺了推 tag 也不会触发构建，界面要提前提示"只能打标签"。 */
+/** 发布相关文件是否已经在 origin/main 上：根 package.json、发版脚本、CI 工作流，
+ *  Docker 项目还要 release-artifacts.json。缺了推 tag 也不会触发构建，
+ *  界面要提前提示"只能打标签"或"还没接入发版"。 */
 async function checkCiReady(
   root: string,
-  docker: boolean,
+  kind: 'package' | 'docker',
 ): Promise<{ ready: boolean; missing: string[]; hasWorkflow: boolean }> {
   let workflows: string[] = [];
   try {
@@ -38,7 +56,10 @@ async function checkCiReady(
   } catch {
     /* 没有 workflows 目录 */
   }
-  const required = docker ? workflows : ['package.json', 'deploy/release.mjs', ...workflows];
+  const required =
+    kind === 'docker'
+      ? ['package.json', 'deploy/release.mjs', 'deploy/release-artifacts.json', ...workflows]
+      : ['package.json', 'deploy/release.mjs', ...workflows];
   const remote = await gitOut(root, ['ls-tree', '-r', '--name-only', 'origin/main']);
   const remoteSet = new Set(remote.split('\n').map((s) => s.trim()).filter(Boolean));
   const missing = required.filter((f) => !remoteSet.has(f));
@@ -161,7 +182,16 @@ async function releaseStatus(
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
   const p = url.pathname;
-  if (p !== '/api/release' && p !== '/api/release-run' && p !== '/api/release-status' && p !== '/api/docker-image-sizes') return false;
+  if (
+    p !== '/api/release' &&
+    p !== '/api/release-run' &&
+    p !== '/api/release-status' &&
+    p !== '/api/docker-image-sizes' &&
+    p !== '/api/release-guide' &&
+    p !== '/api/release-guide-prompt'
+  ) {
+    return false;
+  }
 
   const repo = repoInfo();
   if (!repo || repo.type !== 'git') {
@@ -170,16 +200,65 @@ export async function handle(ctx: Ctx): Promise<boolean> {
   }
   const script = path.join(repo.root, 'deploy', 'release.mjs');
   const artifacts = readReleaseArtifacts(repo.root);
-  const isDocker = artifacts.kind === 'docker';
+  const kindInfo = detectReleaseKind(repo.root);
   const hasScript = fs.existsSync(script);
-  // Docker 项目可以没有 release.mjs（镜像由 workflow 构建），发布历史/状态查询仍可用；
-  // 但「发布新版本」目前仍要求脚本，避免界面按安装包流程误操作。
-  if (!hasScript && !isDocker) {
+  // 只有真正执行发版时才要求脚本；预检/历史/状态/指南下载都允许未接入项目访问，
+  // 由前端展示"引导态"。
+  if (p === '/api/release-run' && !hasScript) {
     sendJson(res, 400, { error: t('srv.releaseUnsupported') });
     return true;
   }
-  if (p === '/api/release-run' && !hasScript) {
-    sendJson(res, 400, { error: t('srv.releaseUnsupported') });
+
+  if (p === '/api/release-guide' && req.method === 'GET') {
+    const name = String(url.searchParams.get('name') ?? '');
+    const file = Object.prototype.hasOwnProperty.call(GUIDE_FILES, name)
+      ? GUIDE_FILES[name]
+      : undefined;
+    if (!file) {
+      sendJson(res, 400, { error: t('srv.releaseBadGuide') });
+      return true;
+    }
+    try {
+      const content = fs.readFileSync(path.join(APP_ROOT, 'docs', file));
+      res.writeHead(200, {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        // 中文文件名用 RFC 5987 的 filename*，避免浏览器把中文变成乱码
+        'Content-Disposition': `attachment; filename="guide.md"; filename*=UTF-8''${encodeURIComponent(file)}`,
+      });
+      res.end(content);
+    } catch {
+      // 打包版可能没有 docs：回退到 GitHub raw（仍是固定文件，不能注入路径）
+      res.writeHead(302, { Location: GUIDE_RAW + encodeURIComponent(file) });
+      res.end();
+    }
+    return true;
+  }
+
+  if (p === '/api/release-guide-prompt' && req.method === 'GET') {
+    let guide: string;
+    try {
+      guide = fs.readFileSync(path.join(APP_ROOT, 'docs', GUIDE_FILE), 'utf8');
+    } catch {
+      sendJson(res, 500, { ok: false, error: t('srv.releaseGuideMissing') });
+      return true;
+    }
+    // 提示词里带项目根和完整指南，用户复制后直接粘给 AI，不需要再下载文件
+    const text = [
+      `工作目录：${repo.root}`,
+      '',
+      '请按下面的指南为当前项目接入一键发版。',
+      '',
+      '要求：',
+      '- 先判断发布方式，汇报判断依据和拟做的事；',
+      '- 等我确认后再创建或修改文件；',
+      '- 不要提交、不要推送、不要改 origin；',
+      '- 生成后按指南的检测清单自测。',
+      '',
+      '---- 指南开始 ----',
+      guide,
+      '---- 指南结束 ----',
+    ].join('\n');
+    sendJson(res, 200, { ok: true, text });
     return true;
   }
 
@@ -193,7 +272,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const branch = await gitOut(repo.root, ['rev-parse', '--abbrev-ref', 'HEAD']);
     // 只看已跟踪文件（未跟踪文件不影响 npm version，见 release.mjs 的同款判断）
     const dirty = (await gitOut(repo.root, ['status', '--porcelain', '--untracked-files=no'])) !== '';
-    const ci = await checkCiReady(repo.root, isDocker);
+    const ci = await checkCiReady(repo.root, kindInfo.kind);
     const next = {
       patch: bump(version, 'patch'),
       minor: bump(version, 'minor'),
@@ -204,6 +283,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const images = gh ? resolveDockerImages(artifacts.images, gh.owner, gh.repo) : artifacts.images;
     sendJson(res, 200, {
       ok: true,
+      // 是否已接入一键发版（本地有 deploy/release.mjs）；false 时前端显示引导页
+      supported: hasScript,
       version,
       branch,
       dirty,
@@ -212,12 +293,16 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       // 本次发布包含的提交（上个 tag 之后），发版前确认用
       commits: await commitsSinceLastTag(repo.root),
       // 项目自定义的产物清单：Docker 项目展示镜像，安装包项目展示文件名
-      kind: artifacts.kind,
+      kind: kindInfo.kind,
+      kindSource: kindInfo.source,
+      kindEvidence: kindInfo.evidence,
+      guide: kindInfo.kind,
       images,
       artifacts: artifacts.items,
       // CI 文件是否已推送到 origin/main：没推送只能打标签，不会出包
       ciReady: ci.ready,
       ciMissing: ci.missing,
+      missing: ci.missing,
       ciHasWorkflow: ci.hasWorkflow,
     });
     return true;

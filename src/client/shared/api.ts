@@ -173,8 +173,18 @@ export interface ReleaseInfo {
   commits: string[];
   /** 项目自定义的 CI 产物清单（deploy/release-artifacts.json），可含 ${version} 占位符 */
   artifacts?: string[];
+  /** 是否已接入一键发版（本地有 deploy/release.mjs）；false 时显示引导页 */
+  supported?: boolean;
   /** 发布类型：package = 安装包，docker = 容器镜像 */
   kind?: 'package' | 'docker';
+  /** 类型来源：config = release-artifacts.json；heuristic = 文件特征推荐；none = 无法判断 */
+  kindSource?: 'config' | 'heuristic' | 'none';
+  /** 类型判断依据（文件名） */
+  kindEvidence?: string[];
+  /** 推荐下载的指南 */
+  guide?: 'package' | 'docker';
+  /** 缺少或未推送到 origin/main 的发版文件 */
+  missing?: string[];
   /** Docker 项目的镜像清单（${owner}/${repo} 已由服务端替换，${version} 由前端替换） */
   images?: ReleaseDockerImage[];
   /** CI 文件是否已推送到 origin/main；false 时发布只能打标签，不会出包 */
@@ -800,6 +810,9 @@ export const get = {
     api<ReleaseCleanupPreview>(`/api/github-release-cleanup?keep=${keep}`),
   /** 一键发版预检：当前版本 / 默认说明 / 工作区状态 */
   releaseInfo: () => api<ReleaseInfo>('/api/release'),
+  /** 生成「完整指南 + 项目根 + 确认要求」的 AI 提示词，供引导页复制 */
+  releaseGuidePrompt: () =>
+    api<{ ok: boolean; text?: string; error?: string }>('/api/release-guide-prompt'),
   dockerImageSizes: (tag: string) =>
     api<DockerImageSizesResult>(`/api/docker-image-sizes?tag=${encodeURIComponent(tag)}`),
   /** 查某个 tag 的 CI 运行状态（发布后台任务轮询） */

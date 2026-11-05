@@ -171,6 +171,12 @@ async function main() {
     for (const f of ['package.json', 'package-lock.json']) {
       fs.copyFileSync(path.join(ROOT, f), path.join(dir, f));
     }
+    // 发版指南：应用内「复制 AI 提示词」要读取，不带进包会提示指南缺失
+    const guide = path.join(ROOT, 'docs', '发版脚本生成指南.md');
+    if (fs.existsSync(guide)) {
+      fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+      fs.copyFileSync(guide, path.join(dir, 'docs', '发版脚本生成指南.md'));
+    }
 
     console.log('== 3/5 安装生产依赖（不含 Electron/TypeScript） ==');
     run(NPM, ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], dir);

@@ -87,6 +87,8 @@ export const srv = {
   'srv.releaseBadNote': '发布说明不能为空，不能换行，且不超过 200 字',
   'srv.releaseNoGithub': '远程地址不是 GitHub，无法查询 CI 状态',
   'srv.releaseBadTag': '版本标签格式无效',
+  'srv.releaseBadGuide': '未知的指南',
+  'srv.releaseGuideMissing': '指南文件不存在，请重新安装应用或从 GitHub 获取',
   'srv.gitSshKeyInvalid': 'SSH 私钥路径不能包含换行或引号',
   'srv.gitSshKeyNotFound': '找不到私钥文件：{path}',
   'srv.remoteUrlEmpty': '远程地址不能为空',

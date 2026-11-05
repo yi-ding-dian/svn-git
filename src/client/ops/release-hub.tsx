@@ -59,12 +59,12 @@ export function ReleaseHubModal(props: { canRelease: boolean; isGithub: boolean;
               </button>
             )}
           </>
-        ) : (
-          // 发布 {tag}
+        ) : formState.label ? (
+          // 发布 {tag}；引导态 label 为空，foot 不显示发布按钮
           <button className="primary" disabled={formState.disabled} onClick={() => formRef.current?.run()}>
             {formState.label}
           </button>
-        )
+        ) : null
       }
     >
       <div
@@ -86,7 +86,7 @@ export function ReleaseHubModal(props: { canRelease: boolean; isGithub: boolean;
             {t('ops.releaseHub.history')}
           </button>
         )}
-        {props.canRelease && (
+        {(props.canRelease || props.isGithub) && (
           <button className={tab === 'form' ? 'mini primary' : 'mini'} onClick={() => setTab('form')}>
             {t('ops.releaseHub.form')}
           </button>
@@ -100,7 +100,7 @@ export function ReleaseHubModal(props: { canRelease: boolean; isGithub: boolean;
           onCleanup={() => setCleanupOpen(true)}
         />
       )}
-      {tab === 'form' && props.canRelease && (
+      {tab === 'form' && (props.canRelease || props.isGithub) && (
         <ReleaseFormPanel ref={formRef} onStateChange={setFormState} onClose={props.onClose} />
       )}
     </ModalShell>

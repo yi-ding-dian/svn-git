@@ -1,13 +1,14 @@
 /** 发布新版本弹窗（⋯ 菜单；仅项目根带 deploy/release.mjs 的 git 项目可见）。
  *  只负责收集参数（升哪一位 + 发布说明），实际发版仍由 deploy/release.mjs 执行，
  *  避免两套流程分叉；发布后不盯 CI（去「发布历史」看产物）。 */
-import React, { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { ConfirmModal } from '../ui/prompt.js';
 import { ResultLine } from '../ui/result-line.js';
 import { get, post, type ReleaseInfo } from '../shared/api.js';
 import { startTask } from '../shared/tasks.js';
 import { launchMagicFlight } from '../animations/index.js';
 import { IconPackage } from '../ui/icons.js';
+import { ReleaseGuidePanel } from './release-guide.js';
 import { t } from '../../shared/i18n/index.js';
 
 type Level = 'patch' | 'minor' | 'major';
@@ -15,6 +16,8 @@ type Level = 'patch' | 'minor' | 'major';
 /** 发布按钮由外层「发布」弹窗的 foot 渲染，面板只暴露执行入口 */
 export interface ReleaseFormHandle {
   run: () => void;
+  /** 重新读取预检（引导页「重新检测」用） */
+  refresh: () => void;
 }
 
 export const ReleaseFormPanel = forwardRef<
@@ -31,7 +34,8 @@ export const ReleaseFormPanel = forwardRef<
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState('');
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setError('');
     get
       .releaseInfo()
       .then((r) => {
@@ -40,6 +44,10 @@ export const ReleaseFormPanel = forwardRef<
       })
       .catch((e: Error) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const next = info?.next[level] ?? '';
   const tag = next ? `v${next}` : '';
@@ -121,12 +129,21 @@ export const ReleaseFormPanel = forwardRef<
     return { ok: false, message: t('ops.release.taskTimeout', { tag: taskTag }) };
   };
 
-  useImperativeHandle(ref, () => ({ run }));
+  useImperativeHandle(ref, () => ({ run, refresh: load }), [load]);
 
-  // 把发布按钮的可用状态和文案上报给外层 foot
+  // 把发布按钮的可用状态和文案上报给外层 foot；引导态不显示发布按钮
   useEffect(() => {
-    onStateChange({ disabled, label: t('ops.release.run', { tag }) });
-  }, [disabled, tag, onStateChange]);
+    const guide = info?.supported === false;
+    onStateChange({
+      disabled: guide || disabled,
+      label: guide ? '' : t('ops.release.run', { tag }),
+    });
+  }, [disabled, tag, onStateChange, info?.supported]);
+
+  // 未接入发版：整个 tab 显示引导页（只读，不执行任何 git 操作）
+  if (info && info.supported === false) {
+    return <ReleaseGuidePanel info={info} onRefresh={load} />;
+  }
 
   const levels: { key: Level; label: string }[] = [
     { key: 'patch', label: t('ops.release.levelPatch') },
