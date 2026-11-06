@@ -206,6 +206,8 @@ export const vcs = {
   'vcs.unresolvedMergeFirst': '上次合并的冲突还没处理完，先去「解决冲突」里解决掉',
   'vcs.mergeLocalChangesBlocked': '这些文件你有未提交的改动，合并会覆盖它们，请先提交或贮藏：{list}',
   'vcs.mergeLocalChangesBlockedNoList': '这些文件你有未提交的改动，合并会覆盖它们，请先提交或贮藏',
+  'vcs.pullLocalChangesBlocked': '这些文件你有未提交的改动，更新会覆盖它们，请先提交或用顶栏 Stash 贮藏后再更新：{list}',
+  'vcs.pullLocalChangesBlockedNoList': '这些文件你有未提交的改动，更新会覆盖它们，请先提交或用顶栏 Stash 贮藏后再更新',
   'vcs.mergeUpToDate': '不用合并：{name} 的改动 {cur} 里已经有了',
   'vcs.mergeFastForward': '{name} 上的改动已经进 {cur} 了（现在两边内容一样）',
   'vcs.mergedWithCommit': '已把 {name} 合并进 {cur}，生成了一条合并记录',

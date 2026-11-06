@@ -203,6 +203,8 @@ export const vcs = {
   'vcs.unresolvedMergeFirst': 'Conflicts from the previous merge are still unresolved; resolve them in the Conflicts view first',
   'vcs.mergeLocalChangesBlocked': 'These files have uncommitted changes that the merge would overwrite; commit or stash them first: {list}',
   'vcs.mergeLocalChangesBlockedNoList': 'These files have uncommitted changes that the merge would overwrite; commit or stash them first',
+  'vcs.pullLocalChangesBlocked': 'These files have uncommitted changes that the update would overwrite; commit them or stash them (toolbar Stash) before updating: {list}',
+  'vcs.pullLocalChangesBlockedNoList': 'These files have uncommitted changes that the update would overwrite; commit them or stash them (toolbar Stash) before updating',
   'vcs.mergeUpToDate': 'Nothing to merge: {cur} already contains the changes from {name}',
   'vcs.mergeFastForward': 'Changes from {name} are now in {cur} (both sides are identical now)',
   'vcs.mergedWithCommit': 'Merged {name} into {cur} (a merge commit was created)',

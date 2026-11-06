@@ -889,6 +889,18 @@ export class GitVcs {
     return { ok: true, message: m ? t('vcs.commitOkRef', { ref: m[1] ?? '', hash: m[2]?.slice(0, 7) ?? '' }) : t('vcs.commitOk') };
   }
 
+  /** 解析“本地未提交修改会被覆盖”类 git 报错（拉取 / 合并共用）：
+   *  命中返回被挡下的文件列表（可能为空，解析不到时给无清单文案），不是这类错误返回 null。
+   *  原始报错是 `error: Your local changes to the following files would be overwritten by merge:`
+   *  （中文 locale：`错误：...本地修改将被合并操作覆盖`），后面缩进列出文件。 */
+  private parseLocalChangesBlocked(err: string): string[] | null {
+    // i18n-ignore: 解析 git merge/pull 的中英文报错（本地改动会被覆盖）
+    if (!/本地修改将被合并操作覆盖|local changes to the following files would be overwritten/i.test(err)) return null;
+    return [...err.matchAll(/^\s+(\S.*)$/gm)]
+      .map((m) => m[1]!.trim())
+      .filter((s) => !/^(请|Please)/.test(s)); // i18n-ignore: 滤掉 git 的中文提示行
+  }
+
   /** git pull */
   async pull(
     signal?: AbortSignal
@@ -939,6 +951,17 @@ export class GitVcs {
     }
     if (res.code !== 0) {
       if (!authFailed) {
+        // 本地未提交修改会被远程更新覆盖：git 拒绝合并。别把原始英文报错直接抛给用户，
+        // 指明是哪几个文件、并给出“提交或 Stash”的出路（否则用户常以为只能先提交）
+        const blockedFiles = this.parseLocalChangesBlocked(res.stderr);
+        if (blockedFiles) {
+          const list = blockedFiles.slice(0, 5).join(t('vcs.pathListSep'));
+          // 这些文件你有未提交的改动，更新会覆盖它们，请先提交或用顶栏 Stash 贮藏后再更新：{list}
+          return {
+            ok: false,
+            message: list ? t('vcs.pullLocalChangesBlocked', { list }) : t('vcs.pullLocalChangesBlockedNoList'),
+          };
+        }
         // git pull 失败
         return { ok: false, message: res.stderr.trim() || t('vcs.gitPullFailed') };
       }
@@ -1596,10 +1619,9 @@ export class GitVcs {
         // 上次合并的冲突还没处理完，先去「解决冲突」里解决掉
         return { ok: false, message: t('vcs.unresolvedMergeFirst') };
       }
-      if (/本地修改将被合并操作覆盖|local changes to the following files would be overwritten/i.test(err)) { // i18n-ignore: 解析 git merge 中英文报错（本地改动会被覆盖）
-        const files = [...err.matchAll(/^\s+(\S.*)$/gm)].map((m) => m[1]!.trim()).filter((s) => !/^(请|Please)/.test(s)); // i18n-ignore: 「请」用于滤掉 git 中文提示行
-        // 、
-        const list = files.slice(0, 5).join(t('vcs.pathListSep'));
+      const blockedFiles = this.parseLocalChangesBlocked(err);
+      if (blockedFiles) {
+        const list = blockedFiles.slice(0, 5).join(t('vcs.pathListSep'));
         // 这些文件你有未提交的改动，合并会覆盖它们，请先提交或贮藏：{list} / 这些文件你有未提交的改动，合并会覆盖它们，请先提交或贮藏
         return { ok: false, message: list ? t('vcs.mergeLocalChangesBlocked', { list }) : t('vcs.mergeLocalChangesBlockedNoList') };
       }
