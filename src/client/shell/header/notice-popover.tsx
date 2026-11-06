@@ -23,8 +23,9 @@ export function NoticePopover(props: { x: number; y: number; onClose: () => void
   useTasks();
   /** 打开的「更新结果」详情窗（点面板里带「详情 ▸」的通知行） */
   const [detail, setDetail] = useState<UpdateResultDetail | null>(null);
-  /** 「全文」小窗（无更新详情的通知——消息被两行截断后，点开看完整内容） */
-  const [fullMsg, setFullMsg] = useState<{ title: string; message: string } | null>(null);
+  /** 「全文」小窗（无更新详情的通知——消息被两行截断后，点开看完整内容）。
+   *  url：发布失败通知带的 Actions 页面地址，小窗里给「查看日志」外链 */
+  const [fullMsg, setFullMsg] = useState<{ title: string; message: string; url?: string } | null>(null);
   // 打开即已读（放 effect 里，避免渲染期改 store）
   useEffect(() => {
     markAllRead();
@@ -59,6 +60,10 @@ export function NoticePopover(props: { x: number; y: number; onClose: () => void
           const ud = asUpdateDetail(n.detail);
           // 检出完成的通知（detail.kind='checkout' 且带来源任务）→ 点开「任务详情」窗（列检出文件清单/警告）
           const coTaskId = n.taskId != null && (n.detail as { kind?: string } | null)?.kind === 'checkout' ? n.taskId : null;
+          // 发布失败通知（detail.kind='release'）→ 全文小窗里附「查看日志」链接（该次 Actions 运行页）
+          const relUrl = (n.detail as { kind?: string; htmlUrl?: string } | null)?.kind === 'release'
+            ? ((n.detail as { htmlUrl?: string }).htmlUrl || undefined)
+            : undefined;
           // 更新详情 → 「更新结果」窗；检出详情 → 「任务详情」窗；否则有消息就点开「全文」小窗；都没有 = 不可点
           const clickable = Boolean(ud || coTaskId !== null || n.message);
           return (
@@ -67,7 +72,7 @@ export function NoticePopover(props: { x: number; y: number; onClose: () => void
               className="row"
               style={{ gap: 8, padding: 6, alignItems: 'flex-start', cursor: clickable ? 'pointer' : undefined }}
               title={clickable ? t('shell.notify.detailTip') : undefined}
-              onClick={clickable ? () => (ud ? setDetail(ud) : coTaskId !== null ? props.onOpenTaskDetail(coTaskId) : setFullMsg({ title: n.title, message: n.message })) : undefined}
+              onClick={clickable ? () => (ud ? setDetail(ud) : coTaskId !== null ? props.onOpenTaskDetail(coTaskId) : setFullMsg({ title: n.title, message: n.message, url: relUrl })) : undefined}
             >
               <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2, color: n.err ? 'var(--err)' : 'var(--ok)' }}>
                 {n.err ? <IconErr /> : <IconOk />}
@@ -123,11 +128,24 @@ export function NoticePopover(props: { x: number; y: number; onClose: () => void
       </div>
       {/* 更新结果详情窗（从面板点开；关闭后回到面板） */}
       {detail && <UpdateResultModal {...detail} onClose={() => setDetail(null)} />}
-      {/* 通知全文小窗（消息两行截断后的完整内容；zIndex 460 高于面板与气泡） */}
+      {/* 通知全文小窗（消息两行截断后的完整内容；zIndex 460 高于面板与气泡）。
+          发布失败带 Actions 地址时，消息下方给「查看日志」外链 */}
       {fullMsg && (
         <InfoModal
           title={fullMsg.title}
-          message={<span style={{ wordBreak: 'break-all' }}>{fullMsg.message}</span>}
+          message={
+            <div style={{ wordBreak: 'break-all' }}>
+              {fullMsg.message}
+              {fullMsg.url && (
+                <div style={{ marginTop: 10 }}>
+                  <a href={fullMsg.url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>
+                    {/* 查看日志 */}
+                    {t('shell.notify.viewLog')} ↗
+                  </a>
+                </div>
+              )}
+            </div>
+          }
           onClose={() => setFullMsg(null)}
           zIndex={460}
         />

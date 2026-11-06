@@ -128,17 +128,21 @@ export const ReleaseFormPanel = forwardRef<
     setStep(0);
   };
 
-  /** 轮询该 tag 的 CI 状态，直到完成/失败/超时 */
+  /** 轮询该 tag 的 CI 状态，直到完成/失败/超时。
+   *  失败/超时时把 Actions 页面地址放进 data（通知窗据此给「查看日志」链接）。 */
   const watchTag = async (
     taskTag: string,
     taskKind: 'package' | 'docker',
     setStep: (n: number) => void,
     doneStep: number,
     signal: AbortSignal,
-  ): Promise<{ ok: boolean; message: string }> => {
+  ): Promise<{ ok: boolean; message: string; data?: unknown }> => {
     setStep(1);
     let noRun = 0;
     let sawRun = false;
+    /** 最后一次拿到的 Actions 页面地址（该次 run 或 Actions 列表页） */
+    let htmlUrl = '';
+    const failedResult = (message: string) => ({ ok: false, message, data: { kind: 'release', tag: taskTag, htmlUrl } });
     // 前 2 分钟等 run 出现；run 出现后最多等 60 分钟
     // （Electron 首次构建含 npm ci + electron-builder，常见 6–12 分钟，不能按 10 分钟掐）
     for (let i = 0; i < 240; i++) {
@@ -146,11 +150,12 @@ export const ReleaseFormPanel = forwardRef<
       try {
         const s = await get.releaseStatus(taskTag);
         if (s.ok) {
+          if (s.htmlUrl) htmlUrl = s.htmlUrl;
           if (s.status === 'pending') {
             noRun++;
             // 2 分钟还看不到任何 run：workflow 未推送/未触发/被禁用，直接失败并说明原因
             if (!sawRun && noRun >= 8) {
-              return { ok: false, message: t('ops.release.taskNoRun', { tag: taskTag }) };
+              return failedResult(t('ops.release.taskNoRun', { tag: taskTag }));
             }
           } else {
             sawRun = true;
@@ -162,7 +167,7 @@ export const ReleaseFormPanel = forwardRef<
           if (s.status === 'completed') {
             setStep(doneStep);
             if (s.conclusion !== 'success') {
-              return { ok: false, message: t('ops.release.taskFailed', { tag: taskTag }) };
+              return failedResult(t('ops.release.taskFailed', { tag: taskTag }));
             }
             // Docker 项目没有 Actions artifacts，产物是已经推送到 GHCR 的镜像
             const n = s.releaseAssets ?? s.artifacts.length;
@@ -182,7 +187,7 @@ export const ReleaseFormPanel = forwardRef<
       }
       await new Promise((r) => setTimeout(r, 15_000));
     }
-    return { ok: false, message: t('ops.release.taskTimeout', { tag: taskTag }) };
+    return failedResult(t('ops.release.taskTimeout', { tag: taskTag }));
   };
 
   useImperativeHandle(ref, () => ({ run, refresh: load }), [load]);

@@ -172,6 +172,8 @@ export const shell = {
   // 失败任务的「重试」：用同一组参数把这次任务再跑一遍
   'shell.notify.retry': '重试',
   'shell.notify.retryTip': '用原来的参数重新执行这次任务',
+  // 发布失败通知的「查看日志」：打开该次 GitHub Actions 运行页面
+  'shell.notify.viewLog': '查看日志',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': '分隔符',

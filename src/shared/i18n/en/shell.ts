@@ -170,6 +170,8 @@ export const shell = {
   // Retry a failed task with the same parameters
   'shell.notify.retry': 'Retry',
   'shell.notify.retryTip': 'Run this task again with the same parameters',
+  // "View log" on a failed release notice: opens that GitHub Actions run page
+  'shell.notify.viewLog': 'View log',
 
   // ---- 顶栏：工具栏拖拽定制（分隔符 / ⋯ 菜单 / 恢复默认）----
   'shell.toolbar.sep': 'Separator',
