@@ -169,6 +169,30 @@ try {
     await run('git', ['reset', '-q', 'HEAD', '--', f], { cwd: GIT_DIR });
   }
 
+  // ---------- 4b. 未跟踪目录的状态刷新（git 折叠 "?? dir/" 回归） ----------
+  {
+    const d = 'api-untracked-dir';
+    fs.mkdirSync(path.join(GIT_DIR, d), { recursive: true });
+    fs.writeFileSync(path.join(GIT_DIR, d, 'a.txt'), 'a');
+    fs.writeFileSync(path.join(GIT_DIR, d, 'b.txt'), 'b');
+    const list = await get(`/api/fs?dir=${encodeURIComponent(d)}&force=1`);
+    const listCodes = list.body.entries?.map((e) => e.code);
+    check(
+      '未跟踪目录：/api/fs 内部文件为 ?',
+      listCodes?.length === 2 && listCodes.every((c) => c === '?'),
+      JSON.stringify(listCodes)
+    );
+    // 预加载（light）先给空状态，进入目录后靠 fs-status 补 ?——之前这里返回空数组，页面一直显示 √
+    const st = await get(`/api/fs-status?dir=${encodeURIComponent(d)}&deep=1`);
+    const stCodes = st.body.items?.map((i) => i.code);
+    check(
+      '未跟踪目录：/api/fs-status 返回 ?（刷新能补状态）',
+      stCodes?.length === 2 && stCodes.every((c) => c === '?'),
+      JSON.stringify(st.body.items)
+    );
+    fs.rmSync(path.join(GIT_DIR, d), { recursive: true, force: true });
+  }
+
   // ---------- 5. 软删除 keep=本地保留 ----------
   {
     const f = 'api-keep-test.txt';

@@ -192,13 +192,42 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       items = list.map((i) => ({ path: i.path, code: i.code }));
     } else {
       const all = (await getStatusCached(repo, true, rel)) as { path: string; code: string }[];
-      const prefix = rel ? rel + '/' : '';
-      items = all
-        .filter((i) => {
-          if (i.path === rel || !i.path.startsWith(prefix)) return false;
-          return !i.path.slice(prefix.length).includes('/');
-        })
-        .map((i) => ({ path: i.path, code: i.code }));
+      // 当前目录是否落在未跟踪目录内（含自身）：git 把未跟踪目录折叠成一条 "?? dir/"
+      // （内部文件不单列）。只按前缀过滤会得到空数组 → 进入目录后的刷新补不到状态，
+      // 预加载缓存里的空 code 会一直渲染成干净 √（用户实报「未跟踪目录里的文件显示 √」）。
+      // 这种情况直接读盘列直接子项，统一按 '?' 返回（与 /api/fs 的 dirSelf 语义一致）。
+      let unversionedSubtree = false;
+      let acc = '';
+      for (const part of rel ? rel.split('/') : []) {
+        acc = acc ? `${acc}/${part}` : part;
+        if (all.some((i) => i.path === acc && i.code === '?')) {
+          unversionedSubtree = true;
+          break;
+        }
+      }
+      if (unversionedSubtree) {
+        const gitIgnore = makeGitIgnoreChecker(repo.root);
+        let names: string[] = [];
+        try {
+          names = fs.readdirSync(abs);
+        } catch {
+          /* 读不到：按空处理 */
+        }
+        for (const n of names) {
+          if (n === '.git' || n === '.svn') continue;
+          // 被忽略的条目不属于未跟踪范围（前端保留 /api/fs 给的 I）
+          if (await gitIgnore.isIgnored(rel, n)) continue;
+          items.push({ path: `${rel}/${n}`, code: '?' });
+        }
+      } else {
+        const prefix = rel ? rel + '/' : '';
+        items = all
+          .filter((i) => {
+            if (i.path === rel || !i.path.startsWith(prefix)) return false;
+            return !i.path.slice(prefix.length).includes('/');
+          })
+          .map((i) => ({ path: i.path, code: i.code }));
+      }
     }
     sendJson(res, 200, { items });
     return true;
