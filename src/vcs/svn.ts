@@ -340,7 +340,7 @@ export class SvnVcs {
   /** 浅扫描：只查目标目录的**直接子项**（svn status -N），毫秒级。
    *  代价：拿不到子目录内部的变更，目录角标不再显示"内部有 N 处修改"——
    *  这是对超大工作副本的取舍（详见 MAX_STATUS_BYTES 注释）。 */
-  private async statusShallow(pathRel?: string): Promise<FileStatus[]> {
+  async statusShallow(pathRel?: string): Promise<FileStatus[]> {
     const args = ['status', '--xml', '-N'];
     if (pathRel) args.push(pathRel);
     const res = await this.exec(args);

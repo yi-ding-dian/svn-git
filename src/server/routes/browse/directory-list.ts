@@ -172,6 +172,38 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     return true;
   }
 
+  if (p === '/api/fs-status') {
+    // 当前目录浅状态轮询（供前端每 30 秒刷新外部修改的 M）：
+    // svn 用 status -N（毫秒级，不会像全量 status 那样卡 1.8s）；
+    // git 没有 -N，走全量 status 后只保留直接子项。
+    const { vcs, repo } = vcsOf();
+    const rel = url.searchParams.get('dir') ?? '';
+    const abs = path.join(repo.root, rel);
+    if (!inRepoRoot(repo.root, abs)) {
+      sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
+      return true;
+    }
+    let items: { path: string; code: string }[] = [];
+    const deep = url.searchParams.get('deep') === '1';
+    if (repo.type === 'svn' && vcs.statusShallow) {
+      // deep：查当前目录子树（42ms 级），用于把深层 M 聚合到直接子目录；
+      // 不 deep：只查直接子项，供 30 秒轮询用。
+      const list = deep ? await vcs.status(rel) : await vcs.statusShallow(rel);
+      items = list.map((i) => ({ path: i.path, code: i.code }));
+    } else {
+      const all = (await getStatusCached(repo, true, rel)) as { path: string; code: string }[];
+      const prefix = rel ? rel + '/' : '';
+      items = all
+        .filter((i) => {
+          if (i.path === rel || !i.path.startsWith(prefix)) return false;
+          return !i.path.slice(prefix.length).includes('/');
+        })
+        .map((i) => ({ path: i.path, code: i.code }));
+    }
+    sendJson(res, 200, { items });
+    return true;
+  }
+
   if (p === '/api/fs') {
     // 工作副本文件夹浏览：磁盘目录 + 状态匹配
     const { vcs, repo } = vcsOf();
@@ -180,6 +212,50 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const abs = path.join(repo.root, rel);
     if (!inRepoRoot(repo.root, abs)) {
       sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
+      return true;
+    }
+    // light=1：预加载专用，只读磁盘目录结构，不查 SVN/Git 状态。
+    // 大 SVN 工作副本每个目录都跑一遍全量 svn status / status --no-ignore，是预加载慢的主因；
+    // 状态徽标等用户真正进入目录时由正常请求补齐，目录树缓存照样秒开。
+    if (url.searchParams.get('light') === '1') {
+      let names: string[];
+      try {
+        names = fs.readdirSync(abs);
+      } catch (err) {
+        sendJson(res, 500, { error: t('srv.readDirFailed', { msg: (err as Error).message }) });
+        return true;
+      }
+      const dirs: string[] = [];
+      const files: string[] = [];
+      const meta = new Map<string, { size: number; mtime: string }>();
+      for (const n of names) {
+        const p = path.join(abs, n);
+        let st: fs.Stats;
+        try {
+          st = fs.statSync(p);
+        } catch {
+          continue;
+        }
+        if (st.isDirectory()) {
+          dirs.push(n);
+        } else {
+          files.push(n);
+          meta.set(n, { size: st.size, mtime: fmtMtime(st.mtimeMs) });
+        }
+      }
+      dirs.sort(compareName);
+      files.sort(compareName);
+      const entries = [
+        ...dirs.map((name) => ({ name, isDir: true, size: 0, mtime: '', code: '' })),
+        ...files.map((name) => ({
+          name,
+          isDir: false,
+          size: meta.get(name)!.size,
+          mtime: meta.get(name)!.mtime,
+          code: '',
+        })),
+      ];
+      sendJson(res, 200, { dir: rel, abs, root: repo.root, entries });
       return true;
     }
     const items = (await getStatusCached(repo, force, rel)) as { path: string; code: string; isDir: boolean; treeConflicted?: boolean; origPath?: string }[];

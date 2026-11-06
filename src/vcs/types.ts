@@ -247,6 +247,8 @@ export interface TagDetail {
 /** 统一 VCS 操作接口：公共方法两实现均实现（必选），平台独有能力可选——server 层按 repo.type 分支或 ?. 调用。 */
 export interface Vcs {
   status(pathRel?: string): Promise<FileStatus[]>;
+  /** 浅状态：只查目标目录直接子项（svn status -N），供目录轮询用；git 无此能力，调用方回退 status */
+  statusShallow?(pathRel?: string): Promise<FileStatus[]>;
   /** 是否已判定为超大工作副本（svn 专有：降级为浅扫描后为 true，调用方据此按目录查询、隐藏聚合角标） */
   isHugeWc?(): boolean;
   /** 分页拉取：offset=跳过前 N 条（git --skip）；afterRev=从该版本之后继续拉（svn -r rev-1:1，0=从头）。limit<=0=全量 */

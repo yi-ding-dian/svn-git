@@ -260,7 +260,7 @@ export function FsView(props: Props) {
   const descOf = useCallback((rel: string) => moduleIndex?.get(rel) ?? '', [moduleIndex]);
   const [favModal, setFavModal] = useState(false);
   // 预加载引擎（BFS + 并发 6 + 代际停止）抽到 useDirPreload；拉到的目录写进树缓存 nodeData
-  const { preload, preloadDir, resetPreload } = useDirPreload((d, r) => {
+  const { preload, preloadDir, prefetchChildren, resetPreload } = useDirPreload((d, r) => {
     setNodeData((m) => new Map(m).set(d, r));
   });
 
@@ -299,6 +299,95 @@ export function FsView(props: Props) {
     // 已保存 {n} 个常用文件夹，正在后台预加载 / 已移除全部常用文件夹
     props.onToast(next.length > 0 ? t('fs.fav.saved', { n: next.length }) : t('fs.fav.cleared'));
   };
+  /** 刷新当前目录状态：deep=true 查子树并把深层 M/A 聚合到直接子目录；
+   *  false 只查直接子项（30 秒轮询）。只更新已有条目的 code，不清选择/预览。 */
+  const refreshCodes = useCallback((cur: string, deep = false) => {
+    get
+      .fsStatus(cur, deep)
+      .then((r) => {
+        const codes = new Map<string, string>();
+        for (const it of r.items) codes.set(it.path, it.code);
+        const rank: Record<string, number> = { C: 6, '!': 5, D: 4, M: 3, A: 2, R: 1 };
+        const apply = (d: FsData): FsData => {
+          let changed = false;
+          const entries = d.entries.map((e) => {
+            const rel = cur ? `${cur}/${e.name}` : e.name;
+            let code = codes.get(rel);
+            // 深层状态聚合：目录自身无条目时，看子树里最高的操作状态
+            if (deep && code === undefined) {
+              const prefix = rel + '/';
+              let best = '';
+              for (const [p, c] of codes) {
+                if (p.startsWith(prefix) && c && rank[c] !== undefined && rank[c] > (rank[best] ?? -1)) {
+                  best = c;
+                }
+              }
+              code = best || undefined;
+            }
+            if (code === undefined || code === e.code) return e;
+            changed = true;
+            return {
+              ...e,
+              code,
+              // 目录角标用的是 codes（不是 code）：不补这个，悬浮提示显示 M 但图标不显示
+              ...(e.isDir
+                ? { codes: code && code !== ' ' && code !== 'none' ? [code] : undefined }
+                : {}),
+            };
+          });
+          return changed ? { ...d, entries } : d;
+        };
+        // deep：当前目录内部有修改时，把父目录里这个目录的角标也标出来。
+        // 否则用户返回上一级，父目录仍显示旧的 ✓（进入子目录时更新了子目录缓存，但父缓存没动）。
+        let selfCode = '';
+        if (deep) {
+          for (const c of codes.values()) {
+            if (c && rank[c] !== undefined && rank[c] > (rank[selfCode] ?? -1)) selfCode = c;
+          }
+        }
+        const idx = cur.lastIndexOf('/');
+        // cur 是根目录的直接子目录（如 ConfigureTool）时没有 '/'：父目录是仓库根 ''，
+        // name 就是 cur 自己；不能因为 idx<0 把 name 置空，否则父级传播被跳过。
+        const parent = deep ? (idx >= 0 ? cur.slice(0, idx) : '') : '';
+        const name = deep ? (idx >= 0 ? cur.slice(idx + 1) : cur) : '';
+        const patchParent = (d: FsData): FsData => {
+          const pe = d.entries.find((e) => e.name === name && e.isDir);
+          if (!pe || pe.code === selfCode) return d;
+          return {
+            ...d,
+            entries: d.entries.map((e) =>
+              e === pe ? { ...e, code: selfCode, codes: selfCode ? [selfCode] : undefined } : e,
+            ),
+          };
+        };
+        setNodeData((m) => {
+          const d = m.get(cur);
+          let map = m;
+          if (d) {
+            const next = apply(d);
+            if (next !== d) map = new Map(map).set(cur, next);
+          }
+          if (deep && name) {
+            const pd = map.get(parent);
+            if (pd) {
+              const nextPd = patchParent(pd);
+              if (nextPd !== pd) map = new Map(map).set(parent, nextPd);
+            }
+          }
+          return map;
+        });
+        setData((d) => {
+          if (!d) return d;
+          if (d.dir === cur) return apply(d);
+          if (deep && name && d.dir === parent) return patchParent(d);
+          return d;
+        });
+      })
+      .catch(() => {
+        /* 轮询失败不打扰 */
+      });
+  }, []);
+
   /** 加载目录（列表/浏览模式）。quiet=true 为静默强刷（操作后 / tick 刷新）：不出顶部加载条、
    *  不弹大目录提示——列表原地换数据，界面不闪；切目录、首次进入照常给加载反馈。 */
   const load = useCallback(async (targetDir: string, force: boolean, quiet = false) => {
@@ -308,6 +397,10 @@ export function FsView(props: Props) {
       setSel(null);
       setPreview(null);
       setError('');
+      // 预加载缓存只有目录结构（light），进入时立即查子树并聚合深层 M/A
+      refreshCodes(targetDir, targetDir !== '');
+      // 静默预取下一层：直接拿当前目录的 entries 入队，不要求父目录未见过
+      prefetchChildren(targetDir, cache.entries, true);
       return;
     }
     if (!quiet) setFsLoading(true);
@@ -318,6 +411,10 @@ export function FsView(props: Props) {
       setData(r);
       setSel(null);
       setPreview(null);
+      // 进入目录后查一次子树状态，把深层 M/A 聚合到直接子目录（根目录用浅查，避免全量扫描）
+      refreshCodes(targetDir, targetDir !== '');
+      // 静默预取下一层：进入目录后立刻在后台拉它的直接子目录（light，不查 SVN 状态）
+      prefetchChildren(targetDir, r.entries ?? [], true);
       if (!quiet) {
         // 大目录提示：条目多时告知原因（加载完成后展示 5 秒）——静默刷新不重复提示
         const n = r.entries?.length ?? 0;
@@ -344,7 +441,14 @@ export function FsView(props: Props) {
     }
     // setPendingLocate 的 useState 在下方才声明，放进依赖数组会 TDZ（Block-scoped variable used before its declaration）
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [prefetchChildren, refreshCodes]);
+
+  // 当前目录浅状态轮询：外部编辑器改了文件，30 秒内刷新 M/A；不重拉目录、不清选择/预览
+  useEffect(() => {
+    if (!props.active || !props.repoRoot) return;
+    const timer = window.setInterval(() => refreshCodes(dirRef.current, false), 30_000);
+    return () => window.clearInterval(timer);
+  }, [props.active, props.repoRoot, refreshCodes]);
 
   // 目录切换：优先缓存
   useEffect(() => {
