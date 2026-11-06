@@ -86,7 +86,9 @@ function parseGitLog(stdout: string): LogEntry[] {
         out.push(cur);
       }
     } else if (cur && line) {
-      const m = line.match(/^([MADRCU])\t(.+)$/);
+      // R100 / C75：重命名/复制状态码带相似度分数，不能只匹配单个字母
+      // （否则整行被丢弃，历史里重命名的新文件凭空消失——用户实报「根目录历史比目录历史少一个文件」）
+      const m = line.match(/^([MADRCU])\d*\t(.+)$/);
       if (m && m[1] && m[2]) {
         const p = m[2].includes('\t') ? m[2].split('\t').pop()! : m[2];
         cur.changed.push({ action: m[1], path: p });
@@ -405,7 +407,7 @@ export class GitVcs {
       const r = await this.exec(args);
       if (r.code !== 0) continue;
       for (const line of r.stdout.split('\n')) {
-        const m = line.match(/^([MADRCU])\t(.+)$/);
+        const m = line.match(/^([MADRCU])\d*\t(.+)$/); // R100/C75 带相似度分数，见 parseGitLog
         if (!m || !m[1] || !m[2]) continue;
         const p = m[2].includes('\t') ? m[2].split('\t').pop()! : m[2];
         e.changed.push({ action: m[1], path: p });

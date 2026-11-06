@@ -193,6 +193,25 @@ try {
     fs.rmSync(path.join(GIT_DIR, d), { recursive: true, force: true });
   }
 
+  // ---------- 4c. 历史解析重命名（git log 输出 R100\t旧\t新） ----------
+  {
+    const headBefore = (await run('git', ['rev-parse', 'HEAD'], { cwd: GIT_DIR })).stdout.trim();
+    const oldF = 'api-rename-old.txt';
+    fs.writeFileSync(path.join(GIT_DIR, oldF), 'rename content\n');
+    await run('git', ['add', oldF], { cwd: GIT_DIR });
+    await run('git', ['commit', '-qm', 'add rename fixture'], { cwd: GIT_DIR });
+    await run('git', ['mv', oldF, 'api-rename-new.txt'], { cwd: GIT_DIR });
+    await run('git', ['commit', '-qm', 'rename fixture'], { cwd: GIT_DIR });
+    const log = await get('/api/log?limit=1');
+    const changed = log.body.logs?.[0]?.changed ?? [];
+    check(
+      '历史解析重命名 R100（新路径进列表）',
+      changed.some((c) => c.action === 'R' && c.path === 'api-rename-new.txt'),
+      JSON.stringify(changed)
+    );
+    await run('git', ['reset', '-q', '--hard', headBefore], { cwd: GIT_DIR });
+  }
+
   // ---------- 5. 软删除 keep=本地保留 ----------
   {
     const f = 'api-keep-test.txt';
