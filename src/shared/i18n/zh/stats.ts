@@ -39,6 +39,11 @@ export const stats = {
   'stats.result.skippedTitle': '空文件 {empty} 个 · 二进制 {binary} 个 · 超大 {large} 个 · 读取失败 {error} 个',
   'stats.result.truncated': '统计超时，以上为已统计部分',
   'stats.result.capped': '文件过多，仅统计了前 {n} 个',
+  'stats.result.autoLimited': '目录/文件较多，默认展开到二级目录；点击目录可继续展开',
+  // 统计完成后可拖动分隔条调整上方设置区高度，拖到底自动折叠
+  'stats.settings.summary': '统计目录 · 文件范围',
+  'stats.settings.dragTip': '拖动调整高度，向上拖到底可收起',
+  'stats.settings.expandTip': '点击展开设置',
   'stats.result.empty': '没有可统计的文件',
 
   // ---- 导出 ----

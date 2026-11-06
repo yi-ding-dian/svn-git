@@ -19,7 +19,7 @@
  *  图标一律用 ui/icons 的彩色 SVG（不用 📁 emoji）：本项目刻意不依赖系统 emoji 字体，
  *  缺字形时那类字符会变成豆腐块。
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get, type CodeStatsNode } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
@@ -27,6 +27,7 @@ import { DirCheckTree } from '../ui/dir-check-tree.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { IconFile, IconFolder, IconHome, IconStats } from '../ui/icons.js';
 import { useCodeStats } from './use-code-stats.js';
+import { formatLines } from './format-lines.js';
 import { buildCodeStatsMd, saveTextFile } from './md-export.js';
 
 /** 扁平化后的展示行（目录可折叠） */
@@ -36,6 +37,18 @@ interface Row {
   hasKids: boolean;
   open: boolean;
 }
+
+/** 结果树节点数（文件 + 目录）不超过此值时默认全展开；超过则只展开前两层。
+ *  大项目全展开会在统计完成瞬间渲染整棵树，直接卡死（实报）。 */
+const EXPAND_ALL_LIMIT = 500;
+/** 自动限制时展开到第几层目录：0 = 只展开根级目录（展示到二级目录，更深收起） */
+const AUTO_EXPAND_DEPTH = 0;
+/** 出结果后设置区默认高度（px） */
+const SETTINGS_DEFAULT_HEIGHT = 250;
+/** 拖到低于此高度松手 → 自动折叠 */
+const SETTINGS_COLLAPSE_THRESHOLD = 40;
+/** 结果树至少保留高度：设置区最大高度 = 内容高度 - 这个值 */
+const RESULT_MIN_HEIGHT = 200;
 
 export function CodeStatsDialog(props: {
   /** 项目根目录名（树的第一行 / 导出 md 的根） */
@@ -70,10 +83,18 @@ export function CodeStatsDialog(props: {
   const [fileName, setFileName] = useState(() => t('stats.export.defaultName'));
   /** 导出结果提示 */
   const [out, setOut] = useState<{ text: string; err: boolean } | null>(null);
-  /** 结果树的折叠集合 */
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  /** 出结果后目录树默认收起；用户可手动展开要回高度 */
-  const [dirsExpanded, setDirsExpanded] = useState(false);
+  /** 结果树的展开集合（白名单：只有记录在案的目录才展开子级）。
+   *  用白名单而不是折叠黑名单——否则默认全部展开，大项目统计完直接渲染整棵树卡死。 */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /** 目录/文件过多时自动只展开前两层，标记一下给用户提示 */
+  const [autoLimited, setAutoLimited] = useState(false);
+  /** 设置区（统计目录 + 文件范围）高度：出结果后拖动分隔条调整；低于阈值自动折叠 */
+  const [settingsHeight, setSettingsHeight] = useState(SETTINGS_DEFAULT_HEIGHT);
+  const [settingsCollapsed, setSettingsCollapsed] = useState(false);
+  /** 折叠前的高度：展开时恢复 */
+  const lastSettingsHeightRef = useRef(SETTINGS_DEFAULT_HEIGHT);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   /** 树的数据源：本地工作副本目录（与「常用文件夹」同一套 /api/fs 取法）。
    *  过滤掉统计口径里本来就不算的目录：隐藏目录（.svn/.git/.build…）与 node_modules
@@ -105,28 +126,30 @@ export function CodeStatsDialog(props: {
   const start = () => {
     if (!canCount) return; // 防御：按钮本身已置灰
     setOut(null);
-    setCollapsed(new Set());
-    setDirsExpanded(false);
+    setExpanded(new Set());
+    setSettingsCollapsed(false);
+    setSettingsHeight(SETTINGS_DEFAULT_HEIGHT);
+    lastSettingsHeightRef.current = SETTINGS_DEFAULT_HEIGHT;
     stats.scan(wholeProject ? [] : [...checked], wholeProject, codeOnly);
   };
 
-  /** 结果树拍平（折叠的目录不展开子级） */
+  /** 结果树拍平（只有展开集合里的目录才带出子级） */
   const rows = useMemo<Row[]>(() => {
     const acc: Row[] = [];
     const walk = (nodes: CodeStatsNode[], depth: number) => {
       for (const node of nodes) {
         const hasKids = node.isDir && node.children.length > 0;
-        const open = hasKids && !collapsed.has(node.path);
+        const open = hasKids && expanded.has(node.path);
         acc.push({ node, depth, hasKids, open });
         if (open) walk(node.children, depth + 1);
       }
     };
     walk(stats.result?.tree ?? [], 0);
     return acc;
-  }, [stats.result, collapsed]);
+  }, [stats.result, expanded]);
 
   const toggle = (path: string) => {
-    setCollapsed((s) => {
+    setExpanded((s) => {
       const n = new Set(s);
       if (n.has(path)) n.delete(path);
       else n.add(path);
@@ -134,18 +157,84 @@ export function CodeStatsDialog(props: {
     });
   };
 
+  /** 统计完成后决定默认展开范围：树不大就全展开（看全貌方便）；
+   *  节点多（大项目）只展开前两层——否则统计完成瞬间要渲染整棵树，界面直接卡死（实报）。 */
+  useEffect(() => {
+    const tree = stats.result?.tree;
+    if (!tree) return;
+    let total = 0;
+    const count = (nodes: CodeStatsNode[]) => {
+      for (const n of nodes) {
+        total++;
+        if (n.isDir) count(n.children);
+      }
+    };
+    count(tree);
+    const next = new Set<string>();
+    if (total <= EXPAND_ALL_LIMIT) {
+      const addAll = (nodes: CodeStatsNode[]) => {
+        for (const n of nodes) {
+          if (!n.isDir) continue;
+          next.add(n.path);
+          addAll(n.children);
+        }
+      };
+      addAll(tree);
+      setAutoLimited(false);
+    } else {
+      const addToDepth = (nodes: CodeStatsNode[], depth: number) => {
+        for (const n of nodes) {
+          if (!n.isDir) continue;
+          if (depth <= AUTO_EXPAND_DEPTH) next.add(n.path);
+          if (depth < AUTO_EXPAND_DEPTH) addToDepth(n.children, depth + 1);
+        }
+      };
+      addToDepth(tree, 0);
+      setAutoLimited(true);
+    }
+    setExpanded(next);
+  }, [stats.result]);
+
   const result = stats.result;
   const skipped = result
     ? result.skippedEmpty + result.skippedBinary + result.skippedLarge + result.skippedError
     : 0;
   const scanning = stats.status === 'scanning';
-  /** 目录树高度：没结果时占满剩余空间；出结果后收起 160px，手动展开则给到 320px
-   *  （固定高度而非 flex:1——否则和结果树平分，展开后几乎看不出变化） */
-  const dirsStyle = !result
-    ? { flex: 1, minHeight: 160 }
-    : dirsExpanded
-      ? { flex: '0 0 320px', minHeight: 160 }
-      : { flex: '0 0 160px', minHeight: 120 };
+  /** 目录树容器：设置区高度由外层拖拽控制，树自身占满剩余空间 */
+  const dirsStyle = { flex: 1, minHeight: 0 } as const;
+
+  /** 拖拽分隔条：上下调整设置区高度；松手时低于阈值自动折叠 */
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = settingsRef.current?.getBoundingClientRect().height ?? settingsHeight;
+    const contentH = contentRef.current?.clientHeight ?? 600;
+    const maxH = Math.max(SETTINGS_DEFAULT_HEIGHT, contentH - RESULT_MIN_HEIGHT);
+    let h = startH;
+    document.body.style.userSelect = 'none';
+    const onMove = (ev: MouseEvent) => {
+      h = Math.min(maxH, Math.max(0, startH + (ev.clientY - startY)));
+      setSettingsHeight(h);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+      if (h < SETTINGS_COLLAPSE_THRESHOLD) {
+        lastSettingsHeightRef.current = Math.min(maxH, Math.max(SETTINGS_DEFAULT_HEIGHT, startH));
+        setSettingsCollapsed(true);
+      } else {
+        lastSettingsHeightRef.current = h;
+      }
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const expandSettings = () => {
+    setSettingsCollapsed(false);
+    setSettingsHeight(lastSettingsHeightRef.current);
+  };
 
   const exportMd = async () => {
     if (!result) {
@@ -249,8 +338,29 @@ export function CodeStatsDialog(props: {
         </div>
       }
     >
-      {/* 整块纵向 flex：目录树 / 结果树轮流占满剩余高度（弹窗拉大、最大化时都不留空白） */}
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      {/* 整块纵向 flex：设置区 / 结果树轮流占满剩余高度（弹窗拉大、最大化时都不留空白） */}
+      <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        {result && settingsCollapsed ? (
+          // 折叠态：保留一行摘要，点击展开（拖动分隔条到阈值也会进入这里）
+          <div
+            className="row"
+            style={{ gap: 8, alignItems: 'center', padding: '2px 0', flexShrink: 0, cursor: 'pointer' }}
+            title={t('stats.settings.expandTip')}
+            onClick={expandSettings}
+          >
+            <span className="small" style={{ fontWeight: 600 }}>{t('stats.settings.summary')}</span>
+            <span className="dim small">▾</span>
+          </div>
+        ) : (
+          <>
+        <div
+          ref={settingsRef}
+          style={
+            result
+              ? { height: settingsHeight, flexShrink: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }
+              : { flex: 1, minHeight: 160, display: 'flex', flexDirection: 'column' }
+          }
+        >
         {/* ── 目录选择 ── */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 6px', flexShrink: 0 }}>
           <span className="small" style={{ fontWeight: 600 }}>
@@ -261,12 +371,6 @@ export function CodeStatsDialog(props: {
             {/* 默认全选一级目录；展开可细选子目录 */}
             {t('stats.defaultAll')}
           </span>
-          {result && (
-            // 展开/收起目录（出结果后目录树默认收起，把高度让给结果树）
-            <button className="mini" disabled={scanning} onClick={() => setDirsExpanded((v) => !v)}>
-              {dirsExpanded ? t('stats.collapseDirs') : t('stats.expandDirs')}
-            </button>
-          )}
           <button
             className="mini tool-btn"
             disabled={rootDirs.length === 0 || scanning || wholeProject}
@@ -318,13 +422,24 @@ export function CodeStatsDialog(props: {
           )}
           {stats.status === 'error' && <span className="err small">{stats.error}</span>}
         </div>
+        </div>
+        {result && (
+          // 拖拽分隔条：上下调整设置区高度，拖到底自动折叠
+          <div
+            onMouseDown={startResize}
+            title={t('stats.settings.dragTip')}
+            style={{ height: 6, flexShrink: 0, margin: '2px 0', borderRadius: 3, background: 'var(--border)', cursor: 'row-resize' }}
+          />
+        )}
+          </>
+        )}
 
         {/* ── 结果（树占满剩余高度） ── */}
         {result && (
           <>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6, flexWrap: 'wrap', flexShrink: 0 }}>
               <span style={{ fontSize: 21, fontWeight: 700, lineHeight: 1.1, color: 'var(--accent)' }}>
-                {result.lines.toLocaleString()}
+                {formatLines(result.lines)}
               </span>
               <span className="dim small">
                 {t('stats.result.unit', { files: result.files, sec: (result.elapsedMs / 1000).toFixed(1) })}
@@ -347,6 +462,11 @@ export function CodeStatsDialog(props: {
               {/* 导出结果提示（导出按钮已移到 foot，提示就近显示在统计结果行尾） */}
               {out && <span className={`small ${out.err ? 'err' : 'ok'}`}>{out.text}</span>}
             </div>
+            {autoLimited && rows.length > 0 && (
+              <div className="dim small" style={{ marginBottom: 4, flexShrink: 0 }}>
+                {t('stats.result.autoLimited')}
+              </div>
+            )}
             {rows.length === 0 ? (
               <div className="dim small" style={{ padding: '12px 0', flex: 1 }}>
                 {/* 没有可统计的文件 */}
@@ -379,8 +499,8 @@ export function CodeStatsDialog(props: {
                     </span>
                     <span className="count" style={{ marginLeft: 'auto', flexShrink: 0 }}>
                       {r.node.isDir
-                        ? t('stats.md.dirNote', { lines: r.node.lines, files: r.node.files })
-                        : t('stats.md.fileNote', { lines: r.node.lines })}
+                        ? t('stats.md.dirNote', { lines: formatLines(r.node.lines), files: r.node.files })
+                        : t('stats.md.fileNote', { lines: formatLines(r.node.lines) })}
                     </span>
                   </div>
                 ))}

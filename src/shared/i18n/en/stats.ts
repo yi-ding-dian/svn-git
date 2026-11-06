@@ -39,6 +39,11 @@ export const stats = {
   'stats.result.skippedTitle': 'empty {empty} · binary {binary} · oversized {large} · unreadable {error}',
   'stats.result.truncated': 'Timed out — partial result only',
   'stats.result.capped': 'Too many files: only the first {n} were counted',
+  'stats.result.autoLimited': 'Many files; folders are expanded to the second level by default. Click a folder to expand it further.',
+  // Drag the divider to resize the settings area; drag to the top to collapse it
+  'stats.settings.summary': 'Folders · File scope',
+  'stats.settings.dragTip': 'Drag to resize; drag all the way up to collapse',
+  'stats.settings.expandTip': 'Click to show settings',
   'stats.result.empty': 'No countable files',
 
   // ---- export ----
