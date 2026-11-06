@@ -26,6 +26,12 @@ export const srv = {
   'srv.fileNotFound': 'File not found',
   'srv.fileNotFoundAt': 'File not found: {path}',
   'srv.unsupportedOp': 'This operation is not supported for the current repository',
+  // Local build: no build script / another build already running for this repo
+  'srv.localBuildNotFound': 'No build script found (supported: deploy/build.sh, build.sh, or .bat/.cmd variants)',
+  'srv.localBuildRunning': 'A build is already running; wait for it to finish or cancel it',
+  'srv.localBuildScriptOutside': 'The build script must be inside the current repository',
+  'srv.localBuildScriptMissing': 'The build script does not exist or is not a regular file',
+  'srv.localBuildScriptExtension': 'Unsupported build script extension (use .sh on Linux, .bat/.cmd on Windows)',
   'srv.pathOutOfBounds': 'Path is out of bounds',
   'srv.outOfScope': 'Outside the working copy',
   'srv.pathOutOfWc': 'Path is outside the working copy: {path}',

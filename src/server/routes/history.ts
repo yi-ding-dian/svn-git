@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, currentScopes, vcsOf, repoInfo, START_DIR, MSG_PATH_OUT_OF_BOUNDS, INSTANCE_ID, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
+import { detectBuildScript } from '../build-script.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { res, url } = ctx;
@@ -85,6 +86,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           // 一键发版入口：只对项目根自带 deploy/release.mjs 的 git 项目显示
           canRelease:
             repo.type === 'git' && fs.existsSync(path.join(repo.root, 'deploy', 'release.mjs')),
+          // 本地打包入口：有打包脚本的 git 项目（没有远程、没接入发版也能用）
+          canLocalBuild: repo.type === 'git' && detectBuildScript(repo.root) !== null,
         });
         return true;
       }

@@ -41,6 +41,12 @@ export const srv = {
   'srv.fileNotFound': '文件不存在',
   'srv.fileNotFoundAt': '文件不存在: {path}',
   'srv.unsupportedOp': '当前仓库不支持该操作',
+  // 本地打包：找不到打包脚本 / 同一仓库已有打包任务在跑
+  'srv.localBuildNotFound': '未找到打包脚本（支持 deploy/build.sh、build.sh 或对应的 .bat/.cmd）',
+  'srv.localBuildRunning': '已有打包任务在运行，请等待完成或取消',
+  'srv.localBuildScriptOutside': '打包脚本必须在当前仓库内',
+  'srv.localBuildScriptMissing': '打包脚本不存在或不是普通文件',
+  'srv.localBuildScriptExtension': '打包脚本扩展名不受支持（Linux 用 .sh，Windows 用 .bat/.cmd）',
   'srv.pathOutOfBounds': '路径越界',
   'srv.outOfScope': '超出工作副本范围',
   'srv.pathOutOfWc': '路径超出工作副本范围: {path}',

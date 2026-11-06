@@ -63,6 +63,8 @@ export interface RepoInfo {
   instanceId?: string;
   /** 项目根有 deploy/release.mjs：⋯ 菜单显示「发布新版本」 */
   canRelease?: boolean;
+  /** 项目里有打包脚本（deploy/build.sh 等）：即使没有远程也能打开「发布」弹窗的「本地打包」tab */
+  canLocalBuild?: boolean;
 }
 
 /** GitHub 仓库信息（/api/github-repo；语言构成为"语言名 → 字节数"） */
@@ -214,6 +216,46 @@ export interface ReleaseInfo {
   ciHasWorkflow?: boolean;
   next: { patch: string; minor: string; major: string };
 }
+
+/** 本地打包：检测到的打包脚本（/api/local-build/detect） */
+export interface LocalBuildDetect {
+  found: boolean;
+  script?: string;
+  kind?: 'sh' | 'bat';
+  mtime?: string;
+  /** found=false 时列出检查过的位置 */
+  searched?: string[];
+  /** 用户手动指定脚本校验失败的原因（仓库内/存在性/扩展名）。
+   *  用 reason 而不是 error：api() 约定「响应体带 error 就抛异常」，这里要正常展示 */
+  reason?: string;
+  /** 应用内文件浏览弹窗的起始目录（deploy 存在用 deploy，否则仓库根） */
+  startDir?: string;
+  /** 仓库根（文件浏览的浏览下界） */
+  root?: string;
+}
+
+/** 本地打包产物（完成事件里带回） */
+export interface LocalBuildArtifact {
+  path: string;
+  size: number;
+  mtime: string;
+}
+
+/** 本地打包 NDJSON 事件（/api/local-build/run） */
+export type LocalBuildEvent =
+  | { type: 'start'; script: string; startedAt: number }
+  | { type: 'log'; stream: 'stdout' | 'stderr'; line: string }
+  | {
+      type: 'done';
+      ok: boolean;
+      code: number;
+      durationMs: number;
+      timedOut?: boolean;
+      aborted?: boolean;
+      truncated?: boolean;
+      artifacts: LocalBuildArtifact[];
+    }
+  | { type: 'error'; message: string };
 
 /** 没有 Release 的版本标签 */
 export interface GitHubTag {
@@ -851,6 +893,9 @@ export const get = {
       /** Release 上的产物数量（用户能下载的 assets）；缺省 = 还没查到/没有 Release */
       releaseAssets?: number;
     }>(`/api/release-status?tag=${encodeURIComponent(tag)}`),
+  /** 本地打包：检测项目里的打包脚本；传 script 时校验用户手动指定的脚本 */
+  localBuildDetect: (script?: string) =>
+    api<LocalBuildDetect>(`/api/local-build/detect${script ? `?script=${encodeURIComponent(script)}` : ''}`),
   /** origin 仓库的访问权限（推送失败后判「无写权限」用；纯读）。
    *  ok=false 查询失败（原因在 message）；canPush=null 表示无凭据查不了；isGithub=false 表示 origin 不是 GitHub。
    *  前端只在 canPush === false 时引导 Fork（宁可不引导，不误弹）。 */
@@ -1365,6 +1410,53 @@ export const post = {
   /** 执行一键发版（实际调用 deploy/release.mjs） */
   releaseRun: (level: 'patch' | 'minor' | 'major', note: string) =>
     api<{ ok: boolean; message: string; timedOut?: boolean }>('/api/release-run', json({ level, note })),
+  /** 本地打包：执行项目打包脚本，逐行回调 NDJSON 事件。
+   *  script 可选（用户手动指定的脚本，绝对路径或仓库相对路径）；缺省用自动检测结果。
+   *  signal 取消 → 断开请求 → 服务端杀掉打包进程组。Promise 在流结束时 resolve；
+   *  HTTP 非 2xx（没有脚本 / 已有任务在跑 / 指定的脚本不合法）抛 Error（取消时抛的是 AbortError）。 */
+  localBuildRun: async (onEvent: (ev: LocalBuildEvent) => void, signal?: AbortSignal, script?: string): Promise<void> => {
+    const res = await fetch('/api/local-build/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(script ? { script } : {}),
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const j = (await res.json()) as { error?: string };
+        if (j.error) msg = j.error;
+      } catch {
+        /* 非 JSON：保留状态码 */
+      }
+      throw new Error(msg);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const l of lines) {
+        if (!l.trim()) continue;
+        try {
+          onEvent(JSON.parse(l) as LocalBuildEvent);
+        } catch {
+          /* 半行/坏行：忽略 */
+        }
+      }
+    }
+    if (buf.trim()) {
+      try {
+        onEvent(JSON.parse(buf) as LocalBuildEvent);
+      } catch {
+        /* 尾部残行：忽略 */
+      }
+    }
+  },
   /** 安全清理（离职/交接前）：按选项删除本机凭据与私钥配置 */
   secureClean: (opts: {
     removeKey: boolean;
