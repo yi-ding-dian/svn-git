@@ -141,8 +141,18 @@ try {
   {
     const evil = await post('/api/shutdown', {}, { Origin: 'http://evil.com' });
     check('跨站 Origin → 403', evil.code === 403, `got=${evil.code}`);
-    const local = await post('/api/config', {}, { Origin: 'http://localhost:23456' });
-    check('localhost Origin 放行（非 403）', local.code !== 403, `got=${local.code}`);
+    // isSafeOrigin 要求 Origin 与 Host 同源（ec21db6 防 DNS rebinding 后不再对 localhost 任意端口放行）
+    const local = await post('/api/config', {}, { Origin: B });
+    check('同源 Origin 放行（非 403）', local.code !== 403, `got=${local.code}`);
+    // 浏览器用 http://localhost:端口 打开时 Host 与 Origin 都是 localhost:端口——localhost 域名也应放行。
+    // 不能手动改 Host 头（undici 会忽略），直接换用 localhost 访问同一个服务
+    const LB = `http://localhost:${handle.port}`;
+    const localHost = await fetch(`${LB}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LB },
+      body: '{}',
+    });
+    check('localhost 同源 Origin 放行（非 403）', localHost.status !== 403, `got=${localHost.status}`);
   }
 
   // ---------- 4. 写后缓存失效（30s 缓存 bug 回归） ----------
