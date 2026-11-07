@@ -133,6 +133,7 @@ export const ops = {
   'ops.tag.checkoutNoUrl': '无法确定标签目录地址，请稍后重试',
   'ops.tag.checkoutNoSource': '无法获取标签的克隆来源（仓库没有 origin，也读不到本地路径）',
   'ops.tag.remotes': '远程仓库：',
+  'ops.tag.lightweightTip': '轻量标签（没有附注说明），下面是它指向的提交信息：',
 
   // ---- Git 信息与配置（gitInfo）----
   'ops.gitInfo.title': '⚙ Git 信息',

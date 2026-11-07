@@ -1,8 +1,9 @@
 /** 标签与 Git 配置弹窗：标签管理（TagDialog，含 RemoteList 辅助）/ Git 信息（GitInfoModal） */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { get, post, type SvnLayout } from '../shared/api.js';
 import { ModalShell, ResizableModal } from '../shell/modal-shell.js';
 import { IconTag } from '../ui/icons.js';
+import { Tooltip } from '../ui/tooltip.js';
 import { HelpNote, FormRow } from '../ui/ui.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
@@ -52,6 +53,8 @@ export function TagDialog(props: {
       date?: string;
       tagAuthor?: string;
       tagDate?: string;
+      /** 附注标签的说明正文（发布说明）；轻量标签没有 */
+      message?: string;
       source: string;
       localSource: boolean;
     }[];
@@ -69,6 +72,8 @@ export function TagDialog(props: {
         date?: string;
         tagAuthor?: string;
         tagDate?: string;
+        /** 附注标签的说明正文（发布说明）；轻量标签没有 */
+        message?: string;
         source: string;
         localSource: boolean;
       }
@@ -97,6 +102,7 @@ export function TagDialog(props: {
               date: d.date,
               tagAuthor: d.tagAuthor,
               tagDate: d.tagDate,
+              message: d.message,
               source: d.source,
               localSource: d.localSource,
             };
@@ -176,6 +182,25 @@ export function TagDialog(props: {
     });
   };
 
+  /** 列表顺序：**最新发布的在前**（按打标签时间倒序）。轻量标签没有打标签时间，
+   *  用它指向的提交时间；SVN 标签用它的版本号（复制成 tags/ 目录的那次提交）。
+   *  全都取不到时退回名称倒序，时间相同也用它做 tie-break（v1.3.0 / v1.3.1 这种同日的）。 */
+  const orderedTags = useMemo(() => {
+    const timeOf = (tag: string): number => {
+      if (props.repoType === 'git') {
+        const iso = gitDetails[tag]?.tagDate ?? gitDetails[tag]?.date;
+        const t = iso ? Date.parse(iso) : NaN;
+        return Number.isNaN(t) ? 0 : t;
+      }
+      const rev = Number(details[tag]?.rev ?? 0);
+      return Number.isFinite(rev) ? rev : 0;
+    };
+    return [...(data?.tags ?? [])].sort((a, b) => {
+      const dt = timeOf(b) - timeOf(a);
+      return dt !== 0 ? dt : b.localeCompare(a, undefined, { numeric: true });
+    });
+  }, [data?.tags, gitDetails, details, props.repoType]);
+
   return (
     // 标签管理
     <ModalShell icon={<IconTag size={16} />} title={`${t('ops.tag.title')} (${props.repoType.toUpperCase()})`} onClose={props.onClose} width={560}>
@@ -208,15 +233,42 @@ export function TagDialog(props: {
           {t('ops.tag.create')}
         </button>
       </div>
-      <div className="vcs-list" style={{ maxHeight: 260 }}>
+      {/* 列表高度按「最多露出 10 个标签」定：行高 37px × 10 + 容器内边距与描边 ≈ 380。
+          更多的标签在框内滚动（.vcs-list 自带 overflow:auto）——标签可能几十个，
+          全铺开会把弹窗顶到屏幕外，而老版本也要能滚回来「检出 / 删除」 */}
+      <div className="vcs-list" style={{ maxHeight: 380 }}>
         {/* 加载中… */}
         {!data && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.loading')}</div>}
         {/* 暂无标签 */}
         {data && data.tags.length === 0 && <div className="dim" style={{ padding: '10px 6px' }}>{t('ops.tag.none')}</div>}
-        {data?.tags.map((tag) => (
+        {orderedTags.map((tag) => {
+          // 发布说明：附注标签取说明正文（发布流程写进去的就是它）；轻量标签没有说明，
+          // 退到它指向的提交信息第一行——至少能看出这版是什么
+          const d = props.repoType === 'git' ? gitDetails[tag] : undefined;
+          const info = d ? d.message || d.subject : undefined;
+          const infoTip = d
+            ? d.message
+              ? `${d.message}${d.tagAuthor ? `\n\n${d.tagAuthor}${d.tagDate ? ` · ${d.tagDate.slice(0, 10)}` : ''}` : ''}`
+              : `${t('ops.tag.lightweightTip')}\n${d.subject ?? ''}`
+            : '';
+          return (
           <div key={tag} className="changed-row">
             <span style={{ color: 'var(--accent)' }}>🏷</span>
-            <span className="mono" style={{ flex: 1 }}>{tag}</span>
+            {/* 名字固定不压缩到看不见；说明占剩余宽度，放不下就省略号，悬浮看全文 */}
+            <span
+              className="mono"
+              style={{ flex: info ? '0 0 auto' : 1, maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              title={tag}
+            >
+              {tag}
+            </span>
+            {info && (
+              <Tooltip content={infoTip}>
+                <span className="dim small" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {info.split('\n')[0]}
+                </span>
+              </Tooltip>
+            )}
             {/* 检出：交给 shell 层打开检出界面（SVN / Git 各一套） */}
             {props.onCheckout && (
               <button
@@ -248,7 +300,8 @@ export function TagDialog(props: {
               {t('common.delete')}
             </button>
           </div>
-        ))}
+          );
+        })}
       </div>
       <ResultLine msg={msg} err={msgErr} />
       {/* 远程仓库（git） */}

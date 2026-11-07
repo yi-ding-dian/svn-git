@@ -239,6 +239,8 @@ export interface TagDetail {
   tagAuthor?: string;
   /** 附注标签：打标签的时间 */
   tagDate?: string;
+  /** 附注标签的说明正文（git tag -a -m 写进去的那段，通常就是发布说明）；轻量标签没有，为 undefined */
+  message?: string;
   source: string;
   /** 来源是本地路径（仓库没有 origin） */
   localSource: boolean;

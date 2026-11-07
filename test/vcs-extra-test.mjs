@@ -69,10 +69,18 @@ console.log('== Git 分支/标签/Stash ==');
   const dl = await vcs.branchDelete('test-feat');
   check('删除分支', dl.ok);
 
-  const tc = await vcs.tagCreate('v-test');
+  const tc = await vcs.tagCreate('v-test', '发布说明：v-test 首版');
   check('创建标签 v-test', tc.ok);
   const tl = await vcs.tagList();
   check('标签列表', tl.includes('v-test'));
+  // 标签管理弹窗要显示"当时的发布说明"：附注标签的 message 必须能读出来
+  const det = (await vcs.tagListDetailed()).find((x) => x.name === 'v-test');
+  check('附注标签带发布说明', det?.message === '发布说明：v-test 首版', JSON.stringify(det?.message));
+  // 轻量标签没有附注：不能把"它指向的提交信息"误当成标签说明
+  await run('git', ['tag', 'light-test'], { cwd: GIT_DIR });
+  const det2 = (await vcs.tagListDetailed()).find((x) => x.name === 'light-test');
+  check('轻量标签没有说明', det2 !== undefined && det2.message === undefined, JSON.stringify(det2?.message));
+  await run('git', ['tag', '-d', 'light-test'], { cwd: GIT_DIR });
   const td = await vcs.tagDelete('v-test');
   check('删除标签', td.ok);
 

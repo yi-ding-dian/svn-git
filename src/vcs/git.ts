@@ -1778,18 +1778,32 @@ export class GitVcs {
       '%(*authordate:iso-strict)',
       '%(taggername)',
       '%(taggerdate:iso-strict)',
+      // 附注说明（= 打标签时 -m 写进去的那段，发布流程就是把它当发布说明用）。
+      // **放最后一个字段**：它可能多行，续行由下面的解析并回这一条
+      '%(contents)',
     ].join('%1f');
     const res = await this.exec(['for-each-ref', `--format=${fmt}`, 'refs/tags']);
     if (res.code !== 0) return [];
     const remote = await this.exec(['remote', 'get-url', 'origin']);
     const origin = remote.code === 0 ? remote.stdout.trim() : '';
     const source = origin || this.repo.root;
-    const out: TagDetail[] = [];
+    const records: string[][] = [];
     for (const line of res.stdout.split('\n')) {
-      if (!line.trim()) continue;
-      const [name, objHash, peeledHash, refSubject, peeledSubject, refAuthor, peeledAuthor, refDate, peeledDate, tagger, tagDate] =
-        line.split('\x1f');
+      const parts = line.split('\x1f');
+      if (parts.length >= 12) {
+        records.push(parts);
+      } else if (records.length > 0) {
+        // 说明正文的续行（空行也在内，保留段落）：并回上一条的 message 字段
+        const last = records[records.length - 1]!;
+        last[11] = `${last[11] ?? ''}\n${line}`;
+      }
+    }
+    const out: TagDetail[] = [];
+    for (const [name, objHash, peeledHash, refSubject, peeledSubject, refAuthor, peeledAuthor, refDate, peeledDate, tagger, tagDate, contents] of records) {
       if (!name) continue;
+      // 轻量标签的 %(contents) 是**它指向的提交**的信息，不是标签说明——只有当有 tagger
+      //（= 附注标签）时才算数，否则留给调用方用 subject（提交信息第一行）
+      const message = tagger ? (contents ?? '').trim() : '';
       out.push({
         name,
         hash: peeledHash || objHash || '',
@@ -1798,6 +1812,7 @@ export class GitVcs {
         date: peeledDate || refDate || undefined,
         tagAuthor: tagger || undefined,
         tagDate: tagDate || undefined,
+        message: message || undefined,
         source,
         localSource: !origin,
       });

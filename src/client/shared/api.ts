@@ -787,6 +787,8 @@ export const get = {
         date?: string;
         tagAuthor?: string;
         tagDate?: string;
+        /** 附注标签的说明正文（发布说明）；轻量标签没有 */
+        message?: string;
         source: string;
         localSource: boolean;
       }[];

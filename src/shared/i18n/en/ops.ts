@@ -132,6 +132,7 @@ export const ops = {
   'ops.tag.checkoutNoUrl': 'Cannot determine the tags directory URL — try again later',
   'ops.tag.checkoutNoSource': 'Cannot determine the clone source for this tag (no origin, and the local path is unavailable)',
   'ops.tag.remotes': 'Remotes:',
+  'ops.tag.lightweightTip': 'Lightweight tag (no annotation); showing the message of the commit it points to:',
 
   // ---- Git 信息与配置（gitInfo）----
   'ops.gitInfo.title': '⚙ Git Info',
