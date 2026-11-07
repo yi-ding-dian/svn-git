@@ -458,6 +458,10 @@ export interface FsData {
   wcIncomplete?: boolean;
   /** 树冲突条目数（>0 时前端再去 /api/wc-conflicts 问服务器，确认这些路径还在不在） */
   treeConflicts?: number;
+  /** 预加载（light=1）拿到的数据：只有磁盘目录结构，**entries 的 code 全是空串**。
+   *  进入该目录时要用整份数据静默补一次——被忽略的条目（.gitignore / svn:ignore）
+   *  在 /api/fs-status 里根本不存在，靠状态接口补不回来，会一直显示成干净 ✓（用户实报）。 */
+  light?: boolean;
 }
 
 /** 树冲突诊断结果（/api/wc-conflicts） */

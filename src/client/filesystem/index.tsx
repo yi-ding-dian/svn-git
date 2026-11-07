@@ -261,7 +261,8 @@ export function FsView(props: Props) {
   const [favModal, setFavModal] = useState(false);
   // 预加载引擎（BFS + 并发 6 + 代际停止）抽到 useDirPreload；拉到的目录写进树缓存 nodeData
   const { preload, preloadDir, prefetchChildren, resetPreload } = useDirPreload((d, r) => {
-    setNodeData((m) => new Map(m).set(d, r));
+    // 打上 light 标记：这份数据没有状态码，真正进入目录时要补一次完整数据（见 load 的缓存分支）
+    setNodeData((m) => new Map(m).set(d, { ...r, light: true }));
   });
 
   // ---------- 跨项目目录缓存：切走收起来、切回直接恢复（不必重新预加载） ----------
@@ -401,6 +402,20 @@ export function FsView(props: Props) {
       refreshCodes(targetDir, targetDir !== '');
       // 静默预取下一层：直接拿当前目录的 entries 入队，不要求父目录未见过
       prefetchChildren(targetDir, cache.entries, true);
+      // light 数据（预加载）的 code 全空，而 refreshCodes 只能补"有状态"的条目——
+      // 被忽略的条目（.gitignore / svn:ignore，如 svngit-test/ 整片测试仓库）在
+      // /api/fs-status 里根本不存在，补不回来，于是整排未版本化的项都显示成干净 ✓（用户实报）。
+      // 目录已秒开，这里再要一份完整数据、到了原地替换；失败就保持现状（不清空列表）
+      if (cache.light) {
+        void get
+          .fs(targetDir)
+          .then((r) => {
+            setNodeData((m) => new Map(m).set(targetDir, r));
+            // 请求期间用户可能已翻到别的目录：只更新内容，不把列表拽回来
+            if (dirRef.current === targetDir) setData(r);
+          })
+          .catch(() => {});
+      }
       return;
     }
     if (!quiet) setFsLoading(true);
