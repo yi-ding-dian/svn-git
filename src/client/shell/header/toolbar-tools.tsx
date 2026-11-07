@@ -80,6 +80,8 @@ export type ToolCtx = {
   repoRoot?: string | null;
   /** 项目根有 deploy/release.mjs：显示「发布新版本」菜单 */
   canRelease?: boolean;
+  /** 项目里有打包脚本：即使没有远程也能打开「本地打包」 */
+  canLocalBuild?: boolean;
   repoType: 'git' | 'svn' | null;
   /** 当前仓库的远程地址（git；/api/info 带回）；GitHub 信息菜单的可见性判断用 */
   repoUrl?: string | null;
@@ -398,7 +400,7 @@ export const TOOLS: ToolDef[] = [
     // 发布（整合发布历史 + 发布新版本）：有远程仓库的 git 项目都能发版；
     // GitHub 项目额外显示发布历史。实际发版交给 deploy/release.mjs（脚本仍是唯一实现）
     key: 'release', zone: 'menu', menuLabelKey: 'shell.tool.release',
-    visible: (c) => c.repoType === 'git' && (!!c.repoUrl || c.canRelease === true),
+    visible: (c) => c.repoType === 'git' && (!!c.repoUrl || c.canRelease === true || c.canLocalBuild === true),
     render: (c) => ({
       icon: <IconRelease />,
       // 发布

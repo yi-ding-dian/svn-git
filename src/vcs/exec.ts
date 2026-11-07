@@ -1,6 +1,31 @@
 /** 子进程执行封装：支持 stdin 传参（svn --password-from-stdin）、超时、输出上限 */
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { decodeMixedText } from '../shared/text.js';
+
+/** 杀掉子进程及其派生进程：Unix 杀整个进程组（负 pid）；
+ *  Windows 没有进程组语义，用 `taskkill /T /F` 杀进程树——否则打包脚本里的
+ *  cmd → npm → electron-builder 链会留下孤儿继续跑。 */
+function killProcessTree(child: ChildProcess): void {
+  try {
+    if (process.platform === 'win32') {
+      if (child.pid) {
+        execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+          stdio: 'ignore',
+          windowsHide: true,
+          timeout: 5000,
+        });
+      } else {
+        child.kill('SIGKILL');
+      }
+    } else if (child.pid) {
+      process.kill(-child.pid, 'SIGKILL');
+    } else {
+      child.kill('SIGKILL');
+    }
+  } catch {
+    /* ESRCH（进程已退出）等：忽略 */
+  }
+}
 
 /** 还活着的子进程（run / runStream 共用）。
  *  **为什么留着这个集合**：app 退出时要把它们收掉——否则会留下孤儿：git/svn 还在往目标目录写，
@@ -41,6 +66,9 @@ export interface RunOptions {
   /** stderr **按行**回调（进度类输出用：git clone --progress 靠 `\r` 原地刷新，故 `\r` 与 `\n` 都当分隔）。
    *  回调只做阅读，不改动 run 的返回值语义（stderr 照常完整收集） */
   onStderrLine?: (line: string) => void;
+  /** stdout **按行**回调（构建日志这类"边跑边看"的场景；切行规则同 onStderrLine）。
+   *  同样只做阅读，stdout 照常完整收集 */
+  onStdoutLine?: (line: string) => void;
   /** 取消信号（如前端请求断开），触发后杀掉子进程 */
   signal?: AbortSignal;
   /** 用 shell 执行：`cmd` 作为**完整命令行**（支持管道 / 重定向 / &&），`args` 忽略。
@@ -99,14 +127,7 @@ export function runStream(cmd: string, args: string[], opts: StreamRunOptions): 
     const child = spawn(cmd, args, spawnOpts);
     trackChild(child);
 
-    const killTree = () => {
-      try {
-        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
-        else child.kill('SIGKILL');
-      } catch {
-        /* ESRCH（进程已退出）等：忽略 */
-      }
-    };
+    const killTree = () => killProcessTree(child);
 
     const stderr: Buffer[] = [];
     let stderrLen = 0;
@@ -216,14 +237,7 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     trackChild(child);
 
     /** 杀整个进程组（detached 起的子进程是组长，负 pid = 组）；已退出/无 pid 时静默 */
-    const killTree = () => {
-      try {
-        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
-        else child.kill('SIGKILL');
-      } catch {
-        /* ESRCH（进程已退出）等：忽略 */
-      }
-    };
+    const killTree = () => killProcessTree(child);
 
     // 输出解码：默认 utf8（与改动前一致）；'auto' 走探测（UTF-8 → GB18030），只给内容型调用点用
     const dec = (b: Buffer) => (opts.decode === 'auto' ? decodeMixedText(b) : b.toString('utf8'));
@@ -268,30 +282,40 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       opts.signal?.removeEventListener('abort', onAbort);
     };
 
+    /** 行回调的缓冲器：`\r` 与 `\n` 都切行（git clone --progress 靠 \r 原地刷同一行，
+     *  只认 \n 会攒到结束才拿到）；迟迟不出分隔符（异常输出）直接丢弃，别无限涨。 */
+    const makeLineSplitter = (cb: (line: string) => void) => {
+      let pending = '';
+      return (d: Buffer) => {
+        pending += d.toString('utf8');
+        for (;;) {
+          const i = pending.search(/[\r\n]/);
+          if (i < 0) break;
+          const line = pending.slice(0, i).trim();
+          pending = pending.slice(i + 1);
+          if (line) cb(line);
+        }
+        if (pending.length > 8192) pending = '';
+      };
+    };
+    const stdoutLine = opts.onStdoutLine ? makeLineSplitter(opts.onStdoutLine) : null;
+    const stderrLine = opts.onStderrLine ? makeLineSplitter(opts.onStderrLine) : null;
+
     child.stdout.on('data', (d: Buffer) => {
       if (stdoutLen < maxBuffer) {
         stdout.push(d);
         stdoutLen += d.length;
       }
+      stdoutLine?.(d);
     });
     /** onStderrLine 的行缓冲。**`\r` 也要切行**：git clone --progress 就是靠 \r 原地刷同一行，
      *  只认 \n 的话整段进度会攒成一行、直到结束才拿到（那就等于没有进度）。 */
-    let stderrPending = '';
     child.stderr.on('data', (d: Buffer) => {
       if (stderrLen < maxBuffer) {
         stderr.push(d);
         stderrLen += d.length;
       }
-      if (!opts.onStderrLine) return;
-      stderrPending += d.toString('utf8');
-      for (;;) {
-        const i = stderrPending.search(/[\r\n]/);
-        if (i < 0) break;
-        const line = stderrPending.slice(0, i).trim();
-        stderrPending = stderrPending.slice(i + 1);
-        if (line) opts.onStderrLine(line);
-      }
-      if (stderrPending.length > 8192) stderrPending = ''; // 迟迟不出分隔符（异常输出）：丢弃，别无限涨
+      stderrLine?.(d);
     });
 
     child.on('error', (err) => {

@@ -75,6 +75,28 @@ const getNdjson = async (p) => {
     });
   return { code: r.status, ticks, done: ticks.find((tick) => tick.done) ?? null };
 };
+/** POST NDJSON（本地打包）：解析每一行事件，done 为终态事件 */
+const postNdjson = async (p, body = {}) => {
+  const r = await fetch(B + p, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) return { code: r.status, events: [], done: null, body: await r.json().catch(() => ({})) };
+  const text = await r.text();
+  const events = text
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  return { code: r.status, events, done: events.find((e) => e.type === 'done') ?? null };
+};
 /** 从行数树里收集所有 path（断言目录归属） */
 const treePaths = (nodes, out = []) => {
   for (const node of nodes ?? []) {
@@ -191,6 +213,132 @@ try {
       JSON.stringify(st.body.items)
     );
     fs.rmSync(path.join(GIT_DIR, d), { recursive: true, force: true });
+  }
+
+  // ---------- 4c. 历史解析重命名（git log 输出 R100\t旧\t新） ----------
+  {
+    const headBefore = (await run('git', ['rev-parse', 'HEAD'], { cwd: GIT_DIR })).stdout.trim();
+    const oldF = 'api-rename-old.txt';
+    fs.writeFileSync(path.join(GIT_DIR, oldF), 'rename content\n');
+    await run('git', ['add', oldF], { cwd: GIT_DIR });
+    await run('git', ['commit', '-qm', 'add rename fixture'], { cwd: GIT_DIR });
+    await run('git', ['mv', oldF, 'api-rename-new.txt'], { cwd: GIT_DIR });
+    await run('git', ['commit', '-qm', 'rename fixture'], { cwd: GIT_DIR });
+    const log = await get('/api/log?limit=1');
+    const changed = log.body.logs?.[0]?.changed ?? [];
+    check(
+      '历史解析重命名 R100（新路径进列表）',
+      changed.some((c) => c.action === 'R' && c.path === 'api-rename-new.txt'),
+      JSON.stringify(changed)
+    );
+    await run('git', ['reset', '-q', '--hard', headBefore], { cwd: GIT_DIR });
+  }
+
+  // ---------- 4d. 本地打包（检测 / 执行 / 产物差集） ----------
+  {
+    const deployDir = path.join(GIT_DIR, 'deploy');
+    const releaseDir = path.join(deployDir, 'release');
+    const isWin = process.platform === 'win32';
+    const scriptName = isWin ? 'build.bat' : 'build.sh';
+    const scriptPath = path.join(deployDir, scriptName);
+    fs.mkdirSync(releaseDir, { recursive: true });
+    // 旧产物：构建前就在、脚本也不碰它 → 不应出现在本次产物里（差集而不是时间窗）
+    fs.writeFileSync(path.join(releaseDir, 'old-artifact.txt'), 'old');
+    const past = new Date(Date.now() - 3600_000);
+    fs.utimesSync(path.join(releaseDir, 'old-artifact.txt'), past, past);
+    fs.writeFileSync(
+      scriptPath,
+      isWin
+        ? '@echo off\r\necho build-stdout-line\r\necho build-stderr-line 1>&2\r\necho artifact>deploy\\release\\new-artifact.txt\r\necho debug>deploy\\release\\builder-debug.yml\r\nexit /b 0\r\n'
+        : '#!/bin/sh\nset -e\nmkdir -p deploy/release\necho build-stdout-line\necho build-stderr-line >&2\nprintf "artifact\\n" > deploy/release/new-artifact.txt\nprintf "debug\\n" > deploy/release/builder-debug.yml\n'
+    );
+
+    const det = await get('/api/local-build/detect');
+    check(
+      '本地打包：检测到 deploy/build.*',
+      det.code === 200 && det.body.found === true && det.body.script === `deploy/${scriptName}`,
+      JSON.stringify(det.body)
+    );
+    check(
+      '本地打包：文件浏览默认进 deploy 目录',
+      det.body.startDir === path.join(GIT_DIR, 'deploy') && det.body.root === GIT_DIR,
+      JSON.stringify({ startDir: det.body.startDir, root: det.body.root })
+    );
+
+    const run = await postNdjson('/api/local-build/run');
+    check('本地打包：收到 done 事件', run.code === 200 && !!run.done, JSON.stringify(run.done));
+    check(
+      '本地打包：stdout 日志实时回传',
+      run.events.some((e) => e.type === 'log' && e.stream === 'stdout' && e.line.includes('build-stdout-line'))
+    );
+    check(
+      '本地打包：stderr 日志实时回传',
+      run.events.some((e) => e.type === 'log' && e.stream === 'stderr' && e.line.includes('build-stderr-line'))
+    );
+    check('本地打包：退出码 0 → ok', run.done?.ok === true && run.done?.code === 0);
+    const paths = (run.done?.artifacts ?? []).map((a) => a.path);
+    check(
+      '本地打包：产物是差集（新产物在、旧产物不在）',
+      paths.includes('deploy/release/new-artifact.txt') && !paths.includes('deploy/release/old-artifact.txt'),
+      paths.join(',')
+    );
+    check(
+      '本地打包：构建元数据被过滤（builder-*.yml）',
+      !paths.includes('deploy/release/builder-debug.yml'),
+      paths.join(',')
+    );
+
+    // 手动指定脚本（非标准位置）+ 越界校验
+    const manualName = isWin ? 'manual-build.bat' : 'manual-build.sh';
+    fs.writeFileSync(
+      path.join(deployDir, manualName),
+      isWin ? '@echo off\r\necho manual-script-ok\r\nexit /b 0\r\n' : '#!/bin/sh\necho manual-script-ok\nexit 0\n'
+    );
+    const detManual = await get(`/api/local-build/detect?script=${encodeURIComponent(`deploy/${manualName}`)}`);
+    check(
+      '本地打包：可手动指定脚本',
+      detManual.body.found === true && detManual.body.script === `deploy/${manualName}`,
+      JSON.stringify(detManual.body)
+    );
+    const manualRun = await postNdjson('/api/local-build/run', { script: `deploy/${manualName}` });
+    check(
+      '本地打包：手动脚本被执行',
+      manualRun.done?.ok === true &&
+        manualRun.events.some((e) => e.type === 'log' && e.line.includes('manual-script-ok')),
+      JSON.stringify(manualRun.done)
+    );
+    const outside = await post('/api/local-build/run', { script: '../outside.sh' });
+    check('本地打包：仓库外脚本被拒绝', outside.code === 400, JSON.stringify(outside.body));
+    // 选错扩展名：必须走 200 + reason（不能带 error 字段，否则前端 api() 会抛异常、面板被清空）
+    const badExt = await get(`/api/local-build/detect?script=${encodeURIComponent('deploy/release/old-artifact.txt')}`);
+    check(
+      '本地打包：扩展名不支持返回 reason（非 error）',
+      badExt.code === 200 &&
+        badExt.body.found === false &&
+        typeof badExt.body.reason === 'string' &&
+        !badExt.body.error,
+      JSON.stringify(badExt.body)
+    );
+
+    // 失败退出码
+    fs.writeFileSync(scriptPath, isWin ? '@echo off\r\necho nope 1>&2\r\nexit /b 7\r\n' : '#!/bin/sh\necho nope >&2\nexit 7\n');
+    const failRun = await postNdjson('/api/local-build/run');
+    check('本地打包：非 0 退出码 → ok:false / code 7', failRun.done?.ok === false && failRun.done?.code === 7, JSON.stringify(failRun.done));
+
+    // 超时（SVNGIT_LOCAL_BUILD_TIMEOUT_MS 测试钩子；脚本睡 3 秒）
+    fs.writeFileSync(scriptPath, isWin ? '@echo off\r\nping -n 3 127.0.0.1 >nul\r\nexit /b 0\r\n' : '#!/bin/sh\nsleep 3\nexit 0\n');
+    process.env.SVNGIT_LOCAL_BUILD_TIMEOUT_MS = '300';
+    const toRun = await postNdjson('/api/local-build/run');
+    delete process.env.SVNGIT_LOCAL_BUILD_TIMEOUT_MS;
+    check('本地打包：超时 → timedOut', toRun.done?.timedOut === true && toRun.done?.ok === false, JSON.stringify(toRun.done));
+
+    // 无脚本
+    fs.rmSync(deployDir, { recursive: true, force: true });
+    const noScript = await post('/api/local-build/run', {});
+    check('本地打包：无脚本 404', noScript.code === 404, JSON.stringify(noScript.body));
+
+    // 清状态缓存：deploy 目录已删，别把 ? 条目留给后续断言
+    await get('/api/status?force=1');
   }
 
   // ---------- 5. 软删除 keep=本地保留 ----------

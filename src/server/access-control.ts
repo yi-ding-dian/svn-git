@@ -33,7 +33,7 @@ const LOCAL_ONLY_PATHS = new Set([
   '/api/share/restart',
   '/api/share/events',
 ]);
-const LOCAL_ONLY_PREFIXES = ['/api/terminal'];
+const LOCAL_ONLY_PREFIXES = ['/api/terminal', '/api/local-build'];
 
 export interface AccessResult {
   ok: boolean;

@@ -31,6 +31,7 @@ import { handle as handleGithub } from './routes/github.js';
 import { handle as handleSvnAuth } from './routes/svn-auth.js';
 import { handle as handleConfig } from './routes/config.js';
 import { handle as handleRelease } from './routes/release.js';
+import { handle as handlePackaging } from './routes/packaging.js';
 import { handle as handleModuleIndex } from './routes/module-index.js';
 import { handle as handleUpload } from './routes/upload.js';
 import { handle as handleWc } from './routes/wc.js';
@@ -155,6 +156,7 @@ export function startServer(): Promise<ServerHandle> {
         if (await handleSvnAuth(ctx)) return;
         if (await handleConfig(ctx)) return;
         if (await handleRelease(ctx)) return;
+        if (await handlePackaging(ctx)) return;
         if (await handleModuleIndex(ctx)) return;
         if (await handleUpload(ctx)) return;
         if (await handleWc(ctx)) return;
