@@ -13,7 +13,7 @@ import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { AppIcon } from '../ui/ui.js';
 import { IconExternal, IconRename } from '../ui/icons.js';
-import { langOf, highlightLine } from '../shared/highlight.js';
+import { langOf, highlightLineCached } from '../shared/highlight.js';
 import { InlineEditor, type InlineEditorHandle } from '../shared/inline-editor.js';
 import { useContentCopyMenu } from '../shared/content-copy.js';
 import { renderMarkdown } from '../shared/markdown.js';
@@ -22,6 +22,12 @@ import { MdTocPopover } from '../ui/md-toc.js';
 import { useMdToc } from '../ui/use-md-toc.js';
 import { useSourceToc } from '../ui/use-source-toc.js';
 import { useSourceOutline } from '../ui/use-source-outline.js';
+
+/** 追溯日期列配色：按日期序号在色环上按**黄金角**取色——相邻日期的颜色差得最开，
+ *  同一天永远同色；固定 S/L（低饱和暗色）保证 5 个浅色主题下都够对比度、又不抢语法高亮 */
+function blameDateColor(index: number): string {
+  return `hsl(${((index * 137.508) % 360).toFixed(1)}, 55%, 34%)`;
+}
 
 /** 预览目标：{文件名, 相对路径, 状态码?, 是否图片?}；文本内容由面板自行加载 */
 export interface PreviewTarget {
@@ -63,6 +69,39 @@ export function PreviewPane(props: Props) {
   const [mdPreview, setMdPreview] = useState(false);
   const [blameMode, setBlameMode] = useState(false);
   const [blameData, setBlameData] = useState<{ rev: string; author: string; date: string; line: number; text: string }[]>([]);
+  /** 追溯的修改人筛选：空集 = 不过滤（默认显示所有人的代码）；可多选，点一次加、再点一次取消 */
+  const [authorFilter, setAuthorFilter] = useState<Set<string>>(new Set());
+  /** 追溯日期 → 颜色：同一天同色；按日期先后取色，相邻两天必然不同色 */
+  const blameDateColors = useMemo(() => {
+    const dates = [...new Set(blameData.map((b) => b.date).filter(Boolean))].sort();
+    const map = new Map<string, string>();
+    dates.forEach((d, i) => map.set(d, blameDateColor(i)));
+    return map;
+  }, [blameData]);
+  /** 修改人 + 各自改了行数（筛选条上的筹码；按行数从多到少） */
+  const blameAuthors = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const b of blameData) counts.set(b.author, (counts.get(b.author) ?? 0) + 1);
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([author, count]) => ({ author, count }));
+  }, [blameData]);
+  /** 筛选后实际渲染的行（带原始下标：搜索定位的 ref / 匹配都用它）。
+   *  日期"只显示一次"要按**可见行**判断——否则被隐藏那行是当天第一行时，日期会整块消失 */
+  const blameVisible = useMemo(
+    () => blameData.map((b, i) => ({ b, i })).filter(({ b }) => authorFilter.size === 0 || authorFilter.has(b.author)),
+    [blameData, authorFilter],
+  );
+  const blameShownCount = blameVisible.length;
+  /** 点筹码：没选就加上、已选就取消（多选叠加） */
+  const toggleAuthor = useCallback((author: string) => {
+    setAuthorFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(author)) next.delete(author);
+      else next.add(author);
+      return next;
+    });
+  }, []);
   // 原文预览搜索
   const [searchQ, setSearchQ] = useState('');
   const [searchActive, setSearchActive] = useState(false);
@@ -215,6 +254,7 @@ export function PreviewPane(props: Props) {
     setMdThemePop(null); // 关掉可能开着的 md 主题气泡（主题本身是持久偏好，不重置）
     setBlameMode(false);
     setBlameData([]);
+    setAuthorFilter(new Set()); // 换文件不带旧筛选：新文件的作者完全是另一批
     setSearchActive(false);
     setSearchQ('');
     setMatchIdx(0);
@@ -634,6 +674,38 @@ export function PreviewPane(props: Props) {
         {/* 内容区右键：复制所选内容 / 复制全部内容 */}
         {copyMenu.menuElement}
       </div>
+      {/* 追溯的修改人筛选条：默认"全部"（不过滤）；点某个人只看他改的行，可多选叠加。
+          只有一个修改人也显示（用户要在第一眼看到"这些行是谁改的"），只是点了也不过滤 */}
+      {blameMode && blameData.length > 0 && !editing && (
+        <div className="blame-filter">
+          {/* 修改人 */}
+          <span className="dim small">{t('fs.pv.blameAuthors')}</span>
+          <button
+            className={`mini${authorFilter.size === 0 ? ' primary' : ''}`}
+            onClick={() => setAuthorFilter(new Set())}
+            // 显示所有人的修改（不过滤）
+            title={t('fs.pv.blameAllTip')}
+          >
+            {/* 全部 {n} */}
+            {t('fs.pv.blameAll')} {blameData.length}
+          </button>
+          {blameAuthors.map(({ author, count }) => (
+            <button
+              key={author || '\u0000'}
+              className={`mini${authorFilter.has(author) ? ' primary' : ''}`}
+              onClick={() => toggleAuthor(author)}
+              // 只显示 {name} 修改的 {n} 行（可多选）
+              title={t('fs.pv.blameAuthorTip', { name: author || t('fs.pv.blameUnknownAuthor'), n: count })}
+            >
+              {author || t('fs.pv.blameUnknownAuthor')} {count}
+            </button>
+          ))}
+          {authorFilter.size > 0 && (
+            // 已筛选：显示 {shown} / {total} 行
+            <span className="dim small">{t('fs.pv.blameFiltered', { shown: blameShownCount, total: blameData.length })}</span>
+          )}
+        </div>
+      )}
       {/* md 阅读主题：变量 inline 打在这个滚动容器上，只作用其子树（工具栏/界面不受影响） */}
       {editing ? (
         <InlineEditor
@@ -657,7 +729,8 @@ export function PreviewPane(props: Props) {
       ) : (
       // data-content-zoom：鼠标在这里时 Ctrl+滚轮只缩放文件内容（app.tsx 的全局监听按它区分）
       <div
-        className="diff"
+        // 全屏 + 代码/追溯：标记 pv-code-full，靠左铺满（阅读列居中只留给 Markdown 正文）
+        className={`diff${full && !mdPreview ? ' pv-code-full' : ''}`}
         data-content-zoom=""
         style={{ flex: 1, overflow: 'auto', ...mdVars }}
         // 图片没有可复制的文字，保留浏览器原生右键行为
@@ -699,11 +772,12 @@ export function PreviewPane(props: Props) {
             }}
           />
         ) : blameMode ? (
-          // Blame 视图：行前缀显示 版本+作者
-          blameData.map((b, i) => {
+          // Blame 视图：行前缀显示 版本+作者（按修改人筛选后的可见行）
+          blameVisible.map(({ b, i }, vi) => {
             const isHit = searchActive && matches.includes(i);
             const isCur = isHit && i === matches[matchIdx % Math.max(1, matches.length)];
             const isJump = jumpLine != null && i === jumpLine - 1;
+            const prevDate = blameVisible[vi - 1]?.b.date;
             return (
               <div
                 key={i}
@@ -713,8 +787,15 @@ export function PreviewPane(props: Props) {
                 className={`pv-line ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''} ${isJump ? 'pv-jump' : ''}`}
                 title={`${b.rev} · ${b.author}${b.date ? ' · ' + b.date : ''}`}
               >
+                {/* 日期列：同一批（同一天连着）只在第一行显示，其余留空保持对齐；
+                    颜色按日期区分，同一天永远同色 */}
+                <span className="blame-date" style={{ color: b.date ? blameDateColors.get(b.date) : undefined }}>
+                  {b.date && prevDate !== b.date ? b.date : ''}
+                </span>
                 <span className="blame-meta">{b.rev} {b.author}</span>
-                <span dangerouslySetInnerHTML={{ __html: highlightLine(b.text, langOf(target.name)) }} />
+                {/* 行号紧挨代码（.blame-no 收窄了列宽，别在作者和代码间留一大条空白） */}
+                <span className="sb-no blame-no">{b.line}</span>
+                <span dangerouslySetInnerHTML={{ __html: highlightLineCached(b.text, langOf(target.name)) }} />
               </div>
             );
           })
@@ -732,7 +813,7 @@ export function PreviewPane(props: Props) {
                 className={`pv-line ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''} ${isJump ? 'pv-jump' : ''}`}
               >
                 <span className="sb-no">{i + 1}</span>
-                <span className="pv-src" dangerouslySetInnerHTML={{ __html: highlightLine(line, langOf(target.name)) }} />
+                <span className="pv-src" dangerouslySetInnerHTML={{ __html: highlightLineCached(line, langOf(target.name)) }} />
               </div>
             );
           })

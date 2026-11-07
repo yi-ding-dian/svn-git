@@ -392,6 +392,13 @@ export const fs = {
   'fs.pv.blameDisabled': '未版本化/忽略的文件没有提交历史，无法追溯',
   'fs.pv.blameTitle': '逐行标注提交/作者',
   'fs.pv.blame': '📜 追溯',
+  // —— 追溯的修改人筛选 ——
+  'fs.pv.blameAuthors': '修改人',
+  'fs.pv.blameAll': '全部',
+  'fs.pv.blameAllTip': '显示所有人的修改（不过滤）',
+  'fs.pv.blameAuthorTip': '只显示 {name} 修改的 {n} 行（可多选）',
+  'fs.pv.blameFiltered': '已筛选：显示 {shown} / {total} 行',
+  'fs.pv.blameUnknownAuthor': '（未提交）',
   'fs.pv.mdThemeTitle': 'md 阅读主题：只改文档区配色，界面主题不受影响',
   'fs.pv.themeBtn': '🎨 主题',
   'fs.pv.themeBtnNamed': '🎨 主题 · {name}',

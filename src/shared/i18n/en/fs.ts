@@ -392,6 +392,13 @@ export const fs = {
   'fs.pv.blameDisabled': 'Unversioned/ignored files have no commit history; blame is unavailable',
   'fs.pv.blameTitle': 'Annotate each line with commit/author',
   'fs.pv.blame': '📜 Blame',
+  // —— blame author filter ——
+  'fs.pv.blameAuthors': 'Authors',
+  'fs.pv.blameAll': 'All',
+  'fs.pv.blameAllTip': 'Show everyone’s changes (no filter)',
+  'fs.pv.blameAuthorTip': 'Show only the {n} lines changed by {name} (multi-select)',
+  'fs.pv.blameFiltered': 'Filtered: showing {shown} / {total} lines',
+  'fs.pv.blameUnknownAuthor': '(uncommitted)',
   'fs.pv.mdThemeTitle': 'md reading theme: recolors the document area only; the UI theme is unaffected',
   'fs.pv.themeBtn': '🎨 Theme',
   'fs.pv.themeBtnNamed': '🎨 Theme · {name}',

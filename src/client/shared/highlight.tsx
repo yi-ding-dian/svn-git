@@ -99,6 +99,22 @@ export function highlightLine(line: string, lang?: string): string {
   }
 }
 
+/** 逐行高亮结果的缓存：同一文件在「追溯 / 普通」之间来回切时，几千行不必每切一次重跑一遍
+ *  highlight.js（实测 2368 行一次 ~70ms，来回都算）。键里带语言，避免同名文本跨语言串色。
+ *  上限后整体清空——预览只会用到最近几个文件的几批行，没有必要做 LRU。 */
+const HL_LINE_CACHE = new Map<string, string>();
+const HL_LINE_CACHE_MAX = 20000;
+
+export function highlightLineCached(line: string, lang?: string): string {
+  const key = `${lang ?? ''}\u0000${line}`;
+  const hit = HL_LINE_CACHE.get(key);
+  if (hit !== undefined) return hit;
+  const html = highlightLine(line, lang);
+  if (HL_LINE_CACHE.size >= HL_LINE_CACHE_MAX) HL_LINE_CACHE.clear();
+  HL_LINE_CACHE.set(key, html);
+  return html;
+}
+
 /** Markdown 代码块：整块高亮 → 完整 `<pre><code>` HTML（与源码预览/差异视图同一份语言表）。
  *  语言未标注或未注册（```text 目录树等）→ 纯文本转义，外观与原来一致。
  *  class 拼进属性前过字符白名单：lang 来自文档内容（仓库可能来自远程），不能直接拼 HTML。

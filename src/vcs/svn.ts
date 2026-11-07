@@ -2194,11 +2194,21 @@ export class SvnVcs {
 
   /** svn blame：逐行标注版本/作者 */
   async blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]> {
-    const res = await this.exec(['blame', pathRel], { timeoutMs: 60_000, decode: 'auto' });
+    // -v：输出带提交日期，界面追溯视图要按"YYYY-MM-DD"分组/上色。
+    // 格式（实测）：<rev> <作者> <YYYY-MM-DD> <HH:mm:ss> <±ZZZZ> (<周几, 日期>) <正文>
+    // 日期直接取第 3 列——就是 YYYY-MM-DD，不用自己算时区。
+    const res = await this.exec(['blame', '-v', pathRel], { timeoutMs: 60_000, decode: 'auto' });
     // svn blame 失败: {err}
     if (res.code !== 0) throw new Error(t('vcs.svnBlameFailed', { err: res.stderr.trim() }));
     const out: { rev: string; author: string; date: string; line: number; text: string }[] = [];
     for (const line of svnTextLines(res.stdout)) {
+      // 正文前只有**一个**分隔空格，剩下的前导空格属于正文（缩进要保住）；
+      // 作者名带空格等极端情况退回无日期的旧格式
+      const v = line.match(/^\s*(\d+)\s+(\S+)\s+(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\s+[+-]\d{4}\s+\([^)]*\)\s?(.*)$/);
+      if (v && v[1] && v[2] && v[3]) {
+        out.push({ rev: `r${v[1]}`, author: v[2], date: v[3], line: out.length + 1, text: v[4] ?? '' });
+        continue;
+      }
       const m = line.match(/^\s*(\d+)\s+(\S+)\s+(.*)$/);
       if (m && m[1] && m[2]) {
         out.push({ rev: `r${m[1]}`, author: m[2], date: '', line: out.length + 1, text: m[3] ?? '' });

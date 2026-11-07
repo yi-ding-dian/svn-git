@@ -136,6 +136,12 @@ console.log('== Git Blame / 忽略 / 清理 ==');
   const blame = await vcs.blame('readme.md');
   check('blame 解析', blame.length >= 3 && blame[0]?.rev && blame[0]?.author);
   await vcs.revert(['readme.md']); // 复原工作区到 HEAD 版（checkout HEAD --），避免残留改动影响后续块
+  // 追溯视图按日期分组/上色：已提交行的日期必须是固定的 yyyy-mm-dd（未提交行 date 为空）
+  const blameCommitted = await vcs.blame('readme.md');
+  check('blame 日期固定 yyyy-mm-dd', /^\d{4}-\d{2}-\d{2}$/.test(blameCommitted[0]?.date ?? ''), blameCommitted[0]?.date);
+  // porcelain 对同一提交只在首次出现时给 author/author-time：不按提交缓存的话，
+  // 后续行作者为空、日期断档（日期列按日期分组会跟着断）
+  check('blame 同一提交的后续行也有作者与日期', blameCommitted.every((b) => b.author && b.date));
 
   const ig = await vcs.ignoreAdd('*.unit-test');
   check('忽略规则写入 .gitignore', ig.ok && fs.existsSync(`${GIT_DIR}/.gitignore`));
@@ -238,6 +244,8 @@ console.log('== SVN Blame / 锁定 / 忽略 / 清理 ==');
   const vcs = new SvnVcs(detectRepo(SVN_DIR), null);
   const blame = await vcs.blame('readme.md');
   check('blame 解析', blame.length >= 1 && blame[0]?.rev && blame[0]?.author);
+  // svn blame -v 的第 3 列就是日期：直接断言 YYYY-MM-DD（界面按它分组/上色）
+  check('blame 日期固定 yyyy-mm-dd', /^\d{4}-\d{2}-\d{2}$/.test(blame[0]?.date ?? ''), blame[0]?.date);
 
   const lk = await vcs.lock('readme.md');
   check('锁定', lk.ok);

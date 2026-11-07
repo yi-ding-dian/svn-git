@@ -10,7 +10,7 @@ import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.
 import { buildGitSshEnvironment, githubSshKeyArgument } from './git-ssh.js';
 import { loadConfig } from '../config.js';
 import { progressStart, progressDone, progressFromStderr } from '../transfer-progress.js';
-import { t, getLang } from '../shared/i18n/index.js';
+import { t } from '../shared/i18n/index.js';
 import type { CommitSummary, FileStatus, LogEntry, RepoInfo, RestorePreview, TagDetail, VcsResult, WorktreeInfo } from './types.js';
 
 /** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限）
@@ -2094,6 +2094,16 @@ export class GitVcs {
 
   // ============ Blame 追溯 ============
 
+  /** 提交时间戳（秒）→ 本地 **YYYY-MM-DD**。
+   *  追溯的日期列固定这个格式：跨界面语言显示一致，也便于"同一批只显示一次"的按日分组 /
+   *  按日期上色（原先用 toLocaleDateString，中文是 2026/11/7、英文是 11/7/2026，没法对齐） */
+  private static formatBlameDate(time: number): string {
+    if (!time) return '';
+    const d = new Date(time * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
   /** git blame --porcelain：逐行标注提交/作者 */
   async blame(pathRel: string): Promise<{ rev: string; author: string; date: string; line: number; text: string }[]> {
     const res = await this.exec(['blame', '--porcelain', pathRel], { timeoutMs: 60_000, decode: 'auto' });
@@ -2101,11 +2111,16 @@ export class GitVcs {
     if (res.code !== 0) throw new Error(t('vcs.gitBlameFailed', { err: res.stderr.trim() }));
     const out: { rev: string; author: string; date: string; line: number; text: string }[] = [];
     const lines = res.stdout.split('\n');
+    /** 提交 → 作者/时间。porcelain 对**同一个提交只在第一次出现时**输出 author/author-time，
+     *  后面的行只有 "<sha> <原行号> <行号>" + 正文——不缓存就会得到作者/日期为空的行
+     *  （原实现就是这样：界面上同一提交只有第一行有作者，日期列也会断成一段一段的） */
+    const meta = new Map<string, { author: string; time: number }>();
     let i = 0;
     while (i < lines.length) {
       const l = lines[i]!;
       const m = l.match(/^([0-9a-f]{40}) \d+ (\d+)/);
       if (m && m[1] && m[2]) {
+        const sha = m[1];
         let author = '';
         let time = 0;
         let text = '';
@@ -2120,12 +2135,17 @@ export class GitVcs {
           }
           i += 1;
         }
+        const known = meta.get(sha);
+        if (known) {
+          author = known.author;
+          time = known.time;
+        } else {
+          meta.set(sha, { author, time });
+        }
         out.push({
-          rev: m[1].slice(0, 7),
+          rev: sha.slice(0, 7),
           author,
-          // 日期格式跟随界面语言（原本写死 'zh-CN'，英文界面下也显示中文格式 —— 这类"代码里的 locale 常量"
-          // 检查脚本扫不到，因为源码里没有中文字面量）
-          date: time ? new Date(time * 1000).toLocaleDateString(getLang() === 'zh' ? 'zh-CN' : 'en-US') : '',
+          date: GitVcs.formatBlameDate(time),
           line: Number(m[2]),
           text,
         });

@@ -1012,12 +1012,37 @@ body.drag-trash-hot .drag-src {
 /* 内容搜索跳入的定位行：强调色系（区别于预览内搜索的黄色 .pv-hit/.pv-cur） */
 .pv-jump { background: rgba(9, 105, 218, .18); outline: 1px solid var(--accent); }
 
-.pv-line { display: flex; align-items: baseline; line-height: 1.55; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace); }
+/* content-visibility:auto：大文件（几千行）来回切「追溯 / 普通」时，整屏几千行的布局/绘制要几百
+   毫秒，就是"卡一下"的来源；现在浏览器跳过视口外行。contain-intrinsic-size 给近似行高，滚动条不跳
+   （实测 2368 行来回切换 300~400ms → 140~170ms） */
+.pv-line {
+  display: flex; align-items: baseline; line-height: 1.55; font-family: var(--code-font, "JetBrains Mono", Consolas, monospace);
+  content-visibility: auto; contain-intrinsic-size: auto 20px;
+}
 .pv-line .pv-src { white-space: pre-wrap; word-break: break-all; flex: 1; min-width: 0; }
+/* 版本 + 作者：**固定宽度、不换行**——宽度不够时长作者会被折成两行（"yi-ding-" / "dian"），
+   行高被撑高、整列和代码列都跟着不齐；超长用省略号，完整信息在行悬浮提示里 */
 .blame-meta {
-  display: inline-block; min-width: 130px; margin-right: 10px;
+  display: inline-block; width: 140px; flex: 0 0 auto; margin-right: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   color: var(--dim); font-size: 0.85em; user-select: none; font-family: Consolas, monospace;
 }
+/* 追溯日期列：固定宽度让"只显示一次"的留空行与有日期的行对齐；着色由内联 style 按日期给
+   （同一批提交显示一次、不同日期不同颜色） */
+.blame-date {
+  display: inline-block; width: 76px; flex: 0 0 auto; margin-right: 6px; white-space: nowrap;
+  font-size: 0.85em; user-select: none; font-family: Consolas, monospace;
+}
+/* 追溯的行号列：比普通预览（44px）窄——作者和代码之间不留一大条空白（用户实报） */
+.blame-no { width: 30px; padding-right: 6px; }
+/* 追溯的修改人筛选条：顶部固定一条，不随代码滚动 */
+.blame-filter {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  flex: 0 0 auto; padding: 6px 12px;
+  border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.blame-filter .mini { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-full > .blame-filter { padding: 6px 14px; }
 .pv-hit { background: rgba(212, 167, 50, .25); }
 .pv-cur { background: rgba(212, 167, 50, .55); outline: 1px solid var(--warn); }
 /* 跳转目标块：点击一侧后另一侧对应修改块呼吸高亮（多块散布时锁定对应位置） */
@@ -1685,6 +1710,9 @@ textarea { resize: vertical; font-family: inherit; }
 .pv-full > .row { padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--border); }
 /* 文档区铺满工具栏以下（去掉卡片边框/圆角）；阅读列最宽 1280px 居中，滚动条仍贴窗口边 */
 .pv-full .diff { border: 0; border-radius: 0; padding: 12px max(14px, calc((100% - 1280px) / 2)); }
+/* 全屏的代码 / 追溯视图：靠左铺满，不套阅读列——那是给 Markdown 正文的。
+   1920 宽窗口下 `(100% - 1280) / 2` = 左边空 320px，日期/版本/作者列被整块挤到中间（用户实报） */
+.pv-full .diff.pv-code-full { padding: 12px 14px; }
 /* 更新中转圈 */
 .spinner {
   width: 36px; height: 36px; border: 3px solid var(--border2); border-top-color: var(--accent);
