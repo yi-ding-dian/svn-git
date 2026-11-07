@@ -44,7 +44,10 @@ export const fs = {
   'fs.toolbar.favN': '⭐ Favorites ({n})',
   'fs.toolbar.upTitle': 'Go up one level',
   'fs.toolbar.up': 'Up',
-  'fs.toolbar.hint': '({n} items · Keys: ↑↓ select · →/Enter open · ← back · right-click blank area for menu)',
+  // Keyboard help lives in the toolbar ⌨ tooltip (shown briefly on first visit) — a permanent row wrapped and wasted space
+  'fs.toolbar.keys': 'Keyboard shortcuts',
+  'fs.toolbar.keysTip': '↑↓ select · →/Enter open · ← back · right-click blank area for menu',
+  'fs.toolbar.count': '{n} items',
 
   // ---- Filters (modified / new / deleted) ----
   'fs.filter.changedTitle': 'Show only modified files',

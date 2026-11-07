@@ -89,6 +89,8 @@ function ActionBtn(props: {
 
 /** 跨项目目录缓存保留的项目数：切走的项目缓存留在内存里，切回直接秒开（LRU 淘汰最久未用的） */
 const CROSS_PROJECT_CACHE_KEEP = 5;
+/** 「键盘操作提示已看过」的本地标记：首次进文件视图展示 5 秒后收起，之后只在 ⌨ 悬浮里看 */
+const KEY_HINT_SEEN = 'svngit:fs-key-hint-seen';
 
 export function FsView(props: Props) {
   /** 共享访问状态：远程时右键菜单不提供「在本机启动外部程序」 */
@@ -222,6 +224,26 @@ export function FsView(props: Props) {
   const [fsLoading, setFsLoading] = useState(false);
   // 大目录提示（条目多时提示原因，避免误以为卡死；5 秒后自动消失）
   const [bigTip, setBigTip] = useState('');
+  /** 首次进入的键盘操作提示：常驻占一行太浪费，展示 5 秒后收起并记住（之后只在 ⌨ 悬浮提示里） */
+  const [showKeyHint, setShowKeyHint] = useState(() => {
+    try {
+      return localStorage.getItem(KEY_HINT_SEEN) !== '1';
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    if (!showKeyHint) return;
+    const timer = setTimeout(() => {
+      setShowKeyHint(false);
+      try {
+        localStorage.setItem(KEY_HINT_SEEN, '1');
+      } catch {
+        /* 隐私模式等写不了：每次进都提示一遍，不影响功能 */
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [showKeyHint]);
   const bigTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---------- 常用文件夹：指定 + 后台递归预加载缓存（大仓库秒开） ----------
@@ -1732,11 +1754,22 @@ export function FsView(props: Props) {
               else setPendingLocate({ rel, at });
             }}
           />
-          {/* （{n} 项 · 键盘: ↑↓ 选择 · →/Enter 进入 · ← 返回 · 空白处右键菜单） */}
-          <span className="dim small">{t('fs.toolbar.hint', { n: rows.length })}</span>
+          {/* ⌨ 键盘操作说明：常驻一行太长（会换行挤占一行），收进悬浮提示 */}
+          <Tooltip content={t('fs.toolbar.keysTip')}>
+            <button className="mini" aria-label={t('fs.toolbar.keys')} title={t('fs.toolbar.keys')}>
+              ⌨
+            </button>
+          </Tooltip>
         </div>
-        {/* 面包屑导航（所有模式，从仓库根开始） */}
-        <div className="breadcrumb" ref={breadcrumbRef} style={{ marginBottom: 8, overflowX: 'auto', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        {/* 首次进入短暂展示快捷键，5 秒后收起（记住，不再打扰） */}
+        {showKeyHint && (
+          <div className="dim small" style={{ marginBottom: 8 }}>
+            {t('fs.toolbar.keysTip')}
+          </div>
+        )}
+        {/* 面包屑导航（所有模式，从仓库根开始）+ 右侧条目数 */}
+        <div className="row" style={{ marginBottom: 8, gap: 8, alignItems: 'baseline', flexShrink: 0 }}>
+          <div className="breadcrumb" ref={breadcrumbRef} style={{ marginBottom: 0, flex: 1, minWidth: 0, overflowX: 'auto', whiteSpace: 'nowrap' }}>
           {breadcrumbs.map((b, i) => (
             <React.Fragment key={i}>
               {i > 0 && <span style={{ margin: '0 4px', color: 'var(--dim)' }}>›</span>}
@@ -1761,6 +1794,7 @@ export function FsView(props: Props) {
               </a>
             </React.Fragment>
           ))}
+          </div>
         </div>
         {error && (
           <div className="error" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -2162,6 +2196,8 @@ export function FsView(props: Props) {
             }}
           />
         )}
+        {/* 条目数：固定在内容区底部居中（放在面包屑后面会跟着路径长度左右跳，且占一行） */}
+        {!preview && <div className="fs-count-bar">{t('fs.toolbar.count', { n: rows.length })}</div>}
       </div>
       {/* 详情面板（列表模式） */}
       {mode === 'list' && sel && !preview && (

@@ -184,8 +184,12 @@ export function TerminalModal(props: {
   const repoName = (props.repoRoot ?? '').replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? '';
   /** 标题里显示**完整磁盘路径**（用户要求：一眼知道这仓库在本机哪里）。
    *  记录前缀仍用 `仓库名/相对路径` 的短形式 —— 完整路径太长，会把命令挤到看不见。 */
-  // 仓库根
-  const fullPath = props.repoRoot ? `${props.repoRoot}${cwd ? '/' + cwd : ''}` : cwd || t('term.repoRoot');
+  // 仓库根。分隔符跟随仓库根本身的风格：Windows 上是 `D:\proj\sub`，用 `/` 拼会变成
+  // `D:\proj/sub`（用户实报）；Linux 根就是 `/`，行为不变
+  const pathSep = (props.repoRoot ?? '').includes('\\') ? '\\' : '/';
+  const fullPath = props.repoRoot
+    ? `${props.repoRoot}${cwd ? pathSep + cwd.split('/').join(pathSep) : ''}`
+    : cwd.split('/').join(pathSep) || t('term.repoRoot');
   /** 按仓库类型给示例/提示（SVN 项目里提示 git 命令会误导 —— 用户实报） */
   const isSvn = props.repoType === 'svn';
   const binName = isSvn ? 'svn' : 'git';

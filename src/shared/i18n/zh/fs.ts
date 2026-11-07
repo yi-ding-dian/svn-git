@@ -44,7 +44,10 @@ export const fs = {
   'fs.toolbar.favN': '⭐ 常用({n})',
   'fs.toolbar.upTitle': '上一级',
   'fs.toolbar.up': '上级',
-  'fs.toolbar.hint': '（{n} 项 · 键盘: ↑↓ 选择 · →/Enter 进入 · ← 返回 · 空白处右键菜单）',
+  // 键盘操作说明：常驻一行太长会换行挤占版面，收进工具栏 ⌨ 的悬浮提示（首次进入短暂展示）
+  'fs.toolbar.keys': '键盘操作说明',
+  'fs.toolbar.keysTip': '↑↓ 选择 · →/Enter 进入 · ← 返回 · 空白处右键菜单',
+  'fs.toolbar.count': '{n} 项',
 
   // ---- 过滤（仅修改/仅新文件/仅删除）----
   'fs.filter.changedTitle': '只看有修改的文件',
