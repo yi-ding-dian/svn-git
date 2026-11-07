@@ -29,6 +29,14 @@ export interface AppConfig {
   /** 界面语言。虽是「偏好」而非凭据，但 server / vcs / main 都要读它决定消息语言，
    *  而这三者与 config.json 同在主进程，故与凭据同放一处（本文件注释本就自称「全局配置 + 凭据」）。 */
   lang: Lang;
+  /** 应用自身在线升级（GitHub Release） */
+  update?: {
+    /** GitHub 下载加速（第三方中转）：默认开。国内直连 GitHub Releases 常失败，
+     *  而更新包动辄 75–90MB，所以和 git 下载加速分开存、默认勾选。 */
+    githubDownloadProxy?: boolean;
+    /** 加速前缀，空串 = 默认 https://gh-proxy.com/ */
+    githubDownloadProxyUrl?: string;
+  };
   /** 局域网共享（监听地址 / IP 白名单 / 在线人数上限），见 shared/share.ts */
   share: ShareConfig;
 }
@@ -40,6 +48,8 @@ const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 const DEFAULTS: AppConfig = {
   svn: { username: '', password: '', trustServerCert: false },
   git: { username: '', password: '', sshKeyPath: '', sshUseForTerminal: false, githubDownloadProxy: false, githubDownloadProxyUrl: '' },
+  // 应用自身升级默认走加速：与 git 下载加速（默认关）故意不同——更新包大且只在发版时下载
+  update: { githubDownloadProxy: true, githubDownloadProxyUrl: '' },
   lang: DEFAULT_LANG,
   share: { ...DEFAULT_SHARE, allow: [] },
 };
@@ -75,7 +85,7 @@ function decode(b64: string): string {
 
 export function loadConfig(): AppConfig {
   try {
-    if (!fs.existsSync(CONFIG_PATH)) return { ...DEFAULTS };
+    if (!fs.existsSync(CONFIG_PATH)) return { ...DEFAULTS, update: { ...DEFAULTS.update } };
     const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
     const data = JSON.parse(raw);
     return {
@@ -92,12 +102,18 @@ export function loadConfig(): AppConfig {
         githubDownloadProxy: Boolean(data?.git?.githubDownloadProxy),
         githubDownloadProxyUrl: String(data?.git?.githubDownloadProxyUrl ?? ''),
       },
+      update: {
+        // 缺省 true：老配置文件里没有 update 段时，升级默认走加速
+        githubDownloadProxy:
+          data?.update?.githubDownloadProxy === undefined ? true : Boolean(data.update.githubDownloadProxy),
+        githubDownloadProxyUrl: String(data?.update?.githubDownloadProxyUrl ?? ''),
+      },
       // 非法值（手改 config.json）一律回退默认，不让脏数据把界面搞成未知语言
       lang: isLang(data?.lang) ? data.lang : DEFAULT_LANG,
       share: readShare(data?.share),
     };
   } catch {
-    return { ...DEFAULTS };
+    return { ...DEFAULTS, update: { ...DEFAULTS.update } };
   }
 }
 
@@ -117,6 +133,11 @@ export function saveConfig(cfg: AppConfig): void {
         sshUseForTerminal: Boolean(cfg.git?.sshUseForTerminal),
         githubDownloadProxy: Boolean(cfg.git?.githubDownloadProxy),
         githubDownloadProxyUrl: cfg.git?.githubDownloadProxyUrl ?? '',
+      },
+      update: {
+        // 只有显式 false 才关；缺省/脏值都按默认（开）处理
+        githubDownloadProxy: cfg.update?.githubDownloadProxy !== false,
+        githubDownloadProxyUrl: cfg.update?.githubDownloadProxyUrl ?? '',
       },
       lang: isLang(cfg.lang) ? cfg.lang : DEFAULT_LANG,
       share: readShare(cfg.share),

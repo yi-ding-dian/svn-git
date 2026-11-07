@@ -10,6 +10,14 @@ electronLanguages:
   - en-US
 # 使用本地 electron 分发，跳过 GitHub 下载（避免网络卡死）
 electronDist: node_modules/electron/dist
+# 在线升级的更新源（electron-updater 用）：
+# 有这段配置，electron-builder 才会生成 latest.yml（Windows）/ latest-linux.yml（Linux）
+# 与 resources/app-update.yml；CI 里仍然用 --publish never，更新元数据由 release job 统一
+# 随 Release 一起上传（见 .github/workflows/release.yml）。
+publish:
+  provider: github
+  owner: yi-ding-dian
+  repo: svn-git
 directories:
   # 打包产物（AppImage / Windows exe）与打包脚本同处 deploy/ 下
   output: deploy/release

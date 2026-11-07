@@ -59,11 +59,17 @@ jobs:
         with:
           name: svngit-${{ runner.os }}
           # 只收最终产物：deploy/release/* 会把 linux-unpacked/win-unpacked 整个目录
-          # 递归传上去（Release 里混进几十个 dll/pak 就是这么来的）
+          # 递归传上去（Release 里混进几十个 dll/pak 就是这么来的）。
+          # latest.yml / latest-linux.yml / blockmap 是在线升级元数据：electron-updater
+          # 靠 yml 判断新版本并校验 sha512；走 gh-proxy 时应用会关掉增量，但直连仍可用。
+          # 只列具体文件名，避免把 builder-debug.yml 一起发出去。
           path: |
             deploy/release/*.AppImage
             deploy/release/*.exe
             deploy/release/*.tar.gz
+            deploy/release/latest.yml
+            deploy/release/latest-linux.yml
+            deploy/release/*.blockmap
           if-no-files-found: error
 
   # 两个平台都构建完后统一发布：避免两个 job 并发抢建同一个 Release。

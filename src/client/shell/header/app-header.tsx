@@ -59,6 +59,8 @@ export function AppHeader(props: {
 
   // 系统应用菜单集成状态（AppImage 方式下有「安装/卸载」入口；源码/浏览器运行不显示）
   const [appMenuState, setAppMenuState] = useState<{ appImage: boolean; installed: boolean }>({ appImage: false, installed: false });
+  /** 有新版时在 ⋯ 上点一个小圆点（主进程启动 5 秒后静默检查；点击进「关于」升级） */
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   /** 共享访问状态：远程只读/可写标记；本机才请求系统菜单等本机专属能力 */
   const share = useShareStatus();
   const shareLocal = share?.local ?? true;
@@ -86,6 +88,29 @@ export function AppHeader(props: {
       .appMenu()
       .then((r) => setAppMenuState({ appImage: r.appImage, installed: r.installed }))
       .catch(() => {});
+  }, [shareLocal]);
+  useEffect(() => {
+    // 在线升级提示只对本机有意义；远程共享会话不显示
+    if (!shareLocal) return;
+    let alive = true;
+    const load = () => {
+      get
+        .appUpdateStatus()
+        .then((s) => {
+          if (!alive) return;
+          setUpdateVersion(s.supported && (s.phase === 'available' || s.phase === 'downloaded') ? (s.version ?? '') : null);
+        })
+        .catch(() => {});
+    };
+    // 主进程启动 5 秒后才自动检查：6 秒先取一次，之后每 15 秒刷新
+    // （本地接口，开销很小；比只轮询一次可靠，不会因为检查慢于首次请求而漏掉红点）
+    const first = window.setTimeout(load, 6000);
+    const timer = window.setInterval(load, 15_000);
+    return () => {
+      alive = false;
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
   }, [shareLocal]);
   // 后台任务：指示器 + 面板（进行中列表 + 取消；完成结果归铃铛——见下方 notices）
   const bgTasks = useTasks();
@@ -371,16 +396,38 @@ export function AppHeader(props: {
         {dragKey !== null && dropBefore === null && <span className="tool-drop-line" />}
       </span>
       {/* 低频操作收进「⋯」菜单（可拖入/拖出；含恢复默认布局） */}
-      <Tooltip content={t('shell.toolbar.moreTitle')}>
+      <Tooltip
+        content={
+          updateVersion !== null
+            ? t('shell.about.updateAvailable', { version: updateVersion })
+            : t('shell.toolbar.moreTitle')
+        }
+      >
         <button
           className="mini tool-btn"
-          style={moreDrop ? { boxShadow: '0 0 0 2px var(--accent) inset' } : undefined}
+          style={{ position: 'relative', ...(moreDrop ? { boxShadow: '0 0 0 2px var(--accent) inset' } : {}) }}
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             setMoreMenu({ x: Math.max(8, r.right - 180), y: r.bottom + 4 });
           }}
         >
           ⋯
+          {/* 有新版本：右上角小圆点（不占按钮宽度） */}
+          {updateVersion !== null && (
+            <span
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                top: 2,
+                right: 2,
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: 'var(--err)',
+                pointerEvents: 'none',
+              }}
+            />
+          )}
         </button>
       </Tooltip>
       {moreMenu && (
@@ -498,8 +545,10 @@ export function AppHeader(props: {
               icon: <IconInfo />,
               // 关于
               label: t('shell.about.title'),
+              // 有新版本时标签后显示红点（用户明确：关于后面标出来）
+              dot: updateVersion !== null,
               // 版本号与构建日期
-              title: t('shell.about.menuTitle'),
+              title: updateVersion !== null ? t('shell.about.updateAvailable', { version: updateVersion }) : t('shell.about.menuTitle'),
               action: openAbout,
             },
           ]}
@@ -511,6 +560,7 @@ export function AppHeader(props: {
           buildDate={aboutInfo.buildDate}
           commit={aboutInfo.commit}
           dirty={aboutInfo.dirty}
+          local={shareLocal}
           onClose={() => setAboutOpen(false)}
         />
       )}

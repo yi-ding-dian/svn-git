@@ -14,6 +14,8 @@ import { Tooltip } from './tooltip.js';
 export interface CtxMenuItem {
   icon?: React.ReactNode;
   label?: string;
+  /** 标签后的小红点（如「关于」有新版本可升级） */
+  dot?: boolean;
   /** 右侧小字说明（可选，目前用于搜索模式菜单；其它菜单不传就不占位） */
   desc?: string;
   danger?: boolean;
@@ -130,6 +132,12 @@ export function ContextMenu(props: {
             >
               <span className="ctx-icon">{it.icon}</span>
               <span style={it.desc ? { flex: 1, minWidth: 0 } : undefined}>{it.label}</span>
+              {it.dot && (
+                <span
+                  aria-hidden="true"
+                  style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--err)', flexShrink: 0, marginLeft: 2 }}
+                />
+              )}
               {it.desc && <span className="ctx-desc">{it.desc}</span>}
               {it.submenu && !it.noArrow && <span className="ctx-arrow">▶</span>}
             </div>

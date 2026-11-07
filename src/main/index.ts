@@ -5,7 +5,8 @@ import os from 'node:os';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { createRequire } from 'node:module';
-import { startServer, setPickDirHandler, setSaveFileHandler } from '../server/index.js';
+import { startServer, setPickDirHandler, setSaveFileHandler, setAppUpdateHandlers } from '../server/index.js';
+import { initAppUpdate } from './app-update.js';
 import { killAllChildren } from '../vcs/exec.js';
 import { recoverInflight } from '../inflight.js';
 import { detectRepo } from '../vcs/detect.js';
@@ -217,6 +218,12 @@ async function boot() {
 
   // 收拾上次异常退出留下的孤儿获取（残留进程 + 半截目录）；没有登记时是一次空读，不拖慢启动
   await recoverInflight();
+
+  // 应用自身在线升级：只有 Electron 打包版有 electron-updater；纯 Node（WSL）不注入，
+  // /api/app-update/* 会返回 unsupported。--browser / -d 下装更新会带走服务，故不启用安装。
+  if (process.versions.electron) {
+    setAppUpdateHandlers(initAppUpdate({ windowMode: !BROWSER && !DAEMON }));
+  }
 
   const handle = await startServer();
   console.log('');

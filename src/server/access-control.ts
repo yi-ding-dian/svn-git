@@ -29,6 +29,11 @@ const LOCAL_ONLY_PATHS = new Set([
   '/api/env-install/stream',
   '/api/run-script',
   '/api/app-menu',
+  // 应用自身升级：触发网络下载/安装等于控制本机，远程一律拒绝
+  '/api/app-update/check',
+  '/api/app-update/download',
+  '/api/app-update/install',
+  '/api/app-update/proxy',
   '/api/share',
   '/api/share/restart',
   '/api/share/events',

@@ -7,6 +7,7 @@ import type { TransferPhase } from '../../transfer-progress.js';
 import { t } from '../../shared/i18n/index.js';
 import type { Lang } from '../../shared/i18n/index.js';
 import type { ShareAccess, ShareConfig, ShareEvent, ShareSettings } from '../../shared/share.js';
+import type { AppUpdateStatus } from '../../shared/app-update.js';
 export type { ParsedDiff };
 
 /** 非空目录的文件预览（新建仓库二次确认用） */
@@ -714,6 +715,10 @@ export const get = {
     }>(`/api/apps-for?ext=${encodeURIComponent(ext)}`),
   /** 系统应用菜单集成状态（AppImage 运行方式；installed=已安装到应用菜单） */
   appMenu: () => api<{ appImage: boolean; installed: boolean }>('/api/app-menu'),
+  /** 应用自身在线升级状态（纯 Node / 源码运行返回 supported=false） */
+  appUpdateStatus: () => api<AppUpdateStatus>('/api/app-update/status'),
+  /** 应用自身升级的 GitHub 下载加速设置 */
+  appUpdateProxy: () => api<{ enabled: boolean; prefix: string }>('/api/app-update/proxy'),
   preflight: (signal?: AbortSignal) =>
     api<{
       remoteHasUpdate: boolean;
@@ -1159,6 +1164,15 @@ export const post = {
   appMenuUninstall: () => api<{ ok: boolean; message: string }>('/api/app-menu', { method: 'DELETE' }),
   /** 用系统默认浏览器打开外链（仅 http/https） */
   openUrl: (url: string) => api<{ ok: boolean }>('/api/open-url', json({ url })),
+  /** 检查应用自身新版本（Electron 打包版） */
+  appUpdateCheck: () => api<AppUpdateStatus>('/api/app-update/check', json({})),
+  /** 开始下载新版本（进度靠轮询 appUpdateStatus） */
+  appUpdateDownload: () => api<AppUpdateStatus>('/api/app-update/download', json({})),
+  /** 安装已下载的新版本并重启 */
+  appUpdateInstall: () => api<{ ok: boolean; error?: string }>('/api/app-update/install', json({})),
+  /** 保存应用升级的下载加速设置（prefix 空 = 默认 gh-proxy.com） */
+  appUpdateProxySave: (enabled: boolean, prefix: string) =>
+    api<{ ok: boolean; enabled: boolean; prefix: string }>('/api/app-update/proxy', json({ enabled, prefix })),
   /** 模块索引注入/更新（included：勾选保留的 path 清单，null/缺省=全保留）；clear=清除作用目录注入 */
   moduleIndexSet: (dir: string, md: string, included: string[] | null) =>
     api<{ ok: boolean; count: number }>('/api/module-index', json({ dir, md, included })),

@@ -22,6 +22,7 @@
     "test:e2e": "node test/e2e-smoke.mjs"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "fast-xml-parser": "^5.11.0",
     "highlight.js": "^11.12.0",
     "marked": "^18.0.10",

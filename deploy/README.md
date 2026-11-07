@@ -17,7 +17,7 @@
 
 > **文件名一律 ASCII，界面名称保持中文**：`productName`（窗口标题、开始菜单、安装目录）是 `svn-git文件版本管理`，而产物文件名写死前缀 `svn-git-`（在 `electron-builder.yml` 的各 `artifactName` 里）。原因：中文文件名在下载 URL 里会被百分号编码、命令行和传输环节容易乱码。
 
-> 产物目录由 `electron-builder.yml` 的 `directories.output` 统一指定（Windows 和 Linux 都落这里，已加进 `.gitignore`）。目录里除最终产物外还有 `win-unpacked/` 等中间文件和 `latest.yml`（自动更新用），可以无视。
+> 产物目录由 `electron-builder.yml` 的 `directories.output` 统一指定（Windows 和 Linux 都落这里，已加进 `.gitignore`）。目录里除最终产物外还有 `win-unpacked/` 等中间文件；`latest.yml` / `latest-linux.yml` / `*.blockmap` 是**在线升级元数据**（electron-updater 用），CI 会随 Release 一起上传，不要手动删除。
 
 ## Windows：双击 `build.bat`
 
@@ -102,6 +102,8 @@ svn-git-1.0.0-portable.exe --browser -d    # Windows：同上（portable 包装�
 
 非交互形态（给 GUI / CI 调用）：`node deploy/release.mjs --patch --yes`。
 另有 `--minor` / `--major`、`--no-push`（只提交打 tag 不推）、`--no-watch`（不盯 CI）、`--branch <名>`（允许在非 main 分支发版）。
+
+> **在线升级**：Release 里的 `latest.yml` / `latest-linux.yml` 是客户端「关于 → 检查更新」的依据。Windows 安装版（`-setup.exe`）和 Linux AppImage 支持全自动升级；免安装 `-portable.exe` 不能替换运行中的自身，只提供发布页入口；WSL/纯 Node 包暂不支持。更新默认走 gh-proxy 加速，可在「关于」里关闭或改成自己的中转前缀。**第一个带更新代码的版本仍需用户手动装一次**，之后的版本才能在线升级。
 
 > 脚本名是 ASCII 的 `release.mjs` 而不是 `发布.mjs`：双击入口里 `chcp 65001` 之后 cmd 按 UTF-8 解析后续行，中文文件名在 bat 里没法可靠表达。
 

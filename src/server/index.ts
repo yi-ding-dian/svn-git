@@ -30,6 +30,7 @@ import { handle as handleRepoBrowse } from './routes/repobrowse.js';
 import { handle as handleGithub } from './routes/github.js';
 import { handle as handleSvnAuth } from './routes/svn-auth.js';
 import { handle as handleConfig } from './routes/config.js';
+import { handle as handleAppUpdate } from './routes/app-update.js';
 import { handle as handleRelease } from './routes/release.js';
 import { handle as handlePackaging } from './routes/packaging.js';
 import { handle as handleModuleIndex } from './routes/module-index.js';
@@ -51,6 +52,8 @@ export interface ServerHandle {
 /** 系统目录选择器（Electron dialog 注入；纯 node 为 null）：
  * 宿主实现随 /api/pick-dir 端点迁至 routes/misc.ts，此处 re-export 保持 server.js 导出语义（main.tsx 静态导入不受影响） */
 export { setPickDirHandler, setSaveFileHandler } from './routes/host.js';
+/** 应用自身在线升级：main 注入 electron-updater 处理器（纯 Node 不注入） */
+export { setAppUpdateHandlers } from './routes/app-update.js';
 
 /** 静态资源 Content-Type（键带点 = path.extname 产物；仓库内文件的图片 MIME 见 routes/misc.ts 的 IMG_MIME） */
 const MIME: Record<string, string> = {
@@ -155,6 +158,7 @@ export function startServer(): Promise<ServerHandle> {
         if (await handleGithub(ctx)) return;
         if (await handleSvnAuth(ctx)) return;
         if (await handleConfig(ctx)) return;
+        if (await handleAppUpdate(ctx)) return;
         if (await handleRelease(ctx)) return;
         if (await handlePackaging(ctx)) return;
         if (await handleModuleIndex(ctx)) return;
