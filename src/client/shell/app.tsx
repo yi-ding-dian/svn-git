@@ -59,6 +59,10 @@ export function App() {
   /** 远程状态重算信号（更新/切分支/合并成功后 +1）：侧边栏据此重跑「远程检查」。
    *  与 tick 分开——tick 连文件保存都会加，不能每次都触发一批联网探测。 */
   const [remoteCheckTick, setRemoteCheckTick] = useState(0);
+  /** 「整个仓库已同步」事件号（拉取/根目录更新成功后 +1）：侧边栏当前项目的 ⬇ 角标
+   *  据此**立即归零**——不等那轮联网重查回来（实测 fetch 5s，用户要的是"拉完马上消失"）。
+   *  与 remoteCheckTick 分开：那个是"去重查"，这个是"本地已确定没有待拉取"。 */
+  const [remoteSyncedTick, setRemoteSyncedTick] = useState(0);
   const [toast, setToast] = useState('');
   const [toastErr, setToastErr] = useState(false);
   /** 轻提示（1.5s 消失；重复操作提醒等"扫一眼就够"的）——见 showToast 的 quick 参数 */
@@ -243,6 +247,7 @@ export function App() {
     onboard,
     setOnboard,
     checkRemote,
+    markRemoteSynced,
     remoteFileCount,
     refreshUnpushed,
     refreshStash,
@@ -908,6 +913,13 @@ export function App() {
           try {
             const r = await post.update(dir || undefined, signal);
             if (r.ok) {
+              // 整个仓库都同步了（git pull 恒为整条分支；svn 只有根目录 update 才是整个工作副本）：
+              // 横条与侧栏 ⬇ 立即本地清零，不等下面那次网络重查——fetch 实测 5s，用户要的是
+              // "拉完马上消失"；重查只作校准（万一期间又有人推了，横条会再回来）
+              if (repo?.type === 'git' || !dir) {
+                markRemoteSynced();
+                setRemoteSyncedTick((n) => n + 1);
+              }
               // remote: 连侧栏的「远程检查」一起重跑——它的 ⬇ 角标有三个来源，只刷顶栏
               // remoteHint 的话，旧的 remoteProbe 值会继续把角标撑在 12（用户实报）
               refresh({ remote: true });
@@ -931,7 +943,7 @@ export function App() {
       // 进度轮询（git 拉取才有数据；svn update 那侧后端一直 ok=false，面板自然不显示进度条）
       stopPoll = pollTransferProgress(taskId, 'pull');
     },
-    [refresh, showToast, repo?.root, repo?.revOrBranch]
+    [refresh, showToast, markRemoteSynced, repo?.type, repo?.root, repo?.revOrBranch]
   );
 
   // 提交失败弹窗：所有提交失败统一弹窗确认（不再 5 秒 toast 一闪而过）；
@@ -1297,6 +1309,8 @@ export function App() {
               // 远程状态重算信号（更新/切分支/合并后 +1）：侧栏据此重跑一遍「远程检查」，
               // 否则 ⬇ 角标会停在操作前的数（后端缓存虽已失效，前端不重探也看不到）
               remoteCheckTick={remoteCheckTick}
+              // 「整个仓库已同步」（拉取/根目录更新成功）：当前项目 ⬇ 立即归零，不等联网重查
+              remoteSyncedTick={remoteSyncedTick}
               // 当前项目的"远程有新提交"（preflight 实时检查结果，顶部提示条同源）——
               // 侧边栏当前项目条目据此显示 ⬇（SVN 项目本地探测拿不到 behind，靠这条补上）
               remoteBehind={remoteHint?.behind ?? 0}

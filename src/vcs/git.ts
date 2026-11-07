@@ -893,8 +893,20 @@ export class GitVcs {
       .filter((s) => !/^(请|Please)/.test(s)); // i18n-ignore: 滤掉 git 的中文提示行
   }
 
-  /** git pull */
-  async pull(
+  /** git pull：外层只管"远程缓存失效"——结束（成功/失败/取消都一样）必须再失效一次。
+   *  pull 内含 fetch，origin/* 可能在 pull 执行期间前移；只在开始时失效的话，**pull 进行中**
+   *  发起的那次 preflight 会用前移前的 refs 算出旧 behind，并在 pull 结束后写回缓存，
+   *  把刚失效的缓存又撑起来 60s（用户实报"拉取完成、横条和 ⬇55 还不消失"）。 */
+  async pull(signal?: AbortSignal): ReturnType<GitVcs['runPull']> {
+    try {
+      return await this.runPull(signal);
+    } finally {
+      this.invalidatePreflight();
+    }
+  }
+
+  /** git pull 的实现体（缓存失效由 pull 包裹，见上） */
+  private async runPull(
     signal?: AbortSignal
   ): Promise<VcsResult & { files?: { path: string; status: string; code: string }[]; authType?: 'github' | 'server' | 'ssh' }> {
     // 无远程（孤仓库）：git pull 只会报原始 fatal，换成友好提示（不执行命令）
@@ -1992,18 +2004,38 @@ export class GitVcs {
    * 成功缓存 60s（远程提示存在即可，提交不必每次拉最新）；失败缓存 10s（弱网防连环挂起 15s） */
   private remoteCache: { time: number; ok: boolean; behind: number; ahead: number; updatedFiles: string[]; remoteLogs: LogEntry[] } | null = null;
 
+  /** 远程缓存的代次号：invalidatePreflight 每次 +1。
+   *  只清单个结果挡不住**已经在跑**的探测——它算完会无条件写回缓存，把刚失效的缓存
+   *  用旧 behind 重新撑满 60s（拉取期间正好有一次 preflight 在跑，界面就一直挂着 ⬇55，
+   *  用户实报）。所以探测开始时记代次，算完代次变了就认定结果过期：不写缓存，重算一次。 */
+  private remoteEpoch = 0;
+
   /** 失效远程检查缓存（pull / 切分支 / 合并后调用）：这几种操作都会移动 HEAD 或改写
    *  origin/* 引用，旧的 ahead/behind 不再对应当前分支。不清的话"操作完成立即重查"会命中
    *  60s 缓存——顶栏横条与侧栏 ⬇ 角标继续挂着旧数字（用户实报"更新完仍显示 ⬇12"）。 */
   invalidatePreflight(): void {
+    this.remoteEpoch += 1;
     this.remoteCache = null;
   }
 
+  /** 取远程信息：计算期间被失效（pull / update / 手动获取抢在前面完成）就重算一次。
+   *  重算是必须的——这一次的响应就是前端"拉完立即重查"的那次，把旧 behind 交回去
+   *  等于界面同步不上（横条 / ⬇ 角标停在旧数字）。最多算两次，避免持续有操作时死循环。 */
   private async remoteCheck() {
+    let r = await this.remoteCheckOnce();
+    if (r.stale) {
+      r = await this.remoteCheckOnce();
+      // 连着两次都被失效：放弃写缓存（写了也是旧值），值只能照常返回给这次调用
+    }
+    return r.value;
+  }
+
+  private async remoteCheckOnce() {
+    const epoch = this.remoteEpoch; // 本次计算的代次：算完代次变了 = 结果基于旧 refs
     const now = Date.now();
     const c = this.remoteCache;
     if (c && now - c.time < (c.ok ? 60_000 : 10_000)) {
-      return { behind: c.behind, ahead: c.ahead, updatedFiles: c.updatedFiles, remoteLogs: c.remoteLogs };
+      return { value: { behind: c.behind, ahead: c.ahead, updatedFiles: c.updatedFiles, remoteLogs: c.remoteLogs }, stale: false };
     }
     // 拉取远程元数据（静默，失败不阻塞）。
     // 15s 快速失败（网络不通时 60s 挂起会占住浏览器连接槽,阻塞目录加载）；
@@ -2039,8 +2071,10 @@ export class GitVcs {
       if (lg.code === 0) remoteLogs = parseGitLog(lg.stdout);
     }
     const ok = fetched.code === 0 && cnt.code === 0;
-    this.remoteCache = { time: now, ok, behind, ahead, updatedFiles: [...remoteChanged], remoteLogs };
-    return { behind, ahead, updatedFiles: [...remoteChanged], remoteLogs };
+    // 计算期间缓存被失效过：这份算的是失效前的 origin/*，写回去就是旧值，跳过
+    const stale = epoch !== this.remoteEpoch;
+    if (!stale) this.remoteCache = { time: now, ok, behind, ahead, updatedFiles: [...remoteChanged], remoteLogs };
+    return { value: { behind, ahead, updatedFiles: [...remoteChanged], remoteLogs }, stale };
   }
 
   // ============ Blame 追溯 ============

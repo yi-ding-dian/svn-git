@@ -6,7 +6,7 @@
  *  注意：App 的 `refresh()`（tick+1 并刷新计数）**不在这里**——tick 是全局刷新信号（还驱动文件视图重拉），
  *  不属于仓库状态域；本 hook 只暴露 refreshUnpushed / refreshStash 供它组合。
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, type LogEntry } from '../shared/api.js';
 
 export interface RemoteHint {
@@ -71,11 +71,17 @@ export function useRepoStatus(opts: { repoType?: string | null; repoRoot?: strin
       .catch(() => {});
   }, [repoType, tick]);
 
+  /** 远程检查的请求序号：只接受**最新一次**请求的响应。
+   *  上一轮（2 分钟巡检 / 操作后的重查）响应回来得慢时，会把刚拿到的"没有新提交"又覆盖回旧数字。 */
+  const remoteCheckSeq = useRef(0);
+
   /** 检查远程状态并刷新提示条；更新完成后立即调用，避免提示条残留旧状态 */
   const checkRemote = useCallback(() => {
+    const seq = (remoteCheckSeq.current += 1);
     get
       .preflight()
       .then((r) => {
+        if (seq !== remoteCheckSeq.current) return; // 已有更晚的检查发出：旧响应丢弃
         const risk = r.conflictRisk?.length ?? 0;
         if (r.behind > 0 || (r.lockedByOthers?.length ?? 0) > 0 || risk > 0) {
           setRemoteHint({ behind: r.behind, locked: r.lockedByOthers?.length ?? 0, risk, files: r.updatedFiles ?? [], remoteLogs: r.remoteLogs ?? [] });
@@ -88,11 +94,21 @@ export function useRepoStatus(opts: { repoType?: string | null; repoRoot?: strin
       .catch(() => {});
   }, []);
 
+  /** 拉取/更新整个仓库成功：本地已确定没有待拉取内容 → **先本地清掉提示条**，
+   *  不等那次网络重查回来（fetch 实测 5s，横条要及时消失）。
+   *  序号一起推进：此刻还在路上的旧响应（更新前发出的检查）不许把旧数字写回来。 */
+  const markRemoteSynced = useCallback(() => {
+    remoteCheckSeq.current += 1;
+    setRemoteHint(null);
+    setRiskFiles([]);
+  }, []);
+
   // 切换仓库：立即清掉上一个仓库的远程提示（remoteHint 是上一个仓库的检查结果）。
   // 必须显式清：下面的监控 effect 虽然依赖 repoRoot，但首次检查有 6s 延迟，这期间提示会
   // 挂着上一个仓库的内容；若新仓库那次检查失败（无远程/网络不通）catch 静默，旧提示更会
   // 永久残留——用户会以为新仓库有远程新提交。
   useEffect(() => {
+    remoteCheckSeq.current += 1; // 上一个仓库还在路上的检查结果，也不许再写进来
     setRemoteHint(null);
     setRiskFiles([]);
   }, [repoRoot]);
@@ -122,6 +138,7 @@ export function useRepoStatus(opts: { repoType?: string | null; repoRoot?: strin
     onboard,
     setOnboard,
     checkRemote,
+    markRemoteSynced,
     remoteFileCount,
     refreshUnpushed,
     refreshStash,

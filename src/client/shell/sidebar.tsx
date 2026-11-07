@@ -145,6 +145,9 @@ export function Sidebar(props: {
   /** 远程状态重算信号（App 在更新/切分支/合并成功后递增）：重跑「远程检查」。
    *  与 refreshTick 分开：后者连文件操作都会变，不能每次都触发一批联网探测。 */
   remoteCheckTick?: number;
+  /** 「整个仓库已同步」事件号（App 在拉取/根目录更新成功后递增）：当前项目的 ⬇ **立即归零**，
+   *  不等重查（fetch 实测 5s）——重查只作校准，又有人推了会让 ⬇ 再回来 */
+  remoteSyncedTick?: number;
   onNav: (v: View) => void;
   onOpenHistory: (h: { path: string }) => void;
   onRemoveHistory: (path: string) => void;
@@ -243,6 +246,16 @@ export function Sidebar(props: {
     // 原先只在项目清单变化时跑，拉取成功后 ⬇ 角标会一直停在旧数字（用户实报）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyKey, props.remoteCheckTick]);
+  // 整个仓库已同步（顶栏拉取 / 根目录更新成功）：当前项目的 ⬇ 立即归零——本地已确定没有
+  // 待拉取内容，不必等那轮联网重查回来（实测 fetch 5s，用户要的是"拉完马上消失"）。
+  // 随后那次重查若发现又有人推了，⬇ 会重新出现（校准不丢）。
+  useEffect(() => {
+    if (!props.remoteSyncedTick || !props.currentRoot) return;
+    const root = props.currentRoot;
+    setRemoteBehinds((p) => ({ ...p, [root]: { behind: 0 } }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.remoteSyncedTick]);
+
   // 点 ⬇ 就地更新该项目（**后台任务**——与推送/检出/更新同套）：飞行线从 ⬇ 按钮起飞，
   // 沙漏 / 任务面板可取消；完成/失败走统一通知（气泡 + 铃铛）。busy 态（⏳）由任务查询得出
   const tasks = useTasks();

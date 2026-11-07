@@ -968,24 +968,30 @@ export class SvnVcs {
    * 提交前检查：svn status -u（查询服务器）
    * 返回：服务器是否更新、落后版本数、冲突风险文件（本地和服务器都改了）、被他人锁定文件
    */
-  async preflight(): Promise<{
-    remoteHasUpdate: boolean;
-    behind: number;
-    conflictRisk: string[];
-    lockedByOthers: string[];
-    updatedFiles: string[];
-    remoteLogs: LogEntry[];
+  async preflight(): Promise<Awaited<ReturnType<SvnVcs['preflightOnce']>>['value']> {
+    // 计算期间被失效（update 抢在前面完成）→ 重算一次：这一次响应就是前端"更新完立即重查"
+    // 的那次，把旧 behind 交回去界面就同步不上（同 git.ts remoteCheck 的代次说明）
+    let r = await this.preflightOnce();
+    if (r.stale) r = await this.preflightOnce();
+    return r.value;
+  }
+
+  private async preflightOnce(): Promise<{
+    value: { remoteHasUpdate: boolean; behind: number; conflictRisk: string[]; lockedByOthers: string[]; updatedFiles: string[]; remoteLogs: LogEntry[] };
+    stale: boolean;
   }> {
+    const epoch = this.preflightEpoch; // 本次计算的代次：算完代次变了 = 结果基于更新前的版本库
     // status -u 是服务器查询（网络）：缓存整体结果——成功 60s（提交不必每次查服务器）、
     // 失败 10s 内不重试（弱网防连环挂起；20s 超时慢失败）
     const now = Date.now();
     const c = this.preflightCache;
-    if (c && now - c.time < (c.ok ? 60_000 : 10_000)) return c.data;
+    if (c && now - c.time < (c.ok ? 60_000 : 10_000)) return { value: c.data, stale: false };
     const res = await this.exec(['status', '-u'], { timeoutMs: 20_000 }); // 快速失败:网络不通时防卡连接槽 60s+
     if (res.code !== 0) {
       const empty = { remoteHasUpdate: false, behind: 0, conflictRisk: [], lockedByOthers: [], updatedFiles: [], remoteLogs: [] };
-      this.preflightCache = { time: now, ok: false, data: empty };
-      return empty;
+      const stale = epoch !== this.preflightEpoch;
+      if (!stale) this.preflightCache = { time: now, ok: false, data: empty };
+      return { value: empty, stale };
     }
     const out = res.stdout.split('\n');
     // 格式（cat -A 实测）：条目行 "[列1状态][7空格][* 过期标记][ 版本号 ][ 路径]"
@@ -994,7 +1000,11 @@ export class SvnVcs {
     const lockedByOthers: string[] = [];
     const updatedFiles: string[] = []; // 服务器有新版本的完整文件列表（无论本地是否修改）
     let expiredCount = 0;
-    for (const line of out) {
+    for (const rawLine of out) {
+      // Windows 上 svn 输出 CRLF：行尾的 \r 会让下面的路径正则匹配不上（"." 不匹配 \r，
+      // `$` 又要求行尾），结果 updatedFiles 恒空、behind 恒 0——SVN 项目永远看不到"远程有新提交"。
+      // POSIX 上没有 \r，这一步是恒等变换。
+      const line = rawLine.replace(/\r$/, '');
       if (line.length < 8 || !line.trim()) continue;
       if (/状态|Status/.test(line)) continue; // i18n-ignore: 解析 svn status -u 汇总行（"版本 26 的状态"/"Status against revision: 26"）
       const c1 = line[0]!;
@@ -1031,16 +1041,22 @@ export class SvnVcs {
       updatedFiles,
       remoteLogs,
     };
-    this.preflightCache = { time: now, ok: true, data: result };
-    return result;
+    const stale = epoch !== this.preflightEpoch;
+    if (!stale) this.preflightCache = { time: now, ok: true, data: result };
+    return { value: result, stale };
   }
 
   /** preflight 结果缓存（status -u 是服务器查询）：成功 60s / 失败 10s 内不重试 */
-  private preflightCache: { time: number; ok: boolean; data: Awaited<ReturnType<SvnVcs['preflight']>> } | null = null;
+  private preflightCache: { time: number; ok: boolean; data: Awaited<ReturnType<SvnVcs['preflightOnce']>>['value'] } | null = null;
+
+  /** 缓存代次号：invalidatePreflight 每次 +1。挡住"更新进行中发起、更新后才算完"的探测
+   *  把旧 behind 写回缓存（写完又撑 60s，横条 / ⬇ 角标不消失——用户实报） */
+  private preflightEpoch = 0;
 
   /** 失效 preflight 缓存（update 成功内部调；外部路径（如侧栏 ⬇ 的 pullAny 用临时实例更新）
    *  经 Vcs 接口调——否则"更新完成立即重查"会命中旧 behind，⬇/横条不消失） */
   invalidatePreflight(): void {
+    this.preflightEpoch += 1;
     this.preflightCache = null;
   }
 
