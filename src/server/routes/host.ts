@@ -9,6 +9,7 @@ import { detectRepo } from '../../vcs/detect.js';
 import { platform } from '../../platform/index.js';
 import { BINARY_EXTS, compareName } from '../../shared/types.js';
 import { run } from '../../vcs/exec.js';
+import { buildGitSshEnvironment, githubSshKeyArgument, isGitAuthenticationError } from '../../vcs/git-ssh.js';
 import { resolveSvnBin } from '../../vcs/svn.js';
 import { inRepoRoot, sendJson, readBody, vcsOf, START_DIR, MSG_PATH_OUT_OF_BOUNDS, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
@@ -385,11 +386,18 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               // 未配置远程
               reason = t('srv.noRemote');
             } else {
-              const r = await run('git', ['ls-remote', 'origin'], { cwd: repo.root, timeoutMs: 8_000 });
+              // 与 GitVcs.exec 走同一套私钥解析（git-ssh.ts）：裸跑 ls-remote 不带 -i，
+              // 配了项目私钥的用户会把"认证失败"误显示成红灯「连不上」
+              const keyArg = githubSshKeyArgument(repo.root, u.stdout.trim());
+              const r = await run('git', ['ls-remote', 'origin'], {
+                cwd: repo.root,
+                timeoutMs: 8_000,
+                env: buildGitSshEnvironment(keyArg),
+              });
               const errText = (r.stderr + '\n' + r.stdout).trim();
               if (r.code === 0) {
                 ok = true; reason = ''; // 一切正常：不返回文本（前端按空串判断"无可说"；返回固定文案会因语言切换导致比较失效）
-              } else if (/auth|credential|401|403|could not read Username|terminal prompts/i.test(errText)) {
+              } else if (isGitAuthenticationError(errText)) {
                 // 已连通（认证失败，需检查令牌）
                 ok = true; reason = t('srv.netAuthFailToken');
               } else {

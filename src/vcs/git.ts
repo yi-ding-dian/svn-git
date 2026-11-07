@@ -7,6 +7,7 @@ import { run } from './exec.js';
 import { decodeText, detectTextEncoding } from '../shared/text.js';
 import { parseDiff, buildPatch, blobOf, type ParsedDiff } from './hunks.js';
 import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.js';
+import { buildGitSshEnvironment, githubSshKeyArgument } from './git-ssh.js';
 import { loadConfig } from '../config.js';
 import { progressStart, progressDone, progressFromStderr } from '../transfer-progress.js';
 import { t, getLang } from '../shared/i18n/index.js';
@@ -187,20 +188,6 @@ export class GitVcs {
     return this.originCache;
   }
 
-  /** GitHub 专用 SSH 私钥参数（config.json 的 git.sshKeyPath）：
-   *  - 没配私钥 / origin 不是 GitHub → 空串，行为与改动前完全一致；
-   *  - 配了 → 只给 GitHub 的 ssh 加 -i；不设 IdentitiesOnly，默认密钥仍可兜底。
-   *  **路径统一正斜杠**：GIT_SSH_COMMAND 经 shell 解析，Windows 反斜杠会被当转义符；
-   *  双引号容纳空格。保存接口已拒绝换行/引号，这里再兜底去掉引号。 */
-  private async sshKeyArg(): Promise<string> {
-    const key = loadConfig().git?.sshKeyPath?.trim();
-    if (!key) return '';
-    const origin = await this.originUrl();
-    if (!/^(?:ssh:\/\/)?(?:[^@/\s]+@)?github\.com[:/]/i.test(origin)) return '';
-    const p = key.replace(/\\/g, '/').replace(/"/g, '');
-    return ` -i "${p}"`;
-  }
-
   private async exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; env?: Record<string, string>; decode?: 'utf8' | 'auto' } = {}) {
     // 传输类子命令（push / pull / fetch）自动上报进度，供顶栏任务面板显示"已传多少、多快"：
     //  - `--progress` 必须显式加（stderr 不是终端时 git 默认不吐）；
@@ -211,7 +198,10 @@ export class GitVcs {
     const sub = args[i] ?? '';
     const chan = sub === 'push' || sub === 'pull' || sub === 'fetch' ? sub : '';
     if (chan) progressStart(chan);
-    const sshKey = await this.sshKeyArg();
+    // 私钥解析统一走 git-ssh.ts（绝对路径 + 文件存在性检查），与网络灯 /api/net-check 同源：
+    //  配置写相对路径时只按当前仓库根解析，别的仓库没有这个文件就不加 -i，
+    //  而不是把不存在的路径丢给 ssh 换回一句难懂的 "Identity file ... not accessible"
+    const sshKey = githubSshKeyArgument(this.repo.root, await this.originUrl());
     return run('git', chan ? [...args.slice(0, i + 1), '--progress', ...args.slice(i + 1)] : args, {
       cwd: this.repo.root,
       timeoutMs: extra.timeoutMs ?? 120_000,
@@ -220,7 +210,7 @@ export class GitVcs {
       stdinData: extra.stdinData, // 透传：此前声明了但漏传，导致 -F - 读到空说明
       // GIT_TERMINAL_PROMPT=0：禁用终端交互提示（否则 git 检测到启动终端会卡在 "Username for..." 等输入，
       //  不走工具的认证弹窗）；GIT_SSH_COMMAND BatchMode：SSH 不交互（不卡主机指纹/密码输入），失败快速返回
-      env: { GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: `ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new${sshKey}`, ...extra.env },
+      env: { ...buildGitSshEnvironment(sshKey), ...extra.env },
       // 进度表的生命周期跟着这次 git 命令走：命令一结束就撤。推送可能连跑几条（无上游重试、
       // 认证重试），每条各自 Start/Done——中间的空档正好就是"两次传输之间"
       ...(chan ? { onStderrLine: (line: string) => progressFromStderr(chan, line) } : {}),
