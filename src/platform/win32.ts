@@ -160,16 +160,6 @@ function extractWinIcon(exe: string): Buffer | null {
 /** 「终端运行」支持的脚本扩展名（判定在平台侧：Windows 三种都能跑，Linux 只有 .sh 有执行途径） */
 const SCRIPT_EXTS = new Set(['.bat', '.cmd', '.sh']);
 
-/** 本进程是否拥有自己的应用窗口（Electron 打包版默认方式为真；浏览器方式与 `-d` 常驻为假）。
- *  **只影响 revealPath 走哪条路**：Windows 只把"窗口能不能到前台"的资格给**前台进程**启动的
- *  窗口——有自己窗口的宿主（用户就点在那个窗口上，进程自己即前台进程）直接 spawn explorer
- *  即可；没有窗口的宿主（服务只是个后台进程）必须借 shell 开、并确认窗口到了前台。
- *  Linux 没有这条限制（xdg-open 交给桌面环境），所以平台入口那边转发过来是个空操作。 */
-let ownsAppWindow = false;
-export function setOwnsAppWindow(value: boolean): void {
-  ownsAppWindow = value;
-}
-
 /** 路径 → 正斜杠形式：传给 bash 的路径必须换掉反斜杠，否则会被 bash 当转义符吃掉
  *  （`C:\Users\...` → `C:Users...`，与 git.ts 给 git 传编辑器路径同一教训——实报过） */
 const fwdSlash = (p: string): string => p.replace(/\\/g, '/');
@@ -301,18 +291,30 @@ const REVEAL_CS =
  *  开着的同目录窗口——实报现场就同时开着 3 个 svn-git 窗口。 */
 function revealScript(abs: string, select: boolean): string {
   const folder = select ? path.dirname(abs) : abs;
+  // Start-Process 的坑：FilePath 不带扩展名时 PowerShell 会按 PATHEXT 补全（.bat/.cmd/.exe…）。
+  // 仓库里 deploy/release 目录旁边正好有 release.bat —— 用户右键「打开文件管理器」实际跑了发版脚本
+  // （用户实报：release 目录 → 弹出的却是「=== 发版 ===」的终端）。给目录补尾部分隔符，
+  // PowerShell 就不会再把它当成文件名去补全；ShellExecute 仍会按目录打开。
+  const folderForStart = /[\\/]$/.test(folder) ? folder : `${folder}${path.sep}`;
   const selectPart = select
     ? `$pidl = [IntPtr]::Zero; $attrs = 0; if ([Rv]::SHParseDisplayName(${psq(abs)}, [IntPtr]::Zero, [ref]$pidl, 0, [ref]$attrs) -eq 0) { [Rv]::SHOpenFolderAndSelectItems($pidl, 0, $null, 0) | Out-Null; [Rv]::CoTaskMemFree($pidl) }; `
     : '';
   return (
     `Add-Type -TypeDefinition ${psq(REVEAL_CS)}; ` +
-    // ① 开窗前的资源管理器窗口快照（key = 句柄）
-    '$seen = @{}; [Rv]::EnumWindows([Rv+EnumProc]{ param($h, $l) $sb = New-Object System.Text.StringBuilder 256; [Rv]::GetClassName($h, $sb, 256) | Out-Null; if ($sb.ToString() -eq "CabinetWClass") { $seen[[int64]$h] = 1 }; return $true }, [IntPtr]::Zero) | Out-Null; ' +
+    // ① 先找**已经开着**的目标文件夹窗口。Start-Process 对已存在的窗口只会激活，
+    //    在 Windows 的前台锁下仍可能被挡住；直接拿它的 HWND 走后面的抢前台逻辑。
+    //    （用户实报：release 目录的窗口已经开着时，再点「打开文件管理器」毫无反应；
+    //     其他目录因为是新开窗口、能被新窗口检测抓到，所以正常。）
+    `$win = [IntPtr]::Zero; try { $shell = New-Object -ComObject Shell.Application; $want = ${psq(folder)}.TrimEnd([char]92); foreach ($it in $shell.Windows()) { try { $p = $it.Document.Folder.Self.Path; if ($p -and $p.TrimEnd([char]92) -ieq $want) { $win = [IntPtr]$it.HWND; break } } catch {} } } catch {} ` +
     selectPart +
-    // ② 让 shell 打开/激活目录
-    `Start-Process -FilePath ${psq(folder)}; ` +
+    // ② 没有已开窗口才让 shell 新开（末尾必须带分隔符，见 folderForStart 注释）
+    'if ($win -eq [IntPtr]::Zero) { ' +
+    // 开窗前的资源管理器窗口快照（key = 句柄）
+    '$seen = @{}; [Rv]::EnumWindows([Rv+EnumProc]{ param($h, $l) $sb = New-Object System.Text.StringBuilder 256; [Rv]::GetClassName($h, $sb, 256) | Out-Null; if ($sb.ToString() -eq "CabinetWClass") { $seen[[int64]$h] = 1 }; return $true }, [IntPtr]::Zero) | Out-Null; ' +
+    `Start-Process -FilePath ${psq(folderForStart)}; ` +
     // ③ 等新窗口出现（最多 6 秒）
-    '$win = [IntPtr]::Zero; for ($i = 0; $i -lt 24 -and $win -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 250; [Rv]::EnumWindows([Rv+EnumProc]{ param($h, $l) $sb = New-Object System.Text.StringBuilder 256; [Rv]::GetClassName($h, $sb, 256) | Out-Null; if ($sb.ToString() -eq "CabinetWClass" -and -not $seen[[int64]$h]) { $script:win = $h }; return $true }, [IntPtr]::Zero) | Out-Null }; ' +
+    'for ($i = 0; $i -lt 24 -and $win -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 250; [Rv]::EnumWindows([Rv+EnumProc]{ param($h, $l) $sb = New-Object System.Text.StringBuilder 256; [Rv]::GetClassName($h, $sb, 256) | Out-Null; if ($sb.ToString() -eq "CabinetWClass" -and -not $seen[[int64]$h]) { $script:win = $h }; return $true }, [IntPtr]::Zero) | Out-Null }; ' +
+    '} ' +
     // ④ 抢前台：先常规，失败再"最小化→还原"，最后闪任务栏
     'if ($win -ne [IntPtr]::Zero -and [Rv]::GetForegroundWindow() -ne $win) { [Rv]::SetForegroundWindow($win) | Out-Null; Start-Sleep -Milliseconds 200; ' +
     'if ([Rv]::GetForegroundWindow() -ne $win) { [Rv]::ShowWindow($win, 6) | Out-Null; Start-Sleep -Milliseconds 150; [Rv]::ShowWindow($win, 9) | Out-Null; [Rv]::SetForegroundWindow($win) | Out-Null; Start-Sleep -Milliseconds 200 }; ' +
@@ -398,27 +400,18 @@ export const win32: Platform = {
     // 对目录也用 /select 是错的：Explorer 会**在上一层打开**并把它选中——用户实报
     // 「在仓库根空白处右键『打开文件管理器』，开出来的是 D:\ 而不是 D:\svn-git」。
     //
-    // **不能自己 spawn explorer**（原来就是）：常驻服务是无控制台的后台进程，Windows 不给它
-    // 开的窗口前台资格，窗口只能停在其他窗口后面（实测 visible=true 但 isForeground=false；
-    // 用户实报"开是开了，得点一下任务栏才看得见"）。改成让 shell 开 + 打开后确认前台，
-    // 细节见 revealScript。detach:false + windowsHide 的理由同 openDefault。
+    // **不再区分有没有自己的窗口，统一走 revealScript**（原来窗口版直接 spawn explorer）：
+    //  - spawn explorer 起的窗口在部分 Windows 环境里会停在其他窗口后面/不弹出（用户实报
+    //    「release 目录右键打开文件管理器打不开」）；脚本里有 SetForegroundWindow +
+    //    最小化还原 + 任务栏闪烁的抢前台兜底。
+    //  - 窗口版也走 shell 开：多花约 1 秒，换"点了能看到"的确定性。
+    //  - windowsHide 必须 true（否则闪黑框）；detach:false 等理由同 openDefault。
     let isDir = false;
     try {
       isDir = fs.statSync(abs).isDirectory();
     } catch {
       /* stat 失败（刚被删等）：按文件走「定位」，保持原行为 */
     }
-
-    // 自己有窗口的运行方式（Electron 内嵌窗口版）：用户就点在这个窗口上，本进程即前台进程，
-    // 它起的窗口本来就有前台资格 —— 直接 spawn 最快（省掉 powershell 中转那几百毫秒），
-    // 也就是这条路径一直以来的做法。**windowsHide 必须显式写 false**：显式写出来是为了
-    // 挡住"顺手改用 run()"——run() 默认 windowsHide:true，SW_HIDE 落到 explorer 头上
-    // 就是把窗口建成不可见的那个坑（e3017dc 那次回归）。
-    if (ownsAppWindow) {
-      spawn('explorer', isDir ? [abs] : ['/select,', abs], { stdio: 'ignore', windowsHide: false, detached: true }).unref();
-      return;
-    }
-
     await launchDetached(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', revealScript(abs, !isDir)], '', { windowsHide: true, detach: false });
   },
 
