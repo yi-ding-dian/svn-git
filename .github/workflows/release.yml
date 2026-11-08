@@ -91,6 +91,16 @@ jobs:
         with:
           path: artifacts
 
+      # WSL/纯 Node 包的在线升级靠 checksums.txt 校验下载的 tar.gz
+      # （Windows/Linux 的 Electron 包用 latest.yml 里的 sha512，不需要这个文件）
+      - name: 生成校验文件
+        run: |
+          find artifacts -type f \( -name '*.AppImage' -o -name '*.exe' -o -name '*.tar.gz' \) -print0 \
+            | xargs -0 sha256sum \
+            | while read -r hash file; do echo "$hash  $(basename "$file")"; done \
+            | sort > artifacts/checksums.txt
+          cat artifacts/checksums.txt
+
       - name: 发布到 Releases
         env:
           GH_TOKEN: ${{ github.token }}

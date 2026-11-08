@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { createRequire } from 'node:module';
 import { startServer, setPickDirHandler, setSaveFileHandler, setAppUpdateHandlers } from '../server/index.js';
-import { initAppUpdate } from './app-update.js';
+import { initAppUpdate, setAppUpdatePort } from './app-update.js';
 import { killAllChildren } from '../vcs/exec.js';
 import { recoverInflight } from '../inflight.js';
 import { detectRepo } from '../vcs/detect.js';
@@ -217,13 +217,14 @@ async function boot() {
   // 收拾上次异常退出留下的孤儿获取（残留进程 + 半截目录）；没有登记时是一次空读，不拖慢启动
   await recoverInflight();
 
-  // 应用自身在线升级：只有 Electron 打包版有 electron-updater；纯 Node（WSL）不注入，
-  // /api/app-update/* 会返回 unsupported。--browser / -d 下装更新会带走服务，故不启用安装。
-  if (process.versions.electron) {
-    setAppUpdateHandlers(initAppUpdate({ windowMode: !BROWSER && !DAEMON }));
-  }
+  // 应用自身在线升级：Electron 走 electron-updater，WSL/纯 Node 发行包走 tar.gz 自更新；
+  // 源码运行没有包标记，initAppUpdate 会返回 supported=false。--browser / -d 只在 Electron 下
+  // 影响「安装」（退出会带走服务），WSL 包本来就是浏览器模式，不受这个开关限制。
+  setAppUpdateHandlers(initAppUpdate({ windowMode: !BROWSER && !DAEMON }));
 
   const handle = await startServer();
+  // 23456 被别的程序占用时实际端口是随机的；换版本后的健康检查要用真实端口
+  setAppUpdatePort(handle.port);
   console.log('');
   // svn-git文件版本管理
   console.log(`  ⬢ ${t('main.title')}`);

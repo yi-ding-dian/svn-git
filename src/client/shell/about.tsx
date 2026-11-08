@@ -88,7 +88,13 @@ export function AboutModal(props: {
     try {
       const r = await post.appUpdateInstall();
       if (!r.ok) {
-        setInstallError(r.error === 'not-downloaded' ? t('shell.about.updateNotDownloaded') : t('shell.about.updateUnsupported'));
+        setInstallError(
+          r.error === 'not-downloaded'
+            ? t('shell.about.updateNotDownloaded')
+            : r.error === 'read-only'
+              ? t('shell.about.updateReadOnly')
+              : t('shell.about.updateUnsupported'),
+        );
       }
       // ok=true：主进程 400ms 后退出并安装，页面不用再做事
     } catch (e) {
@@ -152,7 +158,8 @@ export function AboutModal(props: {
       case 'downloading':
         return t('shell.about.updateDownloading', { percent: Math.round(update.percent ?? 0) });
       case 'downloaded':
-        return t('shell.about.updateDownloaded');
+        // Electron 关了应用也会在退出时装；WSL 包必须点「立即重启」才会跑换目录脚本
+        return update.mode === 'node' ? t('shell.about.updateDownloadedNode') : t('shell.about.updateDownloaded');
       case 'error':
         return t('shell.about.updateError', { msg: update.error ?? '' });
       default:

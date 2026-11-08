@@ -149,6 +149,10 @@ function writeReadme(dir, builtinNode) {
     并确认 .wslconfig 没有设置 localhostForwarding=false。
   - 工作副本请放在 WSL 文件系统（如 ~/projects），不要放 /mnt/c：文件权限和性能都更好。
   - 网页里的文件浏览/上传/下载操作的是 WSL 文件系统，不是 Windows 盘。
+  - 在线升级：页面「关于」→ 检查更新。要求包目录及其父目录可写（升级靠同盘改名换目录），
+    升级完成后会自动重启服务；日志在 ~/.cache/svngit/update.log。
+    升级会替换整个包目录：如果终端还停在这个目录里，升级后请 cd 到别处再重新进入
+    （旧目录已被移走，终端里执行命令可能报 getcwd 错误）。
   - 停止：页面右上角「退出」，或 curl -X POST http://127.0.0.1:23456/api/shutdown。
   - 端口 23456 被占用时服务会自动换端口，以启动日志为准。
 `,
@@ -177,6 +181,12 @@ async function main() {
       fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
       fs.copyFileSync(guide, path.join(dir, 'docs', '发版脚本生成指南.md'));
     }
+    // 在线升级标记：应用只在带这个标记的目录里启用 tar.gz 自更新（源码运行绝不误碰真实目录）。
+    // 文件进了 tar.gz，解压后就在包根；升级时据此判断 flavor（决定下载 wsl 还是 wsl-node 包）。
+    fs.writeFileSync(
+      path.join(dir, '.svngit-package.json'),
+      JSON.stringify({ kind: 'svn-git-package', flavor: WITH_NODE ? 'wsl-node' : 'wsl', version: VERSION }, null, 2) + '\n',
+    );
 
     console.log('== 3/5 安装生产依赖（不含 Electron/TypeScript） ==');
     run(NPM, ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], dir);
