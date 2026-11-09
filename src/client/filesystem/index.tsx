@@ -376,6 +376,10 @@ export function FsView(props: Props) {
         const patchParent = (d: FsData): FsData => {
           const pe = d.entries.find((e) => e.name === name && e.isDir);
           if (!pe || pe.code === selfCode) return d;
+          // 目录本身未被版本控制（I 被忽略 / ? 未版本化）时，子树聚合永远是空——它里面的
+          // 文件 git 根本不跟踪，状态接口查不到。用空结果覆盖会把 I/? 冲成「干净 ✓」
+          // （用户实报：进入被忽略目录再返回上级，I 变成 √）。
+          if (selfCode === '' && (pe.code === 'I' || pe.code === '?')) return d;
           return {
             ...d,
             entries: d.entries.map((e) =>
