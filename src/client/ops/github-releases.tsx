@@ -13,6 +13,13 @@ import { t } from '../../shared/i18n/index.js';
 
 const CARD: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 8, padding: 12 };
 
+/** CI 随 Release 发布的在线升级元数据（electron-updater 读 latest*.yml 与 blockmap，
+ *  WSL/Node 包用 checksums.txt 校验 tar.gz）。它们不是给用户下载的产物，发布历史里隐藏；
+ *  GitHub 页面上仍然存在，清理弹窗也按原始 assets 显示并删除。 */
+function isUpdateMetadata(name: string): boolean {
+  return name === 'checksums.txt' || /^latest(-[\w.-]+)?\.yml$/i.test(name) || /\.blockmap$/i.test(name);
+}
+
 /** 打开弹窗后的后台静默刷新节流：频繁开关不重复消耗 GitHub 配额（跨组件挂载共享） */
 let lastBackgroundRefresh = 0;
 
@@ -154,6 +161,8 @@ export const GitHubReleasesPanel = forwardRef<
   const hasDownloadableAssets = releases.some((r) => r.assets.length > 0);
   const rel = releases.find((r) => `r:${r.tagName}` === selected);
   const tag = tags.find((x) => `t:${x.name}` === selected);
+  /** 产物列表只展示用户能下载的东西；元数据不计入数量（清理按钮仍看原始 assets） */
+  const visibleAssets = rel ? rel.assets.filter((a) => !isUpdateMetadata(a.name)) : [];
 
   /** tag 下拉后缀：按 CI 状态区分构建中 / 构建失败 / 已完成待同步 / 仅标签 */
   const tagSuffix = (tag: GitHubTag) => {
@@ -226,8 +235,8 @@ export const GitHubReleasesPanel = forwardRef<
               )}
 
               <div style={{ marginTop: 10 }}>
-                <div className="dim small">{t('repo.githubReleases.assets', { n: rel.assets.length })}</div>
-                {rel.assets.map((a) => (
+                <div className="dim small">{t('repo.githubReleases.assets', { n: visibleAssets.length })}</div>
+                {visibleAssets.map((a) => (
                   <div
                     key={a.name}
                     className="row"
