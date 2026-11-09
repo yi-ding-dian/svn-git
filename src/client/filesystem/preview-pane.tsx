@@ -93,6 +93,19 @@ export function PreviewPane(props: Props) {
     [blameData, authorFilter],
   );
   const blameShownCount = blameVisible.length;
+  /** 追溯「版本+作者」列宽：按当前文件最长的一条自适应（上限 140px，保持原长作者布局）。
+   *  固定 140px 是按 Git 长作者设计的，SVN 的短作者（如 wuqd）右边会空出一大片（用户实报）。
+   *  用 ch 单位：等宽字体下 1 个 ASCII ≈ 1ch，全角字符按 2ch 计，跟随用户字体大小。 */
+  const blameMetaWidth = useMemo(() => {
+    let cells = 0;
+    for (const b of blameData) {
+      const text = `${b.rev} ${b.author}`;
+      let n = 0;
+      for (const ch of text) n += /[⺀-鿿＀-￯]/.test(ch) ? 2 : 1;
+      cells = Math.max(cells, n);
+    }
+    return `min(140px, ${Math.max(5, cells + 1)}ch)`;
+  }, [blameData]);
   /** 点筹码：没选就加上、已选就取消（多选叠加） */
   const toggleAuthor = useCallback((author: string) => {
     setAuthorFilter((prev) => {
@@ -792,7 +805,7 @@ export function PreviewPane(props: Props) {
                 <span className="blame-date" style={{ color: b.date ? blameDateColors.get(b.date) : undefined }}>
                   {b.date && prevDate !== b.date ? b.date : ''}
                 </span>
-                <span className="blame-meta">{b.rev} {b.author}</span>
+                <span className="blame-meta" style={{ width: blameMetaWidth }}>{b.rev} {b.author}</span>
                 {/* 行号紧挨代码（.blame-no 收窄了列宽，别在作者和代码间留一大条空白） */}
                 <span className="sb-no blame-no">{b.line}</span>
                 <span dangerouslySetInnerHTML={{ __html: highlightLineCached(b.text, langOf(target.name)) }} />

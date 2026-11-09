@@ -1032,11 +1032,12 @@ body.drag-trash-hot .drag-src {
 /* 追溯日期列：固定宽度让"只显示一次"的留空行与有日期的行对齐；着色由内联 style 按日期给
    （同一批提交显示一次、不同日期不同颜色） */
 .blame-date {
-  display: inline-block; width: 76px; flex: 0 0 auto; margin-right: 6px; white-space: nowrap;
+  display: inline-block; width: 10ch; flex: 0 0 auto; margin-right: 6px; white-space: nowrap;
   font-size: 0.85em; user-select: none; font-family: Consolas, monospace;
 }
-/* 追溯的行号列：比普通预览（44px）窄——作者和代码之间不留一大条空白（用户实报） */
-.blame-no { width: 30px; padding-right: 6px; }
+/* 追溯的行号列：比普通预览（44px）窄——作者和代码之间不留一大条空白（用户实报）。
+   必须带 .pv-line 前缀：否则会被后面的 .sb-no（44px）按同特异性覆盖，30px 不生效。 */
+.pv-line .blame-no { width: 30px; padding-right: 6px; }
 /* 追溯的修改人筛选条：顶部固定一条，不随代码滚动 */
 .blame-filter {
   display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
