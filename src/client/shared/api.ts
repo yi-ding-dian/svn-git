@@ -419,7 +419,8 @@ export interface LsResult {
 /** 最近项目记录（含常用标记） */
 export interface HistoryItem {
   path: string;
-  type: 'svn' | 'git';
+  /** wsl：WSL/纯 Node 包的运行目录（不是版本库，点击走目录浏览） */
+  type: 'svn' | 'git' | 'wsl';
   lastOpened: number;
   fav?: boolean;
   /** 用户备注（右键「备注」设置）：显示在时间前，过长由 CSS 截断；空/缺省 = 无备注 */

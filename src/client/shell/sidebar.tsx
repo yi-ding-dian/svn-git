@@ -182,7 +182,7 @@ export function Sidebar(props: {
 }) {
   // 最近项目右键菜单（设常用 / 备注 / 浏览仓库 / 删除 / 取消）。remark/type 一并带出：
   // 菜单项要用它预填备注弹窗、决定是否显示「浏览仓库」（仅 SVN）
-  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean; remark: string; type: 'svn' | 'git' } | null>(null);
+  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean; remark: string; type: 'svn' | 'git' | 'wsl' } | null>(null);
   // 备注弹窗（右键「备注」打开）：null = 关闭
   const [remarkFor, setRemarkFor] = useState<{ path: string; name: string; current: string } | null>(null);
 
@@ -224,7 +224,7 @@ export function Sidebar(props: {
     // **限并发 2**：弱网下每个探测（git fetch / svn status -u）最长 15~20s；全部项目一起发
     // 会占满浏览器同域连接槽（HTTP/1.1 为 6 个），把文件列表等主操作挤到队尾——用户实报
     // 打开项目时"正在加载…"迟迟不结束（网络好时探测秒回、无感，所以是"有时"）
-    const queue = [...props.history];
+    const queue = props.history.filter((h) => h.type !== 'wsl'); // 运行目录不是版本库，不做远程探测
     const worker = async (): Promise<void> => {
       while (alive) {
         const h = queue.shift();
@@ -298,6 +298,8 @@ export function Sidebar(props: {
     // **当前项目强制绕过缓存**（force）：它是我"现在在用"的，刚提交/刷新后角标必须立刻准；
     // 其余项目走缓存（挡侧边栏成批请求的重复探测）
     for (const h of props.history) {
+      // WSL 运行目录不是版本库：探了只会得到 unavailable ⚠（用户明确不要这个提示）
+      if (h.type === 'wsl') continue;
       get
         .projectStatus(h.path, h.path === props.currentRoot)
         .then((r) => {

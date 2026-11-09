@@ -270,7 +270,7 @@ export function ModalHost(props: ModalHostProps) {
       )}
       {modal?.type === 'open' && (
         <OpenModal
-          startDir={info?.home ?? info?.startDir ?? ''}
+          startDir={modal.startDir ?? info?.home ?? info?.startDir ?? ''}
           invalidPaths={invalidPaths}
           onOpened={(r) => {
             setInfo(r);

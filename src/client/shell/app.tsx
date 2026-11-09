@@ -402,7 +402,13 @@ export function App() {
   };
 
   const openHistoryItem = useCallback(
-    async (h: { path: string }) => {
+    async (h: { path: string; type?: 'svn' | 'git' | 'wsl' }) => {
+      // WSL 运行目录不是 SVN/Git 工作副本：不调「打开仓库」接口（否则报 notWc），
+      // 直接在目录浏览弹窗里定位到它（不动当前项目）
+      if (h.type === 'wsl') {
+        setModal({ type: 'open', startDir: h.path });
+        return;
+      }
       try {
         const opened = await post.open(h.path);
         const r = await get.info();

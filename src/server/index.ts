@@ -24,7 +24,7 @@ import { handle as handleStage } from './routes/stage.js';
 import { handle as handleBrowse } from './routes/browse/index.js';
 import { handle as handleHost } from './routes/host.js';
 import { handle as handleHistory } from './routes/history.js';
-import { handle as handleRecent } from './routes/recent.js';
+import { handle as handleRecent, rememberRunDir } from './routes/recent.js';
 import { handle as handlePractice } from './routes/practice.js';
 import { handle as handleRepoBrowse } from './routes/repobrowse.js';
 import { handle as handleGithub } from './routes/github.js';
@@ -121,6 +121,8 @@ export async function takeOverPort(port: number): Promise<boolean> {
 }
 
 export function startServer(): Promise<ServerHandle> {
+  // WSL 包运行目录记入最近项目（条目按文件夹名显示，点击走目录浏览，不报「不是工作副本」）
+  rememberRunDir();
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const p = url.pathname;

@@ -552,6 +552,8 @@ body {
 }
 .badge.svn { background: var(--svn); }
 .badge.git { background: var(--git); }
+/* WSL/纯 Node 包的运行目录（不是版本库） */
+.badge.wsl { background: #64748b; }
 
 /* ---------- GitHub 身份徽标（顶栏；按钮形态——点击打开「GitHub 仓库信息」） ---------- */
 .github-identity {

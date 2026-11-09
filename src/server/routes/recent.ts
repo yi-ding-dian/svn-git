@@ -9,7 +9,7 @@ import { probeProject, probeProjectCached } from '../../vcs/probe.js';
 import { createVcs, type RepoInfo } from '../../vcs/index.js';
 import type { SvnCred } from '../../vcs/svn.js';
 import { loadConfig } from '../../config.js';
-import { sendJson, readBody, currentScopes, vcsOf, realpathSafe, type Ctx } from './util.js';
+import { sendJson, readBody, currentScopes, vcsOf, realpathSafe, START_DIR, type Ctx } from './util.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 最近打开的项目历史（服务端持久化：浏览器端口随机，localStorage 不可靠） */
@@ -18,7 +18,7 @@ const HISTORY_MAX = 20;
 
 export interface HistoryItem {
   path: string;
-  type: 'svn' | 'git';
+  type: 'svn' | 'git' | 'wsl';
   lastOpened: number;
   /** 常用项目标记（星号，启动时优先打开） */
   fav?: boolean;
@@ -82,7 +82,7 @@ export function dedupeHistory(): number {
   }
 }
 
-function addHistory(entry: { path: string; type: 'svn' | 'git' }): void {
+function addHistory(entry: { path: string; type: HistoryItem['type'] }): void {
   try {
     const key = historyKey(entry.path);
     const existed = loadHistory().find((h) => historyKey(h.path) === key);
@@ -95,6 +95,24 @@ function addHistory(entry: { path: string; type: 'svn' | 'git' }): void {
     fs.chmodSync(HISTORY_PATH, 0o600); // 与 config 一致，仅本人可读写
   } catch {
     /* 忽略写失败 */
+  }
+}
+
+/** WSL 包模式启动：把运行目录写进最近项目（type=wsl，侧边栏按文件夹名显示）。
+ *  该目录天然不是 SVN/Git 工作副本，前端点击时走目录浏览而不是「打开仓库」，不会报错。
+ *  更新后包目录会改成新版本号的名字，旧的 wsl 条目一并清掉，避免列表里留下失效路径。 */
+export function rememberRunDir(): void {
+  try {
+    const dir = path.resolve(START_DIR);
+    if (!fs.existsSync(path.join(dir, '.svngit-package.json'))) return;
+    const key = historyKey(dir);
+    const list = loadHistory().filter((h) => h.type !== 'wsl' && historyKey(h.path) !== key);
+    list.unshift({ path: dir, type: 'wsl', lastOpened: Date.now() });
+    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
+    fs.writeFileSync(HISTORY_PATH, JSON.stringify(list.slice(0, HISTORY_MAX), null, 2), { mode: 0o600 });
+    fs.chmodSync(HISTORY_PATH, 0o600);
+  } catch {
+    /* 写失败不影响启动 */
   }
 }
 

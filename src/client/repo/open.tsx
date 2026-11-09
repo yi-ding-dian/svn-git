@@ -47,7 +47,7 @@ export function OpenBrowser(props: {
   const [pathInput, setPathInput] = useState('');
   /** 文件级选择（pick.allowFiles）：当前目录下选中的文件名；切目录即清空，避免跨目录误填 */
   const [pickedFile, setPickedFile] = useState<string | null>(null);
-  const [history, setHistory] = useState<{ path: string; type: 'svn' | 'git'; lastOpened: number }[]>([]);
+  const [history, setHistory] = useState<{ path: string; type: 'svn' | 'git' | 'wsl'; lastOpened: number }[]>([]);
   // 最近项目右键菜单（删除）
   const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string } | null>(null);
   // 最近项目默认只列 10 项，点「…」展开到 15 项（再多靠滚动）
