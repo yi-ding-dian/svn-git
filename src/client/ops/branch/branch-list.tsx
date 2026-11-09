@@ -3,6 +3,7 @@ import React from 'react';
 import type { BranchInfo } from '../../shared/api.js';
 import { cmdOfRepo } from '../../shared/cmd-preview.js';
 import { t } from '../../../shared/i18n/index.js';
+import { relTime, absTime } from '../../shared/relative-time.js';
 import { isCurrentBranchOf, isTrunkName, mergeTargetOf } from './branch-shared.js';
 
 export function BranchList(props: {
@@ -130,13 +131,21 @@ export function BranchList(props: {
         const remoteLocal = b.remote ? b.name.split('/').slice(1).join('/') : '';
         const remoteHasLocal = b.remote ? data.branches.some((r) => !r.remote && r.name === remoteLocal) : false;
         const remoteIsCurrent = b.remote && remoteLocal === data.current;
-        // SVN 分支的完整位置提示（列表里只显示名字，悬浮能看到它属于 branches/）
-        const branchTip = repoType === 'svn' ? `branches/${b.name}` : '';
-        const rowTitle = isCur
-          ? branchTip
-            ? `${branchTip}\n${t('ops.branch.isCurrent')}`
-            : t('ops.branch.isCurrent')
-          : branchTip || undefined;
+        // 悬浮提示：路径 + 创建时间 + 最近提交（时间由后端异步补齐，没查到时先只显示已有行）
+        const tipLines: string[] = [];
+        if (repoType === 'svn') tipLines.push(`branches/${b.name}`);
+        if (b.createdAt) {
+          const when = `${relTime(b.createdAt)}（${absTime(b.createdAt)}）`;
+          const label = t(repoType === 'git' ? 'ops.branch.tipCreatedReflog' : 'ops.branch.tipCreated');
+          tipLines.push(`${label}${when}${b.createdBy ? ` · ${b.createdBy}` : ''}`);
+        }
+        if (b.lastCommitAt) {
+          const when = `${relTime(b.lastCommitAt)}（${absTime(b.lastCommitAt)}）`;
+          const who = [b.lastCommitBy, b.lastCommitRef].filter(Boolean).join('，');
+          tipLines.push(`${t('ops.branch.tipLastCommit')}${when}${who ? ` · ${who}` : ''}`);
+        }
+        if (isCur) tipLines.push(t('ops.branch.isCurrent'));
+        const rowTitle = tipLines.length > 0 ? tipLines.join('\n') : undefined;
         return (
           <div
             key={b.name}

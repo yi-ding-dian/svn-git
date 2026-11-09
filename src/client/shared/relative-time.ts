@@ -15,3 +15,11 @@ export function relTime(iso: string): string {
   if (months < 12) return t('shell.time.monthsAgo', { n: months });
   return t('shell.time.yearsAgo', { n: Math.floor(months / 12) });
 }
+
+/** 绝对时间（本地时区 YYYY-MM-DD HH:mm；解析失败原样返回）——相对时间旁边的精确值 */
+export function absTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}

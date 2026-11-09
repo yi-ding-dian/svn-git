@@ -140,6 +140,82 @@ function svnTextLines(stdout: string): string[] {
   return stdout.split('\n').map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line));
 }
 
+/** svn 文本日期 `2026-01-08 09:15:00 +0800` → ISO `2026-01-08T09:15:00+08:00` */
+function svnDateTimeToIso(s: string): string {
+  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(?: ([+-]\d{2})(\d{2}))?/.exec(s);
+  if (!m) return s;
+  const [, date, time, tzH, tzM] = m;
+  return `${date ?? ''}T${time ?? ''}${tzH ? `${tzH}:${tzM ?? '00'}` : 'Z'}`;
+}
+
+/** 解析 `svn log -q`（每条一行）：r123 | 作者 | 2026-01-08 09:15:00 +0800 (...) | N line */
+function parseSvnQuickLog(stdout: string): { rev: number; author: string; date: string }[] {
+  const entries: { rev: number; author: string; date: string }[] = [];
+  for (const line of svnTextLines(stdout)) {
+    const m = /^r(\d+) \| (.*?) \| ([^(]+?)(?: \(|$)/.exec(line);
+    if (!m) continue;
+    const [, rev, author, date] = m;
+    if (!rev || !date) continue;
+    entries.push({ rev: Number(rev), author: (author ?? '').trim(), date: svnDateTimeToIso(date.trim()) });
+  }
+  return entries;
+}
+
+/** 分支时间缓存（SVN）：key = 分支 URL。悬浮提示的「创建时间 / 最近提交」靠
+ *  `svn log -q --stop-on-copy` 一次拿首尾两条（首=最近提交，尾=创建提交）。
+ *  每个分支一次请求，分支多时慢，所以列表先返回、后台限并发补齐，前端轮询重拉。
+ *  TTL 5 分钟：分支删除重建后 URL 不变，但创建时间会变。 */
+interface BranchTimes {
+  createdAt?: string;
+  createdBy?: string;
+  lastCommitAt?: string;
+  lastCommitBy?: string;
+  lastCommitRef?: string;
+  at: number;
+}
+
+const BRANCH_TIMES = new Map<string, BranchTimes>();
+const BRANCH_TIMES_TTL = 5 * 60_000;
+const BRANCH_TIMES_CONCURRENCY = 4;
+const branchTimesQueue: (() => Promise<void>)[] = [];
+/** 已入队/查询中的分支 URL（防重复入队） */
+const branchTimesLoading = new Set<string>();
+/** 创建时间查询超时/失败的分支：30 分钟内不再重试（超长历史分支每次都要跑满超时） */
+const branchCreatedSkip = new Map<string, number>();
+const BRANCH_CREATED_SKIP_TTL = 30 * 60_000;
+let branchTimesActive = 0;
+
+/** 分支 URL（缓存 key 与请求目标统一走这里） */
+function branchUrl(root: string, name: string): string {
+  return `${root}/branches/${name}`;
+}
+
+function branchTimesOf(url: string): BranchTimes | undefined {
+  const hit = BRANCH_TIMES.get(url);
+  if (!hit) return undefined;
+  if (Date.now() - hit.at > BRANCH_TIMES_TTL) {
+    BRANCH_TIMES.delete(url);
+    return undefined;
+  }
+  return hit;
+}
+
+function pumpBranchTimes(): void {
+  while (branchTimesActive < BRANCH_TIMES_CONCURRENCY && branchTimesQueue.length > 0) {
+    const task = branchTimesQueue.shift()!;
+    branchTimesActive += 1;
+    void task().finally(() => {
+      branchTimesActive -= 1;
+      pumpBranchTimes();
+    });
+  }
+}
+
+function enqueueBranchTimes(task: () => Promise<void>): void {
+  branchTimesQueue.push(task);
+  pumpBranchTimes();
+}
+
 export class SvnVcs {
   private xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
   /** 本次探测到的过大工作副本（跨请求的持久标记见 HUGE_WCS） */
@@ -1125,6 +1201,25 @@ export class SvnVcs {
       // 后台预热；前端拿到 pending=false 后会重拉补齐 trunk 行
       void this.mainlineUrl().catch(() => null);
     }
+    const branches = names
+      .filter((n) => n.isDir)
+      .map((n) => {
+        const name = n.name.replace(/\/$/, '');
+        const url = branchUrl(root, name);
+        const times = branchTimesOf(url);
+        if (!times) this.requestBranchTimes(url);
+        return {
+          name,
+          remote: false,
+          createdAt: times?.createdAt,
+          createdBy: times?.createdBy,
+          lastCommitAt: times?.lastCommitAt,
+          lastCommitBy: times?.lastCommitBy,
+          lastCommitRef: times?.lastCommitRef,
+        };
+      });
+    // 有分支还在后台查时间 → 前端轮询重拉（失败的分支会写空记录，不会一直 pending）
+    const timesPending = branches.some((b) => branchTimesLoading.has(branchUrl(root, b.name)));
     return {
       current: loc.name,
       currentKind: loc.kind,
@@ -1134,9 +1229,66 @@ export class SvnVcs {
       mainlineUrl: cached.value ?? undefined,
       mainlineRelative: cached.value ? this.relOf(cached.value, root) : undefined,
       mainlinePending: !cached.known,
-      branches: names.filter((n) => n.isDir).map((n) => ({ name: n.name.replace(/\/$/, ''), remote: false })),
+      timesPending,
+      branches,
       layout,
     };
+  }
+
+  /** 触发单分支时间的后台查询（已在队列/查询中则跳过） */
+  private requestBranchTimes(url: string): void {
+    if (branchTimesOf(url) || branchTimesLoading.has(url)) return;
+    branchTimesLoading.add(url);
+    enqueueBranchTimes(() =>
+      this.loadBranchTimes(url).finally(() => branchTimesLoading.delete(url)),
+    );
+  }
+
+  /** 后台查询单个分支的创建时间与最近提交；失败也写空记录，避免前端无限轮询 pending */
+  private async loadBranchTimes(url: string): Promise<void> {
+    // 最近提交用 -l 1 单独查：只取一条，历史再长也快
+    try {
+      const lastRes = await this.exec(['log', '-q', '-l', '1', url], { timeoutMs: 15_000 });
+      const last = lastRes.code === 0 ? parseSvnQuickLog(lastRes.stdout)[0] : undefined;
+      if (last) {
+        BRANCH_TIMES.set(url, {
+          ...BRANCH_TIMES.get(url),
+          lastCommitAt: last.date,
+          lastCommitBy: last.author || undefined,
+          lastCommitRef: `r${last.rev}`,
+          at: Date.now(),
+        });
+      }
+    } catch {
+      /* 失败：最近提交留空 */
+    }
+    // 创建时间：升序 -r 1:HEAD + -l 1，服务器直接返回该路径第一次出现的版本（即 copy 创建
+    // 提交），不用像降序 --stop-on-copy 那样把整个分支历史都传回来。
+    // 限时 15 秒兜底（实测 6000+ 提交的老分支 3.4 秒），拿不到就放弃，30 分钟内不重试
+    const skippedAt = branchCreatedSkip.get(url);
+    const skipCreated = skippedAt !== undefined && Date.now() - skippedAt < BRANCH_CREATED_SKIP_TTL;
+    if (!skipCreated) {
+      try {
+        const res = await this.exec(['log', '--stop-on-copy', '-l', '1', '-r', '1:HEAD', '-q', url], {
+          timeoutMs: 15_000,
+        });
+        const oldest = res.code === 0 ? parseSvnQuickLog(res.stdout)[0] : undefined;
+        if (oldest) {
+          BRANCH_TIMES.set(url, {
+            ...BRANCH_TIMES.get(url),
+            createdAt: oldest.date,
+            createdBy: oldest.author || undefined,
+            at: Date.now(),
+          });
+        } else {
+          branchCreatedSkip.set(url, Date.now());
+        }
+      } catch {
+        branchCreatedSkip.set(url, Date.now());
+      }
+    }
+    // 两个都失败也要写记录，避免前端无限轮询 pending
+    if (!BRANCH_TIMES.has(url)) BRANCH_TIMES.set(url, { at: Date.now() });
   }
 
   /** URL 路径相对项目根的简写（提交信息里展示来源用） */

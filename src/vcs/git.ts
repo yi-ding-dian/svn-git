@@ -13,6 +13,18 @@ import { progressStart, progressDone, progressFromStderr } from '../transfer-pro
 import { t } from '../shared/i18n/index.js';
 import type { CommitSummary, FileStatus, LogEntry, RepoInfo, RestorePreview, TagDetail, VcsResult, WorktreeInfo } from './types.js';
 
+/** 限并发遍历（分支多时避免一次性 spawn 几十个 git 进程） */
+async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next++]!;
+      await fn(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
 /** 生成 GIT_ASKPASS 脚本（凭据经 base64 传递，避免特殊字符破坏 shell；脚本 600 权限）
  *  export 给 server.ts 的「获取仓库」用：clone 走的是那边（GitVcs.clone 目前无人调用） */
 export function createAskPass(cred: { username: string; password: string }): { path: string; cleanup: () => void } {
@@ -1269,7 +1281,17 @@ export class GitVcs {
    *  本地分支附带上游跟踪信息（ahead/behind/upstream）——分支管理的 ↑N/↓N 徽标与快进更新用。 */
   async branchList(): Promise<{
     current: string;
-    branches: { name: string; remote: boolean; ahead?: number; behind?: number; upstream?: string }[];
+    branches: {
+      name: string;
+      remote: boolean;
+      ahead?: number;
+      behind?: number;
+      upstream?: string;
+      createdAt?: string;
+      lastCommitAt?: string;
+      lastCommitBy?: string;
+      lastCommitRef?: string;
+    }[];
   }> {
     const cur = await this.branch();
     const res = await this.exec(['branch', '-a']);
@@ -1278,24 +1300,38 @@ export class GitVcs {
     // 上游跟踪：%(upstream:track) 形如 [ahead 1, behind 3] / [ahead 1] / [behind 3] / [gone]
     // （gone = 上游分支已被删除，此时领先/落后没有意义，按"无上游"处理、不显示徽标）
     // 单独用 for-each-ref 而不是解析 branch -vv：后者列宽/中英文对齐不稳定，机器解析容易错位
+    // 同一次请求顺带取最近提交时间/作者/短 sha（悬浮提示用），避免每个分支再跑一条 log
     const trackRes = await this.exec([
       '-c', 'core.quotepath=false', 'for-each-ref',
-      '--format=%(refname:short)%00%(upstream:short)%00%(upstream:track)',
-      'refs/heads',
+      '--format=%(refname:short)%00%(upstream:short)%00%(upstream:track)%00%(objectname:short)%00%(committerdate:iso-strict)%00%(committername)',
+      'refs/heads', 'refs/remotes',
     ]);
     const tracks = new Map<string, { ahead: number; behind: number; upstream: string }>();
+    const commitInfo = new Map<string, { ref: string; at: string; by: string }>();
     if (trackRes.code === 0) {
       for (const line of trackRes.stdout.split('\n')) {
         if (!line) continue;
-        const [name, upstream, state = ''] = line.split('\0');
+        const [name, upstream, state = '', sha = '', date = '', author = ''] = line.split('\0');
+        if (!name) continue;
+        if (date) commitInfo.set(name, { ref: sha, at: date, by: author });
         // 无上游 / 上游已删除：不提供领先落后信息
-        if (!name || !upstream || state.includes('gone')) continue;
+        if (!upstream || state.includes('gone')) continue;
         const a = /ahead (\d+)/.exec(state);
         const b = /behind (\d+)/.exec(state);
         tracks.set(name, { ahead: a ? Number(a[1]) : 0, behind: b ? Number(b[1]) : 0, upstream });
       }
     }
-    const branches: { name: string; remote: boolean; ahead?: number; behind?: number; upstream?: string }[] = [];
+    const branches: {
+      name: string;
+      remote: boolean;
+      ahead?: number;
+      behind?: number;
+      upstream?: string;
+      createdAt?: string;
+      lastCommitAt?: string;
+      lastCommitBy?: string;
+      lastCommitRef?: string;
+    }[] = [];
     for (const line of res.stdout.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed) continue;
@@ -1303,14 +1339,43 @@ export class GitVcs {
       if (trimmed.startsWith('remotes/')) {
         // 过滤符号引用（remotes/origin/HEAD -> origin/main）：非真实分支，checkout 会失败
         if (trimmed.includes(' -> ')) continue;
-        branches.push({ name: trimmed.replace(/^remotes\//, ''), remote: true });
+        const name = trimmed.replace(/^remotes\//, '');
+        const info = commitInfo.get(name);
+        branches.push({
+          name,
+          remote: true,
+          lastCommitAt: info?.at,
+          lastCommitBy: info?.by || undefined,
+          lastCommitRef: info?.ref || undefined,
+        });
       } else if (trimmed !== 'HEAD') {
         const name = trimmed.replace(/^\*\s*/, '');
         if (!name) continue;
         const tr = tracks.get(name);
-        branches.push(tr ? { name, remote: false, ...tr } : { name, remote: false });
+        const info = commitInfo.get(name);
+        branches.push({
+          name,
+          remote: false,
+          ...(tr ?? {}),
+          lastCommitAt: info?.at,
+          lastCommitBy: info?.by || undefined,
+          lastCommitRef: info?.ref || undefined,
+        });
       }
     }
+    // 分支创建时间：git 不记录创建事件，取该分支 reflog 的最早一条（clone 来的分支只能追溯
+    // 到 clone 时刻）。只查本地分支；远程分支没有有意义的创建时间。
+    await mapLimit(
+      branches.filter((b) => !b.remote),
+      8,
+      async (b) => {
+        const r = await this.exec(['reflog', 'show', '--date=iso-strict', '--format=%cd', `refs/heads/${b.name}`]);
+        if (r.code !== 0) return;
+        const lines = r.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+        const oldest = lines[lines.length - 1]; // reflog 最新在前
+        if (oldest) b.createdAt = oldest;
+      },
+    );
     return { current: cur, branches };
   }
 

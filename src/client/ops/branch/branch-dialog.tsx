@@ -86,9 +86,11 @@ export function BranchDialog(props: {
   };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // SVN：主干来源可能在后台追溯（标签目录首次实测 ~10s）。列表先显示，查到后自动补 trunk 行。
+  // SVN：主干来源与分支时间都可能后台补齐（主干标签首次实测 ~10s；分支时间按分支逐个查）。
+  // 列表先显示，查到后自动重拉补齐。
+  const svnPending = props.repoType === 'svn' && (data?.mainlinePending || data?.timesPending) === true;
   useEffect(() => {
-    if (props.repoType !== 'svn' || !data?.mainlinePending) return;
+    if (!svnPending) return;
     let alive = true;
     let tries = 0;
     const timer = setInterval(() => {
@@ -98,22 +100,19 @@ export function BranchDialog(props: {
         .branches()
         .then((r) => {
           if (!alive) return;
-          if (!r.mainlinePending) {
-            setData(r);
-            clearInterval(timer);
-          } else if (tries >= 6) {
-            clearInterval(timer);
-          }
+          setData(r); // 每轮都更新，已补齐的部分立即可见
+          if (!r.mainlinePending && !r.timesPending) clearInterval(timer);
+          else if (tries >= 12) clearInterval(timer);
         })
         .catch(() => {
-          if (tries >= 6) clearInterval(timer);
+          if (tries >= 12) clearInterval(timer);
         });
     }, 2500);
     return () => {
       alive = false;
       clearInterval(timer);
     };
-  }, [props.repoType, data?.mainlinePending]);
+  }, [svnPending]);
 
   /** 3 秒转后台的统一收尾：收起弹窗 + 飞线 + 轻提示（子面板共用）
    *  提示 2 秒后自动消失（用户定稿：转后台的确认提示不用停留太久） */
@@ -746,6 +745,10 @@ export function BranchDialog(props: {
       {/* SVN 主干来源后台追溯中：列表已可用，trunk 行稍后自动出现 */}
       {props.repoType === 'svn' && data?.mainlinePending && (
         <div className="dim small" style={{ padding: '4px 6px' }}>{t('ops.branch.mainlinePending')}</div>
+      )}
+      {/* 分支创建时间/最近提交后台查询中：列表已可用，悬浮提示稍后补齐 */}
+      {props.repoType === 'svn' && data?.timesPending && (
+        <div className="dim small" style={{ padding: '4px 6px' }}>{t('ops.branch.timesPending')}</div>
       )}
       <ResultLine msg={msg} err={msgErr} />
       {/* SVN 合并范围（目录/文件级）；留空回车 = 整个分支 */}

@@ -1085,6 +1085,8 @@ export interface BranchInfo {
   mainlineRelative?: string;
   /** svn：主干来源仍在后台追溯（列表已返回，查到后重拉补齐） */
   mainlinePending?: boolean;
+  /** 分支时间信息仍在后台查询（列表已返回，查到后重拉补齐悬浮提示） */
+  timesPending?: boolean;
   branches: {
     name: string;
     remote: boolean;
@@ -1093,6 +1095,14 @@ export interface BranchInfo {
     behind?: number;
     /** git：上游分支名（如 origin/main）——徽标悬浮提示用 */
     upstream?: string;
+    /** 分支创建时间（svn：copy 提交时间；git：本地分支 reflog 最早记录，远程分支无） */
+    createdAt?: string;
+    /** 创建人（svn 有；git 无） */
+    createdBy?: string;
+    /** 分支内最后一次提交的时间 / 作者 / 版本标识（svn rNNN、git 短 sha） */
+    lastCommitAt?: string;
+    lastCommitBy?: string;
+    lastCommitRef?: string;
   }[];
   /** svn 仓库布局探测结果（git 无此概念，不返回） */
   layout?: SvnLayout;
