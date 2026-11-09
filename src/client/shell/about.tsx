@@ -62,6 +62,8 @@ export function AboutModal(props: {
   const check = async () => {
     setBusy(true);
     setInstallError('');
+    // 立即切到「正在检查…」：接口要 1–2 秒，否则点击后界面毫无变化、按钮像凭空消失
+    setUpdate((s) => (s ? { ...s, phase: 'checking' } : s));
     try {
       setUpdate(await post.appUpdateCheck());
     } catch (e) {
@@ -111,12 +113,15 @@ export function AboutModal(props: {
       .then((r) => {
         setProxyEnabled(r.enabled);
         setProxyPrefix(r.prefix);
-        // 换源后旧检查结果作废（主进程会把 available 重置为 idle），重新拉一次状态
-        return get.appUpdateStatus();
+        // 换源后旧检查结果作废（主进程会把 available 重置为 idle）：
+        // 自动重新检查一次，用户不用自己再点「检查更新」
+        setUpdate((s) => (s ? { ...s, phase: 'checking' } : s));
+        return post.appUpdateCheck();
       })
       .then((s) => setUpdate(s))
       .catch(() => {
-        /* 保存失败保持界面现状 */
+        // 保存/重新检查失败：回到主进程的真实状态（用户仍可手动点检查）
+        void get.appUpdateStatus().then(setUpdate).catch(() => {});
       })
       .finally(() => setProxyBusy(false));
   };
@@ -168,10 +173,11 @@ export function AboutModal(props: {
   };
 
   const supported = update?.supported === true;
+  const checking = update?.phase === 'checking';
   const canCheck =
     supported &&
     !busy &&
-    update?.phase !== 'checking' &&
+    !checking &&
     update?.phase !== 'available' &&
     update?.phase !== 'downloading' &&
     update?.phase !== 'downloaded';
@@ -188,12 +194,8 @@ export function AboutModal(props: {
       title={t('shell.about.title')}
       width={440}
       onClose={props.onClose}
-      foot={
-        <button className="primary" onClick={props.onClose}>
-          {/* 确定 */}
-          {t('common.ok')}
-        </button>
-      }
+      hideFoot
+      closeIcon
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '8px 0 4px' }}>
         <img src="/icon.png" width="52" height="52" alt="logo" style={{ borderRadius: 10 }} />
@@ -234,11 +236,20 @@ export function AboutModal(props: {
           {/* 更新： */}
           <span className="dim" style={{ flexShrink: 0 }}>{t('shell.about.updateLabel')}</span>
           <span className="small" style={{ flex: 1, minWidth: 0 }}>{statusText()}</span>
-          {canCheck && (
-            <button className="mini" disabled={busy} onClick={check}>
-              {update?.phase === 'error' ? t('shell.about.updateRetry') : t('shell.about.updateCheck')}
+          {canCheck || checking ? (
+            <button className="mini" disabled={busy || checking} onClick={check}>
+              {checking ? (
+                <>
+                  <span className="spinner" style={{ width: 12, height: 12, margin: 0 }} />{' '}
+                  {t('shell.about.updateCheckingBtn')}
+                </>
+              ) : update?.phase === 'error' ? (
+                t('shell.about.updateRetry')
+              ) : (
+                t('shell.about.updateCheck')
+              )}
             </button>
-          )}
+          ) : null}
         </div>
 
         {/* 有新版：日期 / 大小（版本号已经在上面那行） */}
@@ -246,6 +257,29 @@ export function AboutModal(props: {
           <div className="small dim" style={{ marginTop: 2 }}>
             {releaseDate}
             {update.sizeBytes ? `${releaseDate ? ' · ' : ''}${formatSize(update.sizeBytes)}` : ''}
+          </div>
+        )}
+
+        {/* 发布日志：Release 正文（Markdown 原文按纯文本展示，超长时区域内滚动） */}
+        {update?.phase === 'available' && update.notes && (
+          <div style={{ marginTop: 8 }}>
+            <div className="dim small">{t('shell.about.updateNotes')}</div>
+            <div
+              className="small"
+              style={{
+                marginTop: 4,
+                maxHeight: 140,
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                lineHeight: 1.6,
+                background: 'var(--panel2)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '6px 8px',
+              }}
+            >
+              {update.notes}
+            </div>
           </div>
         )}
 
@@ -263,8 +297,10 @@ export function AboutModal(props: {
               />
             </div>
             <div className="small dim">
-              {formatSize(update.transferred ?? 0)} / {formatSize(update.total ?? 0)}
-              {update.bytesPerSecond ? ` · ${formatSize(update.bytesPerSecond)}/s` : ''}
+              {update.total
+                ? `${formatSize(update.transferred ?? 0) || '0 B'} / ${formatSize(update.total)}`
+                : t('shell.about.updateConnecting')}
+              {update.total && update.bytesPerSecond ? ` · ${formatSize(update.bytesPerSecond)}/s` : ''}
             </div>
           </>
         )}

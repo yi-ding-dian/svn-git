@@ -58,6 +58,8 @@ export interface AppUpdateStatus {
   releaseDate?: string;
   /** 更新包大小（字节） */
   sizeBytes?: number;
+  /** 新版本的发布日志（GitHub Release 正文；拿不到时不显示） */
+  notes?: string;
   /** 下载进度 0–100 */
   percent?: number;
   bytesPerSecond?: number;

@@ -79,6 +79,7 @@ function resetCheck(): void {
   status.version = undefined;
   status.releaseDate = undefined;
   status.sizeBytes = undefined;
+  status.notes = undefined;
   status.percent = undefined;
   status.bytesPerSecond = undefined;
   status.transferred = undefined;
@@ -153,6 +154,10 @@ function createUpdater(): AppUpdater {
     status.releaseDate = info.releaseDate;
     status.sizeBytes = info.files?.[0]?.size;
     status.error = undefined;
+    // 发布日志异步补：拉不到不影响更新（用户可能已经又点了一次检查，版本对不上就不写）
+    void fetchReleaseNotes(info.version).then((notes) => {
+      if (notes && status.version === info.version) status.notes = notes;
+    });
   });
   autoUpdater.on('update-not-available', () => {
     status.phase = 'latest';
@@ -392,6 +397,27 @@ async function fetchSize(url: string): Promise<number | undefined> {
   }
 }
 
+/** 拉取新版本的发布日志：GitHub Release 正文（匿名可读，CI 从 tag 注释写入）。
+ *  失败静默返回 undefined——「关于」里少一段说明，不影响更新本身。 */
+async function fetchReleaseNotes(version: string): Promise<string | undefined> {
+  const api = `https://api.github.com/repos/${APP_GITHUB_OWNER}/${APP_GITHUB_REPO}/releases/tags/v${version}`;
+  for (const useProxy of sourceOrder()) {
+    const url = useProxy ? `${proxyPrefix()}/${api}` : api;
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'svn-git', Accept: 'application/vnd.github+json' },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) continue;
+      const body = ((await res.json()) as { body?: unknown }).body;
+      if (typeof body === 'string' && body.trim()) return body.trim();
+    } catch {
+      /* 这个源失败：试下一个 */
+    }
+  }
+  return undefined;
+}
+
 /** latest.yml 只需要 version / releaseDate（Node 包不关心 Windows 安装包字段） */
 function parseLatest(text: string): { version: string; releaseDate?: string } | null {
   const version = /^version:\s*['"]?([^'"\s]+)['"]?/m.exec(text)?.[1];
@@ -455,6 +481,10 @@ async function doCheckNode(): Promise<AppUpdateStatus> {
       status.phase = 'available';
       status.version = latest.version;
       status.releaseDate = latest.releaseDate;
+      // 发布日志异步补：拉不到不影响更新
+      void fetchReleaseNotes(latest.version).then((notes) => {
+        if (notes && status.version === latest.version) status.notes = notes;
+      });
       status.sizeBytes = await fetchSize(`${downloadBase(useProxy, latest.version)}/${assetName(latest.version)}`);
       return snapshot();
     } catch (error) {
@@ -585,11 +615,13 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-/** 换版本脚本：等旧进程退出 → 旧目录改名为备份 → 新目录换进来 → run-wsl.sh 重启 → 健康检查失败回滚。
+/** 换版本脚本：等旧进程退出 → 旧目录改名备份 → 新目录换到**带新版本号的目录名**里 →
+ *  run-wsl.sh 重启 → 健康检查失败回滚。目录名跟着版本走（svn-git-<版本>-wsl），
+ *  旧的带旧版本号的路径会消失，日志里会打印新路径。
  *  **不写成 Node 子进程**：本进程马上要退出，脚本必须在它退出后继续跑，/bin/sh 最省事。 */
-function buildSwapScript(root: string, newRoot: string, pid: number, port: number): string {
+function buildSwapScript(root: string, newRoot: string, targetRoot: string, pid: number, port: number): string {
   const oldRoot = `${root}.old-${Date.now()}`;
-  const failedRoot = `${root}.failed-${Date.now()}`;
+  const failedRoot = `${targetRoot}.failed-${Date.now()}`;
   return `#!/bin/sh
 set -u
 LOG="\${HOME:-/tmp}/.cache/svngit/update.log"
@@ -597,11 +629,12 @@ mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 exec >>"$LOG" 2>&1
 ROOT=${shellQuote(root)}
 NEW=${shellQuote(newRoot)}
+TARGET=${shellQuote(targetRoot)}
 OLD=${shellQuote(oldRoot)}
 FAILED=${shellQuote(failedRoot)}
 PID=${pid}
 PORT=${port}
-echo "[$(date '+%F %T')] update start: $ROOT -> $NEW"
+echo "[$(date '+%F %T')] update start: $ROOT -> $TARGET"
 i=0
 while kill -0 "$PID" 2>/dev/null; do
   i=$((i+1))
@@ -611,17 +644,21 @@ while kill -0 "$PID" 2>/dev/null; do
   fi
   sleep 0.2
 done
+# 目标版本目录已存在（上次更新残留）：先清掉，否则 mv 会变成嵌套目录
+if [ "$TARGET" != "$ROOT" ] && [ -e "$TARGET" ]; then
+  rm -rf "$TARGET" || { echo "failed to remove stale target"; exit 1; }
+fi
 if ! mv "$ROOT" "$OLD"; then
   echo "failed to move old directory (parent not writable?)"
   exit 1
 fi
-if ! mv "$NEW" "$ROOT"; then
+if ! mv "$NEW" "$TARGET"; then
   echo "failed to move new directory in; rolling back"
   mv "$OLD" "$ROOT"
   exit 1
 fi
 rmdir "$(dirname "$NEW")" 2>/dev/null || true
-cd "$ROOT" || exit 1
+cd "$TARGET" || exit 1
 if [ -x ./run-wsl.sh ]; then
   ./run-wsl.sh >/dev/null 2>&1 || true
 else
@@ -640,7 +677,7 @@ if command -v curl >/dev/null 2>&1; then
   done
   if [ "$ok" != "1" ]; then
     echo "new version failed to start; rolling back"
-    mv "$ROOT" "$FAILED" 2>/dev/null || true
+    mv "$TARGET" "$FAILED" 2>/dev/null || true
     mv "$OLD" "$ROOT" || exit 1
     cd "$ROOT" || exit 1
     if [ -x ./run-wsl.sh ]; then
@@ -652,7 +689,7 @@ if command -v curl >/dev/null 2>&1; then
   fi
 fi
 rm -rf "$OLD"
-echo "[$(date '+%F %T')] update finished"
+echo "[$(date '+%F %T')] update finished: $TARGET"
 `;
 }
 
@@ -666,8 +703,15 @@ function installNode(): { ok: boolean; error?: string } {
     return { ok: false, error: 'read-only' };
   }
   cleanupStaleUpdateDirs(pkg.root);
+  // 更新后的目录名跟着新版本走（父目录下 svn-git-<版本>-wsl）：旧版本号的目录名会消失，
+  // 避免"里面是 1.7.1、文件夹还叫 1.6.0"的误导。
+  const version = status.version || pkg.version;
+  const targetRoot = path.join(
+    path.dirname(pkg.root),
+    `svn-git-${version}-wsl${pkg.flavor === 'wsl-node' ? '-node' : ''}`,
+  );
   const script = path.join(os.tmpdir(), `svngit-update-${process.pid}.sh`);
-  fs.writeFileSync(script, buildSwapScript(pkg.root, downloadedRoot, process.pid, appPort), { mode: 0o755 });
+  fs.writeFileSync(script, buildSwapScript(pkg.root, downloadedRoot, targetRoot, process.pid, appPort), { mode: 0o755 });
   // 先让 HTTP 响应返回，再 spawn 脚本并退出；脚本自己会等本进程消失后再换目录
   setTimeout(() => {
     const child = spawn('/bin/sh', [script], { detached: true, stdio: 'ignore' });
