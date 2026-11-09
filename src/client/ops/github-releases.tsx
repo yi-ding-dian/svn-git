@@ -176,7 +176,11 @@ export const GitHubReleasesPanel = forwardRef<
           ? t('repo.githubReleases.tagBuilt')
           : t('repo.githubReleases.tagSyncing');
       }
-      if (ci.conclusion) return t('repo.githubReleases.tagFailed');
+      if (ci.conclusion) {
+        return ci.failedStep
+          ? t('repo.githubReleases.tagFailedStep', { step: ci.failedStep })
+          : t('repo.githubReleases.tagFailed');
+      }
     }
     return t('repo.githubReleases.tagOnlySuffix');
   };
@@ -316,7 +320,19 @@ export const GitHubReleasesPanel = forwardRef<
                 </div>
               ) : tag.ci?.status === 'completed' && tag.ci.conclusion ? (
                 <div className="small" style={{ color: 'var(--err)', marginTop: 8 }}>
-                  {t('repo.githubReleases.ciFailed')}
+                  {tag.ci.failedStep
+                    ? t('repo.githubReleases.ciFailedStep', { step: tag.ci.failedStep })
+                    : t('repo.githubReleases.ciFailed')}
+                  {tag.ci.htmlUrl && (
+                    <button
+                      className="mini"
+                      style={{ marginLeft: 8 }}
+                      onClick={() => open(tag.ci!.htmlUrl)}
+                      title={tag.ci.htmlUrl}
+                    >
+                      {t('repo.githubReleases.viewCiLog')}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="dim small" style={{ marginTop: 8 }}>{t('repo.githubReleases.tagOnly')}</div>

@@ -135,6 +135,10 @@ interface GitHubTagCi {
   conclusion: string | null;
   htmlUrl: string;
   createdAt: string;
+  /** Actions run id：失败时用来查失败步骤名 */
+  runId?: number;
+  /** 失败步骤名（如「安装依赖」）；日志正文需要登录，API 只能拿到步骤名 */
+  failedStep?: string;
 }
 
 /** 顶栏 GitHub 身份（/api/github-identity；只挑徽标用到的字段） */interface GitHubIdentityResult {
@@ -487,9 +491,40 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             conclusion: (r.conclusion as string | null) ?? null,
             htmlUrl: String(r.html_url ?? ''),
             createdAt,
+            runId: Number(r.id ?? 0) || undefined,
           });
         }
       }
+      // 失败运行补查失败步骤名：/jobs 匿名可读；具体报错正文要登录才能看，这里只拿步骤名。
+      // 只查最新的几个失败运行，避免多打 GitHub API（每个 run 一次请求）。
+      const failed = [...ciByTag.values()]
+        .filter((c) => c.runId && c.conclusion && c.conclusion !== 'success')
+        .slice(0, 5);
+      await Promise.all(
+        failed.map(async (c) => {
+          try {
+            const jobs = (await githubFetch(
+              `/repos/${github.owner}/${github.repo}/actions/runs/${c.runId}/jobs`,
+              ctl.signal,
+              token,
+            )) as Record<string, unknown>;
+            const jobList = Array.isArray(jobs?.jobs) ? (jobs.jobs as Record<string, unknown>[]) : [];
+            for (const j of jobList) {
+              const steps = Array.isArray(j.steps) ? (j.steps as Record<string, unknown>[]) : [];
+              const bad = steps.find((s) => {
+                const concl = String(s.conclusion ?? '');
+                return concl !== '' && concl !== 'success' && concl !== 'skipped';
+              });
+              if (bad) {
+                c.failedStep = String(bad.name ?? '');
+                break;
+              }
+            }
+          } catch {
+            /* 查询失败：只显示「构建失败」，不影响发布历史 */
+          }
+        }),
+      );
       const artifacts = readReleaseArtifacts(repo.root);
       data = {
         ok: true,

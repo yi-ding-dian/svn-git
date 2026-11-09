@@ -146,6 +146,8 @@ export interface GitHubReleaseCi {
   conclusion: string | null;
   htmlUrl: string;
   createdAt: string;
+  /** 失败步骤名（如「安装依赖」）；具体报错正文需登录 GitHub 查看 */
+  failedStep?: string;
 }
 
 export interface GitHubReleasesResult {
