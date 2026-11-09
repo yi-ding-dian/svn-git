@@ -9,11 +9,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-if [ ! -d node_modules ]; then
-  echo "[1/3] 首次运行，安装依赖 npm install ..."
+# 不能只看 node_modules 目录在不在：package.json 后来加了新依赖时，目录照样在，
+# 旧写法会跳过安装，构建时直接报 Cannot find module（electron-updater 就这么漏过一次）。
+# 改看 package-lock.json 与 node_modules/.package-lock.json 的修改时间：
+# 前者较新说明依赖清单变过，npm install 后会刷新后者时间，判断自洽。
+if [ ! -d node_modules ] \
+  || [ ! -f node_modules/.package-lock.json ] \
+  || [ package-lock.json -nt node_modules/.package-lock.json ]; then
+  echo "[1/3] 依赖缺失或已过期（package-lock.json 有更新），安装依赖 npm install ..."
   npm install
 else
-  echo "[1/3] 依赖已存在，跳过安装"
+  echo "[1/3] 依赖已是最新的，跳过安装"
 fi
 
 echo "[2/3] 编译构建 tsc + esbuild ..."

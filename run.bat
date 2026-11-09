@@ -9,12 +9,19 @@ rem  停止:浏览器页面右上角「退出」。
 rem  命令行运行 run.bat fg 走前台模式(日志打在窗口里,Ctrl+C 或关窗口停止)
 rem ============================================
 
-if not exist "node_modules" (
-  echo [1/3] 首次运行,安装依赖 npm install ...
+rem  依赖判断不能只看 node_modules 目录:package.json 后来加新依赖时目录仍在,
+rem  旧写法会跳过安装,构建直接报 Cannot find module(electron-updater 就这么漏过一次)。
+rem  改看 package-lock.json 是否比 node_modules\.package-lock.json 新:前者较新说明依赖清单变了。
+set "NEED_INSTALL="
+if not exist "node_modules" set "NEED_INSTALL=1"
+if not exist "node_modules\.package-lock.json" set "NEED_INSTALL=1"
+if not defined NEED_INSTALL for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "if ((Get-Item -LiteralPath 'package-lock.json').LastWriteTime -gt (Get-Item -LiteralPath 'node_modules\.package-lock.json').LastWriteTime) { '1' }"`) do set "NEED_INSTALL=%%i"
+if defined NEED_INSTALL (
+  echo [1/3] 依赖缺失或已过期(package-lock.json 有更新),安装依赖 npm install ...
   call npm install
   if errorlevel 1 goto :err_install
 ) else (
-  echo [1/3] 依赖就绪
+  echo [1/3] 依赖已是最新,跳过安装
 )
 
 echo [2/3] 编译构建 tsc + esbuild ...
