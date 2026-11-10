@@ -104,6 +104,9 @@ export function FsView(props: Props) {
   const [showHidden, setShowHidden] = useState(false);
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [mode, setMode] = useState<Mode>('browse');
+  /** 模式镜像：切换项目的 effect 只依赖 repoRoot，延迟回调里要读到最新模式（树/列表用不同刷新方式） */
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   // 树冲突诊断的声明在下面 nodeData 之后：诊断基准要按模式区分（树模式的行 rel 相对仓库根）
   // 过滤激活时记住原视图（取消过滤恢复）
   const prevModeRef = useRef<Mode>(mode);
@@ -221,6 +224,11 @@ export function FsView(props: Props) {
   /** 当前目录镜像（切项目时判断 dir 是否会变化：相同则 dir effect 不触发，要显式加载） */
   const dirRef = useRef(dir);
   dirRef.current = dir;
+  /** 目录加载请求序号：切项目后 dir effect 的普通加载与后台强刷可能并发，
+   *  旧请求晚回来会把新数据覆盖回去——只让最新一次请求的结果落地。 */
+  const loadSeqRef = useRef(0);
+  /** 非静默加载的并发计数：被取代的旧请求也要关掉自己开的那份加载条，任一未完成就继续显示 */
+  const loadingCountRef = useRef(0);
   const [fsLoading, setFsLoading] = useState(false);
   // 大目录提示（条目多时提示原因，避免误以为卡死；5 秒后自动消失）
   const [bigTip, setBigTip] = useState('');
@@ -418,6 +426,7 @@ export function FsView(props: Props) {
   /** 加载目录（列表/浏览模式）。quiet=true 为静默强刷（操作后 / tick 刷新）：不出顶部加载条、
    *  不弹大目录提示——列表原地换数据，界面不闪；切目录、首次进入照常给加载反馈。 */
   const load = useCallback(async (targetDir: string, force: boolean, quiet = false) => {
+    const seq = ++loadSeqRef.current;
     const cache = nodeDataRef.current.get(targetDir);
     if (!force && cache) {
       setData(cache);
@@ -436,6 +445,8 @@ export function FsView(props: Props) {
         void get
           .fs(targetDir)
           .then((r) => {
+            // 期间已有更新的加载（切目录 / 切项目强刷）：这份补数据可能携带旧状态，丢弃
+            if (seq !== loadSeqRef.current) return;
             setNodeData((m) => new Map(m).set(targetDir, r));
             // 请求期间用户可能已翻到别的目录：只更新内容，不把列表拽回来
             if (dirRef.current === targetDir) setData(r);
@@ -444,10 +455,15 @@ export function FsView(props: Props) {
       }
       return;
     }
-    if (!quiet) setFsLoading(true);
+    if (!quiet) {
+      loadingCountRef.current += 1;
+      setFsLoading(true);
+    }
     setError('');
     try {
       const r = await get.fs(targetDir, force);
+      // 旧请求晚回来（快速切目录 / 切项目后的强刷取代了它）：丢弃，否则会把新数据覆盖回旧数据
+      if (seq !== loadSeqRef.current) return;
       setNodeData((m) => new Map(m).set(targetDir, r));
       setData(r);
       setSel(null);
@@ -469,6 +485,8 @@ export function FsView(props: Props) {
         }
       }
     } catch (e) {
+      // 已被更新的加载取代：旧请求的错误（比如旧项目目录已不存在）不作数
+      if (seq !== loadSeqRef.current) return;
       // 目录不存在（ENOENT：上次浏览位置被删除/仓库已切换）→ 自动回到仓库根，避免卡死在错误页
       if (targetDir && (e as Error).message.includes('ENOENT')) {
         setDir('');
@@ -478,7 +496,10 @@ export function FsView(props: Props) {
       }
       setError((e as Error).message);
     } finally {
-      if (!quiet) setFsLoading(false);
+      if (!quiet) {
+        loadingCountRef.current = Math.max(0, loadingCountRef.current - 1);
+        if (loadingCountRef.current === 0) setFsLoading(false);
+      }
     }
     // setPendingLocate 的 useState 在下方才声明，放进依赖数组会 TDZ（Block-scoped variable used before its declaration）
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -575,6 +596,23 @@ export function FsView(props: Props) {
   const reloadOpenNodes = useCallback(() => {
     ['', ...expandedRef.current].forEach((d) => void loadNode(d, true));
   }, [loadNode]);
+
+  // 切回有缓存的项目：缓存只负责秒开，切走期间外部可能改了文件、新增/删除——
+  // 首屏渲染出来后静默强刷一次，数据到达原地替换；失败保留缓存，不弹错误。
+  // 切到无缓存的新项目不用补刷（dir effect / 树重载本来就会加载最新数据）；
+  // 首次挂载走正常加载，也不在这里重复请求。
+  useEffect(() => {
+    if (!props.repoRoot || !restoredAtSwitchRef.current) return;
+    const root = props.repoRoot;
+    const targetDir = props.startRel ?? '';
+    // 让恢复的缓存先完成首帧渲染，再在后台请求（不闪加载条、不打断界面）
+    const timer = window.setTimeout(() => {
+      if (repoRootRef.current !== root) return; // 等待期间又切走了：这次强刷作废
+      if (modeRef.current === 'tree') reloadOpenNodes();
+      else void load(targetDir, true, true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [props.repoRoot]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 刷新（tick 变化）：静默强刷——保留渲染中的缓存、数据原地替换（不闪加载条/不闪整页转圈）。
   // 视图隐藏时只失效缓存不请求：切回来（active 变化）会补拉，否则后台每个视图都在跟着 tick 跑。
