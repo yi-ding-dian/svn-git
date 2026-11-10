@@ -13,6 +13,13 @@ export function AboutModal(props: {
   buildDate: string;
   commit?: string;
   dirty?: boolean;
+  /** 作者与主页（package.json author；点击用系统浏览器打开） */
+  author?: string;
+  authorUrl?: string;
+  /** 项目主页（package.json homepage） */
+  homepage?: string;
+  /** 开源协议（package.json license） */
+  license?: string;
   /** 本机访问（false = 局域网共享的远程查看者）：不显示本机升级入口 */
   local?: boolean;
   onClose: () => void;
@@ -126,8 +133,12 @@ export function AboutModal(props: {
       .finally(() => setProxyBusy(false));
   };
 
+  const openExternal = (url: string) => {
+    void post.openUrl(url).catch(() => {});
+  };
+
   const openReleases = () => {
-    void post.openUrl(APP_RELEASES_LATEST_URL).catch(() => {});
+    openExternal(APP_RELEASES_LATEST_URL);
   };
 
   const unsupportedText = (): string => {
@@ -227,6 +238,34 @@ export function AboutModal(props: {
           {props.buildDate || t('shell.about.buildDateMissing')}
         </div>
       </div>
+
+      {/* 作者 / 项目主页 / 协议：来自 package.json，点击用系统浏览器打开 */}
+      {(props.author || props.homepage || props.license) && (
+        <div className="small dim" style={{ marginTop: 4 }}>
+          {/* 作者只显示名字，不提供点击 */}
+          {props.author && <>{t('shell.about.author')}{props.author}</>}
+          {props.homepage && (
+            <>
+              {props.author ? ' · ' : ''}
+              <a
+                href={props.homepage}
+                onClick={(e) => {
+                  e.preventDefault();
+                  openExternal(props.homepage!);
+                }}
+              >
+                {t('shell.about.repository')}
+              </a>
+            </>
+          )}
+          {props.license && (
+            <>
+              {props.author || props.homepage ? ' · ' : ''}
+              {props.license}
+            </>
+          )}
+        </div>
+      )}
 
       {/* 在线升级区：版本信息下方单独一条分隔线。远程查看者不显示（升级的是本机程序，
           且相关接口在访问门禁里是本机专属，远程点了也只会 403） */}

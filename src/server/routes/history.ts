@@ -18,6 +18,11 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         let buildDate = '';
         let commit = '';
         let dirty = false;
+        /** 作者 / 主页 / 协议：关于弹窗展示，打包元数据也来自同一份 package.json */
+        let author = '';
+        let authorUrl = '';
+        let homepage = '';
+        let license = '';
         {
           // package.json 在项目根、build-info.json 在 dist/ 下，而编译产物位于 dist 下任意深度
           // （dist/routes、dist/server/routes…）。这里**逐级向上找、不写死层数** ——
@@ -34,7 +39,21 @@ export async function handle(ctx: Ctx): Promise<boolean> {
             return null;
           };
           try {
-            version = JSON.parse(readUp('package.json') ?? '{}').version ?? '';
+            const pkg = JSON.parse(readUp('package.json') ?? '{}') as {
+              version?: unknown;
+              author?: unknown;
+              homepage?: unknown;
+              license?: unknown;
+            };
+            version = String(pkg.version ?? '');
+            if (typeof pkg.author === 'string') author = pkg.author;
+            else if (pkg.author && typeof pkg.author === 'object') {
+              const a = pkg.author as { name?: unknown; url?: unknown };
+              author = String(a.name ?? '');
+              authorUrl = String(a.url ?? '');
+            }
+            homepage = String(pkg.homepage ?? '');
+            license = String(pkg.license ?? '');
           } catch {
             /* 读不到就留空 */
           }
@@ -50,7 +69,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         const repo = repoInfo();
         if (!repo) {
-          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version, buildDate, commit, dirty, instanceId: INSTANCE_ID, canRelease: false });
+          sendJson(res, 200, { type: null, root: null, url: null, revOrBranch: null, startDir: START_DIR, home: os.homedir(), version, buildDate, commit, dirty, author, authorUrl, homepage, license, instanceId: INSTANCE_ID, canRelease: false });
           return true;
         }
         const { vcs } = vcsOf();
@@ -82,6 +101,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           buildDate,
           commit,
           dirty,
+          author,
+          authorUrl,
+          homepage,
+          license,
           instanceId: INSTANCE_ID,
           // 一键发版入口：只对项目根自带 deploy/release.mjs 的 git 项目显示
           canRelease:

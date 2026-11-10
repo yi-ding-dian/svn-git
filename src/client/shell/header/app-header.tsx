@@ -66,7 +66,16 @@ export function AppHeader(props: {
   const shareLocal = share?.local ?? true;
   // 关于弹窗（版本 + 构建日期 + 构建提交；打开时拉取 /api/info）
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [aboutInfo, setAboutInfo] = useState<{ version: string; buildDate: string; commit: string; dirty: boolean }>({
+  const [aboutInfo, setAboutInfo] = useState<{
+    version: string;
+    buildDate: string;
+    commit: string;
+    dirty: boolean;
+    author?: string;
+    authorUrl?: string;
+    homepage?: string;
+    license?: string;
+  }>({
     version: '',
     buildDate: '',
     commit: '',
@@ -77,7 +86,18 @@ export function AppHeader(props: {
     setAboutInfo({ version: '', buildDate: '', commit: '', dirty: false });
     void get
       .info()
-      .then((r) => setAboutInfo({ version: r.version ?? '', buildDate: r.buildDate ?? '', commit: r.commit ?? '', dirty: r.dirty === true }))
+      .then((r) =>
+        setAboutInfo({
+          version: r.version ?? '',
+          buildDate: r.buildDate ?? '',
+          commit: r.commit ?? '',
+          dirty: r.dirty === true,
+          author: r.author,
+          authorUrl: r.authorUrl,
+          homepage: r.homepage,
+          license: r.license,
+        }),
+      )
       .catch(() => {});
     setAboutOpen(true);
   };
@@ -560,6 +580,10 @@ export function AppHeader(props: {
           buildDate={aboutInfo.buildDate}
           commit={aboutInfo.commit}
           dirty={aboutInfo.dirty}
+          author={aboutInfo.author}
+          authorUrl={aboutInfo.authorUrl}
+          homepage={aboutInfo.homepage}
+          license={aboutInfo.license}
           local={shareLocal}
           onClose={() => setAboutOpen(false)}
         />

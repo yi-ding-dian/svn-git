@@ -215,6 +215,8 @@ export const shell = {
   'shell.about.versionFailed': '(read failed)',
   'shell.about.buildDate': 'Build Date: ',
   'shell.about.buildDateMissing': '(not generated; run npm run build to update)',
+  'shell.about.author': 'Author: ',
+  'shell.about.repository': 'GitHub repo',
   'shell.about.dirty': 'The working tree had uncommitted changes when this build was made (it does not correspond to any single commit)',
   'shell.about.updateLabel': 'Update: ',
   'shell.about.updateReading': 'Reading...',
