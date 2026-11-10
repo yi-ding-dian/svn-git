@@ -101,6 +101,42 @@ export function parentPath(p: string): string {
   return i <= 0 ? '/' : t.slice(0, i);
 }
 
+/** 路径分段（面包屑）：从根到当前目录，每级带显示名与完整路径。
+ *
+ *  - 根段名称就是根本身（`/`、`D:\`、UNC `\\server\share`），其余取尾段名；
+ *  - UNC 的 `\\server\share` 视为根（parentPath 对它会退到 `\\server`，这里不跟随，
+ *    否则面包屑会多出一级点不进去的 `\\server`）；
+ *  - 空串返回空数组；相对路径原样作为单段（调用方一般只传绝对路径）。 */
+export interface PathSegment {
+  name: string;
+  path: string;
+}
+
+export function pathSegments(p: string): PathSegment[] {
+  const src = p.trim();
+  if (!src) return [];
+  const win = isWinPath(src);
+  let cur = win ? src.replace(/\//g, '\\') : src;
+  // 去掉尾部分隔符（根保留）
+  while (cur.length > 1 && /[\\/]$/.test(cur) && parentPath(cur) !== cur) cur = cur.replace(/[\\/]+$/, '');
+  // UNC 根：`\\server\share` 到此为止，不再向上（parentPath 会退化成 `\\server`）
+  let uncRoot = '';
+  if (/^\\\\/.test(cur)) {
+    const parts = cur.split('\\').filter(Boolean);
+    if (parts.length >= 2) uncRoot = '\\\\' + parts.slice(0, 2).join('\\');
+  }
+  const out: PathSegment[] = [];
+  for (;;) {
+    const up = cur.length <= uncRoot.length ? cur : parentPath(cur);
+    const idx = Math.max(cur.lastIndexOf('/'), cur.lastIndexOf('\\'));
+    const name = up === cur ? cur : cur.slice(idx + 1);
+    out.unshift({ name: name || cur, path: cur });
+    if (up === cur) break;
+    cur = up;
+  }
+  return out;
+}
+
 /** p 是否位于 base 内（含 base 本身）。Windows 形态下 `\` 与 `/` 都接受，盘符比较忽略大小写。
  *  目录选择器的「限制在某个根之下」用它：上翻/跳转/拖入都在这里兜底。 */
 export function isPathWithin(base: string, p: string): boolean {

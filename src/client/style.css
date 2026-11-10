@@ -1821,6 +1821,52 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 }
 .repo-enter .info { flex: 1; color: var(--text); }
 .breadcrumb { color: var(--dim); margin-bottom: 10px; font-family: Consolas, monospace; }
+/* 目录选择器面包屑（dir-browser）：每级可点，单行；溢出宽度由 JS 算好（前缀收成 …），
+   这里只做兜底裁剪与排版。单独加 .dir-crumbs，避免影响文件视图那条 a 序列面包屑。 */
+.dir-crumbs {
+  position: relative;
+  display: flex;
+  align-items: center;
+  white-space: pre;
+  overflow: hidden;
+}
+.dir-crumbs .crumb {
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--dim);
+  font: inherit;
+  white-space: pre;
+}
+.dir-crumbs button.crumb { cursor: pointer; }
+.dir-crumbs button.crumb:hover { color: var(--accent); background: var(--panel2); }
+.dir-crumbs .crumb.current { color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dir-crumbs .crumb-sep { flex: 0 0 auto; color: var(--dim); opacity: .65; }
+.dir-crumbs .crumb-more { flex: 0 0 auto; color: var(--dim); opacity: .65; }
+/* 虚化的「上次离开的目录」：图标感虚线框，点击可回到那里 */
+.dir-crumbs .crumb.back {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  padding: 0 5px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  opacity: .55;
+}
+.dir-crumbs .crumb.back:hover { opacity: 1; color: var(--accent); border-color: var(--accent); }
+/* 隐藏测量节点：与 .crumb 同字体、同内边距，visibility:hidden 不占布局 */
+.dir-crumbs .crumb-measure {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+  font: inherit;
+}
 /* 文件视图底部的条目数状态条：固定在内容区底部居中，不随列表滚动。
    margin-bottom:-16px 吃掉 .content 的全局下内边距（见 .content padding:16px）——
    否则状态条下面还会多出一条 16px 空白带（用户实报）；文字靠 padding-bottom 留一点呼吸。

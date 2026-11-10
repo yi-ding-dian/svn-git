@@ -9,6 +9,8 @@
 export const repo = {
   // ---- 本域多个弹窗共用 ----
   'repo.up': '← 上级',
+  // 目录面包屑：虚化的「上次离开目录」悬浮提示
+  'repo.crumb.backTip': '返回刚离开的目录：{path}',
   'repo.saving': '保存中…',
   'repo.pickDirTitle': '📂 选择所在目录',
   // ---- SVN 仓库浏览（不 checkout 直接看远程）----

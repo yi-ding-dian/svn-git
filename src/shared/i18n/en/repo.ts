@@ -7,6 +7,8 @@
 export const repo = {
   // ---- 本域多个弹窗共用 ----
   'repo.up': '← Up',
+  // Directory breadcrumb: tooltip for the faded "last left directory"
+  'repo.crumb.backTip': 'Back to the directory you just left: {path}',
   'repo.saving': 'Saving…',
   'repo.pickDirTitle': '📂 Choose Parent Directory',
   'repo.browse.title': 'Repository Browser',

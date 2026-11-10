@@ -4,11 +4,11 @@
  *  拖拽、文件灰显，一边只列文件夹）。这里把「怎么浏览」收成一份，父层只保留「数据与语义」：
  *  各自 get.browse（打开项目要吃 entries 做仓库识别、选择器要在重命名后 reload），
  *  目录切换、拖拽取路径、上级判定等一律走本组件，避免再各写一套漂移。 */
-import React, { useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { get, type BrowseResult } from '../shared/api.js';
 import { GridIcon } from '../ui/icons.js';
 import { Tooltip } from '../ui/tooltip.js';
-import { joinPath, parentPath, pathFromFile, isImeComposing } from '../shared/utils.js';
+import { joinPath, parentPath, pathFromFile, isImeComposing, pathSegments, isPathWithin, isWinPath } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 网格条目（/api/browse entries 的子集） */
@@ -64,6 +64,90 @@ export function DirBrowser(props: {
 }) {
   const [dragOver, setDragOver] = useState(false);
 
+  // ---------- 面包屑：每级可点 + 长路径尾部优先 + 虚化的「上次离开目录」 ----------
+  /** 显示的分段：受 rootDir 下界限制，下界之上的上级不展示（也点不过去） */
+  const crumbs = useMemo(() => {
+    const all = pathSegments(props.dir);
+    return props.rootDir ? all.filter((s) => isPathWithin(props.rootDir!, s.path)) : all;
+  }, [props.dir, props.rootDir]);
+  const sep = isWinPath(props.dir) ? '\\' : '/';
+  const sepText = sep;
+  /** 上一次停留的目录：只有「向上返回」时才保留成虚化项（点击可回到那里） */
+  const [backDir, setBackDir] = useState<string | null>(null);
+  const lastDirRef = useRef(props.dir);
+  useEffect(() => {
+    const prev = lastDirRef.current;
+    lastDirRef.current = props.dir;
+    if (!prev || prev === props.dir) return;
+    // 新目录包含旧目录 = 向上返回；进入子目录 / 路径输入跳到无关目录都不留
+    setBackDir(isPathWithin(props.dir, prev) ? prev : null);
+  }, [props.dir]);
+  const backName = useMemo(() => {
+    if (!backDir) return '';
+    const segs = pathSegments(backDir);
+    return segs[segs.length - 1]?.name ?? backDir;
+  }, [backDir]);
+  /** 溢出计算：单行内从尾部（当前目录）往前保留，放不下的前缀收成「…」 */
+  const crumbRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const [from, setFrom] = useState(0);
+  const [showBack, setShowBack] = useState(false);
+  useLayoutEffect(() => {
+    const el = crumbRef.current;
+    const m = measureRef.current;
+    if (!el || !m) return;
+    const compute = () => {
+      const total = el.clientWidth;
+      if (!total) return;
+      const measure = (text: string) => {
+        m.textContent = text;
+        return m.offsetWidth;
+      };
+      const sepW = measure(sepText);
+      // 每段宽度 = 名称 + 前置分隔符；根段名自带尾分隔符（`/`、`C:\`），后面不再加
+      const widths = crumbs.map((s, i) => {
+        const needSep = i > 0 && !/[\\/]$/.test(crumbs[i - 1].name);
+        return measure(s.name) + (needSep ? sepW : 0);
+      });
+      let acc = 0;
+      let start = crumbs.length;
+      for (let i = crumbs.length - 1; i >= 0; i--) {
+        if (acc + widths[i] > total) break;
+        acc += widths[i];
+        start = i;
+      }
+      // 极端：连当前目录都放不下——至少留着它（自身由 CSS 省略）
+      if (start >= crumbs.length) start = Math.max(0, crumbs.length - 1);
+      // 从 start 起的实际占用：段宽合计 + 前缀省略号
+      const moreW = measure('…') + sepW;
+      const used = (s: number) => {
+        let sum = 0;
+        for (let i = s; i < crumbs.length; i++) sum += widths[i];
+        return sum + (s > 0 ? moreW : 0);
+      };
+      // 兜底：前缀省略号本身放不下时，再往前挤掉几段
+      let fixed = start;
+      while (fixed < crumbs.length && used(fixed) > total) fixed += 1;
+      setFrom(fixed);
+      // 虚化项优先于「遥远的祖先」：空间不够就让左侧前缀再省略几段，但当前目录始终保留；
+      // 连当前目录 + 虚化项都放不下时，才挤掉虚化项。
+      if (backDir) {
+        const need = measure(backName) + 16 + sepW;
+        let s = fixed;
+        while (s < crumbs.length && used(s) + need > total) s += 1;
+        const fits = s < crumbs.length && used(s) + need <= total;
+        setShowBack(fits);
+        if (fits) setFrom(s);
+      } else {
+        setShowBack(false);
+      }
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [crumbs, backDir, backName, sepText]);
+
   /** 系统目录选择对话框（输入行按钮与拖拽兜底共用） */
   const pickDir = async () => {
     const pick = props.onPathPicked;
@@ -100,11 +184,6 @@ export function DirBrowser(props: {
   const atRoot = Boolean(props.rootDir) && props.dir === props.rootDir;
   const entries = (props.data?.entries ?? []).filter((e) => !(atRoot && e.name === '..'));
   const empty = props.data ? (props.isEmpty ? props.isEmpty(props.data) : entries.length === 0) : false;
-  // 上级：到根返回自身（`/`、`D:\`）—— 顺带修掉旧 OpenBrowser 用 `dir !== '/'` 时
-  // Windows 盘根也会显示「←上级」、点了没反应的问题
-  const upTarget = props.dir ? parentPath(props.dir) : '';
-  const canUp = Boolean(props.dir) && upTarget !== props.dir && !atRoot;
-
   const tipOf = (it: DirEntry): string => {
     // `..` 无右键（见 onDirContextMenu 注释），提示里也不提重命名
     if (it.name === '..') return t('repo.open.dblClickDir', { name: it.name });
@@ -150,19 +229,51 @@ export function DirBrowser(props: {
           {props.pathInput.hint && <div className="dim small" style={{ marginBottom: 8 }}>{props.pathInput.hint}</div>}
         </>
       )}
-      {/* 面包屑行：当前路径（超长省略，悬浮看全）+ ←上级；右侧 toolbar 插槽（选择器：新建文件夹） */}
+      {/* 面包屑行：每级可点击直达；超长时从右侧（当前目录）往前保留，前缀收成「…」；
+          向上返回后末尾追加虚化的刚离开目录（点击可回到那里）。右侧 toolbar 插槽（新建文件夹） */}
       <div className="row" style={{ marginBottom: 10, gap: 8 }}>
-        <div
-          className="breadcrumb"
-          title={props.dir}
-          style={{ flex: 1, minWidth: 0, marginBottom: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-        >
-          {props.dir}
-          {canUp && (
-            <a href="#" onClick={(e) => { e.preventDefault(); props.onDirChange(upTarget); }}>
-              {/* ← 上级 */}
-              {' '}{t('repo.up')}
-            </a>
+        <div className="breadcrumb dir-crumbs" ref={crumbRef} title={props.dir} style={{ flex: 1, minWidth: 0, marginBottom: 0 }}>
+          {/* 隐藏测量节点：与面包屑同字体，量每段实际像素宽度（不占布局） */}
+          <span ref={measureRef} className="crumb-measure" aria-hidden="true" />
+          {from > 0 && (
+            <>
+              <span className="crumb-more">…</span>
+              <span className="crumb-sep">{sepText}</span>
+            </>
+          )}
+          {crumbs.slice(from).map((s, i) => {
+            const absolute = from + i;
+            const isCurrent = absolute === crumbs.length - 1;
+            // 省略号后已经渲染了分隔符，它后面紧跟的第一段不再重复；其余段按前一段判断
+            const needSep =
+              absolute > 0 && !(i === 0 && from > 0) && !/[\\/]$/.test(crumbs[absolute - 1].name);
+            return (
+              <React.Fragment key={s.path}>
+                {needSep && <span className="crumb-sep">{sepText}</span>}
+                {isCurrent ? (
+                  <span className="crumb current">{s.name}</span>
+                ) : (
+                  <button type="button" className="crumb" onClick={() => props.onDirChange(s.path)}>
+                    {s.name}
+                  </button>
+                )}
+              </React.Fragment>
+            );
+          })}
+          {showBack && backDir && (
+            <>
+              {!/[\\/]$/.test(crumbs[crumbs.length - 1]?.name ?? '') && (
+                <span className="crumb-sep">{sepText}</span>
+              )}
+              <button
+                type="button"
+                className="crumb back"
+                title={t('repo.crumb.backTip', { path: backDir })}
+                onClick={() => props.onDirChange(backDir)}
+              >
+                {backName}
+              </button>
+            </>
           )}
         </div>
         {props.slots?.toolbar}
