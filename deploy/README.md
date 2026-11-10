@@ -79,8 +79,8 @@ WSL 文件系统，不是 Windows 盘。内置 Node 的版本可用 `WSL_NODE_VE
 - **带 `-d`**（自动含 `--browser`）：**后台常驻** —— 命令立即返回，服务在后台运行、浏览器照常自动打开
 
 ```bash
-./svn-git-1.0.0.AppImage --browser -d      # Linux：后台常驻
-svn-git-1.0.0-portable.exe --browser -d    # Windows：同上（portable 包装器会原样转发参数）
+./svn-git-1.7.2.AppImage --browser -d      # Linux：后台常驻
+svn-git-1.7.2-portable.exe --browser -d    # Windows：同上（portable 包装器会原样转发参数）
 ```
 
 > 双击图标没有终端，不弹菜单、直接开窗口。
