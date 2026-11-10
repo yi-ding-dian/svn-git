@@ -808,7 +808,8 @@ export function PreviewPane(props: Props) {
                 <span className="blame-meta" style={{ width: blameMetaWidth }}>{b.rev} {b.author}</span>
                 {/* 行号紧挨代码（.blame-no 收窄了列宽，别在作者和代码间留一大条空白） */}
                 <span className="sb-no blame-no">{b.line}</span>
-                <span dangerouslySetInnerHTML={{ __html: highlightLineCached(b.text, langOf(target.name)) }} />
+                {/* pv-src：white-space: pre-wrap —— 不加这层类，溯源视图的缩进/连续空格会被 HTML 折叠 */}
+                <span className="pv-src" dangerouslySetInnerHTML={{ __html: highlightLineCached(b.text, langOf(target.name)) }} />
               </div>
             );
           })
