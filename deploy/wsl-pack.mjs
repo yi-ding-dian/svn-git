@@ -5,6 +5,9 @@
  *   - 默认：svn-git-<版本>-wsl.tar.gz        目标机需要 Node 20.11+、git、svn
  *   - --with-node：svn-git-<版本>-wsl-node.tar.gz  附带 Linux x64 Node 二进制，目标机只需 git、svn
  *
+ * 包内同时生成两个启动脚本：run-wsl.sh（WSL/Linux）与 run-windows.bat（Windows 原生，
+ * 需目标机自装 Windows 版 Node；依赖目前是纯 JS，可跨平台复用）。
+ *
  * 两个入口薄壳（deploy/build-wsl.sh / build-wsl-node.sh）只负责转发参数，逻辑集中在这里。
  *
  * 与 Electron 包的区别：不含 Chromium/GTK/NSS，不需要 FUSE/WSLg；只跑 HTTP 服务，
@@ -120,6 +123,73 @@ echo "停止：页面右上角「退出」，或 curl -X POST $URL/api/shutdown"
   fs.writeFileSync(path.join(dir, 'run-wsl.sh'), script, { mode: 0o755 });
 }
 
+/** Windows 启动脚本（与 run-wsl.sh 同目录）。
+ *  目标机需自带 Windows 版 Node 20.11+；包内 node_modules 目前全是纯 JS 依赖，Windows 的
+ *  Node 可直接复用（将来若引入原生依赖，需要按平台分别安装，届时必须重新评估这个兼容路径）。
+ *  UTF-8 + chcp 65001 写，避免中文提示在 cmd 下乱码；CRLF 换行。 */
+function writeWindowsBat(dir) {
+  const bat = `@echo off
+chcp 65001 >nul
+setlocal
+cd /d "%~dp0"
+
+rem svn-git Windows 启动脚本（浏览器版）
+rem 用法：
+rem   run-windows.bat       后台常驻（本窗口可关闭）
+rem   run-windows.bat fg    前台运行（Ctrl+C 停止，日志打在窗口里）
+rem 依赖：Windows 版 Node.js 20.11+；git / svn 按实际仓库类型安装
+rem 停止：页面右上角「退出」，或 curl -X POST http://127.0.0.1:23456/api/shutdown
+
+where node >nul 2>nul
+if errorlevel 1 goto :no_node
+
+rem 代码用了 import.meta.dirname，要求 Node 20.11+
+node -e "const [a,b]=process.versions.node.split('.').map(Number);process.exit((a>20||(a===20&&b>=11))?0:1)"
+if errorlevel 1 goto :bad_node
+
+where git >nul 2>nul
+if errorlevel 1 echo [提示] 未找到 git：只用 SVN 时可忽略；需要 Git 时请安装 Git for Windows 并加入 PATH
+where svn >nul 2>nul
+if errorlevel 1 echo [提示] 未找到 svn：只用 Git 时可忽略；需要 SVN 时请安装 TortoiseSVN（勾选命令行工具）或 SlikSVN
+
+if /i "%~1"=="fg" goto :foreground
+
+echo 正在后台启动服务 http://127.0.0.1:23456 ，浏览器将自动打开...
+node dist/main/index.js -d
+if errorlevel 1 goto :fail
+echo 已在后台启动；停止：页面右上角「退出」。
+echo 查看实时日志：run-windows.bat fg
+echo.
+echo 按任意键关闭本窗口（服务继续在后台运行）...
+pause >nul
+exit /b 0
+
+:foreground
+echo 前台启动（Ctrl+C 停止）...
+node dist/main/index.js --browser
+exit /b %errorlevel%
+
+:no_node
+echo 未找到 Node.js（需要 20.11+）。
+echo   请到 https://nodejs.org 安装 Node 22 LTS，安装时勾选 "Add to PATH"。
+pause
+exit /b 1
+
+:bad_node
+echo Node 版本过低（需要 20.11+），当前版本：
+node -v
+echo   请升级 Node 后重试：https://nodejs.org
+pause
+exit /b 1
+
+:fail
+echo 启动失败，请查看上方日志。
+pause
+exit /b 1
+`.replace(/\n/g, '\r\n');
+  fs.writeFileSync(path.join(dir, 'run-windows.bat'), bat, { encoding: 'utf8' });
+}
+
 function writeReadme(dir, builtinNode) {
   const nodeReq = builtinNode
     ? '本包已内置 Linux x64 Node.js，无需另装 Node。'
@@ -143,6 +213,13 @@ function writeReadme(dir, builtinNode) {
 
 然后在 Windows 浏览器打开：
   http://localhost:23456
+
+Windows 原生（不经 WSL）：
+  把包目录复制到 Windows 磁盘，双击 run-windows.bat（或命令行 run-windows.bat fg）。
+  需要 Windows 版 Node.js 20.11+${builtinNode ? '（包内内置的 Node 是 Linux 版，Windows 上不可用）' : ''}；
+  包内 node_modules 目前是纯 JS 依赖，Windows 的 Node 可直接复用；git / svn 使用 Windows 版
+  命令行工具（Git for Windows / TortoiseSVN 命令行工具 / SlikSVN）。
+  注意：Windows 原生路径未经完整测试，正式使用建议优先用 Windows 安装包/便携版。
 
 说明：
   - WSL2 默认把 Windows 的 localhost 转发到 WSL；若打不开，用 hostname -I 查看 WSL IP，
@@ -212,6 +289,7 @@ async function main() {
     }
 
     writeRunScript(dir, WITH_NODE);
+    writeWindowsBat(dir);
     writeReadme(dir, WITH_NODE);
 
     console.log('== 5/5 打包 tar.gz ==');
@@ -223,6 +301,7 @@ async function main() {
     console.log('');
     console.log(`✅ 完成: ${path.relative(ROOT, tarPath)} (${(size / 1024 / 1024).toFixed(1)} MB)`);
     console.log(`   解压后运行: ./${name}/run-wsl.sh，然后 Windows 浏览器打开 http://localhost:23456`);
+    console.log(`   Windows 原生: 复制到 Windows 磁盘后双击 ${name}/run-windows.bat（需自装 Windows 版 Node）`);
   } finally {
     fs.rmSync(stage, { recursive: true, force: true });
   }
