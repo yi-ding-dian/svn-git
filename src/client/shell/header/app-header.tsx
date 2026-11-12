@@ -1,6 +1,6 @@
 /** 顶部工具栏：仓库信息 + 版本管理操作（可定制：拖拽重排 / 拖入拖出 ⋯ 菜单，localStorage 持久化）+ 主题/字号 + 打开项目/登录/退出。
  *  实现按职责拆分在 header/ 下：主题清单 themes.ts、网络灯 net-light、身份徽标 github-identity-badge、
- *  可定制项注册表 toolbar-tools、布局拖拽 use-toolbar-layout、任务/通知面板各自独立。 */
+ *  可定制项注册表 menu/（按功能分组）、布局拖拽 use-toolbar-layout、任务/通知面板各自独立。 */
 import React, { useEffect, useRef, useState } from 'react';
 import { get, post, type RepoInfo } from '../../shared/api.js';
 import { useTasks, cancelTask } from '../../shared/tasks.js';
@@ -14,13 +14,24 @@ import { parseGithub } from '../../../shared/github.js';
 import { type Modal } from '../modal-types.js';
 import { type View } from '../sidebar.js';
 import { useLang } from '../../shared/use-lang.js';
-import { t, LANGS } from '../../../shared/i18n/index.js';
-import { IconServer, IconGitHub, IconHourglassRun, IconBell, IconFolder, IconOk, IconErr, IconGlobe, IconShare, IconInfo } from '../../ui/icons.js';
+import { t } from '../../../shared/i18n/index.js';
+import { IconServer, IconGitHub, IconHourglassRun, IconBell, IconOk, IconErr } from '../../ui/icons.js';
 import { GithubIdentityBadge } from './github-identity-badge.js';
 import { NetLight } from './net-light.js';
 import { TaskPopover } from './task-popover.js';
 import { NoticePopover } from './notice-popover.js';
-import { ToolBtn, TOOLS, isSepItem, newSepId, type ToolCtx } from './toolbar-tools.js';
+import { ToolBtn } from './tool-button.js';
+import { TOOLS } from './menu/index.js';
+import { isSepItem, newSepId } from './menu/layout.js';
+import type { ToolCtx } from './menu/types.js';
+// 固定菜单项（⋯ 菜单里不参与拖拽定制的项）
+import { shareConfigEntry } from './menu/tools/share-config.js';
+import { systemAppMenuEntry } from './menu/tools/system-app-menu.js';
+import { environmentCheckEntry } from './menu/tools/environment-check.js';
+import { separatorEntry } from './menu/application/separator.js';
+import { resetLayoutEntry } from './menu/application/reset-layout.js';
+import { languageEntry } from './menu/application/language.js';
+import { aboutEntry } from './menu/application/about.js';
 import { useToolbarLayout } from './use-toolbar-layout.js';
 import { useShareStatus } from '../../share/share-context.js';
 
@@ -53,7 +64,7 @@ export function AppHeader(props: {
   // 「⋯」更多菜单（低频操作 + 工具栏定制）定位
   const [moreMenu, setMoreMenu] = useState<{ x: number; y: number } | null>(null);
 
-  // 工具栏布局与拖拽定制（布局条目来自 toolbar-tools 的 TOOLS）
+  // 工具栏布局与拖拽定制（布局条目来自 menu/index 的 TOOLS）
   const { layout, resetLayout, dragKey, dragPos, dropBefore, dropMenuBefore, moreDrop, beginDrag } =
     useToolbarLayout(() => setMoreMenu(null));
 
@@ -476,101 +487,25 @@ export function AppHeader(props: {
             }),
             // 局域网共享配置：仅本机显示（远程访问只读，且配置接口只允许本机调用）
             ...(shareLocal
-              ? [{
-                  icon: <IconShare size={14} />,
-                  label: t('share.title'),
-                  title: t('share.title'),
-                  action: () => {
-                    setMoreMenu(null);
-                    props.setModal({ type: 'share' });
-                  },
-                }]
+              ? [shareConfigEntry({ closeMenu: () => setMoreMenu(null), openShare: () => props.setModal({ type: 'share' }) })]
               : []),
             { sep: true } as const,
             // 系统应用菜单集成：固定项（分隔符上方，不参与拖拽定制；仅 AppImage 显示）
             ...(appMenuState.appImage
-              ? [{
-                  icon: <IconFolder />,
-                  // 卸载系统应用菜单 / 安装到系统应用菜单…
-                  label: appMenuState.installed ? t('shell.appMenu.uninstall') : t('shell.appMenu.install'),
-                  title: appMenuState.installed
-                    // 撤销集成：删除系统应用菜单里本工具条目（.desktop 与图标）
-                    ? t('shell.appMenu.uninstallTitle')
-                    // 生成系统应用菜单条目（.desktop + 图标），之后可从系统左上角菜单直接启动本工具（可卸载）
-                    : t('shell.appMenu.installTitle'),
-                  action: () => {
-                    setMoreMenu(null);
-                    void (appMenuState.installed ? post.appMenuUninstall() : post.appMenuInstall())
-                      .then((r) => props.onToast(r.message, !r.ok))
-                      .catch((e: Error) => props.onToast(e.message, true))
-                      .finally(() => {
-                        get.appMenu().then((r) => setAppMenuState({ appImage: r.appImage, installed: r.installed })).catch(() => {});
-                      });
+              ? [systemAppMenuEntry({
+                  closeMenu: () => setMoreMenu(null),
+                  installed: appMenuState.installed,
+                  onToast: props.onToast,
+                  onChanged: () => {
+                    get.appMenu().then((r) => setAppMenuState({ appImage: r.appImage, installed: r.installed })).catch(() => {});
                   },
-                }]
+                })]
               : []),
-            {
-              icon: '|',
-              // 分隔符
-              label: t('shell.toolbar.sep'),
-              // 按住拖到工具栏任意位置插入分隔线；已插入的分隔符也可拖动/拖到 ⋯ 删除
-              title: t('shell.toolbar.sepInsertTitle'),
-              onMouseDown: beginDrag(newSepId()),
-              action: () => {
-                setMoreMenu(null);
-                // 按住「分隔符」拖到工具栏即可插入
-                props.onToast(t('shell.toolbar.sepHint'));
-              },
-            },
-            {
-              icon: '↺',
-              // 恢复默认布局
-              label: t('shell.toolbar.reset'),
-              // 重置工具栏布局（按钮重新按默认顺序显示）
-              title: t('shell.toolbar.resetTitle'),
-              action: () => {
-                setMoreMenu(null);
-                resetLayout();
-                // 已恢复默认布局
-                props.onToast(t('shell.toolbar.resetDone'));
-              },
-            },
-            {
-              icon: '🔍',
-              // 环境检测
-              label: t('shell.tool.envCheck'),
-              // 查看 SVN / Git 的安装状态与版本；缺失时可一键安装
-              title: t('shell.tool.envCheckTitle'),
-              action: () => {
-                setMoreMenu(null);
-                props.setModal({ type: 'env' });
-              },
-            },
-            {
-              // 语言：固定项（与「关于」同为设置类，**不参与拖拽定制** —— 工具栏按钮语义是"点击即执行"，
-              // 而语言是"展开选一个"，拖过去会变成语义怪异的按钮）
-              icon: <IconGlobe />,
-              // 语言
-              label: t('lang.title'),
-              // 切换界面语言（操作结果与报错消息一并切换）
-              title: t('lang.hint'),
-              noArrow: true, // 不显示右侧 ▶（用户要求）：展开选择是这一项的唯一用途，箭头多余
-              submenu: LANGS.map((l) => ({
-                icon: lang === l.key ? <IconOk /> : undefined,
-                label: t(l.labelKey),
-                action: () => changeLang(l.key),
-              })),
-            },
-            {
-              icon: <IconInfo />,
-              // 关于
-              label: t('shell.about.title'),
-              // 有新版本时标签后显示红点（用户明确：关于后面标出来）
-              dot: updateVersion !== null,
-              // 版本号与构建日期
-              title: updateVersion !== null ? t('shell.about.updateAvailable', { version: updateVersion }) : t('shell.about.menuTitle'),
-              action: openAbout,
-            },
+            separatorEntry({ closeMenu: () => setMoreMenu(null), newSeparatorId: newSepId, beginDrag, onToast: props.onToast }),
+            resetLayoutEntry({ closeMenu: () => setMoreMenu(null), resetLayout, onToast: props.onToast }),
+            environmentCheckEntry({ closeMenu: () => setMoreMenu(null), openEnvironment: () => props.setModal({ type: 'env' }) }),
+            languageEntry({ lang, changeLang }),
+            aboutEntry({ updateVersion, openAbout }),
           ]}
         />
       )}

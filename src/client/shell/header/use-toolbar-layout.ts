@@ -2,7 +2,8 @@
  *  （不依赖 HTML5 DnD：真实/模拟环境都可靠）。与渲染分离，AppHeader 只管画。 */
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { DEFAULT_LAYOUT, LAYOUT_KEY, isSepItem, loadLayout, type ToolbarLayout } from './toolbar-tools.js';
+import { DEFAULT_LAYOUT, LAYOUT_KEY, isSepItem, loadLayout } from './menu/layout.js';
+import type { ToolbarLayout } from './menu/types.js';
 
 export function useToolbarLayout(closeMenu: () => void) {
   // 工具栏布局（默认 → localStorage；拖拽即时更新）
