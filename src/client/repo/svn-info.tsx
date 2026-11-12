@@ -1,5 +1,8 @@
-/** SVN 信息弹窗（原「SVN 账号设置」）：显示**当前实际生效的身份**（工具配置 / svn 官方凭据缓存）
- *  + 切换账号 / 退出登录。
+/** SVN 信息弹窗（原「SVN 账号设置」）：仓库信息（URL / 工作副本 / 当前版本 / 服务器）
+ *  + 显示**当前实际生效的身份**（工具配置 / svn 官方凭据缓存）+ 切换账号 / 退出登录。
+ *
+ *  文件命名与组件名对齐 Git 侧的 GitInfoModal：以前叫 login.tsx/LoginModal，只因为最早只有
+ *  登录功能；现在它同时承担「SVN 信息」展示，名字容易让人以为只是登录窗。
  *
  *  为什么显示缓存身份：svn 命令行的凭据有两个来源——工具 config.json 为空时会**静默使用**
  *  官方凭据缓存（~/.subversion/auth，历史上在别的 svn 客户端登录时存的）——界面以前只显示
@@ -15,11 +18,15 @@ import { IconLogout } from '../ui/icons.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { t } from '../../shared/i18n/index.js';
 
-export function LoginModal(props: {
+export function SvnInfoModal(props: {
   /** 工具配置账号（App 的 configUser；弹窗打开后会自行查一次最新身份） */
   username: string;
   /** 当前仓库 URL（查身份 + 清缓存匹配用） */
   repoUrl: string;
+  /** 工作副本根目录（只读展示） */
+  repoPath: string;
+  /** 当前版本（/api/info 的 revOrBranch，SVN 下是 r12345） */
+  rev: string;
   onClose: () => void;
   onSaved: () => void;
   onToast: (msg: string) => void;
@@ -150,6 +157,16 @@ export function LoginModal(props: {
   const srcLabel = t(username ? 'repo.login.srcConfig' : 'repo.login.srcCache');
   /** 编辑中且有身份可回：右上角 ✕（及 Esc）= 返回身份面板（两级视图），而不是关闭整个弹窗 */
   const backMode = editing && Boolean(username || cacheUser);
+  /** 服务器地址（协议 + 主机）：只读信息区展示；svn:// / svn+ssh:// / http(s):// / file:// 都能解析，
+   *  解析失败留空（下面显示 —） */
+  const server = (() => {
+    try {
+      const u = new URL(props.repoUrl);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      return '';
+    }
+  })();
 
   return (
     <>
@@ -183,6 +200,37 @@ export function LoginModal(props: {
           )
         }
       >
+          {/* 仓库信息（只读）：与「Git 信息」弹窗的展示层级对齐；数据来自 /api/info，不再额外请求 */}
+          <div className="help-note" style={{ marginBottom: 12 }}>
+            <div className="small" style={{ flex: 1, minWidth: 0, lineHeight: 1.9 }}>
+              <div className="row" style={{ gap: 8 }}>
+                {/* 仓库 URL */}
+                <span className="dim" style={{ width: 62, flexShrink: 0 }}>{t('repo.svnInfo.repoUrl')}</span>
+                <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={props.repoUrl}>
+                  {props.repoUrl || '—'}
+                </span>
+              </div>
+              {/* 服务器（协议 + 主机） */}
+              <div className="row" style={{ gap: 8 }}>
+                <span className="dim" style={{ width: 62, flexShrink: 0 }}>{t('repo.svnInfo.server')}</span>
+                <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={server}>
+                  {server || '—'}
+                </span>
+              </div>
+              {/* 工作副本路径 */}
+              <div className="row" style={{ gap: 8 }}>
+                <span className="dim" style={{ width: 62, flexShrink: 0 }}>{t('repo.svnInfo.workcopy')}</span>
+                <span className="mono" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={props.repoPath}>
+                  {props.repoPath || '—'}
+                </span>
+              </div>
+              {/* 当前版本 */}
+              <div className="row" style={{ gap: 8 }}>
+                <span className="dim" style={{ width: 62, flexShrink: 0 }}>{t('repo.svnInfo.revision')}</span>
+                <span className="mono" style={{ color: 'var(--accent)', fontWeight: 600 }}>{props.rev || '—'}</span>
+              </div>
+            </div>
+          </div>
           {!editing ? (
             <div className="form-row">
               {/* 当前 SVN 身份 */}

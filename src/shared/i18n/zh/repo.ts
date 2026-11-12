@@ -448,7 +448,11 @@ export const repo = {
   'repo.auth.saveAndPush': '保存并推送',
   'repo.auth.saveAndGet': '保存并获取仓库',
 
-  // ---- SVN 信息 / 账号（LoginModal）----
+  // ---- SVN 信息 / 账号（SvnInfoModal）----
+  'repo.svnInfo.repoUrl': '仓库 URL',
+  'repo.svnInfo.server': '服务器',
+  'repo.svnInfo.workcopy': '工作副本',
+  'repo.svnInfo.revision': '当前版本',
   'repo.login.title': 'SVN 信息',
   'repo.login.saved': 'SVN 账号已保存',
   'repo.login.savedCacheCleared': 'SVN 账号已保存，并清除系统缓存中的旧账号 {user}',

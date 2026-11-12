@@ -15,7 +15,8 @@ import { CommitSelectModal } from '../ops/commit-select.js';
 import { BranchDialog } from '../ops/branch/index.js';
 import type { BranchCheckoutPayload, PickDirRequest } from '../ops/branch/branch-shared.js';
 import { CleanDialog, StashDialog } from '../ops/clean-stash.js';
-import { TagDialog, GitInfoModal, type TagEntry } from '../ops/tag-git-info.js';
+import { TagDialog, type TagEntry } from '../ops/tag-dialog.js';
+import { GitInfoModal } from '../ops/git-info.js';
 import { GitHubCreateModal } from '../repo/github-create-repo.js';
 import { GitHubDeleteModal } from '../repo/github-delete-repo.js';
 import { GitHubForkModal } from '../repo/github-fork.js';
@@ -24,7 +25,7 @@ import { ReleaseHubModal } from '../ops/release-hub.js';
 import { GitHubMyReposModal } from '../repo/github-my-repos.js';
 import { GitIdentityModal } from '../ops/git-identity.js';
 import { GitPushAuthModal } from '../repo/git-auth.js';
-import { LoginModal } from '../repo/login.js';
+import { SvnInfoModal } from '../repo/svn-info.js';
 import { PracticeRepoDialog } from '../repo/practice/index.js';
 import { EnvInstallModal } from '../repo/env-install.js';
 import { RepoBrowseModal } from '../repo/repo-browse.js';
@@ -252,10 +253,12 @@ export function ModalHost(props: ModalHostProps) {
           onDone={async (msg, paths) => doCommit(paths, msg)}
         />
       )}
-      {modal?.type === 'login' && (
-        <LoginModal
+      {modal?.type === 'svn-info' && (
+        <SvnInfoModal
           username={configUser}
           repoUrl={info?.url ?? ''}
+          repoPath={info?.root ?? ''}
+          rev={info?.revOrBranch ?? ''}
           onClose={() => setModal(null)}
           onSaved={() => {
             setConfigUser('');

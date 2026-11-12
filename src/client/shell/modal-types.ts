@@ -5,7 +5,8 @@ import type React from 'react';
 export type Modal =
   | { type: 'commit'; paths: string[] }
   | { type: 'commit-select'; dir: string; dirLabel: string; items: { path: string; code: string; isDir: boolean }[]; checked?: string[]; stagedOnly?: string[]; msg?: string }
-  | { type: 'login' }
+  /** SVN 信息（仓库信息 + 当前身份，认证失败时也自动弹出） */
+  | { type: 'svn-info' }
   | { type: 'open'; startDir?: string }
   | { type: 'practice' }
   | { type: 'branches' }

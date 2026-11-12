@@ -508,7 +508,7 @@ export function App() {
         // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]），与分支/标签弹窗 onChanged 一致
         if (op === 'update') get.info().then((ri) => setInfo(ri)).catch(() => {});
       }
-      if (r.authError) setModal({ type: 'login' });
+      if (r.authError) setModal({ type: 'svn-info' });
       return r;
     },
     [refresh, showToast] // setOpBusy 为稳定 setter,无需入依赖（OP_BUSY_KEY 已提到模块级）
@@ -933,7 +933,7 @@ export function App() {
               settleUpdatedRows(r.files?.map((f) => f.path) ?? []);
               get.info().then((ri) => setInfo(ri)).catch(() => {}); // 更新后工作副本版本变化，重拉仓库信息（头部 [rN]）
             }
-            if (r.authError) setModal({ type: 'login' });
+            if (r.authError) setModal({ type: 'svn-info' });
             // 结果一律走铃铛通知（成功/失败都不自动弹窗——用户定稿）；svn 警告（外部定义失败等）
             // 拼进通知消息，通知里别丢掉
             const msg = r.warnings?.length ? `${r.message}\n⚠ ${r.warnings.join('\n⚠ ')}` : r.message;
@@ -1039,7 +1039,7 @@ export function App() {
       } else {
         showCommitFail(r.message, paths);
       }
-      if (r.authError) setModal({ type: 'login' });
+      if (r.authError) setModal({ type: 'svn-info' });
       setModal(null);
     },
     [refresh, showCommitFail, showToast]
@@ -1128,7 +1128,7 @@ export function App() {
         } else {
           showCommitFail(r.message, paths);
         }
-        if (r.authError) setModal({ type: 'login' });
+        if (r.authError) setModal({ type: 'svn-info' });
       } catch (e) {
         // 提交失败: {msg}
         showCommitFail(t('shell.commit.failMsg', { msg: (e as Error).message }), paths);

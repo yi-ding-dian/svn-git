@@ -446,7 +446,11 @@ export const repo = {
   'repo.auth.saveAndPush': 'Save & Push',
   'repo.auth.saveAndGet': 'Save & Fetch',
 
-  // ---- SVN Info / account (LoginModal) ----
+  // ---- SVN Info / account (SvnInfoModal) ----
+  'repo.svnInfo.repoUrl': 'Repository URL',
+  'repo.svnInfo.server': 'Server',
+  'repo.svnInfo.workcopy': 'Working copy',
+  'repo.svnInfo.revision': 'Current revision',
   'repo.login.title': 'SVN Info',
   'repo.login.saved': 'SVN account saved',
   'repo.login.savedCacheCleared': 'SVN account saved; old cached account {user} was cleared',
