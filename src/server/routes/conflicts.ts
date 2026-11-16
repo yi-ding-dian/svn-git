@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { run } from '../../vcs/exec.js';
 import { platform } from '../../platform/index.js';
-import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, runVcs, writeTextKeepEncoding, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE } from './util.js';
+import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, runVcs, currentScopes, writeTextKeepEncoding, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE } from './util.js';
 import { detectTextEncoding } from '../../shared/text.js';
 import { diffChangedLines } from '../../vcs/diff-lines.js';
 import { t } from '../../shared/i18n/index.js';
@@ -136,7 +136,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       if (p === '/api/preflight') {
         // 提交/推送前检查：服务器版本对比 + 行级冲突检测 + 锁定
         const { vcs, repo } = vcsOf();
-        const r = await vcs.preflight();
+        // 打开的是子项目时只检查该范围（大工作副本避免全仓库 status -u）
+        const r = await vcs.preflight(currentScopes.get(repo.root) || undefined);
         // 行级冲突：对每个风险文件对比 对方改动行 ∩ 我的改动行
         const clash: { path: string; lines: number[] }[] = [];
         const branch = repo.type === 'git' ? await vcs.branch?.() : '';

@@ -20,6 +20,9 @@ export interface HistoryItem {
   path: string;
   type: 'svn' | 'git' | 'wsl';
   lastOpened: number;
+  /** 打开时的操作范围（相对仓库根的子项目路径；空/缺省 = 整个工作副本）。
+   *  大仓库里只打开 trunk/src 这类子项目时记住它，重新打开不用再逐级点进去 */
+  scope?: string;
   /** 常用项目标记（星号，启动时优先打开） */
   fav?: boolean;
   /** 用户备注（侧边栏右键「备注」设置）：侧边栏显示在时间前，过长由前端 CSS 截断；空/缺省 = 无备注 */
@@ -44,12 +47,13 @@ export function loadHistory(): HistoryItem[] {
  *  软链接、结尾斜杠等，按字符串比会当成两个项目，列表里就出现一模一样的条目（用户实报：
  *  最近项目里两个 svn-git，一个带星一个不带）。realpath 对 bind mount 无效（它只解析软链），
  *  所以必须看 dev:ino。取不到（目录已删/无权限）时退回字面路径，只归并完全相同的字符串。 */
-function historyKey(p: string): string {
+function historyKey(p: string, scope?: string): string {
   try {
     const st = fs.statSync(p);
-    return `${st.dev}:${st.ino}`;
+    // 同一工作副本的不同子项目范围视为不同条目（大仓库可同时把多个子项目放进最近列表）
+    return `${st.dev}:${st.ino}\u0000${scope ?? ''}`;
   } catch {
-    return path.resolve(p);
+    return `${path.resolve(p)}\u0000${scope ?? ''}`;
   }
 }
 
@@ -60,7 +64,7 @@ export function dedupeHistory(): number {
     const list = loadHistory();
     const byKey = new Map<string, HistoryItem>();
     for (const h of list) {
-      const key = historyKey(h.path);
+      const key = historyKey(h.path, h.scope);
       const prev = byKey.get(key);
       if (!prev) {
         byKey.set(key, h);
@@ -82,11 +86,11 @@ export function dedupeHistory(): number {
   }
 }
 
-function addHistory(entry: { path: string; type: HistoryItem['type'] }): void {
+function addHistory(entry: { path: string; type: HistoryItem['type']; scope?: string }): void {
   try {
-    const key = historyKey(entry.path);
-    const existed = loadHistory().find((h) => historyKey(h.path) === key);
-    const list = loadHistory().filter((h) => historyKey(h.path) !== key); // 同一目录的别名路径一并去掉，不留重复
+    const key = historyKey(entry.path, entry.scope);
+    const existed = loadHistory().find((h) => historyKey(h.path, h.scope) === key);
+    const list = loadHistory().filter((h) => historyKey(h.path, h.scope) !== key); // 同一条目的别名路径一并去掉，不留重复
     // 记录被整个重新构造，**用户自己设的两样东西都得显式带过来**，否则打开一次项目就没了：
     // 常用标记（不丢星号）+ 备注（用户实报：「更新时间后就不见了，备注」）
     list.unshift({ ...entry, lastOpened: Date.now(), fav: existed?.fav, remark: existed?.remark });
@@ -169,7 +173,9 @@ async function remoteProbeOnce(
   const stale = () => epoch !== (remoteCheckEpoch.get(dir) ?? 0);
   try {
     const vcs = createVcs(repo, cred);
-    const pf = await vcs.preflight();
+    // 只检查打开的项目位置（子项目条目）：大工作副本不因侧栏自动检查被全量联网扫描
+    const scope = path.relative(repo.root, path.resolve(dir));
+    const pf = await vcs.preflight(scope || undefined);
     const isStale = stale();
     if (!isStale) remoteCheckCache.set(dir, { at: Date.now(), ok: true, behind: pf.behind });
     return { value: { behind: pf.behind }, stale: isStale };
@@ -208,14 +214,14 @@ async function pullAny(
       ? { username: cfg.svn.username, password: cfg.svn.password, trustServerCert: cfg.svn.trustServerCert }
       : null;
     const vcs = createVcs(repo, cred);
-    // pull 自带 600s 超时与友好错误；svn update 无参数 = 整个工作副本。
-    // signal：前端断开（后台任务面板「取消」）→ 一并终止 git pull / svn update 子进程
+    // 条目记录了子项目范围：只更新该范围（svn update <scope>）。git pull 是仓库级（git 固有语义）。
+    const scope = path.relative(repo.root, path.resolve(dir));
     const r =
       repo.type === 'git'
         // 当前仓库不支持拉取
         ? ((await vcs.pull?.(signal)) ?? { ok: false, message: t('srv.pullUnsupported') })
         // 当前仓库不支持更新
-        : ((await vcs.update?.(undefined, signal)) ?? { ok: false, message: t('srv.updateUnsupported') });
+        : ((await vcs.update?.(scope || undefined, signal)) ?? { ok: false, message: t('srv.updateUnsupported') });
     if (r.ok) {
       invalidateRemoteProbe(dir); // 拉完重算（缓存失效）
       // 拉的正好是当前打开的仓库：当前会话单例（顶栏 preflight / 侧栏 ⬇ 都读它）的缓存
@@ -223,7 +229,8 @@ async function pullAny(
       // 重查"会命中旧 behind，⬇ 角标/顶栏横条最多滞后 1 分钟才消失（用户实报）
       try {
         const cur = vcsOf();
-        if (realpathSafe(cur.repo.root) === realpathSafe(dir)) cur.vcs.invalidatePreflight?.();
+        // dir 可能是子项目路径：与当前仓库**根**比较（同一工作副本的任意子项目都算）
+        if (realpathSafe(cur.repo.root) === realpathSafe(repo.root)) cur.vcs.invalidatePreflight?.();
       } catch {
         /* 无当前仓库等情况：忽略 */
       }
@@ -255,8 +262,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
         process.env.SVNGIT_REPO_DIR = r.root;
         // 记录操作范围：打开的目录相对仓库根(子项目);打开根目录则为空(全仓库)
-        currentScopes.set(r.root, dir === r.root ? '' : path.relative(r.root, dir));
-        addHistory({ path: r.root, type: r.type }); // 记录到最近项目
+        const scope = dir === r.root ? '' : path.relative(r.root, dir);
+        currentScopes.set(r.root, scope);
+        // 最近项目同时记住操作范围：下次从侧栏点开直接回到子项目，不用重新逐级选择
+        addHistory({ path: r.root, type: r.type, scope: scope || undefined });
         sendJson(res, 200, { ok: true, repo: r });
         return true;
       }
@@ -265,7 +274,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           const body = await readBody(req);
           const hp = String(body.path ?? '');
           const ht = String(body.type ?? '') === 'git' ? 'git' : 'svn';
-          if (hp) addHistory({ path: hp, type: ht });
+          if (hp) addHistory({ path: hp, type: ht, scope: currentScopes.get(hp) || undefined });
           sendJson(res, 200, { ok: true });
           return true;
         }
@@ -277,8 +286,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         // 删除一条最近项目记录
         const body = await readBody(req);
         const hp = String(body.path ?? '');
+        const hs = String(body.scope ?? '');
         if (hp) {
-          const list = loadHistory().filter((h) => h.path !== hp);
+          const list = loadHistory().filter((h) => !(h.path === hp && (h.scope ?? '') === hs));
           try {
             fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
             fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));
@@ -295,9 +305,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         // 设置/取消常用项目标记（星号）
         const body = await readBody(req);
         const hp = String(body.path ?? '');
+        const hs = String(body.scope ?? '');
         const fav = Boolean(body.fav);
         if (hp) {
-          const list = loadHistory().map((h) => (h.path === hp ? { ...h, fav } : h));
+          const list = loadHistory().map((h) => (h.path === hp && (h.scope ?? '') === hs ? { ...h, fav } : h));
           try {
             fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
             fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));
@@ -358,11 +369,12 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         // 设置/清除最近项目的备注（侧边栏右键菜单）。空串 = 清除：把字段删掉，不留空串
         const body = await readBody(req);
         const hp = String(body.path ?? '');
+        const hs = String(body.scope ?? '');
         // 60 字上限：备注显示在 160px 侧边栏里，再长也只会被截断，别让 history.json 被塞长文本
         const remark = String(body.remark ?? '').trim().slice(0, 60);
         if (hp) {
           const list = loadHistory().map((h) => {
-            if (h.path !== hp) return h;
+            if (h.path !== hp || (h.scope ?? '') !== hs) return h;
             const next: HistoryItem = { ...h };
             if (remark) next.remark = remark;
             else delete next.remark;

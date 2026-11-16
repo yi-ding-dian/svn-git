@@ -2050,7 +2050,8 @@ export class GitVcs {
   /**
    * 提交/推送前检查：git fetch + 比较 ahead/behind + 双方修改文件交集
    */
-  async preflight(): Promise<{
+  /** pathRel：只统计该子项目范围内的本地改动/冲突风险（behind/ahead 仍是仓库级，git 固有语义） */
+  async preflight(pathRel?: string): Promise<{
     remoteHasUpdate: boolean;
     behind: number;
     ahead: number;
@@ -2061,7 +2062,9 @@ export class GitVcs {
     // 远程信息走缓存（fetch 是网络请求：弱网 15s 超时会堵住"提交"弹窗秒开）
     const remote = await this.remoteCheck();
     // 本地修改文件（不含未跟踪）；-c core.quotepath=false：中文路径不做八进制转义（unquote 只解引号不解转义）
-    const st = await this.exec(['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-unormal']);
+    const args = ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-unormal'];
+    if (pathRel) args.push('--', pathRel);
+    const st = await this.exec(args);
     const localChanged = new Set<string>();
     for (const line of st.stdout.split('\n')) {
       if (!line || line.length < 4) continue;

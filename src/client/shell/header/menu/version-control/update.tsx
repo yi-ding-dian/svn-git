@@ -10,7 +10,7 @@ export const updateTool: ToolDef = {
     icon: <IconDownload />,
     label: t('shell.tool.update'),
     title: t('shell.tool.updateTitle'),
-    cmd: 'svn update',
+    cmd: `svn update${c.startRel ? ` ${c.startRel}` : ''}`,
     onClick: c.onUpdate,
   }),
 };

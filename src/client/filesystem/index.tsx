@@ -816,6 +816,24 @@ export function FsView(props: Props) {
   const breadcrumbs = useMemo(() => {
     if (!data) return [] as { label: string; rel: string }[];
     const parts = data.dir ? data.dir.split('/') : [];
+    /** 操作范围（大仓库子项目）：把它当作项目根，面包屑从这里开始显示，
+     *  不再露出上层仓库根；用户主动点「根目录」/上级越界时才显示完整路径 */
+    const scope = (props.startRel ?? '').replace(/^\/+|\/+$/g, '');
+    if (scope && data.dir) {
+      if (data.dir === scope) {
+        return [{ label: scope.split('/').pop() || scope, rel: scope }];
+      }
+      if (data.dir.startsWith(`${scope}/`)) {
+        const rest = data.dir.slice(scope.length + 1).split('/');
+        const out = [{ label: scope.split('/').pop() || scope, rel: scope }];
+        let acc = scope;
+        for (const p of rest) {
+          acc = `${acc}/${p}`;
+          out.push({ label: p, rel: acc });
+        }
+        return out;
+      }
+    }
     const out = [{ label: data.root.split('/').pop() || '/', rel: '' }];
     let acc = '';
     for (const p of parts) {
@@ -823,7 +841,7 @@ export function FsView(props: Props) {
       out.push({ label: p, rel: acc });
     }
     return out;
-  }, [data]);
+  }, [data, props.startRel]);
 
   const relOf = (e: FsEntry) => (data?.dir ? `${data.dir}/${e.name}` : e.name);
 

@@ -71,6 +71,8 @@ export function onboardText(r: RepoInfo): string {
 }
 
 export interface ModalHostProps {
+  /** 打开项目成功后回调（App 据此递增 openTick，让文件视图重挂载到新的操作范围） */
+  onRepoOpened?: () => void;
   /** 弹窗状态（含进行中的遮罩） */
   state: {
     modal: Modal;
@@ -79,7 +81,7 @@ export interface ModalHostProps {
     /** 点开过但打不开的项目：路径 → 错误消息（列表项上常驻 ×，悬浮时显示同一条） */
     invalidPaths: Record<string, string>;
     /** 打开某个最近项目（面板里点击时用） */
-    openHistoryItem: (h: { path: string }) => void;
+    openHistoryItem: (h: { path: string; scope?: string }) => void;
     configUser: string;
   };
   /** 对应 setter */
@@ -200,6 +202,7 @@ export function ModalHost(props: ModalHostProps) {
         const r = await get.info();
         if (r.type) {
           setInfo(r);
+          props.onRepoOpened?.();
           refresh();
           loadHistory();
           setView('browse'); // 获取仓库后直接进入文件浏览视图
@@ -278,6 +281,7 @@ export function ModalHost(props: ModalHostProps) {
           onOpened={(r) => {
             setInfo(r);
             setOnboard(null);
+            props.onRepoOpened?.();
             refresh();
             setModal(null);
             loadHistory();
@@ -592,6 +596,7 @@ export function ModalHost(props: ModalHostProps) {
                 const r = await get.info();
                 if (r.type) {
                   setInfo(r);
+                  props.onRepoOpened?.();
                   refresh();
                   loadHistory();
                   setView('browse'); // 新仓库直接进入文件浏览视图（创建时可能停在历史/差异视图）

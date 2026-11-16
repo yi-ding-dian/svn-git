@@ -429,6 +429,9 @@ export interface HistoryItem {
   /** wsl：WSL/纯 Node 包的运行目录（不是版本库，点击走目录浏览） */
   type: 'svn' | 'git' | 'wsl';
   lastOpened: number;
+  /** 打开时的操作范围（相对仓库根的子项目路径；空/缺省 = 整个工作副本）。
+   *  点最近项目时拼回 path 下再打开，恢复上次的子项目范围 */
+  scope?: string;
   fav?: boolean;
   /** 用户备注（右键「备注」设置）：显示在时间前，过长由 CSS 截断；空/缺省 = 无备注 */
   remark?: string;
@@ -1418,10 +1421,11 @@ export const post = {
     ),
   /** 切换界面语言：主进程随即 setLang，server / vcs / main 的消息语言一并跟上 */
   lang: (lang: Lang) => api<{ ok: boolean }>('/api/lang', json({ lang })),
-  historyRemove: (path: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remove', json({ path })),
-  historyFav: (path: string, fav: boolean) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-fav', json({ path, fav })),
-  /** 设置/清除备注（侧边栏右键菜单）：传空串 = 清除 */
-  historyRemark: (path: string, remark: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remark', json({ path, remark })),
+  /** scope：同一仓库的不同子项目条目（大仓库按子项目分条记录） */
+  historyRemove: (path: string, scope?: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remove', json({ path, scope })),
+  historyFav: (path: string, fav: boolean, scope?: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-fav', json({ path, scope, fav })),
+  /** 设置/清除备注（侧边栏右键菜单）：传空串 = 清除；scope 区分子项目条目 */
+  historyRemark: (path: string, remark: string, scope?: string) => api<{ ok: boolean; items: HistoryItem[] }>('/api/history-remark', json({ path, scope, remark })),
   mkdir: (path: string) => api<{ ok: boolean }>('/api/mkdir', json({ path })),
   /** 仓库内新建文件夹（path 相对仓库根，单级）——与上面那个系统级的 mkdir 是两回事 */
   newDir: (path: string) => api<{ ok: boolean; message?: string }>('/api/new-dir', json({ path })),

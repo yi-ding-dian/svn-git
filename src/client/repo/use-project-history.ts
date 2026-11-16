@@ -19,28 +19,28 @@ export function useProjectHistory(onError: (msg: string) => void) {
       .catch(() => {});
   }, []);
 
-  /** 删除最近项目（侧边栏右键菜单）：删除后刷新列表 */
-  const removeHistory = useCallback((path: string) => {
+  /** 删除最近项目（侧边栏右键菜单）：删除后刷新列表。scope 区分同一仓库的子项目条目 */
+  const removeHistory = useCallback((h: { path: string; scope?: string }) => {
     void post
-      .historyRemove(path)
+      .historyRemove(h.path, h.scope)
       .then((r) => setHistory(r.items))
       // 删除失败
       .catch(() => onErrorRef.current(t('repo.recent.delFailed')));
   }, []);
 
   /** 设置/取消常用项目（侧边栏右键菜单）：星号标记，下次启动优先打开 */
-  const setFav = useCallback((path: string, fav: boolean) => {
+  const setFav = useCallback((h: { path: string; scope?: string }, fav: boolean) => {
     void post
-      .historyFav(path, fav)
+      .historyFav(h.path, fav, h.scope)
       .then((r) => setHistory(r.items))
       // 设置常用失败 / 取消常用失败
       .catch(() => onErrorRef.current(fav ? t('repo.fav.setFailed') : t('repo.fav.unsetFailed')));
   }, []);
 
   /** 设置/清除备注（侧边栏右键菜单）：显示在时间前；传空串 = 清除备注 */
-  const setRemark = useCallback((path: string, remark: string) => {
+  const setRemark = useCallback((h: { path: string; scope?: string }, remark: string) => {
     void post
-      .historyRemark(path, remark)
+      .historyRemark(h.path, remark, h.scope)
       .then((r) => setHistory(r.items))
       // 备注失败 / 清除备注失败
       .catch(() => onErrorRef.current(remark ? t('repo.remark.setFailed') : t('repo.remark.clearFailed')));

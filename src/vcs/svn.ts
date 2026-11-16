@@ -1044,29 +1044,34 @@ export class SvnVcs {
    * 提交前检查：svn status -u（查询服务器）
    * 返回：服务器是否更新、落后版本数、冲突风险文件（本地和服务器都改了）、被他人锁定文件
    */
-  async preflight(): Promise<Awaited<ReturnType<SvnVcs['preflightOnce']>>['value']> {
+  async preflight(pathRel?: string): Promise<Awaited<ReturnType<SvnVcs['preflightOnce']>>['value']> {
     // 计算期间被失效（update 抢在前面完成）→ 重算一次：这一次响应就是前端"更新完立即重查"
     // 的那次，把旧 behind 交回去界面就同步不上（同 git.ts remoteCheck 的代次说明）
-    let r = await this.preflightOnce();
-    if (r.stale) r = await this.preflightOnce();
+    let r = await this.preflightOnce(pathRel);
+    if (r.stale) r = await this.preflightOnce(pathRel);
     return r.value;
   }
 
-  private async preflightOnce(): Promise<{
+  /** pathRel：只检查该子项目范围（大工作副本打开子项目时，避免 status -u 扫全仓库） */
+  private async preflightOnce(pathRel?: string): Promise<{
     value: { remoteHasUpdate: boolean; behind: number; conflictRisk: string[]; lockedByOthers: string[]; updatedFiles: string[]; remoteLogs: LogEntry[] };
     stale: boolean;
   }> {
     const epoch = this.preflightEpoch; // 本次计算的代次：算完代次变了 = 结果基于更新前的版本库
     // status -u 是服务器查询（网络）：缓存整体结果——成功 60s（提交不必每次查服务器）、
-    // 失败 10s 内不重试（弱网防连环挂起；20s 超时慢失败）
+    // 失败 10s 内不重试（弱网防连环挂起；20s 超时慢失败）。缓存按 scope 区分：
+    // 同一工作副本可能以不同子项目范围打开，不能拿 A 子项目的结果当 B 的
     const now = Date.now();
+    const scope = pathRel ?? '';
     const c = this.preflightCache;
-    if (c && now - c.time < (c.ok ? 60_000 : 10_000)) return { value: c.data, stale: false };
-    const res = await this.exec(['status', '-u'], { timeoutMs: 20_000 }); // 快速失败:网络不通时防卡连接槽 60s+
+    if (c && c.scope === scope && now - c.time < (c.ok ? 60_000 : 10_000)) return { value: c.data, stale: false };
+    const args = ['status', '-u'];
+    if (pathRel) args.push(pathRel);
+    const res = await this.exec(args, { timeoutMs: 20_000 }); // 快速失败:网络不通时防卡连接槽 60s+
     if (res.code !== 0) {
       const empty = { remoteHasUpdate: false, behind: 0, conflictRisk: [], lockedByOthers: [], updatedFiles: [], remoteLogs: [] };
       const stale = epoch !== this.preflightEpoch;
-      if (!stale) this.preflightCache = { time: now, ok: false, data: empty };
+      if (!stale) this.preflightCache = { time: now, ok: false, scope, data: empty };
       return { value: empty, stale };
     }
     const out = res.stdout.split('\n');
@@ -1118,12 +1123,12 @@ export class SvnVcs {
       remoteLogs,
     };
     const stale = epoch !== this.preflightEpoch;
-    if (!stale) this.preflightCache = { time: now, ok: true, data: result };
+    if (!stale) this.preflightCache = { time: now, ok: true, scope, data: result };
     return { value: result, stale };
   }
 
-  /** preflight 结果缓存（status -u 是服务器查询）：成功 60s / 失败 10s 内不重试 */
-  private preflightCache: { time: number; ok: boolean; data: Awaited<ReturnType<SvnVcs['preflightOnce']>>['value'] } | null = null;
+  /** preflight 结果缓存（status -u 是服务器查询）：成功 60s / 失败 10s 内不重试；scope 区分检查范围 */
+  private preflightCache: { time: number; ok: boolean; scope: string; data: Awaited<ReturnType<SvnVcs['preflightOnce']>>['value'] } | null = null;
 
   /** 缓存代次号：invalidatePreflight 每次 +1。挡住"更新进行中发起、更新后才算完"的探测
    *  把旧 behind 写回缓存（写完又撑 60s，横条 / ⬇ 角标不消失——用户实报） */

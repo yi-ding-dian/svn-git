@@ -23,7 +23,7 @@ import { useProjectHistory } from '../repo/use-project-history.js';
 import { ModalHost, onboardText, type Op } from './modal-host.js';
 import { Sidebar, type View } from './sidebar.js';
 import { IconOk, IconErr } from '../ui/icons.js';
-import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError, baseName } from '../shared/utils.js';
+import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError, baseName, historyEntryKey } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { useTasks, startTask, hasRunningTask, pollTransferProgress } from '../shared/tasks.js';
 import { addNotice } from '../shared/notices.js';
@@ -56,6 +56,9 @@ export function App() {
   const repo = info?.type ? info : null;
   const [view, setView] = useState<View>('browse');
   const [tick, setTick] = useState(0);
+  /** 「打开项目」信号（每次打开成功 +1）：文件视图据此重挂载，浏览位置回到新的操作范围。
+   *  同一项目重新打开（换子项目范围，或上次手动切到了根目录）时不能沿用旧的 dir。 */
+  const [openTick, setOpenTick] = useState(0);
   /** 远程状态重算信号（更新/切分支/合并成功后 +1）：侧边栏据此重跑「远程检查」。
    *  与 tick 分开——tick 连文件保存都会加，不能每次都触发一批联网探测。 */
   const [remoteCheckTick, setRemoteCheckTick] = useState(0);
@@ -402,7 +405,7 @@ export function App() {
   };
 
   const openHistoryItem = useCallback(
-    async (h: { path: string; type?: 'svn' | 'git' | 'wsl' }) => {
+    async (h: { path: string; type?: 'svn' | 'git' | 'wsl'; scope?: string }) => {
       // WSL 运行目录不是 SVN/Git 工作副本：不调「打开仓库」接口（否则报 notWc），
       // 直接在目录浏览弹窗里定位到它（不动当前项目）
       if (h.type === 'wsl') {
@@ -410,11 +413,14 @@ export function App() {
         return;
       }
       try {
-        const opened = await post.open(h.path);
+        // 记录里带了操作范围（上次打开的是子项目）：拼回子目录再打开，恢复范围
+        const openPath = h.scope ? `${h.path.replace(/[\\/]+$/, '')}/${h.scope.replace(/\\/g, '/')}` : h.path;
+        const opened = await post.open(openPath);
         const r = await get.info();
         if (r.type) {
           setInfo(r);
           setOnboard(null); // 切换仓库时清除上次的新建引导条
+          setOpenTick((n) => n + 1); // 重挂载文件视图，浏览位置回到记录的 scope
           refresh();
           loadHistory();
           // 记录里的路径**不是工作副本**（子目录被删或改名了），服务端向上找到了它所属的仓库。
@@ -427,9 +433,9 @@ export function App() {
             // 「{path}」不是工作副本（目录可能已被删除或改名）。已打开它所属的仓库：{root}
             const msg = t('shell.repo.notWC', { path: h.path, root });
             showToast(msg, true);
-            setInvalidPaths((prev) => ({ ...prev, [h.path]: msg }));
+            setInvalidPaths((prev) => ({ ...prev, [historyEntryKey(h)]: msg }));
           } else {
-            setInvalidPaths((prev) => { const n = { ...prev }; delete n[h.path]; return n; }); // 路径有效：撤掉标记
+            setInvalidPaths((prev) => { const n = { ...prev }; delete n[historyEntryKey(h)]; return n; }); // 路径有效：撤掉标记
           }
         } else {
           // 打开失败：未识别为仓库
@@ -1163,7 +1169,9 @@ export function App() {
         setModal={setModal}
         onToast={showToast}
         onPush={doPush}
-        onUpdate={() => void doUpdateDir('')}
+        // 打开的是子项目（操作范围非空）时只更新该子项目（svn update <scope>），
+        // 大工作副本不会一点更新就把几十个子项目全拉一遍
+        onUpdate={() => void doUpdateDir(repo?.startRel ?? '')}
         unpushedCount={unpushedCount}
         stashCount={stashCount}
         canStash={canStash ?? true}
@@ -1310,6 +1318,7 @@ export function App() {
               history={history}
               version={info?.version}
               currentRoot={repo?.root}
+              currentScope={repo?.startRel}
               // 顶栏「刷新」信号：侧边栏重跑状态探测（当前项目绕过后端缓存——刚提交后点刷新，↑ 角标立刻准）
               refreshTick={tick}
               // 远程状态重算信号（更新/切分支/合并后 +1）：侧栏据此重跑一遍「远程检查」，
@@ -1377,6 +1386,7 @@ export function App() {
               </div>
               <div style={{ display: view === 'browse' ? undefined : 'none', height: '100%' }}>
                 <FsView
+                  key={`${repo.root ?? ''}::${openTick}`}
                   tick={tick}
                   active={view === 'browse'}
                   repoType={repo.type}
@@ -1452,6 +1462,7 @@ export function App() {
       {/* 全部弹窗 + 「更新中」遮罩：集中在 modal-host.tsx（原先 21 个分支平铺在本文件 JSX 里，约 340 行） */}
       <ModalHost
         state={{ modal, pushAuth, themePop, invalidPaths, openHistoryItem, configUser }}
+        onRepoOpened={() => setOpenTick((n) => n + 1)}
         set={{
           setModal,
           setPushAuth,

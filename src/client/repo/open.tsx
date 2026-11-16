@@ -3,8 +3,8 @@
  *  「下载到…」/「所在目录」共用，底部「选择此目录」+ 新建文件夹/右键重命名）。
  *  浏览视图在 DirBrowser；这里只管数据与两种模式的语义 */
 import { useEffect, useRef, useState } from 'react';
-import { baseName, joinPath, isImeComposing, isPathWithin } from '../shared/utils.js';
-import { get, post, type BrowseResult, type RepoInfo } from '../shared/api.js';
+import { baseName, joinPath, isImeComposing, isPathWithin, historyEntryKey, historyOpenPath } from '../shared/utils.js';
+import { get, post, type BrowseResult, type HistoryItem, type RepoInfo } from '../shared/api.js';
 import { ModalShell } from '../shell/modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { IconOk, IconErr } from '../ui/icons.js';
@@ -47,9 +47,9 @@ export function OpenBrowser(props: {
   const [pathInput, setPathInput] = useState('');
   /** 文件级选择（pick.allowFiles）：当前目录下选中的文件名；切目录即清空，避免跨目录误填 */
   const [pickedFile, setPickedFile] = useState<string | null>(null);
-  const [history, setHistory] = useState<{ path: string; type: 'svn' | 'git' | 'wsl'; lastOpened: number }[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   // 最近项目右键菜单（删除）
-  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; scope?: string } | null>(null);
   // 最近项目默认只列 10 项，点「…」展开到 15 项（再多靠滚动）
   const [showAllRecent, setShowAllRecent] = useState(false);
   // ——选择目录模式（pick）专用：新建文件夹 / 右键重命名 / 操作反馈（原 DirPicker 的能力）——
@@ -101,7 +101,9 @@ export function OpenBrowser(props: {
   const enter = async () => {
     if (!data?.repo) return;
     try {
-      await post.open(data.repo.root ?? dir);
+      // 打开当前浏览目录而不是仓库根：大仓库里选中子项目（如 trunk/src）时，
+      // 服务端会把它记为「操作范围」，文件列表与状态扫描都从子项目开始
+      await post.open(dir);
       const info = await get.info();
       if (info.type) props.onOpened?.(info);
       // 打开失败
@@ -128,8 +130,8 @@ export function OpenBrowser(props: {
         return;
       }
       if (r.repo) {
-        // 直接进入仓库
-        await post.open(r.repo.root ?? path);
+        // 直接进入仓库：传输入的目录（可能是子项目），由服务端识别根并记下操作范围
+        await post.open(path);
         const info = await get.info();
         if (info.type) props.onOpened?.(info);
         // 打开失败
@@ -225,38 +227,38 @@ export function OpenBrowser(props: {
           <div className={`list recent-list${showAllRecent ? ' expanded' : ''}`} style={{ maxWidth: 640, marginBottom: 12 }}>
             {(showAllRecent ? history.slice(0, RECENT_EXPANDED) : history.slice(0, RECENT_COLLAPSED)).map((h) => (
               <div
-                key={h.path}
-                className={`recent-item${props.invalidPaths?.[h.path] ? ' invalid' : ''}`}
+                key={historyEntryKey(h)}
+                className={`recent-item${props.invalidPaths?.[historyEntryKey(h)] ? ' invalid' : ''}`}
                 title={
-                  props.invalidPaths?.[h.path]
+                  props.invalidPaths?.[historyEntryKey(h)]
                     // {path}（打不开，目录已删除或不是工作副本）
-                    ? t('repo.recent.invalidTip', { path: h.path })
+                    ? t('repo.recent.invalidTip', { path: `${h.path}${h.scope ? ` › ${h.scope}` : ''}` })
                     // {path}\n点击打开 · 右键删除
-                    : t('repo.recent.itemTip', { path: h.path })
+                    : t('repo.recent.itemTip', { path: `${h.path}${h.scope ? ` › ${h.scope}` : ''}` })
                 }
-                onClick={() => void openPath(h.path)}
+                onClick={() => void openPath(historyOpenPath(h))}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  setRmMenu({ x: e.clientX, y: e.clientY, path: h.path });
+                  setRmMenu({ x: e.clientX, y: e.clientY, path: h.path, scope: h.scope });
                 }}
               >
                 <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>
                   {h.type.toUpperCase()}
                 </span>
-                <span className="recent-path">{h.path}</span>
+                <span className="recent-path">{h.path}{h.scope ? ` › ${h.scope}` : ''}</span>
                 {/* 悬浮显形的移除按钮：单击即移除（stopPropagation 防止触发本行的"点击打开"） */}
                 <Tooltip
                   // 从最近项目中移除（不影响仓库本身）
                   content={t('repo.recent.removeTip')}
                 >
                   <button
-                    className={`recent-remove${props.invalidPaths?.[h.path] ? ' always' : ''}`}
+                    className={`recent-remove${props.invalidPaths?.[historyEntryKey(h)] ? ' always' : ''}`}
                     // 移除 {path}
                     aria-label={t('repo.recent.removeAria', { path: h.path })}
                     onClick={(e) => {
                       e.stopPropagation();
                       void post
-                        .historyRemove(h.path)
+                        .historyRemove(h.path, h.scope)
                         .then((r) => setHistory(r.items))
                         // 移除失败
                         .catch(() => props.onToast?.(t('repo.recent.removeFailed'), true));
@@ -291,7 +293,7 @@ export function OpenBrowser(props: {
                 onClose={() => setRmMenu(null)}
                 items={
                   // 失效项（已打不开）：只剩「删除」；正常项保留「取消」作为"什么都不做"的出口
-                  props.invalidPaths?.[rmMenu.path]
+                  props.invalidPaths?.[historyEntryKey(rmMenu)]
                     ? [
                         {
                           icon: '🗑',
@@ -301,7 +303,7 @@ export function OpenBrowser(props: {
                           action: () => {
                             const p = rmMenu.path;
                             void post
-                              .historyRemove(p)
+                              .historyRemove(p, rmMenu.scope)
                               .then((r) => setHistory(r.items))
                               // 删除失败
                               .catch(() => props.onToast?.(t('repo.recent.delFailed'), true));
@@ -317,7 +319,7 @@ export function OpenBrowser(props: {
                           action: () => {
                             const p = rmMenu.path;
                             void post
-                              .historyRemove(p)
+                              .historyRemove(p, rmMenu.scope)
                               .then((r) => setHistory(r.items))
                               // 删除失败
                               .catch(() => props.onToast?.(t('repo.recent.delFailed'), true));

@@ -7,7 +7,7 @@ import { Tooltip, TipHint } from '../ui/tooltip.js';
 import { RemarkModal } from '../repo/remark.js';
 import { THEMES, THEME_PINNED } from './header/index.js';
 import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js';
-import { baseName } from '../shared/utils.js';
+import { baseName, historyEntryKey, historyOpenPath } from '../shared/utils.js';
 import { startTask, useTasks } from '../shared/tasks.js';
 import { launchMagicFlight } from '../animations/index.js';
 import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
@@ -139,6 +139,8 @@ export function Sidebar(props: {
   version?: string;
   /** 当前打开的仓库根：匹配的最近项目高亮选中，标明正在操作的项目 */
   currentRoot?: string | null;
+  /** 当前操作范围（相对仓库根的子项目；空 = 整个工作副本）：与 currentRoot 一起匹配高亮 */
+  currentScope?: string | null;
   /** 顶栏「刷新」信号（App 的 tick 递增）：重跑一轮状态探测——当前项目**强制绕过后端
    *  30s 缓存**（刚提交/改文件后点刷新，↑● 角标必须立刻准，用户实报"刷新后 ↑18 还是旧的"） */
   refreshTick?: number;
@@ -149,12 +151,12 @@ export function Sidebar(props: {
    *  不等重查（fetch 实测 5s）——重查只作校准，又有人推了会让 ⬇ 再回来 */
   remoteSyncedTick?: number;
   onNav: (v: View) => void;
-  onOpenHistory: (h: { path: string }) => void;
-  onRemoveHistory: (path: string) => void;
-  /** 设置/取消常用项目（星号标记，启动时优先打开） */
-  onSetFav: (path: string, fav: boolean) => void;
+  onOpenHistory: (h: { path: string; scope?: string }) => void;
+  onRemoveHistory: (h: { path: string; scope?: string }) => void;
+  /** 设置/取消常用项目（星号标记，启动时优先打开）；scope 区分同一仓库的子项目条目 */
+  onSetFav: (h: { path: string; scope?: string }, fav: boolean) => void;
   /** 设置/清除项目备注（显示在第二行、时间前面）；传空串 = 清除备注 */
-  onSetRemark: (path: string, remark: string) => void;
+  onSetRemark: (h: { path: string; scope?: string }, remark: string) => void;
   /** 外观区：主题色块（位于最近项目上方；字体设置在顶栏 ⋯ 菜单） */
   theme: string;
   setTheme: (t: string) => void;
@@ -182,9 +184,9 @@ export function Sidebar(props: {
 }) {
   // 最近项目右键菜单（设常用 / 备注 / 浏览仓库 / 删除 / 取消）。remark/type 一并带出：
   // 菜单项要用它预填备注弹窗、决定是否显示「浏览仓库」（仅 SVN）
-  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; fav: boolean; remark: string; type: 'svn' | 'git' | 'wsl' } | null>(null);
+  const [rmMenu, setRmMenu] = useState<{ x: number; y: number; path: string; scope?: string; fav: boolean; remark: string; type: 'svn' | 'git' | 'wsl' } | null>(null);
   // 备注弹窗（右键「备注」打开）：null = 关闭
-  const [remarkFor, setRemarkFor] = useState<{ path: string; name: string; current: string } | null>(null);
+  const [remarkFor, setRemarkFor] = useState<{ path: string; scope?: string; name: string; current: string } | null>(null);
 
   // 最近项目仪表盘：路径 → 摘要状态。异步补上（先列表后状态，不阻塞渲染）；后端 30 秒缓存挡重复查询。
   // 依赖用"路径串"而非 history 数组——数组引用每次应用刷新都会新建，会让所有项目被无谓重查。
@@ -209,11 +211,14 @@ export function Sidebar(props: {
       return next;
     });
   };
-  const historyKey = props.history.map((h) => h.path).join('|');
+  const historyKey = props.history.map((h) => historyEntryKey(h)).join('|');
+  /** 条目是否就是当前正在操作的位置（仓库根 + 操作范围都要匹配：同一仓库的兄弟子项目不亮） */
+  const isCurrentEntry = (h: { path: string; scope?: string }) =>
+    h.path === props.currentRoot && (h.scope ?? '') === (props.currentScope ?? '');
   // 渲染顺序：**当前打开的项目固定置顶**，其余保持原顺序（时间序）——稳定排序只把当前项提前，
   // 所以「刚检出/刚打开的其它项目」自然落在第二（用户定稿）
   const ordered = props.currentRoot
-    ? [...props.history].sort((a, b) => Number(b.path === props.currentRoot) - Number(a.path === props.currentRoot))
+    ? [...props.history].sort((a, b) => Number(isCurrentEntry(b)) - Number(isCurrentEntry(a)))
     : props.history;
   // 远程检查（⬇ 待拉取）：打开/刷新时**自动**对全部项目跑一轮（后台异步、先回来先显示）——
   // SVN 等"必须联网才知道"的远程新提交由此覆盖（不切换过去也能看到）；
@@ -230,10 +235,11 @@ export function Sidebar(props: {
         const h = queue.shift();
         if (!h) return;
         try {
-          const r = await get.remoteProbe(h.path);
-          if (alive) setRemoteBehinds((p) => ({ ...p, [h.path]: r.error ? { failed: true } : { behind: r.behind ?? 0 } }));
+          // 传"项目位置"（根 + 子项目范围）：远程检查只查该范围，大工作副本不因侧栏自动检查被全量扫描
+          const r = await get.remoteProbe(historyOpenPath(h));
+          if (alive) setRemoteBehinds((p) => ({ ...p, [historyEntryKey(h)]: r.error ? { failed: true } : { behind: r.behind ?? 0 } }));
         } catch {
-          if (alive) setRemoteBehinds((p) => ({ ...p, [h.path]: { failed: true } }));
+          if (alive) setRemoteBehinds((p) => ({ ...p, [historyEntryKey(h)]: { failed: true } }));
         }
       }
     };
@@ -251,36 +257,39 @@ export function Sidebar(props: {
   // 随后那次重查若发现又有人推了，⬇ 会重新出现（校准不丢）。
   useEffect(() => {
     if (!props.remoteSyncedTick || !props.currentRoot) return;
-    const root = props.currentRoot;
-    setRemoteBehinds((p) => ({ ...p, [root]: { behind: 0 } }));
+    const key = historyEntryKey({ path: props.currentRoot, scope: props.currentScope ?? undefined });
+    setRemoteBehinds((p) => ({ ...p, [key]: { behind: 0 } }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.remoteSyncedTick]);
 
   // 点 ⬇ 就地更新该项目（**后台任务**——与推送/检出/更新同套）：飞行线从 ⬇ 按钮起飞，
   // 沙漏 / 任务面板可取消；完成/失败走统一通知（气泡 + 铃铛）。busy 态（⏳）由任务查询得出
   const tasks = useTasks();
-  const pullProject = (path: string, from?: { x: number; y: number }) => {
+  const pullProject = (h: HistoryItem, from?: { x: number; y: number }) => {
+    const key = historyEntryKey(h);
+    /** 项目实际位置（根 + 子项目范围）：更新/探测都只用这个范围 */
+    const fullPath = historyOpenPath(h);
     // 该项目已有拉取在跑：忽略（⬇ 按钮已显示 ⏳）
-    if (tasks.some((tk) => tk.kind === `pull:${path}` && tk.status === 'running')) return;
+    if (tasks.some((tk) => tk.kind === `pull:${key}` && tk.status === 'running')) return;
     if (from) launchMagicFlight(from);
     startTask({
-      kind: `pull:${path}`,
+      kind: `pull:${key}`,
       // 标题：项目名 · 分支 · 拉取（分支取探测值；未探测到就省略——同检出标题的拼接先例）
-      title: `${baseName(path)}${probes[path]?.branch ? ` · ${probes[path]!.branch}` : ''} · ${t('shell.tasks.pullAction')}`,
+      title: `${baseName(fullPath)}${probes[key]?.branch ? ` · ${probes[key]!.branch}` : ''} · ${t('shell.tasks.pullAction')}`,
       // 失败后可在铃铛里重试：拉取幂等，原样再拉一次
-      retry: () => pullProject(path),
+      retry: () => pullProject(h),
       run: async (signal) => {
-        const r = await post.pullAny(path, signal);
+        const r = await post.pullAny(fullPath, signal);
         if (r.ok) {
-          setRemoteBehinds((p) => ({ ...p, [path]: { behind: 0 } }));
+          setRemoteBehinds((p) => ({ ...p, [key]: { behind: 0 } }));
           // 刚拉完：重探该项目状态（↑● 角标立刻准——force 绕过后端缓存）。
           // 它可能不是当前打开的项目，refreshTick（顶栏刷新）覆盖不到，单独重探
           get
-            .projectStatus(path, true)
-            .then((st) => setProbes((p) => ({ ...p, [path]: st })))
+            .projectStatus(fullPath, true)
+            .then((st) => setProbes((p) => ({ ...p, [key]: st })))
             .catch(() => {});
-          // 拉的正好是当前项目：工作副本已变——顺带刷新主界面（文件列表/顶栏角标，否则还是旧数据）
-          if (path === props.currentRoot) props.onRefresh?.();
+          // 拉的正好是当前条目：工作副本已变——顺带刷新主界面（文件列表/顶栏角标，否则还是旧数据）
+          if (isCurrentEntry(h)) props.onRefresh?.();
         }
         // 与「手动进该项目右键更新」对齐（用户定稿）：svn 警告拼进通知消息（列表里看得见 ⚠），
         // 完整结果（文件清单/警告）装进通知详情 → 点通知弹**同一个「更新结果」窗**（不再是全文小窗）
@@ -300,13 +309,15 @@ export function Sidebar(props: {
     for (const h of props.history) {
       // WSL 运行目录不是版本库：探了只会得到 unavailable ⚠（用户明确不要这个提示）
       if (h.type === 'wsl') continue;
+      // 按条目探（根 + 子项目范围）：同一仓库的多个子项目各自独立统计
+      const key = historyEntryKey(h);
       get
-        .projectStatus(h.path, h.path === props.currentRoot)
+        .projectStatus(historyOpenPath(h), isCurrentEntry(h))
         .then((r) => {
-          if (alive) setProbes((p) => ({ ...p, [h.path]: r }));
+          if (alive) setProbes((p) => ({ ...p, [key]: r }));
         })
         .catch(() => {
-          if (alive) setProbes((p) => ({ ...p, [h.path]: { error: 'unavailable' } }));
+          if (alive) setProbes((p) => ({ ...p, [key]: { error: 'unavailable' } }));
         });
     }
     return () => {
@@ -486,33 +497,34 @@ export function Sidebar(props: {
               也不把整个侧边栏/页面撑出滚动条）；NAV / 主题 / 标题 / 打开按钮都固定不动 */}
           <div className="history-list">
             {ordered.map((h) => {
-              const invalidMsg = props.invalidPaths[h.path];
+              const entryKey = historyEntryKey(h);
+              const invalidMsg = props.invalidPaths[entryKey];
               const invalid = Boolean(invalidMsg);
               // 展示用状态：当前项目的 behind 与"远程实时检查"（remoteHint）取大——
               // SVN 项目本地探测恒 0，靠这里把顶部条那 2 个新提交补进侧边栏
-              const probe = probes[h.path];
-              const rb = remoteBehinds[h.path];
+              const probe = probes[entryKey];
+              const rb = remoteBehinds[entryKey];
               // behind 三源取大：本地记录（probe）· 远程检查（remoteProbe，覆盖任意项目——SVN 靠它）
               // · 当前项目顶部条同源（remoteHint，2 分钟巡检）
               const stView: ProjectProbe | undefined = probe
                 ? {
                     ...probe,
-                    behind: Math.max(probe.behind ?? 0, rb?.behind ?? 0, h.path === props.currentRoot ? (props.remoteBehind ?? 0) : 0),
+                    behind: Math.max(probe.behind ?? 0, rb?.behind ?? 0, isCurrentEntry(h) ? (props.remoteBehind ?? 0) : 0),
                   }
                 : undefined;
               // 实时措辞：顶部条或刚远程检查过的项目 = "远程检查"；其余本地的标"基于上次获取"
-              const behindLive = (h.path === props.currentRoot && (props.remoteBehind ?? 0) > 0) || (rb?.behind ?? 0) > 0;
+              const behindLive = (isCurrentEntry(h) && (props.remoteBehind ?? 0) > 0) || (rb?.behind ?? 0) > 0;
               // 整行提示：迁到自定义 Tooltip 后，行内 ⬇ 按钮的短提示才不会被原生大弹窗盖住
               const rowTip = invalidMsg
                 // {path}（打不开，目录已删除或不是工作副本）
                 ? t('shell.recent.invalid', { path: h.path })
                 // 备注：{remark} / （当前操作的项目） / （常用项目）
-                : `${h.path}${h.remark ? `\n${t('shell.recent.tipRemark', { remark: h.remark })}` : ''}${h.path === props.currentRoot ? `\n${t('shell.recent.tipCurrent')}` : ''}${h.fav ? `\n${t('shell.recent.tipFav')}` : ''}${stView ? `\n${probeTip(stView, behindLive, Boolean(rb?.failed))}` : ''}`;
+                : `${h.path}${h.scope ? ` › ${h.scope}` : ''}${h.remark ? `\n${t('shell.recent.tipRemark', { remark: h.remark })}` : ''}${isCurrentEntry(h) ? `\n${t('shell.recent.tipCurrent')}` : ''}${h.fav ? `\n${t('shell.recent.tipFav')}` : ''}${stView ? `\n${probeTip(stView, behindLive, Boolean(rb?.failed))}` : ''}`;
               // 操作提示单独一行：与上方项目信息用分隔线 + 淡色小字区分
               const rowHint = invalidMsg ? '' : t('shell.recent.tipClick');
               return (
                 <Tooltip
-                  key={h.path}
+                  key={entryKey}
                   content={
                     rowHint ? (
                       <>
@@ -524,14 +536,14 @@ export function Sidebar(props: {
                 >
                 <div
                   data-path={h.path}
-                  className={`history-item ${h.path === props.currentRoot ? 'active' : ''}${invalid ? ' invalid' : ''}`}
+                  className={`history-item ${isCurrentEntry(h) ? 'active' : ''}${invalid ? ' invalid' : ''}`}
                   onClick={() => props.onOpenHistory(h)}
                   onMouseEnter={() => {
                     if (invalidMsg) props.onShowTip(invalidMsg); // 悬浮失效项：提示和点击后完全一致
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    setRmMenu({ x: e.clientX, y: e.clientY, path: h.path, fav: Boolean(h.fav), remark: h.remark ?? '', type: h.type });
+                    setRmMenu({ x: e.clientX, y: e.clientY, path: h.path, scope: h.scope, fav: Boolean(h.fav), remark: h.remark ?? '', type: h.type });
                   }}
                 >
                   <span className={`badge ${h.type}`} style={{ fontSize: 9, padding: '0 5px' }}>
@@ -541,7 +553,7 @@ export function Sidebar(props: {
                       第二行改由 flex-basis:100% 换行、**占满整行**（含徽标下方那块）——原先它缩进在
                       名字下方，徽标底下那 30 多 px 白空着；160px 的侧边栏里这是很大一块
                       （用户实报「左边那么多空位」，备注"git仓库"因此被压成 "g…"） */}
-                  <span className="history-path">{baseName(h.path)}</span>
+                  <span className="history-path">{h.scope ? baseName(h.scope) : baseName(h.path)}</span>
                   {/* 常用项目（启动时优先打开） */}
                   {h.fav && (
                     <Tooltip content={t('shell.recent.favStar')}>
@@ -558,7 +570,7 @@ export function Sidebar(props: {
                         aria-label={t('shell.recent.removeAria', { path: h.path })}
                         onClick={(e) => {
                           e.stopPropagation();
-                          props.onRemoveHistory(h.path);
+                          props.onRemoveHistory(h);
                         }}
                       >
                         ×
@@ -570,7 +582,7 @@ export function Sidebar(props: {
                       异步查得，回来前不占位（不做"…"占位——会先撑高列表再缩回，反而跳） */}
                   {showStatus && stView && probeHasSignal(stView) && (
                     <span className="history-status">
-                      {probeBadges(stView, { busy: tasks.some((tk) => tk.kind === `pull:${h.path}` && tk.status === 'running'), onClick: (rect) => pullProject(h.path, rect) })}
+                      {probeBadges(stView, { busy: tasks.some((tk) => tk.kind === `pull:${entryKey}` && tk.status === 'running'), onClick: (rect) => pullProject(h, rect) })}
                     </span>
                   )}
                   {/* 第二行 = 备注 + 时间（**始终显示**，项目多时列表内部滚动）。时间 flex:0 0 auto
@@ -594,15 +606,15 @@ export function Sidebar(props: {
                 onClose={() => setRmMenu(null)}
                 items={
                   // 失效项（已打不开）：只留「删除」——设为常用没意义，"取消"项也多余（点外面即可关）
-                  props.invalidPaths[rmMenu.path]
+                  props.invalidPaths[historyEntryKey(rmMenu)]
                     // 删除
-                    ? [{ icon: '🗑', label: t('common.delete'), danger: true, action: () => props.onRemoveHistory(rmMenu.path) }]
+                    ? [{ icon: '🗑', label: t('common.delete'), danger: true, action: () => props.onRemoveHistory({ path: rmMenu.path, scope: rmMenu.scope }) }]
                     : [
                         {
                           icon: rmMenu.fav ? '★' : '☆',
                           // 取消常用 / 设为常用
                           label: rmMenu.fav ? t('shell.recent.unsetFav') : t('shell.recent.setFav'),
-                          action: () => props.onSetFav(rmMenu.path, !rmMenu.fav),
+                          action: () => props.onSetFav({ path: rmMenu.path, scope: rmMenu.scope }, !rmMenu.fav),
                         },
                         {
                           // 铅笔用项目里的 SVG（IconRename），不引 emoji——没装彩色 emoji 字体的桌面会渲染成单色
@@ -614,7 +626,8 @@ export function Sidebar(props: {
                             setRmMenu(null);
                             setRemarkFor({
                               path: rmMenu.path,
-                              name: baseName(rmMenu.path),
+                              scope: rmMenu.scope,
+                              name: baseName(rmMenu.scope || rmMenu.path),
                               current: rmMenu.remark,
                             });
                           },
@@ -648,7 +661,7 @@ export function Sidebar(props: {
                             ]
                           : []),
                         // 删除
-                        { icon: '🗑', label: t('common.delete'), danger: true, action: () => props.onRemoveHistory(rmMenu.path) },
+                        { icon: '🗑', label: t('common.delete'), danger: true, action: () => props.onRemoveHistory({ path: rmMenu.path, scope: rmMenu.scope }) },
                         // 取消
                         { icon: '✕', label: t('common.cancel') },
                       ]
@@ -662,7 +675,7 @@ export function Sidebar(props: {
                 current={remarkFor.current}
                 onCancel={() => setRemarkFor(null)}
                 onConfirm={(remark) => {
-                  props.onSetRemark(remarkFor.path, remark);
+                  props.onSetRemark({ path: remarkFor.path, scope: remarkFor.scope }, remark);
                   setRemarkFor(null);
                 }}
               />

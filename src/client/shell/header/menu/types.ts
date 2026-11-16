@@ -22,6 +22,8 @@ export type ToolCtx = {
   /** 项目里有打包脚本：即使没有远程也能打开「本地打包」 */
   canLocalBuild?: boolean;
   repoType: 'git' | 'svn' | null;
+  /** 当前操作范围（相对仓库根的子项目；空 = 整个工作副本）：更新等按范围执行 */
+  startRel?: string | null;
   /** 当前仓库的远程地址（git；/api/info 带回）；GitHub 信息菜单的可见性判断用 */
   repoUrl?: string | null;
   conflictCount: number;

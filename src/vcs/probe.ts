@@ -4,6 +4,7 @@
  *  供 server 的 /api/project-status 使用；probeProjectCached 带 30 秒缓存（侧边栏刷新会重复请求）。
  *  注意 decode：status 带路径输出必须按 utf8（exec.ts 头注释的口径），不要传 decode: 'auto'。 */
 import fs from 'node:fs';
+import path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import { detectRepo } from './detect.js';
 import { run } from './exec.js';
@@ -29,18 +30,23 @@ const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' });
 /** git porcelain 两字母冲突码 */
 const CONFLICT = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
 
-/** 探测一次（不吃缓存）：路径不存在 / 非工作副本 → { error } */
+/** 探测一次（不吃缓存）：路径不存在 / 非工作副本 → { error }。
+ *  dir 是**打开的项目位置**（可能是工作副本里的子项目）：状态只统计该范围，
+ *  避免大工作副本（几十个子项目）每次侧栏刷新都全量扫描。 */
 export async function probeProject(dir: string): Promise<ProbeResult> {
   // 先判"路径本身"存在（不能只靠 detectRepo：目录没了的深路径会向上找到不相干的父仓库）
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return { error: 'unavailable' };
   const repo = detectRepo(dir);
   if (!repo) return { error: 'unavailable' };
-  return repo.type === 'git' ? probeGit(repo.root) : probeSvn(repo.root);
+  const scope = path.relative(repo.root, path.resolve(dir));
+  return repo.type === 'git' ? probeGit(repo.root, scope) : probeSvn(repo.root, scope);
 }
 
-async function probeGit(root: string): Promise<ProbeResult> {
+async function probeGit(root: string, scope: string): Promise<ProbeResult> {
   // maxBuffer 兜底超大仓库的海量变更输出（超限命令失败 → 前端显示"不可用"，不至于拖垮服务）
-  const res = await run('git', ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-b'], {
+  const args = ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-b'];
+  if (scope) args.push('--', scope); // 只统计子项目范围（分支/ahead/behind 仍是仓库级，git 固有语义）
+  const res = await run('git', args, {
     cwd: root,
     timeoutMs: 15_000,
     maxBuffer: 4 * 1024 * 1024,
@@ -74,9 +80,11 @@ async function probeGit(root: string): Promise<ProbeResult> {
   return { type: 'git', branch, ahead, behind, changed, untracked, conflict };
 }
 
-async function probeSvn(root: string): Promise<ProbeResult> {
+async function probeSvn(root: string, scope: string): Promise<ProbeResult> {
+  const statusArgs = ['status', '--xml'];
+  if (scope) statusArgs.push(scope); // 只扫子项目范围
   const [st, info] = await Promise.all([
-    run('svn', ['status', '--xml'], { cwd: root, timeoutMs: 20_000, maxBuffer: 4 * 1024 * 1024 }),
+    run('svn', statusArgs, { cwd: root, timeoutMs: 20_000, maxBuffer: 4 * 1024 * 1024 }),
     run('svn', ['info', '--xml'], { cwd: root, timeoutMs: 20_000 }),
   ]);
   if (st.code !== 0) return { error: st.stderr.trim() || 'unavailable' };

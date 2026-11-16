@@ -263,6 +263,7 @@ export function AppHeader(props: {
   // 当前仓库类型下实际渲染的按钮定义
   const ctx: ToolCtx = {
     repoRoot: repo?.root ?? null,
+    startRel: repo?.startRel ?? null,
     canRelease: repo?.canRelease ?? false,
     canLocalBuild: repo?.canLocalBuild ?? false,
     repoType: repo?.type ?? null,
@@ -306,8 +307,12 @@ export function AppHeader(props: {
         </span>
       </Tooltip>
       {repo?.type ? <span className={`badge ${repo.type}`}>{repo.type.toUpperCase()}</span> : null}
-      {/* 未选择仓库 */}
-      <span className="path">{repo?.root ?? t('shell.header.noRepo')}</span>
+      {/* 当前打开位置：大仓库按子项目打开时显示完整子项目路径（不只仓库根） */}
+      <span className="path">
+        {repo
+          ? `${repo.root?.replace(/[\\/]+$/, '') ?? ''}${repo.startRel ? `/${repo.startRel.replace(/\\/g, '/')}` : ''}`
+          : t('shell.header.noRepo')}
+      </span>
       {repo?.url ? <span className="dim small nowrap">{repo.url}</span> : null}
       {repo?.revOrBranch ? <span className="dim small nowrap">[{repo.revOrBranch}]</span> : null}
       {repo?.url ? <NetLight hostCheckKey={repo.url + repo.revOrBranch} /> : null}
