@@ -1,10 +1,16 @@
 {
   "name": "svngit",
-  "version": "1.7.2",
+  "version": "1.8.0",
   "description": "SVN/Git 图形化版本管理工具（浏览器界面，双引擎并发防护）",
-  "author": { "name": "yi-ding-dian", "url": "https://github.com/yi-ding-dian" },
+  "author": {
+    "name": "yi-ding-dian",
+    "url": "https://github.com/yi-ding-dian"
+  },
   "homepage": "https://github.com/yi-ding-dian/svn-git",
-  "repository": { "type": "git", "url": "https://github.com/yi-ding-dian/svn-git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yi-ding-dian/svn-git"
+  },
   "license": "MIT",
   "desktopName": "svngit",
   "type": "module",
