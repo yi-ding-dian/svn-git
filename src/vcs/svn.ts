@@ -92,6 +92,9 @@ const ITEM_MAP: Record<string, string> = {
  *  而 svn status 只输出"有变更"的条目，输出字节数直接等于同步解析的工作量。
  *  参考实测：正常仓库 30KB / 179 处变更；某超大仓库 11.7MB / 36838 处变更（差 389 倍，中间是空的）。 */
 const MAX_STATUS_BYTES = 1024 * 1024;
+/** preflight 远程日志（svn log -v --xml）的解析上限：超过则放弃提交列表，behind 回退为文件数。
+ *  大工作副本 + 旧 BASE 时日志可达几十 MB，同步解析会长时间占用事件循环（界面整体卡顿）。 */
+const MAX_PREFLIGHT_LOG_BYTES = 4 * 1024 * 1024;
 
 /** 已判定为超大工作副本的仓库根。**必须是进程级**：vcsOf() 每次请求都 new 一个 Vcs 实例，
  *  标记挂在实例上会在下一次请求就丢失，于是每次都重新跑一遍全量命令（实测就是这样：
@@ -1104,12 +1107,30 @@ export class SvnVcs {
     // 远程新提交列表（wc 的 BASE 之后的版本：HEAD:BASE），供"去查看"按提交分组显示
     let remoteLogs: LogEntry[] = [];
     if (expiredCount > 0) {
-      const lg = await this.exec(['log', '-r', 'HEAD:BASE', '-v', '--xml']);
+      // **必须带 pathRel**：只统计影响当前操作范围的提交。大工作副本从仓库根检出时，
+      // branches/tags 上的提交也落在 HEAD:BASE 区间里——不加路径会把它们全算成"主干有新提交"
+      // （用户实报：打开 trunk/src 显示几千个新提交，全是分支上的）
+      const logArgs = ['log', '-r', 'HEAD:BASE', '-v', '--xml'];
+      if (pathRel) logArgs.push(pathRel);
+      const [lg, baseRes] = await Promise.all([
+        this.exec(logArgs, { timeoutMs: 60_000 }),
+        // 该路径的 BASE revision：用来剔除 log 区间里 BASE 自身那版
+        this.exec(['info', '--show-item', 'revision', ...(pathRel ? [pathRel] : [])]),
+      ]);
       if (lg.code === 0) {
-        remoteLogs = this.toWcRelLogs(this.parseLogXml(lg.stdout), await this.wcPrefix());
-        // svn log -r N:M 是**含两端**的区间（倒序输出）：HEAD:BASE 会把 BASE 自身那版也列出来
-        // ——去掉末条（即 BASE），behind 才是真正的"远程新提交数"（实测：只落后 1 个提交时算成了 2）
-        remoteLogs.pop();
+        // 超大输出保护：几千条 -v 日志的 XML 可能几十 MB，同步解析会卡住事件循环
+        // （与 status 的 MAX_STATUS_BYTES 同类取舍）；超限时放弃日志列表，behind 回退为过期文件数
+        if (lg.stdout.length <= MAX_PREFLIGHT_LOG_BYTES) {
+          remoteLogs = this.toWcRelLogs(this.parseLogXml(lg.stdout), await this.wcPrefix());
+          // svn log -r N:M 是**含两端**的区间（倒序输出）：HEAD:BASE 会把 BASE 自身那版也列出来。
+          // 按 BASE revision 精确过滤（全仓库日志必含 BASE；带路径时只有该路径在 BASE 那次有改动才出现）
+          const baseRev = Number(baseRes.stdout.trim());
+          if (Number.isFinite(baseRev) && baseRev > 0) {
+            remoteLogs = remoteLogs.filter((l) => Number(String(l.rev).replace(/^r/i, '')) > baseRev);
+          } else {
+            remoteLogs.pop(); // 拿不到 BASE 时退回原逻辑
+          }
+        }
       }
     }
     const result = {
