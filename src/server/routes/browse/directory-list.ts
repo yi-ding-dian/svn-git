@@ -183,13 +183,20 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
       return true;
     }
-    let items: { path: string; code: string }[] = [];
+    let items: { path: string; code: string; treeConflicted?: boolean }[] = [];
+    /** 当前范围内树冲突条数：两阶段加载的第二阶段据此点亮横幅（light 数据里没有这个字段） */
+    let treeConflicts = 0;
     const deep = url.searchParams.get('deep') === '1';
     if (repo.type === 'svn' && vcs.statusShallow) {
       // deep：查当前目录子树（42ms 级），用于把深层 M 聚合到直接子目录；
       // 不 deep：只查直接子项，供 30 秒轮询用。
       const list = deep ? await vcs.status(rel) : await vcs.statusShallow(rel);
-      items = list.map((i) => ({ path: i.path, code: i.code }));
+      items = list.map((i) => ({
+        path: i.path,
+        code: i.code,
+        ...(i.treeConflicted ? { treeConflicted: true } : {}),
+      }));
+      treeConflicts = list.filter((i) => i.treeConflicted).length;
     } else {
       const all = (await getStatusCached(repo, true, rel)) as { path: string; code: string }[];
       // 当前目录是否落在未跟踪目录内（含自身）：git 把未跟踪目录折叠成一条 "?? dir/"
@@ -229,7 +236,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           .map((i) => ({ path: i.path, code: i.code }));
       }
     }
-    sendJson(res, 200, { items });
+    sendJson(res, 200, { items, treeConflicts });
     return true;
   }
 

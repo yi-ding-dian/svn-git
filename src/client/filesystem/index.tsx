@@ -344,7 +344,12 @@ export function FsView(props: Props) {
       .fsStatus(cur, deep)
       .then((r) => {
         const codes = new Map<string, string>();
-        for (const it of r.items) codes.set(it.path, it.code);
+        /** 树冲突条目：light 数据里没有这个字段，横幅与 ⚠ 角标全靠第二阶段补上 */
+        const conflicted = new Set<string>();
+        for (const it of r.items) {
+          codes.set(it.path, it.code);
+          if (it.treeConflicted) conflicted.add(it.path);
+        }
         const rank: Record<string, number> = { C: 6, '!': 5, D: 4, M: 3, A: 2, R: 1 };
         const apply = (d: FsData): FsData => {
           let changed = false;
@@ -362,11 +367,18 @@ export function FsView(props: Props) {
               }
               code = best || undefined;
             }
-            if (code === undefined || code === e.code) return e;
+            const tc = conflicted.has(rel);
+            if (code === undefined || code === e.code) {
+              // 状态没变：树冲突标记还没打上时补一次（light 条目初始没有）
+              if (!tc || e.treeConflicted) return e;
+              changed = true;
+              return { ...e, treeConflicted: true };
+            }
             changed = true;
             return {
               ...e,
               code,
+              treeConflicted: tc || e.treeConflicted || undefined,
               // 目录角标用的是 codes（不是 code）：不补这个，悬浮提示显示 M 但图标不显示
               ...(e.isDir
                 ? { codes: code && code !== ' ' && code !== 'none' ? [code] : undefined }
@@ -407,7 +419,9 @@ export function FsView(props: Props) {
           let map = m;
           if (d) {
             const next = apply(d);
-            if (next !== d) map = new Map(map).set(cur, next);
+            // 树冲突条数一并回填：light/浅扫描数据靠第二阶段才能点亮横幅
+            const tc = r.treeConflicts ?? d.treeConflicts;
+            if (next !== d || tc !== d.treeConflicts) map = new Map(map).set(cur, { ...next, treeConflicts: tc });
           }
           if (deep && name) {
             const pd = map.get(parent);
@@ -420,7 +434,12 @@ export function FsView(props: Props) {
         });
         setData((d) => {
           if (!d) return d;
-          if (d.dir === cur) return apply(d);
+          if (d.dir === cur) {
+            const next = apply(d);
+            const tc = r.treeConflicts ?? d.treeConflicts;
+            if (next === d && tc === d.treeConflicts) return d;
+            return { ...next, treeConflicts: tc };
+          }
           if (deep && name && d.dir === parent) return patchParent(d);
           return d;
         });

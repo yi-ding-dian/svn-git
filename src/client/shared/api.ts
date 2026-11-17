@@ -596,7 +596,7 @@ export const get = {
     api<FsData>(`/api/fs?dir=${encodeURIComponent(dir ?? '')}${force ? '&force=1' : ''}${light ? '&light=1' : ''}`),
   /** 当前目录状态：deep=true 查子树（进入目录时用），否则只查直接子项（轮询用） */
   fsStatus: (dir?: string, deep = false) =>
-    api<{ items: { path: string; code: string }[] }>(
+    api<{ items: { path: string; code: string; treeConflicted?: boolean }[]; treeConflicts?: number }>(
       `/api/fs-status?dir=${encodeURIComponent(dir ?? '')}${deep ? '&deep=1' : ''}`,
     ),
   /** 工作副本树冲突诊断：去服务器核对冲突路径是否还在（只在 /api/fs 报了 treeConflicts 时调用） */
