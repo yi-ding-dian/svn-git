@@ -14,6 +14,7 @@ export const fs = {
   'fs.andMore': ' 等',
   'fs.loading': '正在加载…',
   'fs.loadingDir': '正在加载目录…',
+  'fs.scanningCodes': '正在补充文件状态…（已 {sec} 秒，大仓库可能较慢）',
   'fs.selectAll': '全选',
   'fs.unselectAll': '取消全选',
   'fs.missingDir': '目录已在磁盘上缺失，请右键「还原」恢复',

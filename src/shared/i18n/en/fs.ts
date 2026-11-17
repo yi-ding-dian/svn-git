@@ -14,6 +14,7 @@ export const fs = {
   'fs.andMore': ' etc.',
   'fs.loading': 'Loading…',
   'fs.loadingDir': 'Loading folder…',
+  'fs.scanningCodes': 'Loading file status… ({sec}s, large repositories may be slow)',
   'fs.selectAll': 'Select all',
   'fs.unselectAll': 'Deselect all',
   'fs.missingDir': 'Folder is missing on disk; right-click "Revert" to restore',

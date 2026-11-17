@@ -446,12 +446,18 @@ export function App() {
         // 共享门禁拒绝（如远程不允许切换项目）不是"项目失效"：只提示，不要打 × 标记
         if (!(e as { shareDenied?: boolean }).shareDenied) {
           // 打不开（目录已删 / 不是工作副本）：标为失效 → 该项上常驻一个 ×，悬浮时也用这条消息提示
-          setInvalidPaths((prev) => ({ ...prev, [h.path]: (e as Error).message }));
+          setInvalidPaths((prev) => ({ ...prev, [historyEntryKey(h)]: (e as Error).message }));
         }
       }
     },
     [refresh, loadHistory, showToast, setOnboard] // setOnboard 是 useState 的 setter，引用稳定
   );
+
+  // 每次「打开项目」动作后（openTick 变化）：浏览目录重置到打开范围，
+  // 保证历史/搜索等默认按子项目，而不是上次浏览的目录或整个仓库
+  useEffect(() => {
+    browseDirRef.current = repo?.startRel ?? '';
+  }, [repo?.root, repo?.startRel, openTick]);
 
   /** 内容区点击 = "还在用这个项目"：刷新它在最近项目里的时间戳（后端按 path 更新 lastOpened）。
    *  60 秒节流——比"刚刚"的显示粒度（1 分钟）还密没有意义，还免得每点一下都写一次 history.json。

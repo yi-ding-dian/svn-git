@@ -230,6 +230,12 @@ export function FsView(props: Props) {
   /** 非静默加载的并发计数：被取代的旧请求也要关掉自己开的那份加载条，任一未完成就继续显示 */
   const loadingCountRef = useRef(0);
   const [fsLoading, setFsLoading] = useState(false);
+  /** 两阶段加载的第二阶段：目录已显示，正在异步补充状态标记（大仓库可能较慢）。
+   *  sec = 已用秒数，让用户知道在干什么，而不是一直转圈。 */
+  const [scanState, setScanState] = useState<{ dir: string; sec: number } | null>(null);
+  const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** 只让最新一次状态补充收起提示（快速切目录时旧扫描可能晚完成） */
+  const scanSeqRef = useRef(0);
   // 大目录提示（条目多时提示原因，避免误以为卡死；5 秒后自动消失）
   const [bigTip, setBigTip] = useState('');
   /** 首次进入的键盘操作提示：常驻占一行太浪费，展示 5 秒后收起并记住（之后只在 ⌨ 悬浮提示里） */
@@ -331,9 +337,10 @@ export function FsView(props: Props) {
     props.onToast(next.length > 0 ? t('fs.fav.saved', { n: next.length }) : t('fs.fav.cleared'));
   };
   /** 刷新当前目录状态：deep=true 查子树并把深层 M/A 聚合到直接子目录；
-   *  false 只查直接子项（30 秒轮询）。只更新已有条目的 code，不清选择/预览。 */
+   *  false 只查直接子项（30 秒轮询）。只更新已有条目的 code，不清选择/预览。
+   *  返回 Promise：两阶段加载要在状态补完后收起「正在补充文件状态」提示。 */
   const refreshCodes = useCallback((cur: string, deep = false) => {
-    get
+    return get
       .fsStatus(cur, deep)
       .then((r) => {
         const codes = new Map<string, string>();
@@ -423,8 +430,39 @@ export function FsView(props: Props) {
       });
   }, []);
 
+  /** 两阶段加载的第二阶段：补状态并显示「正在补充文件状态…（已 N 秒）」，
+   *  补完自动收起（目录已先显示，不阻塞列表）。 */
+  const scanCodes = useCallback(
+    (cur: string, deep: boolean) => {
+      const seq = ++scanSeqRef.current;
+      const started = Date.now();
+      if (scanTimerRef.current) clearInterval(scanTimerRef.current);
+      setScanState({ dir: cur, sec: 0 });
+      scanTimerRef.current = setInterval(() => {
+        setScanState((s) => (s ? { ...s, sec: Math.floor((Date.now() - started) / 1000) } : s));
+      }, 1000);
+      void refreshCodes(cur, deep).finally(() => {
+        if (seq !== scanSeqRef.current) return; // 已有更新的目录在扫：别把新提示收掉
+        if (scanTimerRef.current) {
+          clearInterval(scanTimerRef.current);
+          scanTimerRef.current = null;
+        }
+        setScanState(null);
+      });
+    },
+    [refreshCodes],
+  );
+  // 卸载时清掉计时器
+  useEffect(
+    () => () => {
+      if (scanTimerRef.current) clearInterval(scanTimerRef.current);
+    },
+    [],
+  );
+
   /** 加载目录（列表/浏览模式）。quiet=true 为静默强刷（操作后 / tick 刷新）：不出顶部加载条、
-   *  不弹大目录提示——列表原地换数据，界面不闪；切目录、首次进入照常给加载反馈。 */
+   *  不弹大目录提示——列表原地换数据，界面不闪；切目录、首次进入照常给加载反馈。
+   *  **两阶段**：先 light 读目录结构立即显示文件，再异步补状态（大工作副本不阻塞列表）。 */
   const load = useCallback(async (targetDir: string, force: boolean, quiet = false) => {
     const seq = ++loadSeqRef.current;
     const cache = nodeDataRef.current.get(targetDir);
@@ -440,8 +478,9 @@ export function FsView(props: Props) {
       // light 数据（预加载）的 code 全空，而 refreshCodes 只能补"有状态"的条目——
       // 被忽略的条目（.gitignore / svn:ignore，如 svngit-test/ 整片测试仓库）在
       // /api/fs-status 里根本不存在，补不回来，于是整排未版本化的项都显示成干净 ✓（用户实报）。
-      // 目录已秒开，这里再要一份完整数据、到了原地替换；失败就保持现状（不清空列表）
-      if (cache.light) {
+      // 目录已秒开，这里再要一份完整数据、到了原地替换；失败就保持现状（不清空列表）。
+      // **根目录跳过**：整仓 status 正是打开大工作副本根时长时间卡顿的来源。
+      if (cache.light && targetDir !== '') {
         void get
           .fs(targetDir)
           .then((r) => {
@@ -460,50 +499,67 @@ export function FsView(props: Props) {
       setFsLoading(true);
     }
     setError('');
+    // 两阶段①：只读目录结构（light，毫秒级），文件先出来；状态（M/A/?）由第二阶段异步补
+    let light: Awaited<ReturnType<typeof get.fs>> | null = null;
     try {
-      const r = await get.fs(targetDir, force);
-      // 旧请求晚回来（快速切目录 / 切项目后的强刷取代了它）：丢弃，否则会把新数据覆盖回旧数据
-      if (seq !== loadSeqRef.current) return;
-      setNodeData((m) => new Map(m).set(targetDir, r));
-      setData(r);
-      setSel(null);
-      setPreview(null);
-      // 进入目录后查一次子树状态，把深层 M/A 聚合到直接子目录（根目录用浅查，避免全量扫描）
-      refreshCodes(targetDir, targetDir !== '');
-      // 静默预取下一层：进入目录后立刻在后台拉它的直接子目录（light，不查 SVN 状态）
-      prefetchChildren(targetDir, r.entries ?? [], true);
-      if (!quiet) {
-        // 大目录提示：条目多时告知原因（加载完成后展示 5 秒）——静默刷新不重复提示
-        const n = r.entries?.length ?? 0;
-        if (n > 200) {
-          // 该目录文件较多（共 {n} 项），首次加载可能需要一点时间
-          setBigTip(t('fs.tip.bigDir', { n }));
-          if (bigTipTimer.current) clearTimeout(bigTipTimer.current);
-          bigTipTimer.current = setTimeout(() => setBigTip(''), 5000);
-        } else {
-          setBigTip('');
-        }
-      }
+      light = await get.fs(targetDir, force, true);
     } catch (e) {
       // 已被更新的加载取代：旧请求的错误（比如旧项目目录已不存在）不作数
-      if (seq !== loadSeqRef.current) return;
-      // 目录不存在（ENOENT：上次浏览位置被删除/仓库已切换）→ 自动回到仓库根，避免卡死在错误页
-      if (targetDir && (e as Error).message.includes('ENOENT')) {
-        setDir('');
-        setPendingLocate(null);
-        setError('');
-        return;
+      if (seq === loadSeqRef.current) {
+        // 目录不存在（ENOENT：上次浏览位置被删除/仓库已切换）→ 自动回到仓库根，避免卡死在错误页
+        if (targetDir && (e as Error).message.includes('ENOENT')) {
+          setDir('');
+          setPendingLocate(null);
+          setError('');
+        } else {
+          setError((e as Error).message);
+        }
       }
-      setError((e as Error).message);
+      return;
     } finally {
       if (!quiet) {
         loadingCountRef.current = Math.max(0, loadingCountRef.current - 1);
         if (loadingCountRef.current === 0) setFsLoading(false);
       }
     }
+    if (!light || seq !== loadSeqRef.current) return;
+    setNodeData((m) => new Map(m).set(targetDir, light));
+    setData(light);
+    setSel(null);
+    setPreview(null);
+    // 两阶段②：补状态（根目录浅查直接子项、子目录查子树）。
+    // 顶层显示「正在补充文件状态…（已 N 秒）」，大仓库也看得见在做什么；静默刷新不显示。
+    if (quiet) refreshCodes(targetDir, targetDir !== '');
+    else scanCodes(targetDir, targetDir !== '');
+    // 静默预取下一层：进入目录后立刻在后台拉它的直接子目录（light，不查 SVN 状态）
+    prefetchChildren(targetDir, light.entries ?? [], true);
+    // 子目录且条目不多：后台再要一份完整数据（补忽略项 I/未跟踪 ? 的精确状态）；
+    // 根目录与超大目录跳过全量 status（这正是方案的性能取舍）
+    if (targetDir !== '' && (light.entries?.length ?? 0) <= 200) {
+      void get
+        .fs(targetDir)
+        .then((r) => {
+          if (seq !== loadSeqRef.current) return;
+          setNodeData((m) => new Map(m).set(targetDir, r));
+          if (dirRef.current === targetDir) setData(r);
+        })
+        .catch(() => {});
+    }
+    if (!quiet) {
+      // 大目录提示：条目多时告知原因（加载完成后展示 5 秒）——静默刷新不重复提示
+      const n = light.entries?.length ?? 0;
+      if (n > 200) {
+        // 该目录文件较多（共 {n} 项），首次加载可能需要一点时间
+        setBigTip(t('fs.tip.bigDir', { n }));
+        if (bigTipTimer.current) clearTimeout(bigTipTimer.current);
+        bigTipTimer.current = setTimeout(() => setBigTip(''), 5000);
+      } else {
+        setBigTip('');
+      }
+    }
     // setPendingLocate 的 useState 在下方才声明，放进依赖数组会 TDZ（Block-scoped variable used before its declaration）
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefetchChildren, refreshCodes]);
+  }, [prefetchChildren, refreshCodes, scanCodes]);
 
   // 当前目录浅状态轮询：外部编辑器改了文件，30 秒内刷新 M/A；不重拉目录、不清选择/预览
   useEffect(() => {
@@ -1930,12 +1986,16 @@ export function FsView(props: Props) {
             <div style={{ marginTop: 8 }}>{t('fs.loading')}</div>
           </div>
         )}
-        {/* 列表/浏览模式：加载中转圈提示条（切换目录/首次加载都有反馈，不再干等） */}
-        {(mode === 'list' || mode === 'browse') && fsLoading && !error && (
+        {/* 列表/浏览模式：加载/补状态提示条（两阶段：先出文件，再补状态并显示已用时间） */}
+        {(mode === 'list' || mode === 'browse') && (fsLoading || scanState) && !error && (
           <div className="fs-loading-bar">
             <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
-            {/* 正在加载目录… / 正在加载… */}
-            <span>{data ? t('fs.loadingDir') : t('fs.loading')}</span>
+            {/* 正在加载目录… / 正在加载… / 正在补充文件状态…（已 N 秒） */}
+            <span>
+              {fsLoading
+                ? data ? t('fs.loadingDir') : t('fs.loading')
+                : t('fs.scanningCodes', { sec: scanState?.sec ?? 0 })}
+            </span>
           </div>
         )}
         {/* 常用文件夹后台预加载进度 */}
