@@ -371,6 +371,8 @@ export const fs = {
   'fs.wc.guidePre': 'If the server deletion is correct → for each conflicted file/folder,',
   'fs.wc.guideAction': 'right-click → Accept Server Deletion',
   'fs.wc.guidePost': ' to sync; if the deletion is wrong → leave your local files alone and contact your SVN administrator.',
+  'fs.wc.acceptDeleted': 'Accept Server Deletion ({n} item)|Accept Server Deletion ({n} items)',
+  'fs.wc.dismissTitle': 'Hide this notice (conflicts remain; it reappears when you return to this folder)',
 
   // ---- File preview (preview-pane.tsx) ----
   'fs.pv.unversioned': 'Unversioned file (raw text)',

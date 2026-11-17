@@ -59,40 +59,74 @@ const NOTICES: { key: keyof WcFlags; render: () => React.ReactNode }[] = [
 ];
 
 /** 命中第一条异常就渲染对应提示；都正常则什么都不渲染 */
-export function WcNotice(props: { flags?: WcFlags; diag: WcDiag }) {
+export function WcNotice(props: {
+  flags?: WcFlags;
+  diag: WcDiag;
+  /** 当前目录（相对仓库根）：清单里的路径要带上它，显示成相对根的完整路径 */
+  dir?: string;
+  /** 横幅上「接受服务器的删除」：传相对**当前目录**的路径，由调用方拼上 dir */
+  onAcceptDeleted?: (paths: string[]) => void;
+}) {
   const conflicts = props.diag.list;
   const unchecked = props.diag.unchecked;
   const wcHit = NOTICES.find((n) => props.flags?.[n.key]);
+  /** 收起：本次浏览该目录期间有效（调用方以 dir 作 key，切目录后重新提示） */
+  const [dismissed, setDismissed] = React.useState(false);
+  /** 能"接受删除"的只有服务器上确实没有的条目；服务器上仍在的项不能用这个动作（会本地白删） */
+  const missing = conflicts?.filter((c) => c.serverMissing) ?? [];
 
   return (
     <>
       {wcHit && <div className="fs-big-tip">{wcHit.render()}</div>}
-      {conflicts !== null && conflicts.length > 0 && (
+      {conflicts !== null && conflicts.length > 0 && !dismissed && (
         <div className="fs-big-tip">
-          {/* ⚠ 发现 / 个树冲突：本地是存在的，但是服务器上这些路径已不存在（目录被删或移动过）。 */}
-          {t('fs.wc.foundPre')} <b>{conflicts.length}</b>{t('fs.wc.foundPost')}
-          {/* （未能连上服务器，以下仅列出本地冲突项） */}
-          {unchecked && t('fs.wc.unchecked')}
-          {/* 全部展开列出（原先只显示 8 条、其余折叠成"…另有 N 个"，用户看不到全貌；
-              容器本身有 max-height + 滚动兜底，条数特别多时才会出现滚动条） */}
-          <div className="wc-conflict-list">
-            {conflicts.map((c) => (
-              <div key={c.path} className="wc-conflict-row">
-                <span className="mono">{c.path}</span>
-                {/* · 服务器已删除 / · 服务器上仍在 */}
-                <span className="dim">{c.serverMissing ? t('fs.wc.deletedShort') : t('fs.wc.presentShort')}</span>
-                {c.fromRev && (
-                  <span className="dim">
-                    {/* · 复制自 r{rev} {author} {date} */}
-                    {t('fs.wc.copiedFrom', { rev: c.fromRev, author: c.fromAuthor ?? '', date: c.fromDate ?? '' })}
-                  </span>
-                )}
+          {/* 右侧 × 可收起：冲突没解决时只是暂时不占地方，切目录/重新进入会再提示（用户实报：关不掉） */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* ⚠ 发现 / 个树冲突：本地是存在的，但是服务器上这些路径已不存在（目录被删或移动过）。 */}
+              {t('fs.wc.foundPre')} <b>{conflicts.length}</b>{t('fs.wc.foundPost')}
+              {/* （未能连上服务器，以下仅列出本地冲突项） */}
+              {unchecked && t('fs.wc.unchecked')}
+              {/* 全部展开列出（原先只显示 8 条、其余折叠成"…另有 N 个"，用户看不到全貌；
+                  容器本身有 max-height + 滚动兜底，条数特别多时才会出现滚动条） */}
+              <div className="wc-conflict-list">
+                {conflicts.map((c) => (
+                  <div key={c.path} className="wc-conflict-row">
+                    {/* 清单里的 path 相对当前目录，拼上 dir 显示成相对仓库根（用户要求：看得出文件在哪） */}
+                    <span className="mono">{props.dir ? `${props.dir}/${c.path}` : c.path}</span>
+                    {/* · 服务器已删除 / · 服务器上仍在 */}
+                    <span className="dim">{c.serverMissing ? t('fs.wc.deletedShort') : t('fs.wc.presentShort')}</span>
+                    {c.fromRev && (
+                      <span className="dim">
+                        {/* · 复制自 r{rev} {author} {date} */}
+                        {t('fs.wc.copiedFrom', { rev: c.fromRev, author: c.fromAuthor ?? '', date: c.fromDate ?? '' })}
+                      </span>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 4 }}>
-            {/* 确认服务器删对了 → 对每个冲突文件/文件夹 / 右键 → 接受服务器的删除 / 同步；认为服务器删错了 → 先别动本地，联系 SVN 管理员。 */}
-            {t('fs.wc.guidePre')}<span className="mono">{t('fs.wc.guideAction')}</span>{t('fs.wc.guidePost')}
+              {/* 一键处理：只针对服务器已删除的项；点了先弹文件清单，再二次确认（会删本地文件） */}
+              {missing.length > 0 && props.onAcceptDeleted && (
+                <div style={{ margin: '6px 0 2px' }}>
+                  <button className="mini" onClick={() => props.onAcceptDeleted!(missing.map((c) => c.path))}>
+                    {/* 接受服务器的删除（{n} 项） */}
+                    {t('fs.wc.acceptDeleted', { n: missing.length })}
+                  </button>
+                </div>
+              )}
+              <div style={{ marginTop: 4 }}>
+                {/* 确认服务器删对了 → 对每个冲突文件/文件夹 / 右键 → 接受服务器的删除 / 同步；认为服务器删错了 → 先别动本地，联系 SVN 管理员。 */}
+                {t('fs.wc.guidePre')}<span className="mono">{t('fs.wc.guideAction')}</span>{t('fs.wc.guidePost')}
+              </div>
+            </div>
+            <button
+              className="mini"
+              style={{ flexShrink: 0 }}
+              onClick={() => setDismissed(true)}
+              title={t('fs.wc.dismissTitle')}
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}

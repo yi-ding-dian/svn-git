@@ -1940,8 +1940,18 @@ export function FsView(props: Props) {
         )}
         {bigTip && <div className="fs-big-tip">⚠ {bigTip}</div>}
         {/* 工作副本异常（锁定/不完整/缺失）与树冲突：提示与修法见 wc-notice.tsx，
-            诊断结果（diag）来自上层，与条目角标共用同一份 */}
-        <WcNotice flags={data ?? undefined} diag={diag} />
+            诊断结果（diag）来自上层，与条目角标共用同一份。
+            key=viewDir：换目录重建组件，让"收起"只在当前目录有效。
+            横幅「接受服务器的删除」走与右键同一条 revert 清单流程（会先列文件、再二次确认）。 */}
+        <WcNotice
+          key={viewDir}
+          flags={data ?? undefined}
+          diag={diag}
+          dir={viewDir}
+          onAcceptDeleted={(rels) =>
+            props.onAction('revert', rels.map((r) => (viewDir ? `${viewDir}/${r}` : r)))
+          }
+        />
         {/* 拖入上传：悬停提示落点 / 上传进度 / 同名冲突确认 */}
         {/* 松开即复制到 {dest} / 仓库根目录 */}
         {drop.dragging && <div className="fs-drop-hint">{t('fs.drop.hint', { dest: dir ? `${dir}/` : t('fs.repoRootDir') })}</div>}

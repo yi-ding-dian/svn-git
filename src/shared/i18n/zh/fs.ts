@@ -371,6 +371,8 @@ export const fs = {
   'fs.wc.guidePre': '确认服务器删对了 → 对每个冲突文件/文件夹',
   'fs.wc.guideAction': '右键 → 接受服务器的删除',
   'fs.wc.guidePost': '同步；认为服务器删错了 → 先别动本地，联系 SVN 管理员。',
+  'fs.wc.acceptDeleted': '接受服务器的删除（{n} 项）',
+  'fs.wc.dismissTitle': '收起提示（冲突仍在，切回本目录会再出现）',
 
   // ---- 文件预览（preview-pane.tsx）----
   'fs.pv.unversioned': '未版本化文件（原文）',
