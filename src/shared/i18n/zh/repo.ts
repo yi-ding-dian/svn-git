@@ -328,6 +328,7 @@ export const repo = {
   'repo.open.dblClickDir': '双击进入目录 {name}',
   'repo.open.wcLabel': '{root} — SVN/Git 工作副本',
   'repo.open.enterThis': '进入此仓库 →',
+  'repo.open.scopeHint': '大仓库建议先进入子项目文件夹，再点「进入此仓库」，只加载该子项目，速度快',
 
   // ---- SVN 版本库存储目录提示（OpenBrowser 识别到 svnadmin 布局时）----
   // 前后两段与 <b>{name}</b> 直接拼接，段首空格是有意的

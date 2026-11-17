@@ -464,6 +464,10 @@ export function OpenBrowser(props: {
                     <span className="info">
                       {/* {root} — SVN/Git 工作副本 */}
                       {t('repo.open.wcLabel', { root: rp.root ?? '' })}
+                      {/* 大仓库建议先进入子项目文件夹…（固定显示：进入当前浏览目录即操作范围） */}
+                      <span className="dim small" style={{ display: 'block', marginTop: 2, lineHeight: 1.5 }}>
+                        {t('repo.open.scopeHint')}
+                      </span>
                     </span>
                     {/* 进入此仓库 → */}
                     <button className="primary" onClick={() => void enter()}>{t('repo.open.enterThis')}</button>

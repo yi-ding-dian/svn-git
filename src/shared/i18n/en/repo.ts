@@ -324,6 +324,7 @@ export const repo = {
   'repo.open.dblClickDir': 'Double-click to enter {name}',
   'repo.open.wcLabel': '{root} — SVN/Git working copy',
   'repo.open.enterThis': 'Open this repository →',
+  'repo.open.scopeHint': 'For large repositories, enter the subproject folder first, then click "Open this repository" — only that subproject is loaded, which is much faster',
 
   // ---- SVN 版本库存储目录提示 ----
   'repo.bare.isStore': 'is an SVN repository storage directory (server-side data, not editable directly).',
