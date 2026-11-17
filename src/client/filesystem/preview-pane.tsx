@@ -204,7 +204,14 @@ export function PreviewPane(props: Props) {
   /** 文档目录气泡：只记按钮底边 y（水平位置由浮层自己贴窗口右侧算） */
   const [tocPop, setTocPop] = useState<{ y: number; x: number } | null>(null);
   /** 目录条目 / md 正文容器：公共 hook（渲染后从 DOM 提取标题并挂锚点，文件预览与差异预览共用） */
-  const { bodyRef: mdBodyRef, items: tocItems, rescan: rescanToc, clear: clearToc, jump: jumpToc } = useMdToc();
+  const {
+    bodyRef: mdBodyRef,
+    items: tocItems,
+    activeId: tocActiveId,
+    rescan: rescanToc,
+    clear: clearToc,
+    jump: jumpToc,
+  } = useMdToc();
   /** 编辑态目录：正文在 textarea 里（没有渲染后的 DOM 可扫），条目按**草稿源码**实时解析；
    *  点条目让编辑器跳到源码行（InlineEditor.gotoLine），不用挂锚点 */
   const [editTocText, setEditTocText] = useState('');
@@ -834,12 +841,14 @@ export function PreviewPane(props: Props) {
         )}
       </div>
       )}
-      {/* 文档目录气泡：点条目跳到对应标题（不关气泡，方便连续跳）；点遮罩关闭 */}
+      {/* 文档目录气泡：点条目跳到对应标题（不关气泡，方便连续跳）；点遮罩关闭。
+          打开时按当前阅读位置定位并高亮那一节（用户实报：读到一半打开目录还停在开头） */}
       {tocPop && (
         <MdTocPopover
           y={tocPop.y}
           x={tocPop.x}
           items={tocItems}
+          activeId={tocActiveId}
           onJump={jumpToc}
           onClose={() => setTocPop(null)}
         />

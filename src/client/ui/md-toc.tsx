@@ -24,6 +24,8 @@ export function MdTocPopover(props: {
   /** 按钮左边缘 x：浮层左缘与它对齐、向右展开（用户定稿："尽量靠右，但不能偏离按钮太远"） */
   x: number;
   items: TocItem[];
+  /** 当前阅读到的那一节（滚动跟踪由 use-md-toc 提供）：打开时滚到它，并常驻淡底高亮 */
+  activeId?: string | null;
   onJump: (id: string) => void;
   onClose: () => void;
 }) {
@@ -32,6 +34,8 @@ export function MdTocPopover(props: {
   const [pos, setPos] = useState({ left: -9999, top: props.y });
   /** 被折叠的条目下标。默认全展开 —— 文档通常不长，一眼看全比一层层点开快 */
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  /** 点击过的条目：实底强调色，与「当前阅读位置」的淡底区分（人点了哪一节要一眼看到） */
+  const [selected, setSelected] = useState<string | null>(null);
 
   // 定位：水平**左对齐按钮左边缘、向右展开**（"尽量靠右，但不偏离按钮"——用户定稿；与 MdThemePopover
   // 同一套"贴按钮"模式），右侧不够则回退贴窗口右缘；垂直贴按钮下方，下边不够则改为贴底。
@@ -44,6 +48,18 @@ export function MdTocPopover(props: {
     if (top + r.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - r.height - 8);
     setPos({ left, top });
   }, [props.y, props.x]);
+
+  /** 打开时把当前章节滚进浮层的可视区（约 1/3 处）——只改浮层自身 scrollTop，
+   *  不碰正文与页面；之后用户手动翻目录时不再抢（activeId 随正文变化也不重新定位）。 */
+  const located = useRef(false);
+  useLayoutEffect(() => {
+    if (located.current || !props.activeId || !ref.current) return;
+    const box = ref.current;
+    const row = box.querySelector<HTMLElement>('[data-cur="1"]');
+    if (!row) return; // 条目还没画出来（兜底：下一轮 pos 更新时再试）
+    located.current = true;
+    box.scrollTop = Math.max(0, row.offsetTop - box.clientHeight / 3);
+  }, [props.activeId, pos]);
 
   const items = props.items;
   /** 第 i 项有没有子级：后面紧跟一项、且层级更深 */
@@ -82,11 +98,15 @@ export function MdTocPopover(props: {
         {rows.map(({ item, i }) => (
           <div
             key={item.id}
-            className="ctx-item md-toc-row"
+            className={`ctx-item md-toc-row${item.id === props.activeId ? ' cur' : ''}${item.id === selected ? ' sel' : ''}`}
+            data-cur={item.id === props.activeId ? '1' : undefined}
             style={{ paddingLeft: 6 + (item.level - baseLevel) * 14 }}
             // 整行可点：原先只绑在标题文字上，行内边距与叶子节点的占位三角处点了没反应 ——
             // 而整行都是 cursor:pointer，看起来处处可点，于是表现为"点偏一点就没反应、再点一次才行"
-            onClick={() => props.onJump(item.id)}
+            onClick={() => {
+              setSelected(item.id); // 标记"刚点的这一节"，与当前阅读位置的淡底分开显示
+              props.onJump(item.id);
+            }}
           >
             {hasChild(i) ? (
               // 展开 / 折叠这一节

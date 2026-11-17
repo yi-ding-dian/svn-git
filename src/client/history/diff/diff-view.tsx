@@ -62,6 +62,7 @@ export function DiffView(props: Props) {
   const {
     bodyRef: mdLeftRef,
     items: tocLeftItems,
+    activeId: tocLeftActive,
     rescan: rescanLeftToc,
     clear: clearLeftToc,
     jump: jumpLeftToc,
@@ -69,6 +70,7 @@ export function DiffView(props: Props) {
   const {
     bodyRef: mdRightRef,
     items: tocRightItems,
+    activeId: tocRightActive,
     rescan: rescanRightToc,
     clear: clearRightToc,
     jump: jumpRightToc,
@@ -515,10 +517,24 @@ export function DiffView(props: Props) {
       )}
       {/* md 预览目录浮层：左右各一，点条目在各自预览容器内滚动（不关浮层，方便连续跳） */}
       {tocPopL && tocLeftItems.length > 0 && (
-        <MdTocPopover y={tocPopL.y} x={tocPopL.x} items={tocLeftItems} onJump={jumpLeftToc} onClose={() => setTocPopL(null)} />
+        <MdTocPopover
+          y={tocPopL.y}
+          x={tocPopL.x}
+          items={tocLeftItems}
+          activeId={tocLeftActive}
+          onJump={jumpLeftToc}
+          onClose={() => setTocPopL(null)}
+        />
       )}
       {tocPopR && tocRightItems.length > 0 && (
-        <MdTocPopover y={tocPopR.y} x={tocPopR.x} items={tocRightItems} onJump={jumpRightToc} onClose={() => setTocPopR(null)} />
+        <MdTocPopover
+          y={tocPopR.y}
+          x={tocPopR.x}
+          items={tocRightItems}
+          activeId={tocRightActive}
+          onJump={jumpRightToc}
+          onClose={() => setTocPopR(null)}
+        />
       )}
     </div>
   );
