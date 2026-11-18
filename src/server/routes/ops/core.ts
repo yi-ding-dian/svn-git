@@ -54,7 +54,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       });
       result = repo.type === 'git'
       // 当前仓库不支持拉取
-      ? (await vcs.pull?.(ac.signal)) ?? { ok: false, message: t('srv.pullUnsupported') }
+      // 通道带仓库根：侧栏 ⬇ 可同时拉多个项目（前端按同一个字符串轮询）
+      ? (await vcs.pull?.(ac.signal, `pull:${repo.root}`)) ?? { ok: false, message: t('srv.pullUnsupported') }
       // 当前仓库不支持更新
       : (await vcs.update?.(dir || undefined, ac.signal)) ?? { ok: false, message: t('srv.updateUnsupported') };
       // 更新成功后自动恢复缺失文件（磁盘删除但版本库还在 → 拉回，消除 ! 标识）

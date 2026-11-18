@@ -921,10 +921,15 @@ export function App() {
       launchMagicFlight({ x: mouseRef.current.x, y: mouseRef.current.y });
       /** 传输进度轮询的停止函数（startTask 返回 id 之后才挂得上） */
       let stopPoll: (() => void) | null = null;
+      /** git 拉取的进度通道（`pull:<仓库根>`）：侧栏可同时对多个项目拉取，共用 'pull' 会串进度/清单；
+       *  svn update 没有传输进度，不挂通道 */
+      const pullChan = repo?.type === 'git' && repo.root ? `pull:${repo.root}` : undefined;
       const taskId = startTask({
         kind: 'update',
         // 任务标题：{repo} · {branch} · 更新（右键子目录更新时追加目录——同检出标题的拼接先例）
         title: `${t('shell.tasks.updateTitle', { repo: baseName(repo?.root ?? ''), branch: repo?.revOrBranch ?? '' })}${dir ? ` · ${dir}` : ''}`,
+        // 进度通道：任务详情窗据此每秒实时轮询（通道名与后端一致）
+        chan: pullChan,
         // 失败后可在铃铛里重试：更新幂等，原样再更新一次
         retry: () => doUpdateDir(dir),
         run: async (signal) => {
@@ -959,7 +964,7 @@ export function App() {
         },
       });
       // 进度轮询（git 拉取才有数据；svn update 那侧后端一直 ok=false，面板自然不显示进度条）
-      stopPoll = pollTransferProgress(taskId, 'pull');
+      stopPoll = pollTransferProgress(taskId, pullChan ?? 'pull');
     },
     [refresh, showToast, markRemoteSynced, repo?.type, repo?.root, repo?.revOrBranch]
   );

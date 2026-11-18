@@ -41,7 +41,11 @@ export const shell = {
   'shell.tasks.phaseCheckout': 'Checking out files…',
   'shell.tasks.phaseSwitch': 'Switching branch…',
   'shell.tasks.progressOf': '{done} / {total}',
+  // Pulls have no total byte count (git does not report it): the total is an estimate, hence "~"
+  'shell.tasks.progressOfEst': '{done} / ~{total}',
   'shell.tasks.progressSpeed': '{speed}/s',
+  // Object count: the pull progress bar is based on object counts
+  'shell.tasks.progressObjects': '{done}/{total} objects',
   'shell.tasks.downloaded': 'Downloaded {done}',
   'shell.tasks.uploaded': 'Uploaded {done}',
   'shell.tasks.etaMin': 'about {n} min left',
@@ -134,6 +138,12 @@ export const shell = {
   // {n} files checked out · {size}
   'shell.tasks.checkoutFiles': '{n} files checked out · {size}',
   'shell.tasks.switchFiles': '{n} files processed',
+  // ---- Update manifest pre-scanned before a pull (GitHub remotes only; git's protocol has no file names/progress) ----
+  'shell.tasks.manifestSummary': 'This update: {n} files · {size}',
+  'shell.tasks.manifestTitle': 'Files in this update ({n} · {size})',
+  'shell.tasks.manifestNote':
+    'Pre-scanned before download. Sizes are uncompressed file sizes, not transfer bytes; git does not report per-file progress.',
+  'shell.tasks.manifestTruncated': '(showing the first {n})',
   // Checked-out files ({n} total)
   'shell.tasks.detailFiles': 'Checked-out files ({n} total)',
   // (showing first {m})

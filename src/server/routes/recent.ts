@@ -219,7 +219,9 @@ async function pullAny(
     const r =
       repo.type === 'git'
         // 当前仓库不支持拉取
-        ? ((await vcs.pull?.(signal)) ?? { ok: false, message: t('srv.pullUnsupported') })
+        // 通道用前端传来的 dir（不是检测出的 repo.root）：前端按同一个字符串轮询，
+        // dir 可能是大仓库的子项目路径，两者不保证相同
+        ? ((await vcs.pull?.(signal, `pull:${dir}`)) ?? { ok: false, message: t('srv.pullUnsupported') })
         // 当前仓库不支持更新
         : ((await vcs.update?.(scope || undefined, signal)) ?? { ok: false, message: t('srv.updateUnsupported') });
     if (r.ok) {

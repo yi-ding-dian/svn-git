@@ -44,11 +44,47 @@ export interface TransferProgress {
   currentStep?: number;
   /** 每个阶段的开始时间戳（与 steps 对齐；多一项表示完成时间） */
   stepStartedAt?: number[];
+  /** 已接收对象数 / 对象总数（git 的 `Receiving/Writing objects: 45% (159/352)`）。
+   *  拉取没有总字节，界面拿对象个数画进度条——这是 git 明说的数，不会骗人；
+   *  总大小另用「已收字节 × 总对象数 ÷ 已完成对象数」估算，只作参考 */
+  objectsDone?: number;
+  objectsTotal?: number;
+  /** 本次更新文件清单（拉取前预扫描；只有 GitHub 远端能拿到，见 vcs/update-manifest.ts） */
+  manifest?: UpdateManifest;
+}
+
+/** 更新清单里单个文件的状态：A 新增 / M 修改 / D 删除（与 git diff --name-status 同口径） */
+export type UpdateFileStatus = 'A' | 'M' | 'D';
+
+export interface UpdateManifestFile {
+  path: string;
+  status: UpdateFileStatus;
+  /** 远端文件大小（未压缩）；删除项没有可下载内容，为 0 */
+  size: number;
+}
+
+/** 拉取前预扫描出的「这次更新会涉及哪些文件」。
+ *  ⚠ git 的传输协议不提供文件名/单文件大小/单文件进度，这份清单是另外算的：
+ *  远端树的 path/sha/size 与本地 `git ls-tree -r -l HEAD` 比对（见 vcs/update-manifest.ts）。 */
+export interface UpdateManifest {
+  /** 按大小降序；最多 MANIFEST_MAX_FILES 条（详情弹窗每秒轮询，响应不能太大，
+   *  计数与总大小仍按全量算，被截断时 truncated=true） */
+  files: UpdateManifestFile[];
+  /** 状态计数（含被截断的部分） */
+  counts: { A: number; M: number; D: number };
+  /** 新增 + 修改的远端文件大小合计（未压缩；衡量"这次更新有多大"，不等于传输字节） */
+  totalBytes: number;
+  truncated?: boolean;
 }
 
 /** 通道名 → 进度。通道是"哪一次传输"：获取用目标目录（可并发多个），
- *  推送/拉取用 'push' / 'pull'（同一时刻只对一个仓库做，app 侧另有防重入） */
+ *  推送用 'push'；拉取用 `pull:<仓库根/目录>`——侧栏可以同时对多个项目点 ⬇，
+ *  共用 'pull' 会让两个仓库的进度与清单互相覆盖 */
 const map = new Map<string, TransferProgress>();
+
+/** 更新清单单独存：一次拉取可能要跑两条 git（无 upstream 重试 / 认证重试），
+ *  exec 每次都会 progressStart 重置进度表，清单不能跟着丢 */
+const manifests = new Map<string, UpdateManifest>();
 
 /** 传输开始：登记一条（total 通常先给 0，查到再补——查总大小要发一次 GitHub 请求，不挡克隆开跑） */
 export function progressStart(chan: string, total = 0): void {
@@ -89,10 +125,23 @@ export function progressDone(chan: string): void {
   map.delete(chan);
 }
 
+/** 挂上拉取前预扫描出的更新清单（清单可能先于 pull 的 progressStart 到达，也允许后到；
+ *  进度收尾时由 progressClearManifest 清掉，见 GitVcs.pull） */
+export function progressAttachManifest(chan: string, manifest: UpdateManifest): void {
+  manifests.set(chan, manifest);
+}
+
+/** 撤掉更新清单（拉取结束/取消时调用，避免下一次同名通道拿到旧清单） */
+export function progressClearManifest(chan: string): void {
+  manifests.delete(chan);
+}
+
 /** 前端轮询用；没在跑 = ok:false（任务已结束，或这种操作没有传输进度——如 SVN 检出/更新） */
 export function progressGet(chan: string): ({ ok: true } & TransferProgress) | { ok: false } {
   const p = map.get(chan);
-  return p ? { ok: true, ...p } : { ok: false };
+  if (!p) return { ok: false };
+  const manifest = manifests.get(chan);
+  return manifest ? { ok: true, ...p, manifest } : { ok: true, ...p };
 }
 
 /** "2.62 MiB" → 字节 */
@@ -106,6 +155,14 @@ function toBytes(n: string, unit: string): number {
 export function progressFromStderr(chan: string, line: string): void {
   const p = map.get(chan);
   if (!p) return;
+  // 对象计数：`Receiving objects:  45% (159/352), …` / `Writing objects: …`。
+  // 只认接收/写入（真正的传输）；Counting 阶段是远端在数对象，不是"已下载"。
+  // 拉取没有总字节，界面拿它画进度条（对象数是 git 明说的，稳定且单调）
+  const objects = /^(?:remote:\s*)?(?:Receiving|Writing) objects:.*?\((\d+)\/(\d+)\)/.exec(line);
+  if (objects) {
+    p.objectsDone = Number(objects[1]);
+    p.objectsTotal = Number(objects[2]);
+  }
   // 克隆/拉取时这些行带 `remote: ` 前缀（那是远端进程的输出），推送时不带——前缀可选
   if (/^(remote:\s*)?(Enumerating|Counting) objects/.test(line)) {
     p.phase = 'counting';

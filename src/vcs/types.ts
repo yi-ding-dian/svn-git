@@ -398,7 +398,8 @@ export interface Vcs {
   diffStaged?(pathRel?: string): Promise<DiffResult>;
   show?(rev: string, pathRel?: string): Promise<DiffResult>;
   cat?(pathRel: string): Promise<DiffResult>;
-  pull?(signal?: AbortSignal): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }>;
+  /** chan：进度通道（`pull:<仓库根/目录>`）。侧栏可同时对多个项目拉取，共用 'pull' 会串进度与清单 */
+  pull?(signal?: AbortSignal, chan?: string): Promise<VcsResult & { files?: { path: string; status: string; code: string }[] }>;
   push?(signal?: AbortSignal): Promise<VcsResult & { authType?: 'github' | 'server' | 'ssh' }>;
   stashList?(): Promise<{ index: number; label: string }[]>;
   stashFiles?(index: number): Promise<{ path: string; code: string }[]>;

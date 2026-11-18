@@ -145,7 +145,20 @@ export function pollTransferProgress(id: number, chan: string): () => void {
       .then((r) =>
         setTaskProgress(
           id,
-          r.ok ? { phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0, files: r.files, steps: r.steps, currentStep: r.currentStep } : null,
+          r.ok
+            ? {
+                phase: r.phase!,
+                bytes: r.bytes ?? 0,
+                speed: r.speed ?? 0,
+                total: r.total ?? 0,
+                files: r.files,
+                steps: r.steps,
+                currentStep: r.currentStep,
+                objectsDone: r.objectsDone,
+                objectsTotal: r.objectsTotal,
+                manifest: r.manifest,
+              }
+            : null,
         ),
       )
       .catch(() => {

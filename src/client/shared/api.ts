@@ -3,7 +3,7 @@
 // 状态码说明（i18n，值取当前语言）：单一事实源在 src/shared/types.ts（含 ' ' 无变化 键），此处 re-export 保持 web 侧既有导入路径不变
 export { CODE_DESC } from '../../shared/types.js';
 import type { LineCondition, ParsedDiff } from '../../shared/types.js';
-import type { TransferPhase } from '../../transfer-progress.js';
+import type { TransferPhase, UpdateManifest } from '../../transfer-progress.js';
 import { t } from '../../shared/i18n/index.js';
 import type { Lang } from '../../shared/i18n/index.js';
 import type { ShareAccess, ShareConfig, ShareEvent, ShareSettings } from '../../shared/share.js';
@@ -959,7 +959,21 @@ export const get = {
   /** 传输进度（任务面板每秒轮询；ok=false = 没在跑，或这种操作没有进度信息——如 SVN 检出/更新）。
    *  chan = 获取的目标目录，或 'push' / 'pull'。 */
   transferProgress: (chan: string) =>
-    api<{ ok: boolean; phase?: TransferPhase; bytes?: number; speed?: number; total?: number; files?: number; steps?: string[]; currentStep?: number }>(
+    api<{
+      ok: boolean;
+      phase?: TransferPhase;
+      bytes?: number;
+      speed?: number;
+      total?: number;
+      files?: number;
+      steps?: string[];
+      currentStep?: number;
+      /** 拉取：已接收/总对象数（无总字节时界面按它画进度条） */
+      objectsDone?: number;
+      objectsTotal?: number;
+      /** 拉取：本次更新文件清单（GitHub 远端预扫描；其它远端没有） */
+      manifest?: UpdateManifest;
+    }>(
       `/api/transfer-progress?chan=${encodeURIComponent(chan)}`,
     ),
   /** SVN 身份（只读）：工具配置账号 + svn 官方凭据缓存账号（cache 按 url 的 host 匹配 realm）。 */

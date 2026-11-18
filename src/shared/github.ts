@@ -1,5 +1,10 @@
 /** GitHub 相关共享逻辑（前后端共用，无 Node/DOM 依赖） */
 
+/** 调用 GitHub API 统一的 User-Agent（读/写共用；⚠ 产品名 token 含 "svn" 会被 WAF 403，
+ *  见 server/routes/github.ts 的 githubFetch 注释）。
+ *  服务端两处共用：routes/github.ts（仓库信息/发布等）与 vcs/update-manifest.ts（拉取前清单预扫描）。 */
+export const GITHUB_UA = 'vcs-client/1.0 (+https://github.com/yi-ding-dian/svn-git)';
+
 /** remote URL → owner/repo（https:// / git@ / ssh:// 形式都认；非 github 或认不出 → null）。
  *  服务端（github.ts 路由）与前端（删除弹窗显示完整名）共用。 */
 export function parseGithub(url: string): { owner: string; repo: string } | null {

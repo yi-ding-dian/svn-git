@@ -111,13 +111,26 @@ export function TaskProgress(props: { p: TaskProgressInfo; /** 任务已完成�
     );
   }
 
-  /** 百分比按**字节**算（git 自己的百分比是按对象个数，大小极不均匀），没结束前封顶 99% */
-  const pct = p.total > 0 ? Math.min(99, Math.round((p.bytes / p.total) * 100)) : null;
+  /** 进度条口径：有总字节（克隆/检出，GitHub API 查到的）按字节算；**拉取没有总字节**，
+   *  按 git 报的对象个数画——对象数是 git 明说的，单调且不会因为一个 20 MB 的大文件长时间不动。
+   *  没结束前封顶 99% */
+  const bytePct = p.total > 0 ? Math.min(99, Math.round((p.bytes / p.total) * 100)) : null;
+  const objectPct =
+    p.objectsTotal && p.objectsDone !== undefined ? Math.min(99, Math.round((p.objectsDone / p.objectsTotal) * 100)) : null;
+  const pct = bytePct ?? objectPct;
+  /** 总大小估算（拉取）：已收字节 × 总对象数 ÷ 已完成对象数。对象大小不均匀，只能算"约"；
+   *  前 3 个对象样本太少，比例没有意义，不估 */
+  const estTotal =
+    p.total > 0
+      ? p.total
+      : p.objectsTotal && p.objectsDone !== undefined && p.objectsDone >= 3
+        ? Math.round((p.bytes * p.objectsTotal) / p.objectsDone)
+        : 0;
   /** 字节 → MB / GB（超过 1 GB 进位——大仓库检出时"1024.0 MB"不如"1.02 GB"直观） */
   const size = (n: number) =>
     n >= 1024 * 1024 * 1024 ? `${(n / 1024 / 1024 / 1024).toFixed(2)} GB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
   const speed = p.speed >= 1024 * 1024 ? `${(p.speed / 1024 / 1024).toFixed(1)} MB` : `${Math.round(p.speed / 1024)} KB`;
-  const etaSec = pct !== null && p.speed > 0 && p.bytes < p.total ? Math.round((p.total - p.bytes) / p.speed) : -1;
+  const etaSec = estTotal > 0 && p.speed > 0 && p.bytes < estTotal ? Math.round((estTotal - p.bytes) / p.speed) : -1;
   const phaseKey = {
     counting: 'shell.tasks.phaseCounting',
     compressing: 'shell.tasks.phaseCompressing',
@@ -140,11 +153,16 @@ export function TaskProgress(props: { p: TaskProgressInfo; /** 任务已完成�
       {/* 字节/速度行：**还没拿到数值就不显示**——git 在"统计/压缩"阶段不报字节，推送快时
           中间几行也不带，硬显示就是"已上传 0.0 MB"这种看着像卡住的东西。
           SVN 检出（files 有值）让位给下面的"文件数"行（没有总大小、不画进度条） */}
-      {(p.bytes > 0 || p.speed > 0) && p.files === undefined && (
+      {(p.bytes > 0 || p.speed > 0 || (p.objectsDone ?? 0) > 0) && p.files === undefined && (
         <div className="dim small">
           {pct !== null ? `${pct}% · ` : ''}
-          {p.total > 0 ? t('shell.tasks.progressOf', { done: size(p.bytes), total: size(p.total) }) : t(verb, { done: size(p.bytes) })}
+          {/* 拉取的总大小是估算（git 不报），标"约"；算不出来就只说已下载 */}
+          {estTotal > p.bytes
+            ? t(p.total > 0 ? 'shell.tasks.progressOf' : 'shell.tasks.progressOfEst', { done: size(p.bytes), total: size(estTotal) })
+            : t(verb, { done: size(p.bytes) })}
           {p.speed > 0 ? ` · ${t('shell.tasks.progressSpeed', { speed })}` : ''}
+          {/* 对象数：拉取的进度条就是按它画的，写出来让用户能对上 */}
+          {p.objectsTotal ? ` · ${t('shell.tasks.progressObjects', { done: (p.objectsDone ?? 0).toLocaleString(), total: p.objectsTotal.toLocaleString() })}` : ''}
         </div>
       )}
       {/* 已检出 {n} 个文件 · {size}（SVN 检出：后端周期扫盘上报）；
@@ -154,6 +172,15 @@ export function TaskProgress(props: { p: TaskProgressInfo; /** 任务已完成�
           {p.phase === 'switch'
             ? t('shell.tasks.switchFiles', { n: p.files.toLocaleString() })
             : t('shell.tasks.checkoutFiles', { n: p.files.toLocaleString(), size: size(p.bytes) })}
+        </div>
+      )}
+      {/* 本次更新文件清单的摘要（拉取前预扫描；只有 GitHub 远端有）。完整清单在任务详情弹窗 */}
+      {p.manifest && (
+        <div className="dim small">
+          {t('shell.tasks.manifestSummary', {
+            n: (p.manifest.counts.A + p.manifest.counts.M + p.manifest.counts.D).toLocaleString(),
+            size: size(p.manifest.totalBytes),
+          })}
         </div>
       )}
       {!props.completed && (

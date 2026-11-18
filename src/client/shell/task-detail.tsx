@@ -25,7 +25,19 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
       void get
         .transferProgress(chan)
         .then((r) => {
-          if (r.ok) setProgress({ phase: r.phase!, bytes: r.bytes ?? 0, speed: r.speed ?? 0, total: r.total ?? 0, files: r.files, steps: r.steps, currentStep: r.currentStep });
+          if (r.ok)
+            setProgress({
+              phase: r.phase!,
+              bytes: r.bytes ?? 0,
+              speed: r.speed ?? 0,
+              total: r.total ?? 0,
+              files: r.files,
+              steps: r.steps,
+              currentStep: r.currentStep,
+              objectsDone: r.objectsDone,
+              objectsTotal: r.objectsTotal,
+              manifest: r.manifest,
+            });
         })
         .catch(() => {
           /* 轮询失败不打扰：保持上一次的进度 */
@@ -53,6 +65,18 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
   /** 状态字母统计（A 新增 / U 更新 / …） */
   const stats = new Map<string, number>();
   for (const f of files) stats.set(f.code, (stats.get(f.code) ?? 0) + 1);
+  /** 更新清单（拉取前预扫描）：git 不提供单文件实时进度，这里列的是"这次会下哪些文件" */
+  const manifest = progress?.manifest;
+  const manifestTotal = manifest ? manifest.counts.A + manifest.counts.M + manifest.counts.D : 0;
+  /** 单文件大小：KB/MB/GB（总大小用 TaskProgress 的 size 口径，这里要能显示 3 KB 这种小文件） */
+  const fmtFileSize = (n: number) =>
+    n >= 1024 * 1024 * 1024
+      ? `${(n / 1024 ** 3).toFixed(2)} GB`
+      : n >= 1024 * 1024
+        ? `${(n / 1024 ** 2).toFixed(2)} MB`
+        : n >= 1024
+          ? `${Math.round(n / 1024)} KB`
+          : `${n} B`;
   const status =
     task.status === 'running'
       ? // 进行中 · 已用 {n} 秒
@@ -113,7 +137,8 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
       {task.chan ? (
         <div className="small" style={{ marginBottom: 10 }}>
           <span className="dim">{t('shell.tasks.detailTarget')}：</span>
-          <span className="mono" style={{ wordBreak: 'break-all' }}>{task.chan}</span>
+          {/* 拉取通道形如 pull:<仓库根>（仅供轮询区分仓库），显示时去掉前缀只留路径 */}
+          <span className="mono" style={{ wordBreak: 'break-all' }}>{task.chan.replace(/^pull:/, '')}</span>
         </div>
       ) : null}
       {/* 无进度的任务（如部分本地操作）不显示进度区；已完成时定格数值（不显"正在…"） */}
@@ -128,6 +153,54 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
             {task.endedAt && (
               <span> · {t('shell.tasks.completedAt', { time: formatClock(task.endedAt) })}</span>
             )}
+          </div>
+        </div>
+      )}
+      {/* 更新清单（拉取前预扫描的"这次会下哪些文件"，GitHub 远端才有）。
+          git 的传输协议不提供单文件实时进度，所以这里只列文件与大小，不标"正在下/已完成"——
+          总进度在上面的进度条（按对象数）与已下载字节里。 */}
+      {manifest && (
+        <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+          <div className="dim small" style={{ marginBottom: 6 }}>
+            {t('shell.tasks.manifestTitle', { n: manifestTotal.toLocaleString(), size: fmtFileSize(manifest.totalBytes) })}
+            <span className="mono" style={{ marginLeft: 8, color: 'var(--ok)' }}>A {manifest.counts.A}</span>
+            <span className="mono" style={{ marginLeft: 8, color: 'var(--accent)' }}>M {manifest.counts.M}</span>
+            <span className="mono" style={{ marginLeft: 8, color: 'var(--err)' }}>D {manifest.counts.D}</span>
+          </div>
+          <div className="vcs-list" style={{ maxHeight: 240, minHeight: 60 }}>
+            {manifest.files.map((f) => (
+              <div key={`${f.status}:${f.path}`} className="vcs-row" style={{ cursor: 'default' }}>
+                <span
+                  className="mono small nowrap"
+                  style={{
+                    width: 30,
+                    textAlign: 'center',
+                    fontWeight: 700,
+                    color: f.status === 'A' ? 'var(--ok)' : f.status === 'D' ? 'var(--err)' : 'var(--accent)',
+                  }}
+                >
+                  {f.status}
+                </span>
+                <span
+                  className="mono small"
+                  style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  title={f.path}
+                >
+                  {f.path}
+                </span>
+                <span className="dim mono small nowrap" style={{ marginLeft: 8 }}>
+                  {f.status === 'D' ? '—' : fmtFileSize(f.size)}
+                </span>
+              </div>
+            ))}
+          </div>
+          {manifest.truncated && (
+            <div className="dim small" style={{ marginTop: 4 }}>
+              {t('shell.tasks.manifestTruncated', { n: manifest.files.length.toLocaleString() })}
+            </div>
+          )}
+          <div className="dim small" style={{ marginTop: 4 }}>
+            {t('shell.tasks.manifestNote')}
           </div>
         </div>
       )}

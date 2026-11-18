@@ -31,11 +31,9 @@ import { loadHistory } from './recent.js';
 import { readReleaseArtifacts, resolveDockerImages, type ReleaseDockerImage } from '../release-artifacts.js';
 import { t } from '../../shared/i18n/index.js';
 import { loadConfig } from '../../config.js';
-import { normalizeGhRepoName, parseGithub } from '../../shared/github.js';
+import { GITHUB_UA, normalizeGhRepoName, parseGithub } from '../../shared/github.js';
 
 const GITHUB_API = 'https://api.github.com';
-/** 调用 GitHub API 统一的 User-Agent（读/写共用；⚠ 产品名 token 含 "svn" 会被 WAF 403，见 githubFetch 注释） */
-const GITHUB_UA = 'vcs-client/1.0 (+https://github.com/yi-ding-dian/svn-git)';
 /** 单次请求超时（元信息与语言构成两接口并发；网络差时尽快降级） */
 const FETCH_TIMEOUT_MS = 8_000;
 /** 写请求超时（建/删仓库；比元信息读取宽松些。建仓库超时时 GitHub 侧可能已建好，前端重试会提示重名） */

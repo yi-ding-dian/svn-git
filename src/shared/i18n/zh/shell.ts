@@ -43,7 +43,11 @@ export const shell = {
   'shell.tasks.phaseCheckout': '正在检出文件…',
   'shell.tasks.phaseSwitch': '正在切换分支…',
   'shell.tasks.progressOf': '{done} / {total}',
+  // 拉取没有总字节（git 不报），总量是估算，标「约」
+  'shell.tasks.progressOfEst': '{done} / 约 {total}',
   'shell.tasks.progressSpeed': '{speed}/s',
+  // 对象数：拉取进度条就是按对象个数画的
+  'shell.tasks.progressObjects': '{done}/{total} 个对象',
   'shell.tasks.downloaded': '已下载 {done}',
   'shell.tasks.uploaded': '已上传 {done}',
   'shell.tasks.etaMin': '还需约 {n} 分钟',
@@ -136,6 +140,11 @@ export const shell = {
   // 已检出 {n} 个文件 · {size}
   'shell.tasks.checkoutFiles': '已检出 {n} 个文件 · {size}',
   'shell.tasks.switchFiles': '已处理 {n} 个文件',
+  // ---- 拉取前预扫描的更新清单（GitHub 远端；git 协议不提供文件名与单文件进度）----
+  'shell.tasks.manifestSummary': '本次更新 {n} 个文件 · {size}',
+  'shell.tasks.manifestTitle': '本次更新文件（{n} 个 · {size}）',
+  'shell.tasks.manifestNote': '下载前预扫描：大小是文件未压缩大小，不等于传输字节；git 不提供单文件实时进度',
+  'shell.tasks.manifestTruncated': '（仅显示前 {n} 条）',
   // 检出文件（共 {n} 个）
   'shell.tasks.detailFiles': '检出文件（共 {n} 个）',
   // （仅显示前 {m} 条）

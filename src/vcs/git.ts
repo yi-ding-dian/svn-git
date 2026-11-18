@@ -3,15 +3,25 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { statSync } from 'node:fs';
-import { run } from './exec.js';
+import { run, type RunResult } from './exec.js';
 import { decodeText, detectTextEncoding } from '../shared/text.js';
 import { parseDiff, buildPatch, blobOf, type ParsedDiff } from './hunks.js';
 import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.js';
 import { buildGitSshEnvironment, githubSshKeyArgument } from './git-ssh.js';
 import { loadConfig } from '../config.js';
-import { progressStart, progressDone, progressFromStderr } from '../transfer-progress.js';
+import { progressStart, progressDone, progressFromStderr, progressAttachManifest, progressClearManifest } from '../transfer-progress.js';
+import type { UpdateManifest } from '../transfer-progress.js';
+import { parseGithub } from '../shared/github.js';
+import { fetchGithubTree, parseLsTreeOutput, buildUpdateManifest } from './update-manifest.js';
 import { t } from '../shared/i18n/index.js';
 import type { CommitSummary, FileStatus, LogEntry, RepoInfo, RestorePreview, TagDetail, VcsResult, WorktreeInfo } from './types.js';
+
+/** 正在拉取的仓库根（跨 GitVcs 实例共享）。
+ *  为什么不用实例字段：侧栏 ⬇ 的 pullAny 每次 new 一个临时实例，和顶栏共存的 vcsOf 实例
+ *  不是同一个——只看自己实例的标志，后台远程检查照样会去和拉取抢同一条慢网络。
+ *  键用 path.resolve 归一化（两个实例的 root 来源不同，但指向同一目录）。 */
+const pullingRepos = new Set<string>();
+const pullKeyOf = (root: string) => path.resolve(root);
 
 /** 限并发遍历（分支多时避免一次性 spawn 几十个 git 进程） */
 async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -189,6 +199,9 @@ export class GitVcs {
    *  用单独的 run 读取而不是 this.exec——exec 本身要用它判断，会递归。
    *  null = 还没读过；'' = 没有 origin / 读取失败 */
   private originCache: string | null = null;
+  /** 本次 pull 的进度通道（`pull:<仓库根/目录>`）：侧栏可能同时拉多个项目，
+   *  通道按仓库区分，否则两个 pull 的进度与更新清单会互相覆盖 */
+  private pullChannel = '';
 
   constructor(private repo: RepoInfo) {}
 
@@ -203,12 +216,14 @@ export class GitVcs {
   private async exec(args: string[], extra: { stdinData?: string; timeoutMs?: number; signal?: AbortSignal; env?: Record<string, string>; decode?: 'utf8' | 'auto' } = {}) {
     // 传输类子命令（push / pull / fetch）自动上报进度，供顶栏任务面板显示"已传多少、多快"：
     //  - `--progress` 必须显式加（stderr 不是终端时 git 默认不吐）；
-    //  - 通道名就是子命令名——同一时刻只对一个仓库做传输（推送侧另有防重入），不必再拼路径；
+    //  - 通道名：push / fetch 直接用子命令名（同一时刻只对一个仓库做，另有防重入）；
+    //    pull 用 `pull:<仓库根/目录>`（侧栏可同时对多个项目点 ⬇，共用名字会串进度与清单，
+    //    见 GitVcs.pull 传入的 chan）；
     //  - **不逐处穿回调**：一次推送要跑 2~3 个 exec（无上游重试、认证重试），拉取同理，
     //    挂在这里一处到位，也免得将来新加的 push 变体漏掉。
     const i = gitSubcommandIndex(args);
     const sub = args[i] ?? '';
-    const chan = sub === 'push' || sub === 'pull' || sub === 'fetch' ? sub : '';
+    const chan = sub === 'pull' ? this.pullChannel || 'pull' : sub === 'push' || sub === 'fetch' ? sub : '';
     if (chan) progressStart(chan);
     // 私钥解析统一走 git-ssh.ts（绝对路径 + 文件存在性检查），与网络灯 /api/net-check 同源：
     //  配置写相对路径时只按当前仓库根解析，别的仓库没有这个文件就不加 -i，
@@ -905,15 +920,75 @@ export class GitVcs {
       .filter((s) => !/^(请|Please)/.test(s)); // i18n-ignore: 滤掉 git 的中文提示行
   }
 
-  /** git pull：外层只管"远程缓存失效"——结束（成功/失败/取消都一样）必须再失效一次。
+  /** 拉取：git pull + 进度通道（chan = `pull:<仓库根/目录>`）。
+   *  开工前异步预扫描「这次会下哪些文件」（仅 GitHub 远端，见 scanUpdateManifest），
+   *  清单到了就挂到进度通道——扫描与 pull 并行，不挡下载。
+   *
+   *  外层还负责"远程缓存失效"：结束（成功/失败/取消都一样）必须再失效一次。
    *  pull 内含 fetch，origin/* 可能在 pull 执行期间前移；只在开始时失效的话，**pull 进行中**
    *  发起的那次 preflight 会用前移前的 refs 算出旧 behind，并在 pull 结束后写回缓存，
    *  把刚失效的缓存又撑起来 60s（用户实报"拉取完成、横条和 ⬇55 还不消失"）。 */
-  async pull(signal?: AbortSignal): ReturnType<GitVcs['runPull']> {
+  async pull(signal?: AbortSignal, chan = 'pull'): ReturnType<GitVcs['runPull']> {
+    this.pullChannel = chan;
+    // 从这一刻起，本仓库的后台远程检查不再发起 fetch（见 remoteCheckCompute）：
+    // 它下的正是 pull 还没写完的那批对象，会和 pull 抢带宽、超时被杀还留 tmp_pack
+    const pullKey = pullKeyOf(this.repo.root);
+    pullingRepos.add(pullKey);
+    // 预扫描有自己的中止：拉取结束/取消后不再挂清单（避免晚到的清单安到下一次同名拉取上）
+    const scanCtl = new AbortController();
+    const onAbort = () => scanCtl.abort();
+    if (signal?.aborted) scanCtl.abort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
+    void this.scanUpdateManifest(scanCtl.signal)
+      .then((m) => {
+        if (m) progressAttachManifest(chan, m);
+      })
+      .catch(() => {
+        /* 预扫描失败只影响清单，不影响拉取本身 */
+      });
     try {
       return await this.runPull(signal);
     } finally {
+      scanCtl.abort();
+      signal?.removeEventListener('abort', onAbort);
+      progressClearManifest(chan);
+      this.pullChannel = '';
+      pullingRepos.delete(pullKey);
       this.invalidatePreflight();
+    }
+  }
+
+  /** 预扫描「这次更新会下载哪些文件」：只有 GitHub 远端能做（tree API 一次拿全树的 path/sha/size）。
+   *  远端提交已在本地（例如刚“获取远程”过）时直接跳过——这次拉取只剩合并，没有下载内容，
+   *  不值得再花约 141 KB 去查树。任何一步失败都返回 null：预扫描不能让拉取变慢或变失败。 */
+  private async scanUpdateManifest(signal: AbortSignal): Promise<UpdateManifest | null> {
+    try {
+      const gh = parseGithub(await this.originUrl());
+      if (!gh) return null;
+      // 上游分支（origin/main）。没有上游时 pull 会走 “pull origin <当前分支>” 兜底，
+      // 这里不猜分支——猜错会把别的分支的清单安到这次更新上。
+      const up = await this.exec(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { timeoutMs: 5_000, signal });
+      const upstream = up.stdout.trim(); // 形如 origin/main
+      const slash = upstream.indexOf('/');
+      if (up.code !== 0 || slash <= 0) return null;
+      const remoteName = upstream.slice(0, slash);
+      const branch = upstream.slice(slash + 1);
+      // originUrl() 只读 origin：上游是别的 remote 时，不能拿 origin 的 owner/repo 去查树
+      if (remoteName !== 'origin') return null;
+      // 远端当前提交
+      const ls = await this.exec(['ls-remote', 'origin', `refs/heads/${branch}`], { timeoutMs: 15_000, signal });
+      const sha = ls.stdout.trim().split(/\s+/)[0] ?? '';
+      if (ls.code !== 0 || !/^[0-9a-f]{40}$/i.test(sha)) return null;
+      // 远端提交已在本地：这次拉取只剩合并，没有要下载的对象
+      if ((await this.exec(['cat-file', '-e', `${sha}^{commit}`], { timeoutMs: 5_000, signal })).code === 0) return null;
+      // 本地树（-z：路径原样输出，中文/空格不受转义影响）与远端树比对
+      const local = await this.exec(['-c', 'core.quotepath=false', 'ls-tree', '-r', '-l', '-z', 'HEAD'], { timeoutMs: 30_000, signal });
+      if (local.code !== 0) return null;
+      const remote = await fetchGithubTree(gh.owner, gh.repo, sha, loadConfig().git?.password ?? '', signal);
+      if (!remote) return null;
+      return buildUpdateManifest(parseLsTreeOutput(local.stdout), remote);
+    } catch {
+      return null;
     }
   }
 
@@ -2087,6 +2162,12 @@ export class GitVcs {
    * 成功缓存 60s（远程提示存在即可，提交不必每次拉最新）；失败缓存 10s（弱网防连环挂起 15s） */
   private remoteCache: { time: number; ok: boolean; behind: number; ahead: number; updatedFiles: string[]; remoteLogs: LogEntry[] } | null = null;
 
+  /** 在途的远程检查（并发去重）：顶栏状态与侧栏探测同时请求时共用一次计算 */
+  private remoteCheckInflight: Promise<{
+    value: { behind: number; ahead: number; updatedFiles: string[]; remoteLogs: LogEntry[] };
+    stale: boolean;
+  }> | null = null;
+
   /** 远程缓存的代次号：invalidatePreflight 每次 +1。
    *  只清单个结果挡不住**已经在跑**的探测——它算完会无条件写回缓存，把刚失效的缓存
    *  用旧 behind 重新撑满 60s（拉取期间正好有一次 preflight 在跑，界面就一直挂着 ⬇55，
@@ -2113,18 +2194,35 @@ export class GitVcs {
     return r.value;
   }
 
+  /** 同一实例同一时刻只跑一次远程检查：顶栏状态与侧栏探测可能同时请求，
+   *  不合并就会并发两条 fetch（慢网下互相拖慢，还各在 .git/objects/pack 留一个 tmp_pack） */
   private async remoteCheckOnce() {
+    if (!this.remoteCheckInflight) {
+      this.remoteCheckInflight = this.remoteCheckCompute().finally(() => {
+        this.remoteCheckInflight = null;
+      });
+    }
+    return this.remoteCheckInflight;
+  }
+
+  /** 远程检查的实现体（可能联网 fetch，并发去重见 remoteCheckOnce） */
+  private async remoteCheckCompute() {
     const epoch = this.remoteEpoch; // 本次计算的代次：算完代次变了 = 结果基于旧 refs
     const now = Date.now();
     const c = this.remoteCache;
     if (c && now - c.time < (c.ok ? 60_000 : 10_000)) {
       return { value: { behind: c.behind, ahead: c.ahead, updatedFiles: c.updatedFiles, remoteLogs: c.remoteLogs }, stale: false };
     }
+    // 拉取进行中（本仓库任一实例）：后台检查**不发起 fetch**——它要下的正是 pull 还没写完的
+    // 那批对象，会和 pull 抢同一条慢网络；15s 超时被杀还会留下 tmp_pack 垃圾（用户实报）。
+    // 直接用现有 origin/* refs 本地算：数字最多滞后到拉取结束，而 pull 结束会失效缓存，
+    // 前端"拉完立即重查"拿到的就是新值。
+    const pulling = pullingRepos.has(pullKeyOf(this.repo.root));
     // 拉取远程元数据（静默，失败不阻塞）。
     // 15s 快速失败（网络不通时 60s 挂起会占住浏览器连接槽,阻塞目录加载）；
     // --no-tags：后台检查只需要 ahead/behind，不需要标签数据（慢网络下拉 tag 开销可观；
     // 正常的「拉取」照常同步标签，只有"光探测不拉取"时本地标签列表暂不刷新）
-    const fetched = await this.exec(['fetch', '--quiet', '--no-tags', 'origin'], { timeoutMs: 15_000 }).catch((e) => ({ code: -1, stdout: '', stderr: String(e?.message ?? '') }));
+    const fetched = pulling ? { code: 0, stdout: '', stderr: '' } : await this.backgroundFetch();
     const branch = await this.branch();
     const upstream = `origin/${branch}`;
     // ahead/behind 计数：git rev-list --left-right --count HEAD...origin/xxx
@@ -2158,6 +2256,49 @@ export class GitVcs {
     const stale = epoch !== this.remoteEpoch;
     if (!stale) this.remoteCache = { time: now, ok, behind, ahead, updatedFiles: [...remoteChanged], remoteLogs };
     return { value: { behind, ahead, updatedFiles: [...remoteChanged], remoteLogs }, stale };
+  }
+
+  /** 后台远程检查的静默 fetch（15s 超时失败）。
+   *  被杀/超时后清掉本次留下的 tmp_pack：git 被强杀来不及删自己的临时包（成功时会 rename 成正式 pack）。
+   *  清理只认「本次新增」且「当前没有 pull 在跑」——并发的另一条 fetch（手动"获取远程"）或
+   *  刚起的 pull 正在写的文件不能碰（Linux 上 unlink 正在写的文件会直接让那条传输失败）。 */
+  private async backgroundFetch(): Promise<RunResult> {
+    const packDir = path.join(this.repo.root, '.git', 'objects', 'pack');
+    const before = new Set<string>();
+    /** 24 小时前的 tmp_pack 一定是死进程留下的（正常结束的 fetch 会把它 rename 成正式 pack，
+     *  被取消/强杀的才留在这里）。慢网大仓库的拉取撑死几小时，24h 的阈值不会误删任何在跑的传输。
+     *  历史残骸（用户机器上曾攒了 19 个）也靠这里慢慢收掉，不必手动清。 */
+    const STALE_MS = 24 * 60 * 60_000;
+    try {
+      const now = Date.now();
+      for (const f of fs.readdirSync(packDir)) {
+        if (!f.startsWith('tmp_pack_')) continue;
+        before.add(f);
+        try {
+          if (now - fs.statSync(path.join(packDir, f)).mtimeMs > STALE_MS) fs.rmSync(path.join(packDir, f), { force: true });
+        } catch {
+          /* 文件刚被别的进程删掉/占用：忽略 */
+        }
+      }
+    } catch {
+      /* 目录异常：跳过清理，不影响检查 */
+    }
+    let res: RunResult;
+    try {
+      res = await this.exec(['fetch', '--quiet', '--no-tags', 'origin'], { timeoutMs: 15_000 });
+    } catch (e) {
+      res = { code: -1, stdout: '', stderr: String((e as Error)?.message ?? '') };
+    }
+    if (res.code !== 0 && !pullingRepos.has(pullKeyOf(this.repo.root))) {
+      try {
+        for (const f of fs.readdirSync(packDir)) {
+          if (f.startsWith('tmp_pack_') && !before.has(f)) fs.rmSync(path.join(packDir, f), { force: true });
+        }
+      } catch {
+        /* Windows 上被杀进程的句柄可能还没释放：清不掉就算了，不影响检查结果 */
+      }
+    }
+    return res;
   }
 
   // ============ Blame 追溯 ============

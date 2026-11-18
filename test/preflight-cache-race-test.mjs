@@ -110,6 +110,63 @@ console.log('== git preflight 竞态 ==');
   check('pull 结束后缓存已清空', vcs.remoteCache === null);
 }
 
+// ---------- git：拉取期间后台检查不发 fetch / 并发检查合并 / 超时 tmp_pack 清理 ----------
+//  背景（用户实报）：拉取时后台远程检查也在 fetch 同一批对象，抢带宽；15s 超时被杀后
+//  .git/objects/pack 里攒了 19 个 tmp_pack。这里把三个行为钉死。
+console.log('== git 后台检查与拉取互斥 ==');
+{
+  const vcs = new GitVcs(detectRepo(GIT_WORK));
+  const origExec = vcs.exec.bind(vcs);
+  let fetchCount = 0;
+  vcs.exec = async (args, opts) => {
+    if (args[0] === 'fetch') {
+      fetchCount += 1;
+      await sleep(300); // 制造"检查进行中"的窗口（真实环境 fetch 是秒级）
+    }
+    return origExec(args, opts);
+  };
+
+  // 1) 拉取进行中：后台检查必须跳过 fetch，只用本地 refs 算
+  const origRunPull = vcs.runPull.bind(vcs);
+  vcs.runPull = async (signal) => {
+    await sleep(500); // 把 pull 固定在"进行中"，好在这个窗口里发起检查
+    return origRunPull(signal);
+  };
+  vcs.invalidatePreflight();
+  fetchCount = 0;
+  const pullP = vcs.pull();
+  await sleep(50);
+  const during = await vcs.preflight();
+  check('拉取进行中：后台检查不发起 fetch', fetchCount === 0, `fetch=${fetchCount}`);
+  check('拉取进行中：仍能用本地 refs 算出 behind', during.behind === 0, `behind=${during.behind}`);
+  await pullP;
+  vcs.runPull = origRunPull;
+
+  // 2) 两个入口同时请求：合并成一次 fetch（原先会各起一条）
+  vcs.invalidatePreflight();
+  fetchCount = 0;
+  await Promise.all([vcs.preflight(), vcs.preflight()]);
+  check('并发远程检查合并为一次 fetch', fetchCount === 1, `fetch=${fetchCount}`);
+
+  // 3) fetch 超时被杀：清掉本次新产生的 tmp_pack，不动已有残骸
+  const packDir = path.join(GIT_WORK, '.git', 'objects', 'pack');
+  const oldTmp = path.join(packDir, 'tmp_pack_old_garbage');
+  fs.writeFileSync(oldTmp, 'old');
+  let fakeTmp = '';
+  vcs.exec = async (args) => {
+    if (args[0] === 'fetch') {
+      fakeTmp = path.join(packDir, `tmp_pack_test_${Date.now()}`);
+      fs.writeFileSync(fakeTmp, 'partial');
+      return { code: -1, stdout: '', stderr: 'timed out', timedOut: true };
+    }
+    return { code: 0, stdout: '', stderr: '' };
+  };
+  await vcs.backgroundFetch();
+  check('fetch 超时后清掉本次 tmp_pack', fakeTmp !== '' && !fs.existsSync(fakeTmp));
+  check('不误删已有的 tmp_pack 残骸', fs.existsSync(oldTmp));
+  fs.rmSync(oldTmp, { force: true });
+}
+
 // ---------- svn：同一竞态 ----------
 console.log('== svn preflight 竞态 ==');
 {

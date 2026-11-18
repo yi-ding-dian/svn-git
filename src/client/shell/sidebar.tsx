@@ -8,7 +8,7 @@ import { RemarkModal } from '../repo/remark.js';
 import { THEMES, THEME_PINNED } from './header/index.js';
 import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js';
 import { baseName, historyEntryKey, historyOpenPath } from '../shared/utils.js';
-import { startTask, useTasks } from '../shared/tasks.js';
+import { startTask, useTasks, pollTransferProgress } from '../shared/tasks.js';
 import { launchMagicFlight } from '../animations/index.js';
 import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
 import { t } from '../../shared/i18n/index.js';
@@ -272,33 +272,43 @@ export function Sidebar(props: {
     // 该项目已有拉取在跑：忽略（⬇ 按钮已显示 ⏳）
     if (tasks.some((tk) => tk.kind === `pull:${key}` && tk.status === 'running')) return;
     if (from) launchMagicFlight(from);
-    startTask({
+    /** 传输进度的停止函数（startTask 返回 id 之后才挂得上） */
+    let stopPoll: (() => void) | null = null;
+    const taskId = startTask({
       kind: `pull:${key}`,
       // 标题：项目名 · 分支 · 拉取（分支取探测值；未探测到就省略——同检出标题的拼接先例）
       title: `${baseName(fullPath)}${probes[key]?.branch ? ` · ${probes[key]!.branch}` : ''} · ${t('shell.tasks.pullAction')}`,
+      // 进度通道：任务详情窗据此实时轮询（通道名与后端 pullAny 一致）
+      chan: `pull:${fullPath}`,
       // 失败后可在铃铛里重试：拉取幂等，原样再拉一次
       retry: () => pullProject(h),
       run: async (signal) => {
-        const r = await post.pullAny(fullPath, signal);
-        if (r.ok) {
-          setRemoteBehinds((p) => ({ ...p, [key]: { behind: 0 } }));
-          // 刚拉完：重探该项目状态（↑● 角标立刻准——force 绕过后端缓存）。
-          // 它可能不是当前打开的项目，refreshTick（顶栏刷新）覆盖不到，单独重探
-          get
-            .projectStatus(fullPath, true)
-            .then((st) => setProbes((p) => ({ ...p, [key]: st })))
-            .catch(() => {});
-          // 拉的正好是当前条目：工作副本已变——顺带刷新主界面（文件列表/顶栏角标，否则还是旧数据）
-          if (isCurrentEntry(h)) props.onRefresh?.();
+        try {
+          const r = await post.pullAny(fullPath, signal);
+          if (r.ok) {
+            setRemoteBehinds((p) => ({ ...p, [key]: { behind: 0 } }));
+            // 刚拉完：重探该项目状态（↑● 角标立刻准——force 绕过后端缓存）。
+            // 它可能不是当前打开的项目，refreshTick（顶栏刷新）覆盖不到，单独重探
+            get
+              .projectStatus(fullPath, true)
+              .then((st) => setProbes((p) => ({ ...p, [key]: st })))
+              .catch(() => {});
+            // 拉的正好是当前条目：工作副本已变——顺带刷新主界面（文件列表/顶栏角标，否则还是旧数据）
+            if (isCurrentEntry(h)) props.onRefresh?.();
+          }
+          // 与「手动进该项目右键更新」对齐（用户定稿）：svn 警告拼进通知消息（列表里看得见 ⚠），
+          // 完整结果（文件清单/警告）装进通知详情 → 点通知弹**同一个「更新结果」窗**（不再是全文小窗）
+          const base = r.message ?? t('shell.recent.pullTip');
+          const msg = r.warnings?.length ? `${base}\n⚠ ${r.warnings.join('\n⚠ ')}` : base;
+          const detail = { kind: 'update' as const, dir: '', ok: r.ok, message: base, files: r.files, warnings: r.warnings };
+          return { ok: r.ok, message: msg, data: detail };
+        } finally {
+          stopPoll?.(); // 任务收尾就停轮询
         }
-        // 与「手动进该项目右键更新」对齐（用户定稿）：svn 警告拼进通知消息（列表里看得见 ⚠），
-        // 完整结果（文件清单/警告）装进通知详情 → 点通知弹**同一个「更新结果」窗**（不再是全文小窗）
-        const base = r.message ?? t('shell.recent.pullTip');
-        const msg = r.warnings?.length ? `${base}\n⚠ ${r.warnings.join('\n⚠ ')}` : base;
-        const detail = { kind: 'update' as const, dir: '', ok: r.ok, message: base, files: r.files, warnings: r.warnings };
-        return { ok: r.ok, message: msg, data: detail };
       },
     });
+    // 传输进度：通道名与后端 pullAny 一致（pull:<项目实际位置>），任务面板才有下载进度与更新清单
+    stopPoll = pollTransferProgress(taskId, `pull:${fullPath}`);
   };
   useEffect(() => {
     let alive = true;
