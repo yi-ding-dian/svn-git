@@ -412,6 +412,8 @@ export const fs = {
   'fs.pv.exitFullTitle': 'Exit fullscreen (Esc)',
   'fs.pv.fullTitle': 'Fill the window to read long documents; Esc to exit',
   'fs.pv.exitFull': 'Exit Fullscreen',
+  'fs.pv.fullEdit': 'Fullscreen edit',
+  'fs.pv.fullEditTitle': 'Fill the window to edit long files; Esc to exit',
   'fs.pv.full': 'Fullscreen',
   'fs.pv.mdPreviewTitle': 'Markdown rendered preview',
   'fs.pv.viewRaw': '📄 View Source',

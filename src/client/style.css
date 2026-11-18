@@ -1912,16 +1912,22 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 .preview-edit-area { position: relative; flex: 1; min-width: 0; display: flex; }
 .preview-edit-nums {
   flex: 0 0 auto; overflow: hidden;           /* 不要自己的滚动条：由 textarea 的 onScroll 驱动 */
-  padding: 10px 8px 10px 12px;                /* 上 10 = textarea 的 padding-top，不齐整列偏移 */
+  /* 上 10 = textarea 的 padding-top，不齐整列偏移；
+     底部补 textarea 横向滚动条的高度（--edit-sb-h），让行号列能滚到与 textarea 相同的底部 */
+  padding: 10px 8px calc(10px + var(--edit-sb-h, 0px)) 12px;
   text-align: right; user-select: none;
   color: var(--dim); background: var(--panel); border-right: 1px solid var(--border);
   font-family: var(--code-font, "JetBrains Mono", Consolas, "Courier New", monospace);
   font-size: var(--font-size, 14px);          /* 与 textarea 同字号同倍率 → 行高一致 */
-  line-height: 1.5;
+  /* 行高统一用同一个 calc 像素值（与 textarea/高亮层完全一致）：
+     无单位 1.5 由浏览器按字体计算，和行号列的绝对像素值可能差零点几像素，
+     长文件里逐行累积 → 「越往下文字越靠上」。 */
+  line-height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5));
 }
 .preview-edit-nums > div {
   font-size: 12px;                                   /* 行号小一号（与预览态 .sb-no 的观感一致） */
-  line-height: calc(var(--font-size, 14px) * 1.5);   /* ← 关键：按 textarea 的字号算行高。
+  height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5));        /* 固定行高：与 textarea 的行严格一致 */
+  line-height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5));   /* ← 关键：按 textarea 的字号算行高。
                                                         用 inherit/1.5 会跟着 12px 缩水，行号越往下越错位 */
   padding-right: 8px;
   min-width: 36px;
@@ -1932,17 +1938,21 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 .preview-edit-hl {
   position: absolute; inset: 0; overflow: hidden; pointer-events: none;
   box-sizing: border-box;
-  padding: 10px 12px;                         /* 与 textarea 一致 */
+  /* 右侧/底部补 textarea 滚动条的占位（--edit-sb-w / --edit-sb-h）：
+     高亮层没有滚动条，不补的话它比 textarea 少滚一个滚动条的宽/高，文字与行号会错位 */
+  padding: 10px calc(12px + var(--edit-sb-w, 0px)) calc(10px + var(--edit-sb-h, 0px)) 12px;
   background: var(--bg);
   font-family: var(--code-font, "JetBrains Mono", Consolas, "Courier New", monospace);
   font-size: var(--font-size, 14px);
-  line-height: 1.5;
+  /* 与行号列/textarea 同一个 calc 像素值（见 .preview-edit-nums 注释） */
+  line-height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5));
   tab-size: 4;
   white-space: pre;                           /* 尾随空格/制表符保真（与 textarea 同为 pre 行为） */
 }
 .preview-edit-hl > div {
   white-space: pre;
-  min-height: calc(var(--font-size, 14px) * 1.5);  /* 空行也占一行高（与 textarea 的空行一致） */
+  height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5));      /* 空行也占一行高（与 textarea 的空行一致） */
+  line-height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5));
 }
 .preview-edit {
   flex: 1;
@@ -1959,12 +1969,30 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
   position: relative;
   font-family: var(--code-font, "JetBrains Mono", Consolas, "Courier New", monospace);
   font-size: var(--font-size, 14px);
-  line-height: 1.5;
+  line-height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5));
   tab-size: 4;
   white-space: pre;                           /* 不折行：折了行号没法 1:1（用户选定方案） */
   overflow: auto;
 }
 .preview-edit::selection { background: rgba(88, 166, 255, .30); color: transparent; }
+/* 编辑区独立内容缩放（Ctrl+滚轮悬停在编辑区）：只放大代码与行号，界面不动。
+   字号、行高、行号列必须**同一个倍率**，否则 textarea（透明）与高亮层/行号列会错位。 */
+.preview-edit-wrap[data-content-zoom] .preview-edit,
+.preview-edit-wrap[data-content-zoom] .preview-edit-hl,
+.preview-edit-wrap[data-content-zoom] .preview-edit-nums {
+  font-size: calc(var(--font-size, 14px) * var(--content-zoom, 1));
+  line-height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5 * var(--content-zoom, 1)));
+}
+.preview-edit-wrap[data-content-zoom] .preview-edit-nums > div {
+  font-size: calc(12px * var(--content-zoom, 1));
+  height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5 * var(--content-zoom, 1)));
+  line-height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5 * var(--content-zoom, 1)));
+  min-width: calc(36px * var(--content-zoom, 1));
+}
+.preview-edit-wrap[data-content-zoom] .preview-edit-hl > div {
+  height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5 * var(--content-zoom, 1)));
+  line-height: var(--edit-line-h, calc(var(--font-size, 14px) * 1.5 * var(--content-zoom, 1)));
+}
 /* 编辑态搜索：命中词常亮（textarea 字形透明，只有下面这层高亮层可见）。
    颜色与预览态的 pv-hit / pv-cur 一致：普通命中淡黄、当前跳转行深黄+描边 */
 .preview-edit-hl mark { background: rgba(212, 167, 50, .25); color: inherit; border-radius: 2px; }

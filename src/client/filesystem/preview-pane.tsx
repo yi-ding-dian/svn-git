@@ -121,10 +121,9 @@ export function PreviewPane(props: Props) {
   const [matchIdx, setMatchIdx] = useState(0);
   /** md/图片预览图片放大查看（点击图片 → 全屏显示原图） */
   const [imgViewer, setImgViewer] = useState<string | null>(null);
-  /** 内联编辑：是否在编辑中 + 保存后重读的触发键（target 没变，只能靠它）；
-   *  编辑本体（草稿/三件套/保存）在独立组件 InlineEditor 里（preview 与 diff 右栏共用） */
+  /** 内联编辑：编辑本体（草稿/三件套/保存）在独立组件 InlineEditor 里（preview 与 diff 右栏共用）。
+   *  保存后**留在编辑态**，只把正文同步成刚保存的内容。 */
   const [editing, setEditing] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
   /** 编辑器的命令式句柄（保存按钮触发）+ 脏状态（保存按钮点亮） */
   const editorRef = useRef<InlineEditorHandle>(null);
   const [editDirty, setEditDirty] = useState(false);
@@ -310,7 +309,7 @@ export function PreviewPane(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [target, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps -- target 每次打开都是新对象；reloadKey 用于保存后重读
+  }, [target]); // eslint-disable-line react-hooks/exhaustive-deps -- target 每次打开都是新对象
 
   /** 进入内联编辑（「编辑」菜单的第一项）。**只对 UTF-8 开**，原因见 openEditMenu */
   const startEdit = () => {
@@ -405,6 +404,12 @@ export function PreviewPane(props: Props) {
         if (e.key === 'Escape') setSearchActive(false);
         return;
       }
+      // 全屏（浏览或编辑）：Esc 先退全屏（编辑态退全屏不影响草稿）
+      if (fullRef.current && e.key === 'Escape') {
+        e.preventDefault();
+        setFull(false);
+        return;
+      }
       // 编辑态：Esc 不退出（避免静默丢草稿）；有改动时提示先保存或点「取消」
       if (editingRef.current) {
         if (e.key === 'Escape' && editDirtyRef.current) {
@@ -412,11 +417,6 @@ export function PreviewPane(props: Props) {
           // 有未保存的修改，先保存或点「取消」
           props.onError(t('fs.pv.unsavedEdit'));
         }
-        return;
-      }
-      if (fullRef.current && e.key === 'Escape') {
-        e.preventDefault();
-        setFull(false); // 全屏下 Esc 先退全屏（←/Backspace 仍是返回列表）
         return;
       }
       if (e.key === 'Escape' || e.key === 'ArrowLeft' || e.key === 'Backspace') {
@@ -695,8 +695,21 @@ export function PreviewPane(props: Props) {
                 </button>
               </Tooltip>
             )}
-            {/* 💾 保存（有修改才点亮） */}
-            <button className={`mini${editDirty ? ' primary' : ''}`} onClick={() => editorRef.current?.save()}>{t('fs.pv.saveBtn')}</button>
+            {/* 编辑态全屏：与全屏浏览同一套（pv-full），铺满窗口写/看长文；Esc 退出 */}
+            <Tooltip content={full ? t('fs.pv.exitFullTitle') : t('fs.pv.fullEditTitle')}>
+              <button className={`mini ${full ? 'primary' : ''}`} onClick={() => setFull((v) => !v)}>
+                {/* ⛶ 退出全屏 / ⛶ 全屏编辑 */}
+                ⛶ {full ? t('fs.pv.exitFull') : t('fs.pv.fullEdit')}
+              </button>
+            </Tooltip>
+            {/* 💾 保存（有修改才点亮；保存成功后留在编辑态，按钮自动变灰） */}
+            <button
+              className={`mini${editDirty ? ' primary' : ''}`}
+              disabled={!editDirty}
+              onClick={() => editorRef.current?.save()}
+            >
+              {t('fs.pv.saveBtn')}
+            </button>
             {/* 取消 */}
             <button className="mini" onClick={() => setEditing(false)}>{t('common.cancel')}</button>
           </>
@@ -761,9 +774,11 @@ export function PreviewPane(props: Props) {
           onDirtyChange={setEditDirty}
           onDraftChange={setEditTocText}
           search={editSearch}
-          onSaved={(m) => {
-            setEditing(false);
-            setReloadKey((k) => k + 1); // 重读内容（保存后预览刷新）
+          onSaved={(m, saved) => {
+            // 保存后**保持编辑态**（编辑器内部已把基线前移，保存按钮变灰）；
+            // 同步正文：之后切「查看原文/预览」或退出编辑时显示的是刚保存的内容。
+            // 用回调带回的 saved（就是本次写盘内容），不要读 editTocText —— 闭包里的 state 可能还是旧值
+            setText(saved);
             props.onSaved?.(m);
           }}
           onError={(m) => props.onError(m)}

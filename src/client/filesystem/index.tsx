@@ -2425,12 +2425,13 @@ export function FsView(props: Props) {
             // 内容区右键复制 / Ctrl+A 复制结果提示
             onToast={props.onToast}
             onSaved={(msg) => {
-              // 内联编辑保存后：文件状态会从干净变成 M（或未版本化项内容变了），列表必须重拉；
-              // 树模式同样要重载（带展开状态的节点）
+              // 内联编辑保存后：文件状态会从干净变成 M（或未版本化项内容变了），角标要更新。
+              // **不能走 load()**：load 会 setPreview(null)，把还开着编辑的用户踢回列表。
+              // 只补状态码即可（deep 顺带把父目录的聚合角标刷新）。
               props.onToast(msg);
               invalidateCache();
               if (mode === 'tree') reloadOpenNodes();
-              else void load(dir, true, true);
+              else void refreshCodes(dir, true);
             }}
           />
         )}

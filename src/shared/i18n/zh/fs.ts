@@ -412,6 +412,8 @@ export const fs = {
   'fs.pv.exitFullTitle': '退出全屏（Esc）',
   'fs.pv.fullTitle': '铺满窗口阅读长文，Esc 退出',
   'fs.pv.exitFull': '退出全屏',
+  'fs.pv.fullEdit': '全屏编辑',
+  'fs.pv.fullEditTitle': '铺满窗口编辑长文，Esc 退出',
   'fs.pv.full': '全屏浏览',
   'fs.pv.mdPreviewTitle': 'Markdown 渲染预览',
   'fs.pv.viewRaw': '📄 查看原文',

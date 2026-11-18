@@ -5,7 +5,7 @@
  *  jumpLine：进入时光标定位到该行 + 滚动居中（diff 里"定位到当前差异处"用）。
  *  非 UTF-8 / 超限文件的准入由调用方把关（读取时带回的 encoding/truncated 事实）。
  *  **每次进入编辑应是新挂载**（调用方用条件渲染/key 保证）：定位只在挂载时做一次。 */
-import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { post } from '../shared/api.js';
 import { highlightLine, langOf } from '../shared/highlight.js';
 import { t } from '../../shared/i18n/index.js';
@@ -88,13 +88,52 @@ export const InlineEditor = forwardRef<
     /** 编辑态搜索（调用方算好的命中行）：命中词常亮，当前跳转行深色。
      *  只把词传给命中行——未命中行的 memo 不因搜索词变化重渲染。 */
     search?: { query: string; hitLines: Set<number>; activeLine: number };
-    onSaved: (message: string) => void;
+    /** 保存成功：message 给提示；text 是**刚写盘的草稿**（LF）——
+     *  调用方要同步正文时直接用它，别依赖 onDraftChange 的 state（回调闭包里可能还是旧值） */
+    onSaved: (message: string, text: string) => void;
     onError: (message: string) => void;
   }
 >(function InlineEditor(props, ref) {
   const [draft, setDraft] = useState(props.initialText);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const numsRef = useRef<HTMLDivElement | null>(null);
+  /** textarea 滚动条占位（横向条高 / 纵向条宽）：高亮层与行号列没有滚动条，
+   *  **必须把这部分补进它们的内容尺寸**（CSS 见 --edit-sb-*），否则滚到底部时
+   *  它们比 textarea 少滚一个滚动条的高度/宽度 → 行号与文字错位（用户实报）。
+   *  部分浏览器滚动条不占空间（overlay），测量值为 0，不影响现有布局。 */
+  const [sb, setSb] = useState({ h: 0, w: 0 });
+  /** 统一行高（整数像素）：textarea 的光标按 line-height 定位，高亮层/行号列按行 div 高度定位；
+   *  缩放后行高常是 14.4px 这类小数，浏览器把行 div 吸附到 1/64px（14.391），
+   *  textarea 内部行位置却按 14.4 走 → 每行差零点零几像素，越往下越明显（用户实报「标记位越往下越靠上」）。
+   *  取整成整数像素后三层完全一致（缩放多少都不会再有吸附差）。 */
+  const [lineH, setLineH] = useState(0);
+  /** 测量 textarea 的滚动条占位，并跟随内容/窗口尺寸变化更新（draft 变化时滚动条可能出现/消失） */
+  useLayoutEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const measure = () => {
+      const h = Math.max(0, ta.offsetHeight - ta.clientHeight);
+      const w = Math.max(0, ta.offsetWidth - ta.clientWidth);
+      setSb((p) => (p.h === h && p.w === w ? p : { h, w }));
+      // 行高取整：字号已包含内容缩放（CSS calc），×1.5 后四舍五入成整数像素
+      const fs = parseFloat(getComputedStyle(ta).fontSize) || 14;
+      const lh = Math.max(1, Math.round(fs * 1.5));
+      setLineH((p) => (p === lh ? p : lh));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(ta);
+    // 内容缩放（--content-zoom）与字号（--font-size）都写在根节点 style 上：变化时重新取整
+    const mo = new MutationObserver(measure);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+    mo.observe(document.body, { attributes: true, attributeFilter: ['style'] });
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [draft]);
   const hlRef = useRef<HTMLDivElement | null>(null);
   /** 三件套滚动同步：高亮层横竖都跟（wrap=off 有横向滚动），行号列只跟纵向 */
   const syncScroll = () => {
@@ -105,8 +144,10 @@ export const InlineEditor = forwardRef<
       hlRef.current.scrollLeft = taRef.current.scrollLeft;
     }
   };
-  /** 脏检测：基准 = 初始文本 LF 规范化（textarea 内部总是 LF） */
-  const dirty = draft !== props.initialText.replace(/\r\n/g, '\n');
+  /** 脏检测基准：初始文本 LF 规范化；**保存成功后更新为已保存的草稿**——
+   *  这样保存后留在编辑态，按钮自动变灰，下一次修改再亮起。 */
+  const [savedText, setSavedText] = useState(props.initialText.replace(/\r\n/g, '\n'));
+  const dirty = draft !== savedText;
   useEffect(() => {
     props.onDirtyChange(dirty);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在脏状态翻转时通知
@@ -185,8 +226,10 @@ export const InlineEditor = forwardRef<
               props.onError(r.message || t('fs.pv.saveFailed'));
               return;
             }
-            // 已保存
-            props.onSaved(r.message || t('fs.pv.saved'));
+            // 已保存（把刚写盘的草稿一并带回：父级据此同步正文，不依赖异步上报的 state）
+            props.onSaved(r.message || t('fs.pv.saved'), draft);
+            // 基线前移：保存后不退出编辑，按钮变灰；继续改会重新变亮
+            setSavedText(draft);
           })
           // 保存失败: {msg}
           .catch((e: Error) => props.onError(t('fs.pv.saveFailedMsg', { msg: e.message })));
@@ -199,7 +242,19 @@ export const InlineEditor = forwardRef<
     [draft],
   );
   return (
-    <div className="preview-edit-wrap">
+    // data-content-zoom：鼠标在编辑区时 Ctrl+滚轮**只缩放文件内容**（界面不动）；
+    // 字号/行高/行号列在 CSS 里按 --content-zoom 同步放大，三者保持 1:1 对齐
+    <div
+      className="preview-edit-wrap"
+      data-content-zoom=""
+      style={
+        {
+          '--edit-sb-h': `${sb.h}px`,
+          '--edit-sb-w': `${sb.w}px`,
+          ...(lineH ? { '--edit-line-h': `${lineH}px` } : {}),
+        } as React.CSSProperties
+      }
+    >
       {/* 行号列：行数与行高都跟 textarea 一致（见 CSS 的 calc），滚动由 textarea 驱动 */}
       <div className="preview-edit-nums" ref={numsRef}>
         {draft.split('\n').map((_, i) => (
