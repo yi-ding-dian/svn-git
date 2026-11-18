@@ -6,10 +6,11 @@
  *  - 选择持久化在 localStorage（svngit-mdtheme）；键失效自动回退「跟随界面」
  *
  *  为什么不用全局主题：读者常想让界面保持浅色、文档区单独用护眼绿/夜间（反过来也一样）。
+ *  纯逻辑文件：主题气泡组件在 ui/md-theme-popover.tsx（shared 不放 JSX）。
  */
-import React, { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
-import { deriveThemeVars } from '../shared/theme.js';
+import { deriveThemeVars } from './theme.js';
 
 /** md 阅读主题 = 6 色（其余变量推导）。key='follow' 表示跟随界面主题 */
 export interface MdTheme {
@@ -69,66 +70,8 @@ export function mdThemeName(key: string): string {
 /** key → 打在预览容器上的 inline 变量；「跟随界面」返回 undefined（不覆盖）
  *  另外显式给容器 background/color：容器 CSS 本来就是 `background: var(--panel)`（差异视图要的），
  *  文档区要的是主题的页面色（--bg），且文字不能继续继承界面的色（深色文档 + 浅色界面会看不见字）。 */
-export function mdThemeVars(key: string): React.CSSProperties | undefined {
+export function mdThemeVars(key: string): CSSProperties | undefined {
   const th = MD_THEMES.find((x) => x.key === key);
   if (!th || th.group === 'follow') return undefined;
-  return { ...deriveThemeVars(th), background: 'var(--bg)', color: 'var(--text)' } as unknown as React.CSSProperties;
-}
-
-/** 主题气泡：贴按钮弹出，越界回退视口内（与全局主题气泡同一套 .ctx-menu/.theme-chip 样式） */
-export function MdThemePopover(props: { x: number; y: number; current: string; onPick: (key: string) => void; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState({ left: props.x, top: props.y });
-
-  useEffect(() => {
-    if (!ref.current) return;
-    const r = ref.current.getBoundingClientRect();
-    let left = props.x;
-    let top = props.y;
-    if (left + r.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - r.width - 8);
-    if (top + r.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - r.height - 8);
-    setPos({ left, top });
-  }, [props.x, props.y]);
-
-  const chip = (th: MdTheme) => (
-    <button
-      key={th.key}
-      className={`theme-chip ${props.current === th.key ? 'active' : ''}`}
-      title={t(th.nameKey)}
-      onClick={() => props.onPick(th.key)}
-    >
-      <span
-        className="theme-dot"
-        style={th.group === 'follow' ? { background: 'var(--bg)', borderColor: 'var(--accent)' } : { background: th.bg, borderColor: th.accent }}
-      />
-      <span className="theme-chip-name">{t(th.nameKey)}</span>
-    </button>
-  );
-
-  return (
-    <>
-      <div
-        style={{ position: 'fixed', inset: 0, zIndex: 299 }}
-        onClick={props.onClose}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          props.onClose();
-        }}
-      />
-      <div ref={ref} className="ctx-menu theme-pop" style={{ left: pos.left, top: pos.top }}>
-        {/* md 阅读主题 */}
-        <div className="theme-pop-group">{t('fs.mdTheme.popTitle')}</div>
-        {/* 「跟随界面」单独一行占满：3 列网格里名字会被截成「跟随…」 */}
-        <div className="theme-pop-grid" style={{ gridTemplateColumns: '1fr' }}>
-          {MD_THEMES.filter((th) => th.group === 'follow').map(chip)}
-        </div>
-        {/* 浅色 */}
-        <div className="theme-pop-group">{t('look.group.light')}</div>
-        <div className="theme-pop-grid">{MD_THEMES.filter((th) => th.group === 'light').map(chip)}</div>
-        {/* 深色 */}
-        <div className="theme-pop-group">{t('look.group.dark')}</div>
-        <div className="theme-pop-grid">{MD_THEMES.filter((th) => th.group === 'dark').map(chip)}</div>
-      </div>
-    </>
-  );
+  return { ...deriveThemeVars(th), background: 'var(--bg)', color: 'var(--text)' } as unknown as CSSProperties;
 }
