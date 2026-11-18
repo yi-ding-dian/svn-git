@@ -28,7 +28,7 @@ import { handle as handleHistory } from './routes/history.js';
 import { handle as handleRecent } from './routes/recent.js';
 import { rememberRunDir } from './recent/history-store.js';
 import { handle as handlePractice } from './routes/practice.js';
-import { handle as handleRepoBrowse } from './routes/repobrowse.js';
+import { handle as handleRepoBrowse } from './routes/repobrowse/index.js';
 import { handle as handleGithub } from './routes/github/index.js';
 import { handle as handleSvnAuth } from './routes/svn-auth.js';
 import { handle as handleConfig } from './routes/config.js';

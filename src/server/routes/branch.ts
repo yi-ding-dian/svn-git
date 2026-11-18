@@ -4,7 +4,7 @@ import { vcsOf, invalidateStatusCache, runVcs } from '../repo-context.js';
 import { authErrorOf, MSG_UNSUPPORTED_OP } from '../errors.js';
 import { progressDone } from '../../transfer-progress.js';
 import { invalidateRemoteProbe } from '../../server/recent/probe.js';
-import { findCacheCreds } from './svn-auth.js';
+import { findCacheCreds } from '../../vcs/svn/auth-cache.js';
 import { t } from '../../shared/i18n/index.js';
 import type { VcsResult } from '../../vcs/index.js';
 import type { Ctx } from '../http/response.js';

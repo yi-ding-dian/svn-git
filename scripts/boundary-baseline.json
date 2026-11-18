@@ -1,8 +1,1 @@
-[
-  {
-    "scope": "server",
-    "rule": "routes-cross-domain",
-    "file": "src/server/routes/branch.ts",
-    "target": "./svn-auth.js"
-  }
-]
+[]
