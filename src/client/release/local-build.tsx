@@ -9,7 +9,7 @@ import { get, post, type LocalBuildArtifact, type LocalBuildDetect } from '../sh
 import { ResultLine } from '../ui/result-line.js';
 import { IconPackage, IconFolder, IconOk, IconErr } from '../ui/icons.js';
 import { formatSize } from '../shared/format-size.js';
-import type { PickDirRequest } from './branch/branch-shared.js';
+import type { PickDirRequest } from '../shared/modal-requests.js';
 import { t } from '../../shared/i18n/index.js';
 
 type Phase = 'detecting' | 'ready' | 'running' | 'cancelling' | 'done' | 'failed' | 'timeout' | 'cancelled' | 'error';

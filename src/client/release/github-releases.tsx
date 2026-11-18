@@ -8,7 +8,7 @@ import { HelpNote } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
 import { formatSize } from '../shared/format-size.js';
 import { DockerImagesSection } from './docker-images.js';
-import { GitTokenForm } from './git-token-form.js';
+import { TokenForm } from '../ui/token-form.js';
 import { relTime } from '../shared/relative-time.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -259,7 +259,7 @@ export const GitHubReleasesPanel = forwardRef<
               </div>
               {authError && tokenForm && (
                 <div style={{ marginTop: 8 }}>
-                  <GitTokenForm
+                  <TokenForm
                     onToast={(m, err) => {
                       if (err) setError(m);
                     }}

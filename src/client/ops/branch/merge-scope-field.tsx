@@ -3,7 +3,7 @@
  *  按工作副本根换算成合并用的相对路径（pathRel）后回填。 */
 import React from 'react';
 import { t } from '../../../shared/i18n/index.js';
-import type { PickDirRequest } from './branch-shared.js';
+import type { PickDirRequest } from '../../shared/modal-requests.js';
 
 /** 选中的绝对路径 → 相对工作副本根的合并范围路径。
  *  不在工作副本内返回 null（防止把范围指到分支外）。Windows 的 `\` 与 `/` 都接受。 */

@@ -9,7 +9,7 @@
  *    鼠标悬停在文件内容区时由 app.tsx 的 Ctrl+滚轮调它，界面字号保持不动。
  */
 import { useCallback, useEffect, useState } from 'react';
-import { THEMES } from '../shell/header/index.js';
+import { THEMES } from '../shared/themes.js';
 import { deriveThemeVars, THEME_VAR_KEYS, type MyTheme } from '../shared/theme.js';
 import { FONT_MIN, FONT_MAX } from './font-modal.js';
 

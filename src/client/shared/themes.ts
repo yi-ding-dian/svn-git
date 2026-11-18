@@ -1,5 +1,5 @@
-/** 内置主题清单：顶栏主题气泡与侧边栏快捷圆点共用（header 域内数据，不依赖组件）。 */
-import type { I18nKey } from '../../../shared/i18n/index.js';
+/** 内置主题清单：顶栏主题气泡与侧边栏快捷圆点共用（设计系统数据，不依赖组件）。 */
+import type { I18nKey } from '../../shared/i18n/index.js';
 
 /** 内置主题项（THEMES 的元素类型；theme-popover 的 chip 复用同一结构） */
 export type ThemeDef = { key: string; nameKey: I18nKey; color: string; group: 'light' | 'dark' };

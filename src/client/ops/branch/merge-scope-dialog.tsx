@@ -4,7 +4,8 @@ import { ConfirmModal } from '../../ui/prompt.js';
 import { cmdOfRepo } from '../../shared/cmd-preview.js';
 import { isImeComposing } from '../../shared/utils.js';
 import { t } from '../../../shared/i18n/index.js';
-import { mergeSourceNoteOf, type PickDirRequest } from './branch-shared.js';
+import { mergeSourceNoteOf } from './branch-shared.js';
+import type { PickDirRequest } from '../../shared/modal-requests.js';
 import { MergeScopeField } from './merge-scope-field.js';
 import { MergeSourceTarget } from './merge-source-target.js';
 

@@ -5,7 +5,7 @@ import { IconClock, IconEye, IconEyeClosed, IconFolder, IconRename, IconServer }
 import { ContextMenu } from '../ui/context-menu.js';
 import { Tooltip, TipHint } from '../ui/tooltip.js';
 import { RemarkModal } from '../repo/remark.js';
-import { THEMES, THEME_PINNED } from './header/index.js';
+import { THEMES, THEME_PINNED } from '../shared/themes.js';
 import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js';
 import { baseName } from '../shared/utils.js';
 import { historyEntryKey, historyOpenPath } from '../repo/recent.js';

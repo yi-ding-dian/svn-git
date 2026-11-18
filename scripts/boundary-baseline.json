@@ -1,15 +1,5 @@
 [
   {
-    "rule": "domain-shell",
-    "file": "src/client/appearance/theme-popover.tsx",
-    "target": "../shell/header/index.js"
-  },
-  {
-    "rule": "domain-shell",
-    "file": "src/client/appearance/use-appearance.ts",
-    "target": "../shell/header/index.js"
-  },
-  {
     "scope": "server",
     "rule": "main-routes",
     "file": "src/main/index.ts",

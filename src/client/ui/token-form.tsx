@@ -1,16 +1,17 @@
-/** Git 推送 / 发布凭据输入（用户名 + Token）：Git 信息弹窗与「发布历史 401」处共用。
+/** 通用凭据输入（用户名 + Token）：Git 信息弹窗与发布历史 401 处共用。
  *
  *  Token 存在服务端配置里（AES-256-GCM 加密），**不回显**：只显示「已设置/未设置」，
  *  输入新值保存后清空输入框。保存走 /api/git-auth（会清掉 GitHub 身份缓存）。
  *
- *  放在 ops/ 而不是 repo/：发布历史（ops）与 Git 信息（ops）都要用，业务域之间不能互相引用。
+ *  放在 ui/：只依赖 props + shared，ops 与 release 两个业务域都可直接复用，避免跨域引用。
+ *  文案沿用既有 ops.gitInfo.* 键（键名中立化会牵动语言包，无必要）。
  */
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 
-export function GitTokenForm(props: {
+export function TokenForm(props: {
   onToast: (m: string, err?: boolean) => void;
   /** 保存成功（调用方据此刷新数据 / 收起表单） */
   onSaved?: () => void;

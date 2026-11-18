@@ -8,7 +8,7 @@ import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 import { SecureCleanModal } from './secure-clean.js';
-import { GitTokenForm } from './git-token-form.js';
+import { TokenForm } from '../ui/token-form.js';
 
 // ==================== Git 信息与配置 ====================
 export function GitInfoModal(props: {
@@ -205,7 +205,7 @@ export function GitInfoModal(props: {
               </FormRow>
               {/* Git 推送 / 发布凭据（GitHub Token）：HTTPS 推送与 GitHub API 共用；加密存储、不回显 */}
               <FormRow label={t('ops.gitInfo.authLabel')}>
-                <GitTokenForm onToast={props.onToast} onSaved={props.onChanged} />
+                <TokenForm onToast={props.onToast} onSaved={props.onChanged} />
               </FormRow>
               {/* SSH 私钥配置 */}
               <FormRow label={t('ops.gitInfo.sshKeyLabel')}>

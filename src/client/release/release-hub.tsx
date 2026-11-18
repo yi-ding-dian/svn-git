@@ -12,7 +12,7 @@ import { LocalBuildPanel } from './local-build.js';
 import { ReleaseCleanupModal } from './release-cleanup.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { post } from '../shared/api.js';
-import type { PickDirRequest } from './branch/branch-shared.js';
+import type { PickDirRequest } from '../shared/modal-requests.js';
 import { t } from '../../shared/i18n/index.js';
 
 export function ReleaseHubModal(props: {
