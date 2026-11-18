@@ -377,7 +377,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           return true;
         }
         const unpushed = (await vcs.unpushedLog?.()) ?? [];
-        sendJson(res, 200, { count: unpushed.length, unpushed });
+        // 列表有 200 条上限（unpushedLog 的 -n 200）；count 用真实总数，避免"477 变成 200"
+        const total = (await vcs.unpushedCount?.()) ?? unpushed.length;
+        sendJson(res, 200, { count: total, total, unpushed });
         return true;
       }
 

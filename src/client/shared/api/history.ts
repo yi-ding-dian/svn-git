@@ -55,7 +55,7 @@ export const getHistory = {
   /** 提交完整说明（标题+正文）：改注释弹窗回显用（列表接口只带 %s 标题，不含正文） */
   commitMessage: (rev: string) => api<{ message: string }>(`/api/commit-message?rev=${encodeURIComponent(rev)}`),
   gitUnpushedCount: () => api<{ count: number }>('/api/git-unpushed-count'),
-  gitUnpushed: () => api<{ count: number; unpushed: LogEntry[] }>('/api/git-unpushed'),
+  gitUnpushed: () => api<{ count: number; total: number; unpushed: LogEntry[] }>('/api/git-unpushed'),
   /** 单文件的逐块差异（hunk 级部分提交用） */
   diffHunks: (path: string) => api<ParsedDiff>(`/api/diff-hunks?path=${encodeURIComponent(path)}`),
 };

@@ -570,6 +570,7 @@ export const ops = {
   'ops.push.checkFailed': '远程状态检查失败，可尝试直接推送',
   'ops.push.conflictRisk': '⚠ 以下文件双方都有修改，推送后拉取时可能冲突：',
   'ops.push.unpushedList': '未推送提交（点击展开变更文件）：',
+  'ops.push.truncated': '列表仅显示最近 {n} 条，共 {total} 条未推送提交',
   'ops.push.noUnpushed': '没有未推送的提交',
   'ops.push.tipHead': '（未推送的最新提交，右键可修改注释/撤销）',
   'ops.push.tipOther': '（右键可修改注释；撤销仅对最近一次提交生效）',

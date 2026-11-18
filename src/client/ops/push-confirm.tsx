@@ -48,6 +48,8 @@ export function PushConfirmModal(props: {
 }) {
   const [loading, setLoading] = useState(true);
   const [unpushed, setUnpushed] = useState<LogEntry[]>([]);
+  /** 未推送的真实总数：列表接口最多返回 200 条，标题/按钮要用总数 */
+  const [unpushedTotal, setUnpushedTotal] = useState(0);
   /** 实际推送命令：首次推送（分支没有 upstream）会自动带 -u 建立跟踪 */
   const [pushCmd, setPushCmd] = useState('git push');
   const [pf, setPf] = useState<Awaited<ReturnType<typeof get.preflight>> | null>(null);
@@ -77,7 +79,10 @@ export function PushConfirmModal(props: {
   const reload = () => {
     get
       .gitUnpushed()
-      .then((r) => setUnpushed(r.unpushed))
+      .then((r) => {
+        setUnpushed(r.unpushed);
+        setUnpushedTotal(r.total);
+      })
       .catch(() => {});
   };
 
@@ -168,7 +173,10 @@ export function PushConfirmModal(props: {
     get
       .gitUnpushed()
       .then((r) => {
-        if (!cancelled) setUnpushed(r.unpushed);
+        if (!cancelled) {
+          setUnpushed(r.unpushed);
+          setUnpushedTotal(r.total);
+        }
       })
       .catch(() => {});
     get
@@ -189,7 +197,7 @@ export function PushConfirmModal(props: {
     <div className="modal-mask">
       <ResizableModal width={680} minWidth={520} onEsc={props.onCancel}>
         {/* 🔄 确认推送（{n} 个未推送提交） */}
-        <h3>{t('ops.push.title', { n: unpushed.length })}</h3>
+        <h3>{t('ops.push.title', { n: unpushedTotal })}</h3>
         <div className="body" style={{ maxHeight: '60vh', overflow: 'auto' }}>
           {/* 推送条件 */}
           <div style={{ marginBottom: 10 }}>
@@ -233,6 +241,11 @@ export function PushConfirmModal(props: {
           {/* 未推送提交列表（类似历史界面，只含未推送） */}
           {/* 未推送提交（点击展开变更文件）： */}
           <div className="dim small" style={{ marginBottom: 6 }}>{t('ops.push.unpushedList')}</div>
+          {unpushedTotal > unpushed.length && (
+            <div className="dim small" style={{ marginBottom: 6 }}>
+              {t('ops.push.truncated', { n: unpushed.length, total: unpushedTotal })}
+            </div>
+          )}
           {/* 没有未推送的提交 */}
           {unpushed.length === 0 && !loading && <div className="dim" style={{ padding: 8 }}>{t('ops.push.noUnpushed')}</div>}
           <div className="vcs-list" style={{ border: '1px solid var(--border)', borderRadius: 8 }}>
@@ -332,7 +345,7 @@ export function PushConfirmModal(props: {
             title={pushCmd}
           >
             {/* 确认推送（{n}） */}
-            {t('ops.push.confirm', { n: unpushed.length })}
+            {t('ops.push.confirm', { n: unpushedTotal })}
           </button>
         </div>
       </ResizableModal>

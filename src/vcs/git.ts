@@ -431,6 +431,13 @@ export class GitVcs {
       const check = await this.exec(['rev-parse', '--verify', ref]);
       if (check.code === 0) return `origin/${br}`;
     }
+    // 新分支首次推送前：没有同名远端分支，用远端默认分支作基线。
+    // 否则会把整条历史都算成"未推送"（实报：新建分支后角标显示 477，实际只新增 13 条）。
+    // 真正的新仓库（远端还是空的）没有 origin/HEAD，仍返回 null，由调用方按"全部待推送"处理。
+    for (const base of ['origin/HEAD', 'origin/main', 'origin/master']) {
+      const check = await this.exec(['rev-parse', '--verify', base]);
+      if (check.code === 0) return base;
+    }
     return null;
   }
 
