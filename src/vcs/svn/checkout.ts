@@ -9,25 +9,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { run, type RunResult } from '../exec.js';
 import { resolveSvnBin } from '../svn.js';
+import { createLeftoverCleaner } from '../leftover.js';
+import { svnNetArgs } from './net.js';
 import { loadConfig } from '../../config.js';
 import { progressStart, progressDone, progressReport } from '../../transfer-progress.js';
 import { t } from '../../shared/i18n/index.js';
 
-/** 检出失败/取消后没清干净的半截目录（键即路径）：下次对同一目标检出时开始时先重试清理。
- *  同 index.ts 获取仓库的 leftoverTargets 思路；清不掉**绝不算检出失败**。 */
-const coLeftovers = new Set<string>();
-
-/** 清掉本次检出留下的半截目录（Windows 上 svn 刚被 SIGKILL，句柄可能未释放，带重试防 EBUSY/EPERM） */
-function cleanCoTarget(target: string): boolean {
-  try {
-    fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-    coLeftovers.delete(target);
-    return true;
-  } catch {
-    coLeftovers.add(target);
-    return false;
-  }
-}
+/** 检出失败/取消后没清干净的半截目录：下次对同一目标检出时开始时先重试清理。
+ *  与「获取仓库」的登记表分开（见 vcs/leftover.ts）；清不掉**绝不算检出失败**。 */
+const coLeftover = createLeftoverCleaner();
 
 /** 递归统计目录下已落盘文件数与字节（跳过 .svn 元数据）。svn 检出没有 --progress，
  *  周期扫盘估算"已检出多少文件 / 多大"用；竞态（文件正写入/刚被清）静默跳过。 */
@@ -92,14 +82,14 @@ export async function checkoutRemote(p: RemoteCheckoutParams, signal: AbortSigna
   const body: Record<string, unknown> = { include: p.include, username: p.username, password: p.password };
   const target = path.join(dir, name);
   // 上次同目标的半截检出没清干净（或服务重启丢了记录）：开始时先清一遍
-  if (coLeftovers.has(target)) cleanCoTarget(target);
+  if (coLeftover.has(target)) coLeftover.remove(target);
   let existedBefore = fs.existsSync(target);
   if (existedBefore) {
     try {
       const entries = fs.readdirSync(target);
       if (entries.length === 1 && entries[0] === '.svn') {
         // 只有 .svn 一个条目 = 上次检出中断留下的残骸（必然检出失败）；清掉继续
-        cleanCoTarget(target);
+        coLeftover.remove(target);
         existedBefore = false;
       } else if (entries.length > 0) {
         // 目标目录已存在且非空：{path}
@@ -121,7 +111,7 @@ export async function checkoutRemote(p: RemoteCheckoutParams, signal: AbortSigna
   const cred = tempCred ?? (cfg.svn.username ? { username: cfg.svn.username, password: cfg.svn.password } : null);
   /** 失败/取消清半截目录：只清"这次刚建出来的"，原本就存在的（哪怕空的）一个字节都不动 */
   const cleanup = () => {
-    if (!existedBefore) cleanCoTarget(target);
+    if (!existedBefore) coLeftover.remove(target);
   };
   // 选择性检出（SVN 深度检出）：前端树勾选的**相对路径**（可多级，如 branches/AnHui）——勾了
   // 则只检出勾选项，未勾选的连空壳都不留（--set-depth exclude），且后续 update 也只更新勾选的
@@ -138,15 +128,14 @@ export async function checkoutRemote(p: RemoteCheckoutParams, signal: AbortSigna
     const uniq = [...new Set(norm)].sort((a, b) => a.split('/').length - b.split('/').length);
     return uniq.filter((p, i) => !uniq.slice(0, i).some((q) => p === q || p.startsWith(q + '/')));
   })();
-  /** 每条 svn 命令的公共网络参数（凭据/证书选项与既有检出完全一致）。
+  /** 每条 svn 命令的公共网络参数（与「获取仓库」共用 vcs/svn/net.ts）。
    *  -q 由各命令自加：svn list 不接受 -q（实测），不能混进公共组 */
-  const svnNet = () => {
-    const a = ['--non-interactive'];
-    if (cred) a.push('--username', cred.username, '--password-from-stdin');
-    if (tempCred) a.push('--no-auth-cache');
-    if (cfg.svn.trustServerCert) a.push('--trust-server-cert');
-    return a;
-  };
+  const svnNet = () =>
+    svnNetArgs({
+      user: cred?.username,
+      tempUser: tempCred ? tempCred.username : '',
+      trustServerCert: cfg.svn.trustServerCert,
+    });
   const runOpts = {
     cwd: os.tmpdir(),
     stdinData: cred ? cred.password + '\n' : undefined,
