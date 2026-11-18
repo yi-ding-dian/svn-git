@@ -1,0 +1,540 @@
+[
+  {
+    "rule": "domain-domain",
+    "file": "src/client/filesystem/index.tsx",
+    "target": "../share/share-context.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/appearance/font-modal.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/appearance/theme-popover.tsx",
+    "target": "../shell/header/index.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/appearance/use-appearance.ts",
+    "target": "../shell/header/index.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/conflicts/conflicts.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/conflicts/remote-conflicts.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/filesystem/fav-dirs.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/filesystem/ignore-modal.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/filesystem/index.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/filesystem/module-index.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/filesystem/rename.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/filesystem/revert.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/filesystem/upload-conflict.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/history/commit-changes-modal.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/history/history.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/branch/branch-dialog.tsx",
+    "target": "../../shell/bg-defer.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/branch/branch-dialog.tsx",
+    "target": "../../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/branch/delete-branch-modal.tsx",
+    "target": "../../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/branch/project-migrate-panel.tsx",
+    "target": "../../shell/bg-defer.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/branch/project-migrate-panel.tsx",
+    "target": "../../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/clean-stash.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/commit-select.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/commit.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/git-identity.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/git-info.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/push-confirm.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/release-cleanup.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/release-hub.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/secure-clean.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/stage-hunks.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/tag-dialog.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/ops/update-result.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/branch-checkout.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/checkout-confirm.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/checkout-size.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/checkout-task.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/checkout.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/env-install.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/git-auth.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/github-create-repo.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/github-delete-repo.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/github-fork.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/github-my-repos.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/github-repo.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/open.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/pick-dir.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/practice/practice-dialog.tsx",
+    "target": "../../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/remark.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/repo-browse.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/repo-create.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/svn-cred.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/svn-info.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/tag-checkout.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/repo/worktree-manage.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/share/share-dialog.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/stats/code-stats.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "domain-shell",
+    "file": "src/client/terminal/terminal.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "rule": "shared-ui",
+    "file": "src/client/shared/content-copy.tsx",
+    "target": "../ui/context-menu.js"
+  },
+  {
+    "rule": "shared-ui",
+    "file": "src/client/shared/content-copy.tsx",
+    "target": "../ui/icons.js"
+  },
+  {
+    "rule": "shared-ui",
+    "file": "src/client/shared/diff-connectors.tsx",
+    "target": "../ui/tooltip.js"
+  },
+  {
+    "rule": "shared-ui",
+    "file": "src/client/shared/use-resize-cursor.tsx",
+    "target": "../ui/icons.js"
+  },
+  {
+    "rule": "ui-shell",
+    "file": "src/client/ui/prompt.tsx",
+    "target": "../shell/modal-shell.js"
+  },
+  {
+    "scope": "server",
+    "rule": "main-routes",
+    "file": "src/main/index.ts",
+    "target": "../server/routes/recent.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/app-update.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/branch.ts",
+    "target": "./recent.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/branch.ts",
+    "target": "./svn-auth.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/branch.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/browse/code-stats.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/browse/directory-list.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/browse/file-content.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/browse/file-versions.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/browse/index.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/browse/line-scan.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/browse/search.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/config.ts",
+    "target": "./github.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/config.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/conflicts.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/github.ts",
+    "target": "./recent.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/github.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/history.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/host.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/module-index.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/ops/core.ts",
+    "target": "../recent.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/ops/core.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/ops/file-operations.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/ops/ignore.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/ops/index.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/ops/maintenance.ts",
+    "target": "../util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/packaging.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/practice.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/recent.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/release.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/repobrowse.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/share.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/stage.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/svn-auth.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/terminal.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/upload.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/wc.ts",
+    "target": "./util.js"
+  },
+  {
+    "scope": "server",
+    "rule": "routes-cross-domain",
+    "file": "src/server/routes/worktree.ts",
+    "target": "./util.js"
+  }
+]

@@ -21,7 +21,7 @@
     "dev": "npm run build && node scripts/dev.mjs",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
-    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "check:boundaries": "node scripts/check-boundaries.mjs && node scripts/check-boundaries-server.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
     "dist:linux": "npm run build && electron-builder --linux AppImage",
     "dist:wsl": "bash deploy/build-wsl.sh",
