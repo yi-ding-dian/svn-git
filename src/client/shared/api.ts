@@ -160,6 +160,8 @@ export interface GitHubReleaseCi {
 export interface GitHubReleasesResult {
   ok: boolean;
   error?: string;
+  /** 认证类失败（401：GitHub Token 无效/过期）：界面给出「重新生成 Token」入口 */
+  authError?: boolean;
   remote?: string;
   /** 仓库 Releases 页面（「在 GitHub 打开」用） */
   releasesUrl?: string;

@@ -59,6 +59,8 @@ export const repo = {
   'repo.githubReleases.prerelease': 'Pre-release',
   'repo.githubReleases.changelog': 'Changelog',
   'repo.githubReleases.assets': 'Assets ({n})',
+  'repo.githubReleases.fillToken': 'Enter token',
+  'repo.githubReleases.tokenHelp': 'Regenerate GitHub Token',
   'repo.githubReleases.download': 'Download',
   'repo.githubReleases.copyUrl': 'Copy URL',
   'repo.githubReleases.copied': 'Copied',

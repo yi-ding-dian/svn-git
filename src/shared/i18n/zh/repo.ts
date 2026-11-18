@@ -63,6 +63,8 @@ export const repo = {
   'repo.githubReleases.prerelease': '预发布',
   'repo.githubReleases.changelog': '更新说明',
   'repo.githubReleases.assets': '产物（{n}）',
+  'repo.githubReleases.fillToken': '填写 Token',
+  'repo.githubReleases.tokenHelp': '重新生成 GitHub Token',
   'repo.githubReleases.download': '下载',
   'repo.githubReleases.copyUrl': '复制地址',
   'repo.githubReleases.copied': '已复制',

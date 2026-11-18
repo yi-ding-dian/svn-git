@@ -1,5 +1,6 @@
 /** 配置管理：~/.config/svngit/config.json（600 权限），存 SVN 账号密码 */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { isLang, DEFAULT_LANG, t, type Lang } from './shared/i18n/index.js';
@@ -71,13 +72,61 @@ function readShare(data: unknown): ShareConfig {
   };
 }
 
-function encode(pw: string): string {
-  return Buffer.from(pw, 'utf8').toString('base64');
+/** 凭据加密（AES-256-GCM）：密文格式 `enc:v1:<base64(iv|tag|data)>`。
+ *  密钥是本地随机生成的 32 字节文件（与 config.json 同目录、600 权限）；首次加密时创建。
+ *  兼容旧版纯 base64 存储：读到没有前缀的值按 base64 解码（下次保存自动迁移成密文）。 */
+const SECRET_KEY_PATH = path.join(CONFIG_DIR, 'secret.key');
+let cachedKey: Buffer | null = null;
+
+function credentialKey(): Buffer {
+  if (cachedKey) return cachedKey;
+  try {
+    const k = fs.readFileSync(SECRET_KEY_PATH);
+    if (k.length === 32) {
+      cachedKey = k;
+      return k;
+    }
+  } catch {
+    /* 首次运行：下面生成 */
+  }
+  const k = crypto.randomBytes(32);
+  try {
+    fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(SECRET_KEY_PATH, k, { mode: 0o600 });
+    try {
+      fs.chmodSync(SECRET_KEY_PATH, 0o600);
+    } catch {
+      /* Windows 等不支持 POSIX 权限：忽略 */
+    }
+  } catch {
+    /* 写不进去（只读目录）：本次进程用内存密钥（重启后旧密文解不开，需重新输入凭据） */
+  }
+  cachedKey = k;
+  return k;
 }
 
-function decode(b64: string): string {
+function encode(pw: string): string {
+  const key = credentialKey();
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const data = Buffer.concat([c.update(pw, 'utf8'), c.final()]);
+  return `enc:v1:${Buffer.concat([iv, c.getAuthTag(), data]).toString('base64')}`;
+}
+
+function decode(stored: string): string {
+  if (stored.startsWith('enc:v1:')) {
+    try {
+      const buf = Buffer.from(stored.slice(7), 'base64');
+      const d = crypto.createDecipheriv('aes-256-gcm', credentialKey(), buf.subarray(0, 12));
+      d.setAuthTag(buf.subarray(12, 28));
+      return Buffer.concat([d.update(buf.subarray(28)), d.final()]).toString('utf8');
+    } catch {
+      return '';
+    }
+  }
+  // 旧版：base64（没有加密）
   try {
-    return Buffer.from(b64, 'base64').toString('utf8');
+    return Buffer.from(stored, 'base64').toString('utf8');
   } catch {
     return '';
   }

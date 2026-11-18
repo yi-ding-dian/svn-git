@@ -104,6 +104,8 @@ interface GitHubRelease {
 interface GitHubReleasesResult {
   ok: boolean;
   error?: string;
+  /** 认证类失败（401：Token 无效/过期）：界面给出「重新生成 Token」入口 */
+  authError?: boolean;
   remote?: string;
   /** 仓库的 Releases 页面（「在 GitHub 打开」用） */
   releasesUrl?: string;
@@ -212,6 +214,13 @@ async function releasesWithAssets(
  *  "svngit/1.0" 全被拦——历史遗留规则，疑为早年 SVN 客户端滥用后遗症；URL 部分含 svn-git 无碍）。
  *  故用中性产品名 + 来源 URL 的形式（GitHub 官方推荐的 UA 格式）。
  *  token 可选：有凭据就带 Authorization（私有仓库也能读）；404/限流的文案按匿名/带凭据区分。 */
+/** 401：Token 无效/过期/被撤销。带上标记，调用方据此在界面上给"重新生成 Token"的入口 */
+function badTokenError(): Error {
+  const e = new Error(t('srv.githubBadToken')) as Error & { auth?: boolean };
+  e.auth = true;
+  return e;
+}
+
 async function githubFetch(pathname: string, signal: AbortSignal, token = ''): Promise<unknown> {
   const res = await fetch(`${GITHUB_API}${pathname}`, {
     signal,
@@ -222,6 +231,8 @@ async function githubFetch(pathname: string, signal: AbortSignal, token = ''): P
     },
   });
   if (!res.ok) {
+    // 401：凭据无效/过期（GitHub 明确的 Bad credentials）
+    if (res.status === 401) throw badTokenError();
     // 404：仓库不存在（带凭据）或私有不可见（匿名）；403/429：多为限流（两种身份文案不同）
     if (res.status === 404) throw new Error(token ? t('srv.githubNotFound') : t('srv.githubNotFoundAnon'));
     if (res.status === 403 || res.status === 429) throw new Error(token ? t('srv.githubRateLimitedAuth') : t('srv.githubRateLimited'));
@@ -577,7 +588,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     } catch (e) {
       // 超时/断网/404/限流：githubFetch 已把常见状态转成中文文案
       const err = (e as Error).name === 'AbortError' ? t('srv.githubTimeout', { sec: FETCH_TIMEOUT_MS / 1000 }) : (e as Error).message;
-      data = { ok: false, error: err, remote: remoteUrl };
+      const auth = (e as Error & { auth?: boolean }).auth === true;
+      data = { ok: false, error: err, remote: remoteUrl, ...(auth ? { authError: true } : {}) };
     } finally {
       clearTimeout(timer);
       res.off('close', onClose);

@@ -8,6 +8,7 @@ import { HelpNote } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
 import { formatSize } from '../shared/format-size.js';
 import { DockerImagesSection } from './docker-images.js';
+import { GitTokenForm } from './git-token-form.js';
 import { relTime } from '../shared/relative-time.js';
 import { t } from '../../shared/i18n/index.js';
 
@@ -45,6 +46,10 @@ export const GitHubReleasesPanel = forwardRef<
   const [data, setData] = useState<GitHubReleasesResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  /** 认证类失败（401：Token 无效/过期）：错误行旁给「重新生成 Token」入口 */
+  const [authError, setAuthError] = useState(false);
+  /** 401 时展开的「填写 Token」表单（保存后自动刷新发布历史） */
+  const [tokenForm, setTokenForm] = useState(false);
   /** 下拉选中值：`r:<tag>` = 有 Release，`t:<name>` = 只有 tag */
   const [selected, setSelected] = useState('');
   /** 刚复制过的地址：按钮短暂显示「已复制」 */
@@ -63,6 +68,7 @@ export const GitHubReleasesPanel = forwardRef<
         if (silent && !r.ok) return;
         setData(r);
         setError(r.ok ? '' : (r.error ?? ''));
+        setAuthError(!r.ok && r.authError === true);
         // 默认选最新 Release；没有 Release 就选最新的 tag。刷新后原选择仍有效则保留
         const firstRelease = r.releases?.[0]?.tagName;
         const firstTag = r.tags?.[0]?.name;
@@ -73,8 +79,13 @@ export const GitHubReleasesPanel = forwardRef<
             : fallback,
         );
       })
-      .catch((e: Error) => {
-        if (!silent) setError(e.message);
+      .catch((e: Error & { authError?: boolean }) => {
+        if (!silent) {
+          setError(e.message);
+          // api() 对带 error 字段的响应是**抛错**（不是 resolve ok:false），
+          // authError 标记挂在错误对象上（见 shared/api.ts 的 ApiError）
+          setAuthError(e.authError === true);
+        }
       })
       .finally(() => {
         if (!silent) setLoading(false);
@@ -222,7 +233,47 @@ export const GitHubReleasesPanel = forwardRef<
   return (
     <>
           {loading && <div className="loading">{t('repo.githubReleases.loading')}</div>}
-          {!loading && error && <ResultLine msg={error} err />}
+          {!loading && error && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <ResultLine msg={error} err />
+                {authError && (
+                  <>
+                    {/* 填写 Token：直接展开输入框，保存后自动刷新发布历史 */}
+                    <button className="mini" onClick={() => setTokenForm((v) => !v)}>
+                      {t('repo.githubReleases.fillToken')}
+                    </button>
+                    {/* 重新生成：打开 GitHub 的 Token 设置页 */}
+                    <button
+                      className="mini"
+                      title="https://github.com/settings/tokens"
+                      onClick={() => void post.openUrl('https://github.com/settings/tokens').catch(() => {})}
+                    >
+                      <span className="row" style={{ gap: 4, alignItems: 'center' }}>
+                        <IconExternal size={13} />
+                        {t('repo.githubReleases.tokenHelp')}
+                      </span>
+                    </button>
+                  </>
+                )}
+              </div>
+              {authError && tokenForm && (
+                <div style={{ marginTop: 8 }}>
+                  <GitTokenForm
+                    onToast={(m, err) => {
+                      if (err) setError(m);
+                    }}
+                    onSaved={() => {
+                      setTokenForm(false);
+                      setError('');
+                      setAuthError(false);
+                      load(true);
+                    }}
+                  />
+                </div>
+              )}
+            </>
+          )}
           {!loading && !error && !hasVersions && <HelpNote>{t('repo.githubReleases.empty')}</HelpNote>}
 
           {!loading && !error && rel && (

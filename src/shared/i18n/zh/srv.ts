@@ -228,6 +228,7 @@ export const srv = {
   'srv.githubNotFound': '仓库不存在或无权访问',
   'srv.githubNotFoundAnon': '仓库不存在、或为私有（未配置凭据，无法读取私有仓库）',
   'srv.githubRateLimited': 'GitHub 接口访问受限（匿名限流，稍后再试）',
+  'srv.githubBadToken': 'GitHub 凭据无效或已过期（401 Bad credentials）。请重新生成 Token 并在「Git 信息与配置」中更新',
   'srv.githubRateLimitedAuth': 'GitHub 接口限流（Token 配额），稍后再试',
   'srv.githubTimeout': '请求 GitHub 超时（{sec} 秒）',
   'srv.githubCleanupNeedToken': '批量清理需要先配置 GitHub 凭据（Token）',

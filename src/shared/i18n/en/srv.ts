@@ -214,6 +214,7 @@ export const srv = {
   'srv.githubNotFound': 'Repository not found or no access',
   'srv.githubNotFoundAnon': 'Repository not found, or private (no credential configured — private repos cannot be read anonymously)',
   'srv.githubRateLimited': 'GitHub API rate-limited (anonymous quota — try again later)',
+  'srv.githubBadToken': 'GitHub credentials are invalid or expired (401 Bad credentials). Generate a new token and update it in the Git settings.',
   'srv.githubRateLimitedAuth': 'GitHub API rate-limited (token quota) — try again later',
   'srv.githubTimeout': 'GitHub request timed out ({sec}s)',
   'srv.githubCleanupNeedToken': 'Batch cleanup requires configured GitHub credentials (Token)',
