@@ -13,17 +13,21 @@ import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } fr
 import { useFileSearch, FsSearchBox } from './search.js';
 import { useFilterTree } from './filter-tree.js';
 import { useIgnoreFlow } from './use-ignore-flow.js';
-import { useFsKeyboard } from './use-fs-keyboard.js';
+import { useFsKeyboard, useRowClickSelect } from './use-fs-keyboard.js';
 import { useFsLocate } from './use-fs-locate.js';
 import { TreeRow } from './views/rows.js';
 import { GridItem, FileTipCard } from './views/grid.js';
 import { ThumbIcon } from './views/thumb.js';
 import { compareName } from '../../shared/types.js';
 import { useDirPreload } from './use-dir-preload.js';
+import { useFsData } from './use-fs-data.js';
+import { useFsStatus } from './use-fs-status.js';
+import { useFsFavorites } from './use-fs-favorites.js';
+import { useFsContextMenu } from './use-fs-context-menu.js';
+import { useFsDrag } from './use-fs-drag.js';
 import { WcNotice } from './wc-notice.js';
 import { useWcConflicts, useConflictLookup, tcState } from './use-wc-conflicts.js';
-import { useDropUpload, useCopyPaste, moveItemsTo, MOVE_MIME, type ConflictChoice, type ClipItem } from './use-file-transfer.js';
-import { useDragToTrash } from './use-drag-to-trash.js';
+import { useCopyPaste } from './use-file-transfer.js';
 import { UploadConflictModal } from './upload-conflict.js';
 import { ModuleIndexDialog } from './module-index.js';
 
@@ -32,7 +36,7 @@ import { ModuleIndexDialog } from './module-index.js';
 /** 有版本库内容（可从版本库移除，非添加/删除调度中）：干净 / M / C（A 添加调度用"还原=取消添加"，D 删除调度不再移除） */
 /** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
 import { IgnoreModal } from './ignore-modal.js';
-import { FavDirsModal, type FavDir } from './fav-dirs.js';
+import { FavDirsModal } from './fav-dirs.js';
 import { isBinaryFile, isImageFile, isImeComposing } from '../shared/utils.js';
 import { formatFileSize } from '../shared/format-size.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
@@ -89,53 +93,25 @@ function ActionBtn(props: {
   );
 }
 
-/** 跨项目目录缓存保留的项目数：切走的项目缓存留在内存里，切回直接秒开（LRU 淘汰最久未用的） */
-const CROSS_PROJECT_CACHE_KEEP = 5;
 /** 「键盘操作提示已看过」的本地标记：首次进文件视图展示 5 秒后收起，之后只在 ⌨ 悬浮里看 */
 const KEY_HINT_SEEN = 'svngit:fs-key-hint-seen';
 
 export function FsView(props: Props) {
   const [dir, setDir] = useState(props.startRel ?? ''); // 列表模式当前目录(初始 = 操作范围,大仓库子项目)
-  const [data, setData] = useState<FsData | null>(null); // 列表模式数据
-  const [error, setError] = useState('');
   const [sel, setSel] = useState<FsEntry | null>(null);
   // 预览目标（文本/图片等实际内容与 md/blame/搜索状态都在 PreviewPane 内；此处只做开关与目标，供目录切换/刷新时关闭）
   const [preview, setPreview] = useState<{ name: string; rel: string; img?: boolean; code?: string; line?: number; worktree?: boolean } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [mode, setMode] = useState<Mode>('browse');
-  /** 模式镜像：切换项目的 effect 只依赖 repoRoot，延迟回调里要读到最新模式（树/列表用不同刷新方式） */
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
-  // 树冲突诊断的声明在下面 nodeData 之后：诊断基准要按模式区分（树模式的行 rel 相对仓库根）
   // 过滤激活时记住原视图（取消过滤恢复）
   const prevModeRef = useRef<Mode>(mode);
-  type CtxItem = CtxMenuItem; // 右键菜单项（公共类型见 context-menu.tsx）
-  const [ctx, setCtx] = useState<{ x: number; y: number; items: CtxItem[] } | null>(null);
-  // 右键选中锁定：右键后条目保持选中（hover 不清），点击其他地方/菜单关闭才取消
-  const [ctxLocked, setCtxLocked] = useState(false);
-  // 菜单随悬停消失：延迟关闭计时器 + 右键的条目 rel（空白右键为 null，用于判断鼠标是否回到原条目）
-  const ctxHideTimer = useRef<ReturnType<typeof setTimeout>>();
-  const ctxRelRef = useRef<string | null>(null);
   // 多选：rel 集合（Ctrl 点选 / Shift 范围选 / 浏览模式拖拽框选）；右键项在集合内时菜单作用于整个集合
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const shiftAnchorRef = useRef<string | null>(null); // Shift 范围选择锚点（上次单击项）
-  // 浏览模式拖拽框选：拖拽起点 / 框选矩形（ref 直接操作 DOM，避免 mousemove 高频 re-render 卡顿） / 本次是否发生过拖动（供 click 判断，避免空白点击清空误伤框选结果）
-  const selBoxRef = useRef<HTMLDivElement | null>(null);
-  const selDragRef = useRef<{ startX: number; startY: number } | null>(null);
-  // 框选 mouseup 丢失兜底（松手移出窗口/松开在菜单遮罩上等）：任何 position 清除拖拽状态并隐藏矩形，
-  // 避免"没按左键移动鼠标也画出框选"；grid 内正常松开由 grid 的 onMouseUp 先行处理，此兜底无副作用
-  useEffect(() => {
-    const onWinUp = () => {
-      if (selDragRef.current) {
-        selDragRef.current = null;
-        if (selBoxRef.current) selBoxRef.current.style.display = 'none';
-      }
-    };
-    window.addEventListener('mouseup', onWinUp);
-    return () => window.removeEventListener('mouseup', onWinUp);
-  }, []);
-  const lastWasDragRef = useRef(false);
+  const [focusIndex, setFocusIndex] = useState(0);
+  // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
+  const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean; nestedWc?: boolean; tc?: { state: 'missing' | 'present' | 'unknown'; inner?: boolean; innerCount?: number }; tcItem?: { fromRev?: string; fromAuthor?: string; fromDate?: string } } | null>(null);
   /** 忽略写入去向的说明（JSX 用；状态本身在 useIgnoreFlow 里）。每次渲染重建，故可直接 t() */
   const IGNORE_WHERE_LABEL: Record<'gitignore' | 'global' | 'exclude', string> = {
     // 仓库 .gitignore（随仓库分发）
@@ -145,9 +121,89 @@ export function FsView(props: Props) {
     // .git/info/exclude（仅本机本仓库）
     exclude: t('fs.ignoreWhere.exclude'),
   };
-  const [focusIndex, setFocusIndex] = useState(0);
-  // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
-  const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean; nestedWc?: boolean; tc?: { state: 'missing' | 'present' | 'unknown'; inner?: boolean; innerCount?: number }; tcItem?: { fromRev?: string; fromAuthor?: string; fromDate?: string } } | null>(null);
+  /** 行数模式是否已经改过主视图（进入时记住原视图，退出恢复） */
+  const lineViewActiveRef = useRef(false);
+  /** 切目录（面包屑/上下级/键盘）：行数范围是当前目录，旧结果必须退出。
+   *  exitLineMode 依赖 data?.dir（在数据层之后才定义），用 ref 桥接，保持这个 effect 的注册顺序。 */
+  const exitLineModeRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    if (lineViewActiveRef.current) exitLineModeRef.current();
+  }, [dir]);
+  // only：显式指定选中集合（拖入上传用）——跳过"按 code 同状态全选"，只选中真正落盘的那几个
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const breadcrumbRef = useRef<HTMLDivElement | null>(null);
+
+  // 树模式状态：展开集合
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // ---------- 常用文件夹：指定 + 后台递归预加载缓存（大仓库秒开） ----------
+  // 预加载引擎（BFS + 并发 6 + 代际停止）抽到 useDirPreload；拉到的目录写进树缓存 nodeData。
+  // 写缓存函数由 useFsData 提供（hook 顺序：预加载先于数据层，用 ref 桥接）。
+  const nodeDataWriterRef = useRef<((d: string, r: FsData) => void) | null>(null);
+  const { preload, preloadDir, prefetchChildren, resetPreload } = useDirPreload((d, r) => {
+    nodeDataWriterRef.current?.(d, r);
+  });
+  const {
+    favs,
+    favModal,
+    setFavModal,
+    saveFavs,
+    onRepoSwitch,
+    moduleIndexModal,
+    setModuleIndexModal,
+    loadModuleIndex,
+    descOf,
+  } = useFsFavorites({
+    repoRoot: props.repoRoot,
+    repoType: props.repoType,
+    onToast: props.onToast,
+    preloadDir,
+    resetPreload,
+  });
+
+  // 数据层需要状态聚合的 refreshCodes / scanCodes，而状态聚合又需要数据层的 setter：
+  // 用 ref 桥接，保持两者的稳定引用（与原先 load 的依赖行为一致）。
+  const refreshCodesRef = useRef<(cur: string, deep?: boolean) => Promise<void> | void>(() => {});
+  const scanCodesRef = useRef<(cur: string, deep: boolean) => void>(() => {});
+  const refreshCodes = useCallback((cur: string, deep = false) => refreshCodesRef.current(cur, deep), []);
+  const scanCodes = useCallback((cur: string, deep: boolean) => scanCodesRef.current(cur, deep), []);
+  // load 在 ENOENT 时要清残留定位；useFsLocate 在本组件下方才声明，用 ref 桥接最新 setter。
+  const clearPendingLocateRef = useRef<() => void>(() => {});
+  const clearPendingLocate = useCallback(() => clearPendingLocateRef.current(), []);
+
+  // 目录数据层：两阶段加载、节点缓存、跨项目 LRU、tick 刷新与 30 秒轮询
+  const dataLayer = useFsData({
+    active: props.active,
+    tick: props.tick,
+    mode,
+    repoType: props.repoType,
+    repoRoot: props.repoRoot,
+    startRel: props.startRel,
+    dir,
+    setDir,
+    expanded,
+    setSel,
+    setPreview,
+    clearPendingLocate,
+    refreshCodes,
+    scanCodes,
+    prefetchChildren,
+    preload,
+    onRepoSwitch,
+  });
+  // 预加载落缓存：打上 light 标记，真正进入目录时要补一次完整数据（见 load 的缓存分支）
+  nodeDataWriterRef.current = (d, r) => {
+    dataLayer.setNodeData((m) => new Map(m).set(d, { ...r, light: true }));
+  };
+  const { refreshCodes: refreshCodesImpl, scanCodes: scanCodesImpl, scanState } = useFsStatus({
+    setNodeData: dataLayer.setNodeData,
+    setData: dataLayer.setData,
+  });
+  refreshCodesRef.current = refreshCodesImpl;
+  scanCodesRef.current = scanCodesImpl;
+  const { data, nodeData, error, setError, fsLoading, bigTip, load, loadNode, invalidateCache, reloadOpenNodes } = dataLayer;
+
   // 文件搜索（工具栏）：防抖查询 + 结果下拉状态收于 useFileSearch；行数模式另走 useLineScan
   const search = useFileSearch(data?.dir ?? '');
   const lineScan = useLineScan(data?.dir ?? '');
@@ -158,8 +214,6 @@ export function FsView(props: Props) {
   const exitSearchLineMode = search.exitLineMode;
   /** 行数结果是否接管主列表区（开始扫描后成立；选中行数模式但还没确认时不成立） */
   const lineActive = search.mode === 'lineCount' && lineScan.started;
-  /** 行数模式是否已经改过主视图（进入时记住原视图，退出恢复） */
-  const lineViewActiveRef = useRef(false);
 
   /** 点「确定」：先记原视图并切树，再发扫描；状态过滤与行数互斥（进入前清掉） */
   const startLineScan = useCallback(
@@ -187,20 +241,7 @@ export function FsView(props: Props) {
     onLineExit();
     exitSearchLineMode();
   }, [onLineExit, exitSearchLineMode]);
-  /** 切目录（面包屑/上下级/键盘）：行数范围是当前目录，旧结果必须退出 */
-  const exitLineModeRef = useRef(exitLineMode);
   exitLineModeRef.current = exitLineMode;
-  useEffect(() => {
-    if (lineViewActiveRef.current) exitLineModeRef.current();
-  }, [dir]);
-  // only：显式指定选中集合（拖入上传用）——跳过"按 code 同状态全选"，只选中真正落盘的那几个
-  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const gridRef = useRef<HTMLDivElement | null>(null);
-  const breadcrumbRef = useRef<HTMLDivElement | null>(null);
-
-  // 树模式状态：展开集合 + 各目录数据
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [nodeData, setNodeData] = useState<Map<string, FsData>>(new Map());
 
   // 树冲突诊断（需要时才联网问服务器）：横幅与条目角标**共用同一份结果**，不再各查一遍。
   // 条目级 treeConflicted 来自 /api/fs 的 status（本地就知道），这里只负责补"服务器上还在不在"。
@@ -211,34 +252,7 @@ export function FsView(props: Props) {
   const diag = useWcConflicts((mode === 'tree' ? nodeData.get('') : data) ?? undefined, viewDir, props.tick);
   const conflictLookup = useConflictLookup(diag, viewDir);
 
-  const loadNode = useCallback((d: string, force = false) => {
-    return get.fs(d, force).then((r: FsData) => {
-      setNodeData((m) => new Map(m).set(d, r));
-    });
-  }, []);
-
-  // 列表/浏览模式加载（进入过的目录走 nodeData 缓存，秒开不重复请求）
-  // 注意：load 必须是稳定引用（用 nodeDataRef 读写缓存），否则 setNodeData → load 重建 → effect 循环 → 抖动
-  const nodeDataRef = useRef(nodeData);
-  nodeDataRef.current = nodeData;
-  /** 当前目录镜像（切项目时判断 dir 是否会变化：相同则 dir effect 不触发，要显式加载） */
-  const dirRef = useRef(dir);
-  dirRef.current = dir;
-  /** 目录加载请求序号：切项目后 dir effect 的普通加载与后台强刷可能并发，
-   *  旧请求晚回来会把新数据覆盖回去——只让最新一次请求的结果落地。 */
-  const loadSeqRef = useRef(0);
-  /** 非静默加载的并发计数：被取代的旧请求也要关掉自己开的那份加载条，任一未完成就继续显示 */
-  const loadingCountRef = useRef(0);
-  const [fsLoading, setFsLoading] = useState(false);
-  /** 两阶段加载的第二阶段：目录已显示，正在异步补充状态标记（大仓库可能较慢）。
-   *  sec = 已用秒数，让用户知道在干什么，而不是一直转圈。 */
-  const [scanState, setScanState] = useState<{ dir: string; sec: number } | null>(null);
-  const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  /** 只让最新一次状态补充收起提示（快速切目录时旧扫描可能晚完成） */
-  const scanSeqRef = useRef(0);
-  // 大目录提示（条目多时提示原因，避免误以为卡死；5 秒后自动消失）
-  const [bigTip, setBigTip] = useState('');
-  /** 首次进入的键盘操作提示：常驻占一行太浪费，展示 5 秒后收起并记住（之后只在 ⌨ 悬浮提示里） */
+  // 首次进入的键盘操作提示：常驻占一行太浪费，展示 5 秒后收起并记住（之后只在 ⌨ 悬浮提示里）
   const [showKeyHint, setShowKeyHint] = useState(() => {
     try {
       return localStorage.getItem(KEY_HINT_SEEN) !== '1';
@@ -258,548 +272,6 @@ export function FsView(props: Props) {
     }, 5000);
     return () => clearTimeout(timer);
   }, [showKeyHint]);
-  const bigTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ---------- 常用文件夹：指定 + 后台递归预加载缓存（大仓库秒开） ----------
-  const favKey = (root: string) => `svngit:fav-dirs:${root}`;
-  const loadFavs = (root: string): FavDir[] => {
-    try {
-      return JSON.parse(localStorage.getItem(favKey(root)) ?? '[]') as FavDir[];
-    } catch {
-      return [];
-    }
-  };
-  const [favs, setFavs] = useState<FavDir[]>(() => (props.repoRoot ? loadFavs(props.repoRoot) : []));
-  // 模块索引（md 文件说明注入）：仓库相对路径 → 描述；null=未加载/无索引。加载时机：仓库打开时一次性
-  const [moduleIndex, setModuleIndex] = useState<Map<string, string> | null>(null);
-  const [moduleIndexModal, setModuleIndexModal] = useState<{ md: string } | null>(null);
-  const loadModuleIndex = useCallback(() => {
-    get
-      .moduleIndex()
-      .then((r) => {
-        const m = new Map<string, string>();
-        // 父目录先（短路径优先），子目录索引后写入覆盖 → 命中"向上就近/子覆盖父"
-        const dirs = Object.keys(r.indexes).sort((a, b) => a.split('/').length - b.split('/').length);
-        for (const dir of dirs) {
-          for (const e of r.indexes[dir]?.entries ?? []) {
-            m.set(dir ? `${dir}/${e.path}` : e.path, e.desc);
-          }
-        }
-        setModuleIndex(m);
-      })
-      .catch(() => setModuleIndex(null));
-  }, []);
-  useEffect(() => {
-    loadModuleIndex();
-  }, [props.repoRoot, loadModuleIndex]);
-  /** 行 rel → 描述（无索引/无命中返回空串） */
-  const descOf = useCallback((rel: string) => moduleIndex?.get(rel) ?? '', [moduleIndex]);
-  const [favModal, setFavModal] = useState(false);
-  // 预加载引擎（BFS + 并发 6 + 代际停止）抽到 useDirPreload；拉到的目录写进树缓存 nodeData
-  const { preload, preloadDir, prefetchChildren, resetPreload } = useDirPreload((d, r) => {
-    // 打上 light 标记：这份数据没有状态码，真正进入目录时要补一次完整数据（见 load 的缓存分支）
-    setNodeData((m) => new Map(m).set(d, { ...r, light: true }));
-  });
-
-  // ---------- 跨项目目录缓存：切走收起来、切回直接恢复（不必重新预加载） ----------
-  /** repoRoot → 目录缓存；只留最近切换过的 CROSS_PROJECT_CACHE_KEEP 个项目（仅内存，重启清空） */
-  const cacheByRootRef = useRef(new Map<string, Map<string, FsData>>());
-  /** 上一个渲染的项目根（切走时把它的缓存收进桶里） */
-  const prevRootRef = useRef<string | null>(null);
-  /** 缓存不完整的项目（切走时预加载还没跑完 / 本项目内刷新清过缓存）：切回时重新预加载 */
-  const incompleteRootsRef = useRef(new Set<string>());
-  /** preload 状态镜像（切换 effect 里读，避免把它加进依赖导致重复执行） */
-  const preloadRef = useRef(preload);
-  preloadRef.current = preload;
-  /** 当前项目根镜像（invalidateCache 是稳定回调，不能把 props.repoRoot 加进依赖） */
-  const repoRootRef = useRef<string>(props.repoRoot ?? '');
-  repoRootRef.current = props.repoRoot ?? '';
-  /** 切项目时的 tick：App 打开项目后会 refresh()，这次 tick 不能当成「用户刷新」去清刚恢复的缓存 */
-  const tickAtSwitchRef = useRef(props.tick);
-  /** 本次切换是否恢复了该项目的缓存（树/浏览模式据此跳过重载） */
-  const restoredAtSwitchRef = useRef(false);
-  /** 树/浏览模式 effect 上次处理的 tick（区分「切项目」与「用户刷新」） */
-  const lastTreeTickRef = useRef(props.tick);
-
-  /** 保存勾选树的结果（弹窗「确定并预加载」）：勾选集合 = 新的常用列表，写本机 + 立即预加载 */
-  const saveFavs = (paths: string[]) => {
-    if (!props.repoRoot) return;
-    const old = new Map(loadFavs(props.repoRoot).map((f) => [f.path, f]));
-    const next: FavDir[] = paths.map(
-      (p) => old.get(p) ?? { path: p, name: p.split('/').pop() || p, addedAt: Date.now() },
-    );
-    localStorage.setItem(favKey(props.repoRoot), JSON.stringify(next));
-    setFavs(next);
-    // force：刚改选过的目录要重拉（已缓存的子目录仍命中，不会整棵重来）
-    for (const p of paths) preloadDir(p, true);
-    setFavModal(false);
-    // 已保存 {n} 个常用文件夹，正在后台预加载 / 已移除全部常用文件夹
-    props.onToast(next.length > 0 ? t('fs.fav.saved', { n: next.length }) : t('fs.fav.cleared'));
-  };
-  /** 刷新当前目录状态：deep=true 查子树并把深层 M/A 聚合到直接子目录；
-   *  false 只查直接子项（30 秒轮询）。只更新已有条目的 code，不清选择/预览。
-   *  返回 Promise：两阶段加载要在状态补完后收起「正在补充文件状态」提示。 */
-  const refreshCodes = useCallback((cur: string, deep = false) => {
-    return get
-      .fsStatus(cur, deep)
-      .then((r) => {
-        const codes = new Map<string, string>();
-        /** 树冲突条目：light 数据里没有这个字段，横幅与 ⚠ 角标全靠第二阶段补上 */
-        const conflicted = new Set<string>();
-        /** 独立工作副本条目：父 WC 看不到它内部，状态用服务端按它自己的 WC 聚合的结果 */
-        const nestedItems = new Map<string, { code: string; codes?: string[]; count?: number; nestedWc?: boolean }>();
-        for (const it of r.items) {
-          codes.set(it.path, it.code);
-          if (it.treeConflicted) conflicted.add(it.path);
-          if (it.nestedWc || it.codes || it.count !== undefined) nestedItems.set(it.path, it);
-        }
-        const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
-        const rank: Record<string, number> = { C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3 };
-        /** 目录深聚合：状态码集合 + 变更项数。
-         *  口径与 /api/fs 完整数据一致：子项未版本化 '?' 与外部引用 'X' 不计入数量；
-         *  目录自身码（?/I/D 等）优先，内部操作码并入集合。 */
-        const dirAgg = (rel: string, own?: string) => {
-          const prefix = rel + '/';
-          const ops = new Set<string>();
-          let count = 0;
-          for (const [p, c] of codes) {
-            if (!p.startsWith(prefix)) continue;
-            if (!c || c === ' ' || c === 'none' || c === '?' || c === 'X') continue;
-            count++;
-            ops.add(c);
-          }
-          // 目录自身码：? / I / X 是"目录整体"的标记，优先展示且不被子项升级；
-          // 其余（M/A/D/C/R…）与子项操作一起参与最高码/集合。口径同 /api/fs 完整数据。
-          const self = own && own !== ' ' && own !== 'none' ? own : '';
-          const special = self === '?' || self === 'I' || self === 'X' ? self : '';
-          if (self && !special) ops.add(self);
-          let best = special;
-          if (!special) {
-            for (const c of ops) if ((rank[c] ?? -1) > (rank[best] ?? -1)) best = c;
-          }
-          const list = [...ops].sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b));
-          if (special === 'X' && !list.includes('X')) list.push('X');
-          if ((special === '?' || special === 'I') && list.length === 0) list.push(special);
-          return { code: best || undefined, codes: list.length ? list : undefined, count: count || undefined };
-        };
-        const sameList = (a?: string[], b?: string[]) =>
-          a === b || (!!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]));
-        const apply = (d: FsData): FsData => {
-          let changed = false;
-          /** 当前目录整体未版本化（服务端 wc-root 查不到）：所有条目统一 ?。
-           *  被忽略 I / 外部引用 X 保留；这是进入未版本化目录任意深度时唯一可靠的数据源。 */
-          const selfMark = r.dirSelf;
-          const entries = d.entries.map((e) => {
-            if (selfMark) {
-              if (e.code === 'I' || e.code === 'X') return e;
-              if (e.code === selfMark && sameList(e.codes, [selfMark])) return e;
-              changed = true;
-              return { ...e, code: selfMark, codes: [selfMark], count: undefined };
-            }
-            const rel = cur ? `${cur}/${e.name}` : e.name;
-            const own = codes.get(rel);
-            const tc = conflicted.has(rel);
-            if (deep && e.isDir) {
-              // 独立工作副本：父 WC 看不到内部，直接用服务端按它自己 WC 聚合的 code/codes/count
-              const ownItem = nestedItems.get(rel);
-              if (ownItem?.nestedWc) {
-                const nextTc = tc || e.treeConflicted || undefined;
-                const nextCode = ownItem.code ?? '';
-                const nextCodes = ownItem.codes;
-                const nextCount = ownItem.count;
-                if (
-                  nextCode === (e.code ?? '') &&
-                  sameList(nextCodes, e.codes) &&
-                  nextCount === e.count &&
-                  nextTc === e.treeConflicted &&
-                  e.nestedWc
-                ) {
-                  return e;
-                }
-                changed = true;
-                return { ...e, code: nextCode, codes: nextCodes, count: nextCount, treeConflicted: nextTc, nestedWc: true };
-              }
-              // 目录：整棵子树聚合（code + codes 集合 + 变更项数）
-              const agg = dirAgg(rel, own);
-              const nextTc = tc || e.treeConflicted || undefined;
-              // 没有聚合结果，但完整数据给了"目录整体"的属性码（未版本化 ? / 忽略 I / 外部 X）：
-              // 必须保留 —— fs-status 在未版本化目录内部只报目录自身，拿不到子项，
-              // 无条件覆盖会把 ? 冲成空（显示成干净的 ✓，用户实报）。
-              const keep = !agg.code && !agg.codes && (e.code === '?' || e.code === 'I' || e.code === 'X');
-              const nextCode = keep ? e.code : (agg.code ?? '');
-              const nextCodes = keep ? e.codes : agg.codes;
-              const nextCount = keep ? e.count : agg.count;
-              if (
-                nextCode === (e.code ?? '') &&
-                sameList(nextCodes, e.codes) &&
-                nextCount === e.count &&
-                nextTc === e.treeConflicted
-              ) {
-                return e;
-              }
-              changed = true;
-              return { ...e, code: nextCode, codes: nextCodes, count: nextCount, treeConflicted: nextTc };
-            }
-            const code = own;
-            // 独立工作副本：父 WC 的浅扫描永远只给 ?（它不跟踪别人的工作副本），
-            // 不能拿这个覆盖"按自身 WC 聚合"得到的 A/M/✓（否则 30 秒轮询后目录又变回 ?）
-            if (e.nestedWc && (code === undefined || code === '?')) return e;
-            if (code === undefined || code === e.code) {
-              // 状态没变：树冲突标记还没打上时补一次（light 条目初始没有）
-              if (!tc || e.treeConflicted) return e;
-              changed = true;
-              return { ...e, treeConflicted: true };
-            }
-            changed = true;
-            return {
-              ...e,
-              code,
-              treeConflicted: tc || e.treeConflicted || undefined,
-              // 目录角标用的是 codes（不是 code）：不补这个，悬浮提示显示 M 但图标不显示
-              ...(e.isDir
-                ? { codes: code && code !== ' ' && code !== 'none' ? [code] : undefined }
-                : {}),
-            };
-          });
-          return changed ? { ...d, entries } : d;
-        };
-        // deep：当前目录内部有修改时，把父目录里这个目录的角标也标出来。
-        // 否则用户返回上一级，父目录仍显示旧的 ✓（进入子目录时更新了子目录缓存，但父缓存没动）。
-        // 同时把变更项数与操作码集合一并带回：返回上级时目录上的数字/徽标立即是新的。
-        let selfCode = '';
-        let selfCount = 0;
-        const selfOps = new Set<string>();
-        if (deep) {
-          for (const c of codes.values()) {
-            if (!c || c === ' ' || c === 'none' || c === '?' || c === 'X') continue;
-            selfCount++;
-            selfOps.add(c);
-            if ((rank[c] ?? -1) > (rank[selfCode] ?? -1)) selfCode = c;
-          }
-        }
-        const selfCodes = selfOps.size
-          ? [...selfOps].sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b))
-          : undefined;
-        const idx = cur.lastIndexOf('/');
-        // cur 是根目录的直接子目录（如 ConfigureTool）时没有 '/'：父目录是仓库根 ''，
-        // name 就是 cur 自己；不能因为 idx<0 把 name 置空，否则父级传播被跳过。
-        const parent = deep ? (idx >= 0 ? cur.slice(0, idx) : '') : '';
-        const name = deep ? (idx >= 0 ? cur.slice(idx + 1) : cur) : '';
-        const patchParent = (d: FsData): FsData => {
-          const pe = d.entries.find((e) => e.name === name && e.isDir);
-          if (!pe) return d;
-          if (pe.code === selfCode && sameList(pe.codes, selfCodes) && pe.count === (selfCount || undefined)) return d;
-          // 目录本身未被版本控制（I 被忽略 / ? 未版本化）时，子树聚合永远是空——它里面的
-          // 文件 git 根本不跟踪，状态接口查不到。用空结果覆盖会把 I/? 冲成「干净 ✓」
-          // （用户实报：进入被忽略目录再返回上级，I 变成 √）。
-          if (selfCode === '' && (pe.code === 'I' || pe.code === '?')) return d;
-          return {
-            ...d,
-            entries: d.entries.map((e) =>
-              e === pe ? { ...e, code: selfCode, codes: selfCodes, count: selfCount || undefined } : e,
-            ),
-          };
-        };
-        setNodeData((m) => {
-          const d = m.get(cur);
-          let map = m;
-          if (d) {
-            const next = apply(d);
-            // 树冲突条数一并回填：light/浅扫描数据靠第二阶段才能点亮横幅
-            const tc = r.treeConflicts ?? d.treeConflicts;
-            if (next !== d || tc !== d.treeConflicts) map = new Map(map).set(cur, { ...next, treeConflicts: tc });
-          }
-          if (deep && name) {
-            const pd = map.get(parent);
-            if (pd) {
-              const nextPd = patchParent(pd);
-              if (nextPd !== pd) map = new Map(map).set(parent, nextPd);
-            }
-          }
-          return map;
-        });
-        setData((d) => {
-          if (!d) return d;
-          if (d.dir === cur) {
-            const next = apply(d);
-            const tc = r.treeConflicts ?? d.treeConflicts;
-            if (next === d && tc === d.treeConflicts) return d;
-            return { ...next, treeConflicts: tc };
-          }
-          if (deep && name && d.dir === parent) return patchParent(d);
-          return d;
-        });
-      })
-      .catch(() => {
-        /* 轮询失败不打扰 */
-      });
-  }, []);
-
-  /** 两阶段加载的第二阶段：补状态并显示「正在补充文件状态…（已 N 秒）」，
-   *  补完自动收起（目录已先显示，不阻塞列表）。 */
-  const scanCodes = useCallback(
-    (cur: string, deep: boolean) => {
-      const seq = ++scanSeqRef.current;
-      const started = Date.now();
-      if (scanTimerRef.current) clearInterval(scanTimerRef.current);
-      setScanState({ dir: cur, sec: 0 });
-      scanTimerRef.current = setInterval(() => {
-        setScanState((s) => (s ? { ...s, sec: Math.floor((Date.now() - started) / 1000) } : s));
-      }, 1000);
-      void refreshCodes(cur, deep).finally(() => {
-        if (seq !== scanSeqRef.current) return; // 已有更新的目录在扫：别把新提示收掉
-        if (scanTimerRef.current) {
-          clearInterval(scanTimerRef.current);
-          scanTimerRef.current = null;
-        }
-        setScanState(null);
-      });
-    },
-    [refreshCodes],
-  );
-  // 卸载时清掉计时器
-  useEffect(
-    () => () => {
-      if (scanTimerRef.current) clearInterval(scanTimerRef.current);
-    },
-    [],
-  );
-
-  /** 加载目录（列表/浏览模式）。quiet=true 为静默强刷（操作后 / tick 刷新）：不出顶部加载条、
-   *  不弹大目录提示——列表原地换数据，界面不闪；切目录、首次进入照常给加载反馈。
-   *  **两阶段**：先 light 读目录结构立即显示文件，再异步补状态（大工作副本不阻塞列表）。 */
-  const load = useCallback(async (targetDir: string, force: boolean, quiet = false) => {
-    const seq = ++loadSeqRef.current;
-    const cache = nodeDataRef.current.get(targetDir);
-    if (!force && cache) {
-      setData(cache);
-      setSel(null);
-      setPreview(null);
-      setError('');
-      // 预加载缓存只有目录结构（light），进入时立即查子树并聚合深层 M/A。
-      // **根目录也查子树**：否则根下目录拿不到"内部有修改"（用户实报：浏览视图全是 ✓，
-      // 「仅修改」却能看到深层 M）。大工作副本由服务端降级浅扫描，不会真的全量。
-      refreshCodes(targetDir, true);
-      // 静默预取下一层：直接拿当前目录的 entries 入队，不要求父目录未见过
-      prefetchChildren(targetDir, cache.entries, true);
-      // light 数据（预加载）的 code 全空，而 refreshCodes 只能补"有状态"的条目——
-      // 被忽略的条目（.gitignore / svn:ignore，如 svngit-test/ 整片测试仓库）在
-      // /api/fs-status 里根本不存在，补不回来，于是整排未版本化的项都显示成干净 ✓（用户实报）。
-      // 目录已秒开，这里再要一份完整数据、到了原地替换；失败就保持现状（不清空列表）。
-      // **根目录跳过**：整仓 status 正是打开大工作副本根时长时间卡顿的来源。
-      if (cache.light && targetDir !== '') {
-        void get
-          .fs(targetDir)
-          .then((r) => {
-            // 期间已有更新的加载（切目录 / 切项目强刷）：这份补数据可能携带旧状态，丢弃
-            if (seq !== loadSeqRef.current) return;
-            setNodeData((m) => new Map(m).set(targetDir, r));
-            // 请求期间用户可能已翻到别的目录：只更新内容，不把列表拽回来
-            if (dirRef.current === targetDir) setData(r);
-          })
-          .catch(() => {});
-      }
-      return;
-    }
-    if (!quiet) {
-      loadingCountRef.current += 1;
-      setFsLoading(true);
-    }
-    setError('');
-    // 两阶段①：只读目录结构（light，毫秒级），文件先出来；状态（M/A/?）由第二阶段异步补
-    let light: Awaited<ReturnType<typeof get.fs>> | null = null;
-    try {
-      light = await get.fs(targetDir, force, true);
-    } catch (e) {
-      // 已被更新的加载取代：旧请求的错误（比如旧项目目录已不存在）不作数
-      if (seq === loadSeqRef.current) {
-        // 目录不存在（ENOENT：上次浏览位置被删除/仓库已切换）→ 自动回到仓库根，避免卡死在错误页
-        if (targetDir && (e as Error).message.includes('ENOENT')) {
-          setDir('');
-          setPendingLocate(null);
-          setError('');
-        } else {
-          setError((e as Error).message);
-        }
-      }
-      return;
-    } finally {
-      if (!quiet) {
-        loadingCountRef.current = Math.max(0, loadingCountRef.current - 1);
-        if (loadingCountRef.current === 0) setFsLoading(false);
-      }
-    }
-    if (!light || seq !== loadSeqRef.current) return;
-    setNodeData((m) => new Map(m).set(targetDir, light));
-    setData(light);
-    setSel(null);
-    setPreview(null);
-    // 两阶段②：补状态（查子树，把深层 M/A 聚合到直接子目录；根目录也查，
-    // 否则根下目录看不到"内部有修改"）。
-    // 顶层显示「正在补充文件状态…（已 N 秒）」，大仓库也看得见在做什么；静默刷新不显示。
-    if (quiet) refreshCodes(targetDir, true);
-    else scanCodes(targetDir, true);
-    // 静默预取下一层：进入目录后立刻在后台拉它的直接子目录（light，不查 SVN 状态）
-    prefetchChildren(targetDir, light.entries ?? [], true);
-    // 子目录且条目不多：后台再要一份完整数据（补忽略项 I/未跟踪 ? 的精确状态）；
-    // 根目录与超大目录跳过全量 status（这正是方案的性能取舍）
-    if (targetDir !== '' && (light.entries?.length ?? 0) <= 200) {
-      void get
-        .fs(targetDir)
-        .then((r) => {
-          if (seq !== loadSeqRef.current) return;
-          setNodeData((m) => new Map(m).set(targetDir, r));
-          if (dirRef.current === targetDir) setData(r);
-        })
-        .catch(() => {});
-    }
-    if (!quiet) {
-      // 大目录提示：条目多时告知原因（加载完成后展示 5 秒）——静默刷新不重复提示
-      const n = light.entries?.length ?? 0;
-      if (n > 200) {
-        // 该目录文件较多（共 {n} 项），首次加载可能需要一点时间
-        setBigTip(t('fs.tip.bigDir', { n }));
-        if (bigTipTimer.current) clearTimeout(bigTipTimer.current);
-        bigTipTimer.current = setTimeout(() => setBigTip(''), 5000);
-      } else {
-        setBigTip('');
-      }
-    }
-    // setPendingLocate 的 useState 在下方才声明，放进依赖数组会 TDZ（Block-scoped variable used before its declaration）
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefetchChildren, refreshCodes, scanCodes]);
-
-  // 当前目录浅状态轮询：外部编辑器改了文件，30 秒内刷新 M/A；不重拉目录、不清选择/预览
-  useEffect(() => {
-    if (!props.active || !props.repoRoot) return;
-    const timer = window.setInterval(() => refreshCodes(dirRef.current, false), 30_000);
-    return () => window.clearInterval(timer);
-  }, [props.active, props.repoRoot, refreshCodes]);
-
-  // 目录切换：优先缓存
-  useEffect(() => {
-    void load(dir, false);
-  }, [dir, load]);
-  // 仓库切换（repoRoot 变化）→ 浏览位置回到操作范围(子项目/根)
-  // 目录缓存按项目分桶：切走收起、切回恢复（秒开，不重新预加载）；只留最近 5 个项目
-  useEffect(() => {
-    const prev = prevRootRef.current;
-    tickAtSwitchRef.current = props.tick;
-    if (prev && prev !== props.repoRoot) {
-      // 切走：收起上一个项目的缓存（最近使用排最后，超过上限淘汰最久未用的）
-      const buckets = cacheByRootRef.current;
-      buckets.delete(prev);
-      buckets.set(prev, nodeDataRef.current);
-      while (buckets.size > CROSS_PROJECT_CACHE_KEEP) {
-        const oldest = buckets.keys().next().value;
-        if (oldest === undefined) break;
-        buckets.delete(oldest);
-      }
-      // 预加载没跑完就切走 → 缓存不完整，切回时要补拉
-      if (preloadRef.current?.running) incompleteRootsRef.current.add(prev);
-    }
-    prevRootRef.current = props.repoRoot ?? null;
-    // 切回：恢复该项目上次的缓存（存在则进入目录命中缓存，秒开）
-    const restored = props.repoRoot ? cacheByRootRef.current.get(props.repoRoot) : undefined;
-    restoredAtSwitchRef.current = Boolean(restored);
-    const targetDir = props.startRel ?? '';
-    const restoredMap = restored ? new Map(restored) : new Map();
-    setDir(targetDir);
-    setSel(null);
-    setPreview(null);
-    setNodeData(restoredMap);
-    // nodeDataRef 下一渲染才更新；这里先写，供下面的 load 读（否则读到上一个项目的缓存）
-    nodeDataRef.current = restoredMap;
-    // 两个项目的起始目录相同时 dir 不变、dir effect 不会触发 → 列表会残留上一个项目的内容，
-    // 必须显式加载一次（命中恢复的缓存则秒开；首次挂载交给 dir effect，避免重复请求）
-    if (prev && dirRef.current === targetDir) void load(targetDir, false);
-    setFavModal(false); // 仓库切换：勾选树指向旧仓库，直接关掉
-    // 自动预加载该仓库保存的常用文件夹（仅 svn，git 无需预加载；后台，不阻塞界面）
-    if (props.repoRoot) {
-      resetPreload(); // 停掉旧仓库的预加载 worker，清空队列与已见集合，避免污染新仓库缓存
-      if (props.repoType === 'svn') {
-        const saved = loadFavs(props.repoRoot);
-        setFavs(saved);
-        // 缓存完整且该常用目录已在缓存里 → 保留（切回秒开）；否则补拉
-        const complete = Boolean(restored) && !incompleteRootsRef.current.has(props.repoRoot);
-        incompleteRootsRef.current.delete(props.repoRoot);
-        for (const f of saved) {
-          if (!complete || !restored!.has(f.path)) preloadDir(f.path);
-        }
-      } else {
-        setFavs([]);
-      }
-    }
-  }, [props.repoRoot]); // eslint-disable-line react-hooks/exhaustive-deps
-  // 树/浏览模式的重载要按"已展开集合"刷新，下面的工具用 ref 镜像（避免闭包捕获旧集合）
-  const expandedRef = useRef(expanded);
-  expandedRef.current = expanded;
-
-  /** 操作后 / tick 刷新的缓存失效：**保留渲染中的目录**（''、当前目录、已展开）——
-   *  整体清空会让树闪成整页加载态、列表闪空白再重建（「操作后界面刷新抖动」的根源）；
-   *  其余目录缓存照旧清掉（操作可能改动任意目录，陈旧缓存下次进入会显示旧状态）。 */
-  const invalidateCache = useCallback(() => {
-    // 刷新 / 操作清过缓存 → 该项目缓存不完整；切走再切回时重新补预加载
-    if (repoRootRef.current) incompleteRootsRef.current.add(repoRootRef.current);
-    const keep = new Set<string>(['', dir, ...expandedRef.current]);
-    setNodeData((m) => {
-      let changed = false;
-      const n = new Map(m);
-      for (const k of n.keys()) {
-        if (!keep.has(k)) {
-          n.delete(k);
-          changed = true;
-        }
-      }
-      return changed ? n : m;
-    });
-  }, [dir]);
-
-  /** 树/浏览模式重载：''+已展开节点全刷（保留缓存后必须重载它们，否则展开子树显示旧数据）。
-   *  loadNode 无加载态、数据到达原地替换——界面不闪。 */
-  const reloadOpenNodes = useCallback(() => {
-    ['', ...expandedRef.current].forEach((d) => void loadNode(d, true));
-  }, [loadNode]);
-
-  // 切回有缓存的项目：缓存只负责秒开，切走期间外部可能改了文件、新增/删除——
-  // 首屏渲染出来后静默强刷一次，数据到达原地替换；失败保留缓存，不弹错误。
-  // 切到无缓存的新项目不用补刷（dir effect / 树重载本来就会加载最新数据）；
-  // 首次挂载走正常加载，也不在这里重复请求。
-  useEffect(() => {
-    if (!props.repoRoot || !restoredAtSwitchRef.current) return;
-    const root = props.repoRoot;
-    const targetDir = props.startRel ?? '';
-    // 让恢复的缓存先完成首帧渲染，再在后台请求（不闪加载条、不打断界面）
-    const timer = window.setTimeout(() => {
-      if (repoRootRef.current !== root) return; // 等待期间又切走了：这次强刷作废
-      if (modeRef.current === 'tree') reloadOpenNodes();
-      else void load(targetDir, true, true);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [props.repoRoot]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 刷新（tick 变化）：静默强刷——保留渲染中的缓存、数据原地替换（不闪加载条/不闪整页转圈）。
-  // 视图隐藏时只失效缓存不请求：切回来（active 变化）会补拉，否则后台每个视图都在跟着 tick 跑。
-  useEffect(() => {
-    if (props.tick === 0) return;
-    // 切项目带来的 tick（App 打开项目后会 refresh）：刚恢复的缓存就是切换时刻的数据，
-    // 不能再整体失效/强刷——否则"切回秒开"变成"重新请求根目录、常用目录缓存被清空"
-    if (props.tick === tickAtSwitchRef.current) return;
-    invalidateCache();
-    if (!props.active) return;
-    void load(dir, true, true);
-  }, [props.tick, props.active, load]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 树/浏览模式：初始化 + 刷新时重载根和已展开节点（同样只在视图可见时做）
-  // 切回已缓存的项目时跳过重载（缓存直接可用）；切到新项目 / 用户刷新照常重载
-  useEffect(() => {
-    if (mode !== 'tree' && mode !== 'browse') return;
-    if (!props.active) return;
-    const tickChanged = props.tick !== lastTreeTickRef.current;
-    lastTreeTickRef.current = props.tick;
-    if (tickChanged && props.tick === tickAtSwitchRef.current && restoredAtSwitchRef.current) return;
-    reloadOpenNodes();
-  }, [mode, props.tick, props.active, loadNode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 树模式：扁平化可见行
   const visibleRows = useMemo<VisibleRow[]>(() => {
@@ -1037,39 +509,8 @@ export function FsView(props: Props) {
   type FsOp = 'add' | 'commit' | 'revert' | 'delete';
   const onAction = (op: FsOp, rel: string, keep?: boolean) => props.onAction(op, [rel], keep);
 
-  // 关闭右键菜单（同时解锁右键选中锁定，并清空"原右键条目"记录，避免残留误判）
-  const closeCtx = () => {
-    if (ctxHideTimer.current) {
-      clearTimeout(ctxHideTimer.current);
-      ctxHideTimer.current = undefined;
-    }
-    ctxRelRef.current = null;
-    setCtx(null);
-    setCtxLocked(false);
-  };
-  // 延迟关闭：鼠标离开条目/菜单后短暂等待（给鼠标移入菜单留时间），移入菜单或回到原条目则取消
-  const closeCtxSoon = () => {
-    if (!ctx) return; // 菜单已关（渲染时闭包），无需再启动计时
-    if (ctxHideTimer.current) return; // 已有计时，不重置（避免条目间快速移动反复刷新）
-    ctxHideTimer.current = setTimeout(closeCtx, 250);
-  };
-  const cancelCtxClose = () => {
-    if (ctxHideTimer.current) {
-      clearTimeout(ctxHideTimer.current);
-      ctxHideTimer.current = undefined;
-    }
-  };
-  // 点击其他地方 / 滚动 → 立即关闭（同时解锁）
-  useEffect(() => {
-    if (!ctx) return;
-    window.addEventListener('click', closeCtx);
-    window.addEventListener('scroll', closeCtx, true);
-    return () => {
-      window.removeEventListener('click', closeCtx);
-      window.removeEventListener('scroll', closeCtx, true);
-      cancelCtxClose();
-    };
-  }, [ctx]);
+  // 右键菜单挂载/延迟关闭逻辑抽到 useFsContextMenu；菜单内容仍由下方 menuSvc 生成
+  const { ctx, setCtx, ctxLocked, setCtxLocked, ctxRelRef, closeCtx, closeCtxSoon, cancelCtxClose, ctxPos } = useFsContextMenu();
 
   // 当前目录下的匹配文件名（网格/列表框选高亮；匹配集来自 useFileSearch）
   const currentMatchNames = useMemo(() => {
@@ -1104,6 +545,7 @@ export function FsView(props: Props) {
     setDir,
     relOf,
   });
+  clearPendingLocateRef.current = () => setPendingLocate(null);
 
   // ---------- 键盘导航 ----------
   // 行数模式的结果也是树：键盘 ↑↓/Enter 走同一套行模型，不能落到背后那份普通树上
@@ -1177,57 +619,37 @@ export function FsView(props: Props) {
     clearLocate: () => setPendingLocate(null),
   });
 
-  /** 菜单定位：动态估算菜单尺寸，超出屏幕右/下边界时上移/左移，保证完整显示 */
-  const ctxPos = (e: React.MouseEvent, itemCount: number) => {
-    const itemH = 36; // 每项高度（含分隔线/间距）估算
-    const h = itemCount * itemH + 12;
-    const w = 220;
-    const x = Math.max(4, Math.min(e.clientX, window.innerWidth - w - 8));
-    const y = Math.max(4, Math.min(e.clientY, window.innerHeight - h - 8));
-    return { x, y };
-  };
+  // 行点击选择（Ctrl 切换 / Shift 锚点范围）抽到 use-fs-keyboard.ts
+  const { onRowClick } = useRowClickSelect({
+    mode,
+    dir,
+    visibleRows,
+    listEntries,
+    relOf,
+    setFocusIndex,
+    setSelected,
+    shiftAnchorRef,
+    setSel,
+  });
 
-  /** 条目点击（三视图通用）：无修饰=单选，Ctrl=切换选中，Shift(列表/树)=锚点范围选择 */
-  const onRowClick = (rel: string, i: number, ev: React.MouseEvent, e: FsEntry) => {
-    setFocusIndex(i);
-    if (ev.ctrlKey || ev.metaKey) {
-      // Ctrl：切换该项选中
-      setSelected((prev) => {
-        const s = new Set(prev);
-        if (s.has(rel)) s.delete(rel);
-        else s.add(rel);
-        return s;
-      });
-      shiftAnchorRef.current = rel;
-    } else if (ev.shiftKey && shiftAnchorRef.current) {
-      // Shift：锚点 → 当前 范围选择（列表/树）
-      const rels =
-        mode === 'tree'
-          ? (visibleRows as unknown as { rel: string }[]).map((r) => r.rel)
-          : listEntries.map((e) => relOf(e));
-      const a = rels.indexOf(shiftAnchorRef.current);
-      const b = rels.indexOf(rel);
-      if (a >= 0 && b >= 0) {
-        const s = new Set<string>();
-        for (let k = Math.min(a, b); k <= Math.max(a, b); k++) s.add(rels[k]!);
-        setSelected(s);
-      } else {
-        setSelected(new Set([rel]));
-        shiftAnchorRef.current = rel;
-      }
-    } else {
-      // 单击：单选（替换）
-      setSelected(new Set([rel]));
-      shiftAnchorRef.current = rel;
-    }
-    setSel(e);
-  };
+  // 框选 / 应用内拖拽 / 拖入上传 / 丢回收站手势抽到 useFsDrag
+  const { selBoxRef, selDragRef, lastWasDragRef, dragRels, onRowDragStart, onRowDragEnd, drop, conflictAsk, setConflictAsk, askConflict } = useFsDrag({
+    dir,
+    mode,
+    repoType: props.repoType,
+    selected,
+    rowsRef,
+    rowRel,
+    setTip,
+    load,
+    invalidateCache,
+    reloadOpenNodes,
+    setPendingLocate,
+    onToast: props.onToast,
+    onTrash: (rels) => props.onAction('fs-delete', rels),
+  });
 
-  // 切换目录后清空多选（rel 相对新目录已失效）；树模式 dir 不变，不受影响
-  useEffect(() => {
-    setSelected(new Set());
-    shiftAnchorRef.current = null;
-  }, [dir]);
+  /** 菜单定位：动态估算菜单尺寸，超出屏幕右/下边界时上移/左移，保证完整显示（有 ctxPos） */
 
   /** 在当前目录打开系统终端（/api/open-terminal：Windows Windows Terminal / cmd，Linux 终端模拟器） */
   const openTerminal = (rel: string) => {
@@ -1397,77 +819,12 @@ export function FsView(props: Props) {
   });
 
   /** 列表/浏览模式共用的条目行渲染 */
-  // 拖入上传：落点 = 文件区（当前目录）或文件夹行/格子（该文件夹）。
-  // 冲突时弹窗问策略：用 promise 把弹窗结果交回给 hook（弹窗状态只服务本视图，不进全局 modal-host）
-  const [conflictAsk, setConflictAsk] = useState<{ conflicts: string[]; resolve: (c: ConflictChoice | null) => void } | null>(null);
   const [crossCutAsk, setCrossCutAsk] = useState<{ versioned: string[]; pasteCount: number; resolve: (ok: boolean) => void } | null>(null);
   /** 跨仓库「剪切」含版本化文件：版本化不能跨仓库移动——弹窗告知/确认（继续=只粘未版本化项） */
   const askCrossCut = useCallback(
     (versioned: string[], pasteCount: number) => new Promise<boolean>((resolve) => setCrossCutAsk({ versioned, pasteCount, resolve })),
     [],
   );
-  const askConflict = useCallback(
-    (conflicts: string[]) => new Promise<ConflictChoice | null>((resolve) => setConflictAsk({ conflicts, resolve })),
-    [],
-  );
-  const drop = useDropUpload({
-    dir,
-    askConflict,
-    /** 项目内拖拽落在目录上 → 移动过去（规则与剪切粘贴同一套：版本化走 svn move / git mv） */
-    onMoveDrop: (destDir) => {
-      const items = dragItemsRef.current;
-      dragItemsRef.current = [];
-      // 松开在非文件夹上 = 用户自己放弃了这次拖拽：静默结束，不弹提示（拖没拖动他看得见）
-      if (destDir === null) return;
-      if (items.length === 0) return;
-      void (async () => {
-        const outcome = await moveItemsTo(items, destDir, props.onToast);
-        if (outcome !== 'ok') return;
-        // 移动同时改了两个目录（源与目标）→ 失效目录缓存再静默强刷（保留渲染中的不闪）
-        invalidateCache();
-        if (mode === 'tree') reloadOpenNodes();
-        else void load(dir, true, true);
-      })();
-    },
-    onDone: useCallback(
-      async (okCount: number, failed: string[], saved: string[]) => {
-        if (okCount > 0) {
-          // 落地改变了目录内容：静默重载（树模式连已展开节点一起）。
-          // 列表/网格必须等刷新完成再定位：否则 pendingLocate 会拿旧列表找行号，找不到就超时放弃
-          if (mode === 'tree') reloadOpenNodes();
-          else await load(dir, true, true);
-        }
-        // 只能选中当前目录下的：拖进子文件夹的那些不在本视图里，改用文案告诉用户它们去哪了
-        const parentOf = (r: string) => (r.includes('/') ? r.slice(0, r.lastIndexOf('/')) : '');
-        const here = saved.filter((r) => parentOf(r) === dir);
-        if (here.length > 0) {
-          // 数据就绪后由 pendingLocate effect 完成选中 + 滚动到首个 + 脉冲闪烁
-          setPendingLocate({ rel: here[0]!, at: Date.now(), only: here });
-        }
-        const elsewhere = saved.length - here.length;
-        // ，已选中并定位
-        const picked = here.length > 0 ? t('fs.drop.picked') : '';
-        // ，另有 {n} 个在子文件夹里
-        const sub = elsewhere > 0 ? t('fs.drop.elsewhere', { n: elsewhere }) : '';
-        props.onToast(
-          failed.length
-            // 已复制 {ok} 个文件{picked}{sub}；{n} 个失败：{list}
-            ? t('fs.drop.copiedFailed', {
-                ok: okCount,
-                picked,
-                sub,
-                n: failed.length,
-                //  等
-                list: failed.slice(0, 3).join(t('common.listSep')) + (failed.length > 3 ? t('fs.andMore') : ''),
-              })
-            // 已复制 {n} 个文件{picked}{sub}
-            : t('fs.drop.copied', { n: okCount, picked, sub }),
-          failed.length > 0, // 有失败项就按错误态显示（停留久一点，也提醒去处理）
-        );
-      },
-      [mode, dir, load, loadNode], // eslint-disable-line react-hooks/exhaustive-deps
-    ),
-  });
 
   /** 文件剪贴板（复制 / 剪切 / 粘贴）：冲突策略复用拖入上传那个弹窗；落点缺省 = 当前浏览目录 */
   const clipFlow = useCopyPaste({
@@ -1484,12 +841,6 @@ export function FsView(props: Props) {
       if (mode === 'tree') reloadOpenNodes();
       else void load(dir, true, true);
     }, [mode, dir, load, invalidateCache, reloadOpenNodes]),
-  });
-
-  // 拖到窗口边缘「丢回收站」手势：热区内松手 → 弹「移到回收站」确认（复用 fs-delete 全流程）；
-  // 拖出窗口外/落在目录行上 → 不触发（详见 use-drag-to-trash.ts 头注释）
-  const trashGesture = useDragToTrash({
-    onTrash: (rels) => props.onAction('fs-delete', rels),
   });
 
   // 剪贴板快捷键（Ctrl+C / Ctrl+X / Ctrl+V）：**单独一个监听**。
@@ -1535,49 +886,6 @@ export function FsView(props: Props) {
     () => new Set(clipFlow.clip?.mode === 'cut' ? clipFlow.clip.items.map((i) => i.rel) : []),
     [clipFlow.clip],
   );
-
-  /** 应用内拖拽移动：拖起时把要搬的条目记在这里。
-   *  拖拽期间浏览器不让读 dataTransfer 的内容（只在 drop 时才能读），所以拖了哪些只能自己记。 */
-  const dragItemsRef = useRef<ClipItem[]>([]);
-  /** 正在被拖的条目：整批一起变淡，让"我拖着的是一整批"一眼可见（浏览器默认只淡化鼠标按住的那一行） */
-  const [dragRels, setDragRels] = useState<Set<string>>(new Set());
-  /** 自定义拖拽图像（多点拖动时跟随鼠标的「N 项」卡片）；浏览器在下一帧才取快照，所以挂到 body 上、dragend 再摘 */
-  const dragGhostRef = useRef<HTMLElement | null>(null);
-  /** 拖起一行/一格：拖的是选中集合里的一员就整批搬，否则只搬它自己 */
-  const onRowDragStart = (ev: React.DragEvent, rel: string, name: string, isDir: boolean, code: string) => {
-    const picked: ClipItem[] =
-      selected.has(rel) && selected.size > 1
-        ? rowsRef.current.filter((r) => selected.has(rowRel(r))).map((r) => ({ rel: rowRel(r), name: r.name, isDir: r.isDir, code: r.code }))
-        : [{ rel, name, isDir, code }];
-    dragItemsRef.current = picked;
-    setDragRels(new Set(picked.map((i) => i.rel)));
-    // 拖动期间不挂悬浮卡：卡片是拖起来之前悬停弹出来的，不关掉它会一直停在原处挡路
-    // （HTML5 拖拽期间浏览器抑制鼠标事件，卡片既不会更新也不会自动消失）
-    setTip(null);
-    ev.dataTransfer.effectAllowed = 'move';
-    // 必须 setData，否则部分浏览器不触发 drop；值只在 drop 时读得到，
-    // 这里主要靠这个 MIME 让投放区分出「项目内拖拽」和「外部文件拖入」
-    ev.dataTransfer.setData(MOVE_MIME, picked.map((i) => i.rel).join('\n'));
-    // 丢回收站手势：本批全可磁盘删除（? / git 的 I）才武装——拖到窗口边缘松手 = 弹确认删除
-    trashGesture.begin(picked, props.repoType);
-    // 多个条目才换图像：只拖一条时，浏览器默认给的那一行就是最好的提示
-    if (picked.length > 1) {
-      const ghost = document.createElement('div');
-      ghost.className = 'drag-ghost';
-      // 移动 {n} 项
-      ghost.textContent = t('fs.drop.movingGhost', { n: picked.length });
-      document.body.appendChild(ghost);
-      ev.dataTransfer.setDragImage(ghost, 18, 14);
-      dragGhostRef.current = ghost;
-    }
-  };
-  const onRowDragEnd = () => {
-    dragItemsRef.current = []; // 拖到窗口外松手不会触发 drop，这里兜底清掉
-    setDragRels(new Set());
-    dragGhostRef.current?.remove();
-    dragGhostRef.current = null;
-    trashGesture.end(); // 垃圾桶手势收尾（桶隐藏；删除的触发在 drop 里）
-  };
 
   // 上报当前目录：切「历史」视图时按它过滤
   const onDirChangeRef = useRef(props.onDirChange);

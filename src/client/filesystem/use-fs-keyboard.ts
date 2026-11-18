@@ -5,6 +5,7 @@
  *  `modeRef` / `dirRef` 只有这里用，搬进来自己维护 —— 它们存在只为"按键回调读到最新值而不用重挂监听"。
  */
 import { useEffect, useRef } from 'react';
+import type React from 'react';
 import type { FsEntry } from '../shared/api.js';
 import { relOfName, type Mode, type VisibleRow } from './utils.js';
 
@@ -146,4 +147,68 @@ export function useFsKeyboard(opts: {
     const el = gridRef.current?.children[focusIndex] as HTMLElement | undefined;
     el?.scrollIntoView({ block: 'nearest' });
   }, [focusIndex, mode, rows.length]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/** 行点击选择（三视图通用）：从 index.tsx 原样抽出，和键盘导航放在同一文件。
+ *
+ *  无修饰=单选，Ctrl=切换选中，Shift（列表/树）=锚点范围选择。
+ *  切换目录后清空多选（rel 相对新目录已失效）；树模式 dir 不变，不受影响。
+ *  shiftAnchorRef 由调用方持有——浏览模式框选（use-fs-drag）也要更新同一个锚点。
+ */
+export function useRowClickSelect(opts: {
+  mode: Mode;
+  dir: string;
+  visibleRows: VisibleRow[];
+  listEntries: FsEntry[];
+  relOf: (e: FsEntry) => string;
+  setFocusIndex: (i: number) => void;
+  setSelected: React.Dispatch<React.SetStateAction<Set<string>>>;
+  shiftAnchorRef: React.MutableRefObject<string | null>;
+  setSel: React.Dispatch<React.SetStateAction<FsEntry | null>>;
+}) {
+  const { mode, dir, visibleRows, listEntries, relOf, setFocusIndex, setSelected, shiftAnchorRef, setSel } = opts;
+
+  /** 条目点击（三视图通用）：无修饰=单选，Ctrl=切换选中，Shift(列表/树)=锚点范围选择 */
+  const onRowClick = (rel: string, i: number, ev: React.MouseEvent, e: FsEntry) => {
+    setFocusIndex(i);
+    if (ev.ctrlKey || ev.metaKey) {
+      // Ctrl：切换该项选中
+      setSelected((prev) => {
+        const s = new Set(prev);
+        if (s.has(rel)) s.delete(rel);
+        else s.add(rel);
+        return s;
+      });
+      shiftAnchorRef.current = rel;
+    } else if (ev.shiftKey && shiftAnchorRef.current) {
+      // Shift：锚点 → 当前 范围选择（列表/树）
+      const rels =
+        mode === 'tree'
+          ? (visibleRows as unknown as { rel: string }[]).map((r) => r.rel)
+          : listEntries.map((e) => relOf(e));
+      const a = rels.indexOf(shiftAnchorRef.current);
+      const b = rels.indexOf(rel);
+      if (a >= 0 && b >= 0) {
+        const s = new Set<string>();
+        for (let k = Math.min(a, b); k <= Math.max(a, b); k++) s.add(rels[k]!);
+        setSelected(s);
+      } else {
+        setSelected(new Set([rel]));
+        shiftAnchorRef.current = rel;
+      }
+    } else {
+      // 单击：单选（替换）
+      setSelected(new Set([rel]));
+      shiftAnchorRef.current = rel;
+    }
+    setSel(e);
+  };
+
+  // 切换目录后清空多选（rel 相对新目录已失效）；树模式 dir 不变，不受影响
+  useEffect(() => {
+    setSelected(new Set());
+    shiftAnchorRef.current = null;
+  }, [dir, setSelected, shiftAnchorRef]);
+
+  return { onRowClick };
 }
