@@ -11,7 +11,7 @@ import { secureClean } from '../../secure-clean.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { clearGithubIdentityCache } from './github.js';
+import { clearGithubIdentityCache } from '../github/cache.js';
 import { t, setLang, getLang, isLang } from '../../shared/i18n/index.js';
 import type { Ctx } from '../http/response.js';
 

@@ -10,6 +10,7 @@ import { run } from '../../vcs/exec.js';
 import { sendJson, readBody, type Ctx } from '../http/response.js';
 import { repoInfo } from '../repo-context.js';
 import { loadConfig } from '../../config.js';
+import { parseGithub } from '../../shared/github.js';
 import { t } from '../../shared/i18n/index.js';
 import {
   readReleaseArtifacts,
@@ -17,11 +18,9 @@ import {
   detectReleaseKind,
 } from '../release-artifacts.js';
 import { dockerImageSize } from '../docker-registry.js';
+import { FETCH_TIMEOUT_MS, githubFetchRaw } from '../github/client.js';
 
 const LEVELS = new Set(['patch', 'minor', 'major']);
-const GITHUB_API = 'https://api.github.com';
-/** 与 github.ts 同款中性 UA（含 "svn" 的产品名会被 GitHub WAF 403） */
-const GITHUB_UA = 'vcs-client/1.0 (+https://github.com/yi-ding-dian/svn-git)';
 
 /** 应用自身根目录：dist/server/routes → 项目根（开发与打包结构一致） */
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -91,13 +90,10 @@ async function commitsSinceLastTag(root: string): Promise<string[]> {
     .filter(Boolean);
 }
 
-/** origin 是否指向 GitHub，返回 owner/repo（发布镜像地址替换用）。 */
+/** origin 是否指向 GitHub，返回 owner/repo（发布镜像地址替换用；解析统一走 shared/github.ts）。 */
 async function githubOwnerRepo(root: string): Promise<{ owner: string; repo: string } | null> {
   const remote = await gitOut(root, ['remote', 'get-url', 'origin']);
-  const m = /github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/.exec(remote);
-  const owner = m?.[1];
-  const repo = m?.[2];
-  return owner && repo ? { owner, repo } : null;
+  return parseGithub(remote);
 }
 
 function bump(cur: string, level: 'patch' | 'minor' | 'major'): string {
@@ -122,21 +118,19 @@ async function releaseStatus(
   releaseAssets?: number;
 }> {
   const remote = await gitOut(root, ['remote', 'get-url', 'origin']);
-  const m = /github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/.exec(remote);
-  if (!m) return { ok: false, error: t('srv.releaseNoGithub'), status: 'pending', conclusion: null, htmlUrl: '', artifacts: [] };
+  const gh = parseGithub(remote);
+  if (!gh) return { ok: false, error: t('srv.releaseNoGithub'), status: 'pending', conclusion: null, htmlUrl: '', artifacts: [] };
   const token = loadConfig().git?.password ?? '';
-  const headers: Record<string, string> = {
-    'User-Agent': GITHUB_UA,
-    Accept: 'application/vnd.github+json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
   // Docker 项目同时有 ci.yml 和 docker.yml：只认 docker.yml 的 run，
   // 否则可能把普通 CI 跑完误判成"镜像发布成功"。
   const docker = readReleaseArtifacts(root).kind === 'docker';
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 8_000);
+  const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(`${GITHUB_API}/repos/${m[1]}/${m[2]}/actions/runs?per_page=30`, { headers, signal: ctl.signal });
+    const res = await githubFetchRaw(`/repos/${gh.owner}/${gh.repo}/actions/runs?per_page=30`, {
+      signal: ctl.signal,
+      token,
+    });
     if (!res.ok) {
       return { ok: false, error: `HTTP ${res.status}`, status: 'pending', conclusion: null, htmlUrl: '', artifacts: [] };
     }
@@ -152,7 +146,7 @@ async function releaseStatus(
         ok: true,
         status: 'pending',
         conclusion: null,
-        htmlUrl: `https://github.com/${m[1]}/${m[2]}/actions`,
+        htmlUrl: `https://github.com/${gh.owner}/${gh.repo}/actions`,
         artifacts: [],
       };
     }
@@ -162,9 +156,9 @@ async function releaseStatus(
     let artifacts: { name: string; size: number }[] = [];
     let releaseAssets: number | undefined;
     if (status === 'completed' && conclusion === 'success') {
-      const ar = await fetch(`${GITHUB_API}/repos/${m[1]}/${m[2]}/actions/runs/${runInfo.id}/artifacts`, {
-        headers,
+      const ar = await githubFetchRaw(`/repos/${gh.owner}/${gh.repo}/actions/runs/${runInfo.id}/artifacts`, {
         signal: ctl.signal,
+        token,
       });
       if (ar.ok) {
         const ad = (await ar.json()) as { artifacts?: Record<string, unknown>[] };
@@ -176,9 +170,9 @@ async function releaseStatus(
       // Release assets 才是用户能下载的产物：有些项目不传 Actions artifacts，
       // 直接 gh release upload（my-Agent 这类），只看 artifacts 会误报 0 个产物
       try {
-        const rr = await fetch(
-          `${GITHUB_API}/repos/${m[1]}/${m[2]}/releases/tags/${encodeURIComponent(tag)}`,
-          { headers, signal: ctl.signal },
+        const rr = await githubFetchRaw(
+          `/repos/${gh.owner}/${gh.repo}/releases/tags/${encodeURIComponent(tag)}`,
+          { signal: ctl.signal, token },
         );
         if (rr.ok) {
           const rd = (await rr.json()) as { assets?: unknown };

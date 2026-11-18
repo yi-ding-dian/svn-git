@@ -4,11 +4,5 @@
     "rule": "routes-cross-domain",
     "file": "src/server/routes/branch.ts",
     "target": "./svn-auth.js"
-  },
-  {
-    "scope": "server",
-    "rule": "routes-cross-domain",
-    "file": "src/server/routes/config.ts",
-    "target": "./github.js"
   }
 ]
