@@ -12,7 +12,7 @@
  *  失败时回落到旧身份（"以为切了其实没切"）。 */
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { FormRow } from '../ui/ui.js';
 import { IconLogout } from '../ui/icons.js';
 import { ConfirmModal } from '../ui/prompt.js';

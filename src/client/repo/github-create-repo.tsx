@@ -7,7 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { get, post, type GitHubCreateResult } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { t } from '../../shared/i18n/index.js';
 import { normalizeGhRepoName, sanitizeGhRepoName } from '../../shared/github.js';
 import { useGitHubCred, GitHubCredBox } from './github-cred.js';

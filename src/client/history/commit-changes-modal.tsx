@@ -4,13 +4,13 @@
  *  提交之间的差异一律相对第一父（合并提交取 `rev^`），与历史行里的文件数口径一致；
  *  根提交没有父，用 Git 空树对象作为"前一版本"（差异表现为整文件新增）。 */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { DiffView } from './diff/index.js';
 import { RestoreVersionConfirm } from './restore-version.js';
 import type { RestoreVersionTarget } from './restore-version.js';
 import { isBinaryFile } from '../shared/utils.js';
 import { IconResizeHorizontal } from '../ui/icons.js';
-import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
+import { ResizeCursor, useResizeCursor } from '../ui/use-resize-cursor.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { t } from '../../shared/i18n/index.js';

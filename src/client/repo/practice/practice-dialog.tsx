@@ -1,7 +1,7 @@
 /** 练习仓库弹窗（容器）：类型/父目录/场景 → 创建 → 交给上层自动打开 */
 import React, { useEffect, useMemo, useState } from 'react';
 import { get, post } from '../../shared/api.js';
-import { ModalShell } from '../../shell/modal-shell.js';
+import { ModalShell } from '../../ui/modal-shell.js';
 import { joinPath } from '../../shared/utils.js';
 import { t } from '../../../shared/i18n/index.js';
 import { OpenBrowser } from '../open.js';

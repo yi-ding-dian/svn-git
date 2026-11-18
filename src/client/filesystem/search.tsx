@@ -9,11 +9,11 @@ import { t } from '../../shared/i18n/index.js';
 import type { LineCondition } from '../../shared/types.js';
 import { get } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
-import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
+import { ResizeCursor, useResizeCursor } from '../ui/use-resize-cursor.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
 // 命中高亮已提升 shared（仓库浏览搜索共用，边界规范）
-import { highlightMatch } from '../shared/highlight-match.js';
+import { highlightMatch } from '../ui/highlight-match.js';
 import { parseLineCondition, sanitizeLineQuery, sameLineCondition } from './utils.js';
 import type { LineScanState } from './line-filter.js';
 
@@ -173,7 +173,7 @@ export function useFileSearch(dir: string) {
 }
 
 /** 把命中的片段包成 <mark>（大小写不敏感，与后端 includes 判定一致）。
- *  已提升到 shared/highlight-match.tsx（文件浏览器与仓库浏览共用）——此处 import 使用 */
+ *  已提升到 ui/highlight-match.tsx（文件浏览器与仓库浏览共用）——此处 import 使用 */
 export type FileSearch = ReturnType<typeof useFileSearch>;
 
 /** 搜索输入框 + 结果下拉（受控：状态来自 useFileSearch；选中项回调 onPick）；

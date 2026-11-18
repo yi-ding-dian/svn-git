@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { Tooltip } from '../ui/tooltip.js';
 
 interface Entry {

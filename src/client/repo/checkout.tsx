@@ -7,7 +7,7 @@
  *  入口：repo-browse.tsx 树里右键（目录行 + 空白 = 仓库根）。 */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { get, post, type RepoCheck } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { launchMagicFlight } from '../animations/index.js';
 import { PickDirModal } from './pick-dir.js';
 import { DirCheckTree } from '../ui/dir-check-tree.js';

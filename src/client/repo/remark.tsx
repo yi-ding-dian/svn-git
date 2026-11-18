@@ -1,6 +1,6 @@
 /** 备注弹窗（最近项目右键「备注」） */
 import React, { useState } from 'react';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';
 

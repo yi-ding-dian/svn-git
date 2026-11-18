@@ -1,6 +1,6 @@
 /** 更新结果弹窗 */
 import React, { useMemo } from 'react';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { IconOk, IconErr } from '../ui/icons.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 

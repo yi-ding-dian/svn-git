@@ -6,7 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** compare 预填页：origin 默认分支 ← 你 fork 的当前分支（GitHub 标准提 PR 入口） */

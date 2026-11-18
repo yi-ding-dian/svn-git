@@ -6,7 +6,7 @@
  *  （获取仓库是长期行为，用户通常希望记住）；真正写入配置在**获取成功之后**（由 get-repo-task 做），
  *  密码错误不会污染已保存的账号。 */
 import React, { useState } from 'react';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { FormRow } from '../ui/ui.js';
 import { isImeComposing } from '../shared/utils.js';
 import { t } from '../../shared/i18n/index.js';

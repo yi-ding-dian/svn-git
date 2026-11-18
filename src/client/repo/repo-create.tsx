@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { post, get, type RepoCheck } from '../shared/api.js';
 import { launchMagicFlight } from '../animations/index.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { IconDownload, IconPlus } from '../ui/icons.js';
 import { PickDirModal } from './pick-dir.js';
 import { SvnCredModal } from './svn-cred.js';

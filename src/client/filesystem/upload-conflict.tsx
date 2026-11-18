@@ -5,7 +5,7 @@
  *  又能按用户想要的名字另存。改名不需要后端配合——上传/复制的目标名字本来就是请求里的相对路径。 */
 import React, { useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import type { ConflictChoice } from './use-file-transfer.js';
 import { Tooltip } from '../ui/tooltip.js';
 

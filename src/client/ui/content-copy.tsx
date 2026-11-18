@@ -8,8 +8,8 @@
  *  - 复制结果统一用全局 toast 提示（成功「已复制」/ 失败「复制失败」）
  */
 import React, { useCallback, useRef, useState } from 'react';
-import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
-import { IconCopy } from '../ui/icons.js';
+import { ContextMenu, type CtxMenuItem } from './context-menu.js';
+import { IconCopy } from './icons.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 提示回调（与 app.tsx 的 showToast 同签名：msg, err?） */

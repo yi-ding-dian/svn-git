@@ -1,5 +1,5 @@
 /** 左右两栏各自独立的搜索：输入/匹配计数/上一个下一个，以及搜索框宽度的持久化与拖拽收起。
- *  拖拽复用 shared/use-resize-cursor 的统一光标（实例由外壳持有并传入，保证全局只有一个浮层）。 */
+ *  拖拽复用 ui/use-resize-cursor 的统一光标（实例由外壳持有并传入，保证全局只有一个浮层）。 */
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, MutableRefObject, RefObject } from 'react';
 import type { LeftRow, RightRow } from './use-diff-rows.js';

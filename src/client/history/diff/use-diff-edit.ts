@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import { get } from '../../shared/api.js';
 import { t } from '../../../shared/i18n/index.js';
-import type { InlineEditorHandle } from '../../shared/inline-editor.js';
+import type { InlineEditorHandle } from '../../ui/inline-editor.js';
 import type { DiffTarget } from './diff-types.js';
 import type { DiffBlock } from './use-diff-rows.js';
 

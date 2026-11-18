@@ -6,15 +6,16 @@
  *  cat 内容超过 2MB 由后端拒绝（提示用下载）。
  *  入口：最近项目里 SVN 项目右键「浏览仓库」（app 用 repo-root 接口取仓库根 URL 后打开）。 */
 import React, { useEffect, useRef, useState } from 'react';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { get, post } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
+import { formatFileSize } from '../shared/format-size.js';
 import { langOf, highlightLine } from '../shared/highlight.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { loadMdTheme, mdThemeVars } from '../shared/md-theme.js';
-import { highlightMatch } from '../shared/highlight-match.js';
+import { highlightMatch } from '../ui/highlight-match.js';
 import { MiniIcon, IconServer, IconPin, IconResizeHorizontal } from '../ui/icons.js';
-import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
+import { ResizeCursor, useResizeCursor } from '../ui/use-resize-cursor.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { PickDirModal } from './pick-dir.js';
 import { CheckoutDialog } from './checkout.js';
@@ -30,14 +31,6 @@ interface RepoEntry {
   rev?: string;
   author?: string;
   date?: string;
-}
-
-/** 字节 → 人类可读（文件列表右列） */
-function fmtSize(n?: number): string {
-  if (n === undefined) return '';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export function RepoBrowseModal(props: {
@@ -714,7 +707,7 @@ export function RepoBrowseModal(props: {
                         )}
                         {/* 弹性占位：把大小/修订列推到行尾（替代 name 原本的 flex:1） */}
                         <span style={{ flex: 1 }} />
-                        <span className="dim small nowrap" style={{ flexShrink: 0, width: 60, textAlign: 'right' }}>{fmtSize(e.size)}</span>
+                        <span className="dim small nowrap" style={{ flexShrink: 0, width: 60, textAlign: 'right' }}>{formatFileSize(e.size)}</span>
                         <span className="dim small nowrap" style={{ flexShrink: 0, width: 70 }} title={`${e.author ?? ''} ${e.date?.slice(0, 10) ?? ''}`}>
                           {e.rev ? `r${e.rev}` : ''}
                         </span>

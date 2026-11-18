@@ -10,7 +10,7 @@
  *    onMouseUp:   stop()
  *    渲染一次 <ResizeCursor ghostRef={ghostRef} />（fixed 定位，放哪个组件里都行） */
 import React, { useCallback, useRef } from 'react';
-import { IconResizeHorizontal } from '../ui/icons.js';
+import { IconResizeHorizontal } from './icons.js';
 
 export function useResizeCursor() {
   const ghostRef = useRef<HTMLSpanElement | null>(null);

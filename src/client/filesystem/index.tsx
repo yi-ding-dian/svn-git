@@ -3,11 +3,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '../../shared/i18n/index.js';
 import { get, post, CODE_DESC, codeRank, type FsData, type FsEntry } from '../shared/api.js';
 import { IconDiff, IconRevert, IconClock, IconEyeClosed, IconEye, IconLock, IconUnlock, IconCommit, IconPlus, IconClean, IconList, IconTree, IconGrid, IconHome, IconUp, GridIcon, MiniIcon } from '../ui/icons.js';
-import { CodeBadge, DirBadge, TreeConflictBadge } from '../ui/badges.js';
+import { CodeBadge, DirBadge, TreeConflictBadge } from './badges.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
-import { useShareStatus } from '../share/share-context.js';
-import { filterEntries, parseLineCondition, type Filter, type Mode, type VisibleRow } from './utils.js';
+import { filterEntries, parseLineCondition, statusColor, type Filter, type Mode, type VisibleRow } from './utils.js';
 import type { LineCondition } from '../../shared/types.js';
 import { useLineScan, useLineRows, LineScanHeader } from './line-filter.js';
 import { buildBlankItems, buildMultiItems, buildRowItems, type MenuServices } from './menus.js';
@@ -34,10 +33,11 @@ import { ModuleIndexDialog } from './module-index.js';
 /** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
 import { IgnoreModal } from './ignore-modal.js';
 import { FavDirsModal, type FavDir } from './fav-dirs.js';
-import { fmtSize, statusColor, isBinaryFile, isImageFile, isImeComposing } from '../shared/utils.js';
+import { isBinaryFile, isImageFile, isImeComposing } from '../shared/utils.js';
+import { formatFileSize } from '../shared/format-size.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 /** 命令预览: 多路径缩写（前 3 个 + …） */
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { FormRow } from '../ui/ui.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { PreviewPane } from './preview-pane.js';
@@ -51,6 +51,8 @@ interface Props {
   repoRoot?: string | null;
   /** 操作范围(相对仓库根):大仓库打开的子项目,浏览从这里开始 */
   startRel?: string | null;
+  /** 远程访问（由组合根传入）：右键菜单不提供「在本机启动外部程序」 */
+  remote?: boolean;
   onAction: (op: 'add' | 'revert' | 'delete' | 'commit' | 'fs-delete' | 'move' | 'fs-move', paths: string[], keep?: boolean) => void;
   onDiff: (path: string) => void;
   /** 打开历史视图：isDir 决定目录还原走反向合并（确认框/命令预览按它区分） */
@@ -93,8 +95,6 @@ const CROSS_PROJECT_CACHE_KEEP = 5;
 const KEY_HINT_SEEN = 'svngit:fs-key-hint-seen';
 
 export function FsView(props: Props) {
-  /** 共享访问状态：远程时右键菜单不提供「在本机启动外部程序」 */
-  const share = useShareStatus();
   const [dir, setDir] = useState(props.startRel ?? ''); // 列表模式当前目录(初始 = 操作范围,大仓库子项目)
   const [data, setData] = useState<FsData | null>(null); // 列表模式数据
   const [error, setError] = useState('');
@@ -1253,7 +1253,7 @@ export function FsView(props: Props) {
   const menuSvc = (): MenuServices => ({
     repoType: props.repoType,
     // 远程访问：隐藏在本机启动外部程序的项，换浏览器新标签打开
-    remote: Boolean(share && !share.local),
+    remote: Boolean(props.remote),
     dir: data?.dir ?? '',
     root: data?.root,
     setIgnoreTarget,
@@ -1778,7 +1778,7 @@ export function FsView(props: Props) {
           </span>
         </Tooltip>
         {rowButtons({ ...e, rel })}
-        {!e.isDir && <span className="dim small nowrap">{fmtSize(e.size)}</span>}
+        {!e.isDir && <span className="dim small nowrap">{formatFileSize(e.size)}</span>}
         {!e.isDir && <span className="dim small nowrap" style={{ width: 110 }}>{e.mtime}</span>}
       </div>
     );
@@ -2452,7 +2452,7 @@ export function FsView(props: Props) {
                   {/* 状态 / 无变更 */}
                   <tr><td>{t('fs.detail.status')}</td><td>{sel.code ? `${CODE_DESC[sel.code]?.() ?? sel.code} (${sel.code})` : t('fs.detail.noChange')}</td></tr>
                   {/* 大小 */}
-                  <tr><td>{t('fs.detail.size')}</td><td>{fmtSize(sel.size)}</td></tr>
+                  <tr><td>{t('fs.detail.size')}</td><td>{formatFileSize(sel.size)}</td></tr>
                   {/* 修改时间 */}
                   <tr><td>{t('fs.detail.mtime')}</td><td>{sel.mtime}</td></tr>
                   {/* 类型 / 文件夹 / 文件 */}

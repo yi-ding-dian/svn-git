@@ -3,9 +3,10 @@
  *  「下载到…」/「所在目录」共用，底部「选择此目录」+ 新建文件夹/右键重命名）。
  *  浏览视图在 DirBrowser；这里只管数据与两种模式的语义 */
 import { useEffect, useRef, useState } from 'react';
-import { baseName, joinPath, isImeComposing, isPathWithin, historyEntryKey, historyOpenPath } from '../shared/utils.js';
+import { baseName, joinPath, isImeComposing, isPathWithin } from '../shared/utils.js';
+import { historyEntryKey, historyOpenPath } from './recent.js';
 import { get, post, type BrowseResult, type HistoryItem, type RepoInfo } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { IconOk, IconErr } from '../ui/icons.js';
 import { Tooltip } from '../ui/tooltip.js';

@@ -4,7 +4,7 @@
  *  两个 tab 按能力显示，默认落在发布历史（发布是危险操作，不默认展示）。
  *  历史 tab 的「刷新 / 在 GitHub 打开」放在弹窗底部的 foot，不覆盖内容。 */
 import React, { useRef, useState } from 'react';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { IconRelease, IconRefresh, IconExternal } from '../ui/icons.js';
 import { GitHubReleasesPanel, type ReleasesPanelHandle } from './github-releases.js';
 import { ReleaseFormPanel, type ReleaseFormHandle } from './release-modal.js';

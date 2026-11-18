@@ -5,7 +5,7 @@ import { t } from '../../../../../shared/i18n/index.js';
 import { baseName } from '../../../../shared/utils.js';
 import { launchMagicFlight } from '../../../../animations/index.js';
 import { IconClean } from '../../../../ui/icons.js';
-import { startTaskDeferred } from '../../../bg-defer.js';
+import { startTaskDeferred } from '../../../../shared/bg-defer.js';
 import type { ToolDef } from '../types.js';
 
 export const cleanWorkingCopyTool: ToolDef = {

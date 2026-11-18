@@ -4,7 +4,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { t } from '../../../shared/i18n/index.js';
 import { post, type BranchDeleteCheck } from '../../shared/api.js';
-import { ResizableModal } from '../../shell/modal-shell.js';
+import { ResizableModal } from '../../ui/modal-shell.js';
 
 /** ISO 时间 → 本地可读（解析失败原样显示） */
 function formatDate(iso?: string): string {

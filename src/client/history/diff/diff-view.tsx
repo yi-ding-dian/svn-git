@@ -5,7 +5,7 @@ import { isBinaryFile } from '../../shared/utils.js';
 import { DiffRender } from '../../ui/diff-render.js';
 import { langOf } from '../../shared/highlight.js';
 import { IconCopy } from '../../ui/icons.js';
-import { ResizeCursor, useResizeCursor } from '../../shared/use-resize-cursor.js';
+import { ResizeCursor, useResizeCursor } from '../../ui/use-resize-cursor.js';
 import { ContextMenu, type CtxMenuItem } from '../../ui/context-menu.js';
 import { parseUnifiedDiff, lineMarksOf, type DiffLine } from '../../../shared/diff-parse.js';
 import { t } from '../../../shared/i18n/index.js';

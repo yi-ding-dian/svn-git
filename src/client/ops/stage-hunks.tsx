@@ -8,11 +8,19 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { get, post, type ParsedDiff } from '../shared/api.js';
-import { ResizableModal } from '../shell/modal-shell.js';
-import { hunkSummaryLabel } from '../shared/utils.js';
+import { ResizableModal } from '../ui/modal-shell.js';
+import type { Hunk } from '../../shared/types.js';
 import { highlightLine, langOf } from '../shared/highlight.js';
 import { CommandPreview } from '../ui/command-preview.js';
 import { t } from '../../shared/i18n/index.js';
+
+/** 变更块的摘要（hunk 勾选弹窗里每块的标题，如「第 12 行 · +3 −1」） */
+function hunkSummaryLabel(h: Hunk): string {
+  const add = h.lines.filter((l) => l.type === 'add').length;
+  const del = h.lines.filter((l) => l.type === 'del').length;
+  // 第 {line} 行 · +{add} −{del}
+  return t('common.hunkSummary', { line: h.oldStart, add, del });
+}
 
 export function StageHunksModal(props: {
   /** 文件相对路径 */

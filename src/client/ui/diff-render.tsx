@@ -1,7 +1,7 @@
 /** diff 文本着色渲染 */
 import React from 'react';
 import { t } from '../../shared/i18n/index.js';
-import { useContentCopyMenu, type CopyToast } from '../shared/content-copy.js';
+import { useContentCopyMenu, type CopyToast } from './content-copy.js';
 
 const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
 

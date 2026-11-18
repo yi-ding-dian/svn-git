@@ -6,7 +6,7 @@
  *  列表滚动到底自动拉下一页（服务端按 GitHub 的 Link 头给 hasMore）。 */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { get, post, type GitHubMyRepo } from '../shared/api.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { IconGitHub, IconLock, IconUnlock, IconStar, IconClock, IconExternal, IconCopy, IconDownload } from '../ui/icons.js';

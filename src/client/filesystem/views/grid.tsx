@@ -2,8 +2,8 @@
 import React from 'react';
 import { t } from '../../../shared/i18n/index.js';
 import { CODE_DESC, codeRank, type FsEntry } from '../../shared/api.js';
-import { fmtSize } from '../../shared/utils.js';
-import { CodeBadge, DirBadge, TreeConflictBadge, type TreeConflictState } from '../../ui/badges.js';
+import { formatFileSize } from '../../shared/format-size.js';
+import { CodeBadge, DirBadge, TreeConflictBadge, type TreeConflictState } from '../badges.js';
 import { GridIcon, IconLock } from '../../ui/icons.js';
 import { Tooltip } from '../../ui/tooltip.js';
 import { ThumbIcon } from './thumb.js';
@@ -100,7 +100,7 @@ export function GridItem(props: {
           {props.renaming ?? e.name}
         </span>
       </Tooltip>
-      {!e.isDir && <span className="dim small nowrap">{fmtSize(e.size)}</span>}
+      {!e.isDir && <span className="dim small nowrap">{formatFileSize(e.size)}</span>}
     </div>
   );
 }
@@ -222,7 +222,7 @@ export function FileTipCard(props: { tip: TipData | null }) {
       )}
       {!tip.isDir && (tip.size !== undefined || tip.mtime) && (
         <div className="dim" style={{ fontSize: 11, marginBottom: 4 }}>
-          {tip.size !== undefined ? fmtSize(tip.size) : ''}
+          {tip.size !== undefined ? formatFileSize(tip.size) : ''}
           {tip.size !== undefined && tip.mtime ? ' · ' : ''}
           {tip.mtime ?? ''}
         </div>

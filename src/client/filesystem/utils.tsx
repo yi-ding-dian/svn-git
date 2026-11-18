@@ -153,3 +153,17 @@ export interface VisibleRow {
   /** 条目自身就是树冲突（区别于 tc.inner 的"目录内部有冲突"）：右键菜单据此给专门的处理入口 */
   treeConflicted?: boolean;
 }
+
+/** 文件名状态染色：按状态码返回文字色（M 橙黄/A 绿/D 红/C 红/? 灰），无状态返回 undefined（默认色）。
+ * 与徽标实底色联动——文件名带色 = 该文件有对应状态,扫视一眼可辨。 */
+export function statusColor(code?: string): string | undefined {
+  switch (code) {
+    case 'M': return 'var(--warn)';
+    case 'A': return 'var(--ok)';
+    case 'D': return 'var(--err)';
+    case 'C': return 'var(--err)';
+    case '!': return 'var(--err)'; // 磁盘缺失（svn ! / git " D"）
+    case '?': return 'var(--dim)';
+    default: return undefined;
+  }
+}

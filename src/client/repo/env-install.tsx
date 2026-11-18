@@ -1,6 +1,6 @@
 /** 环境检测 / 安装弹窗：显示 svn/git 是否安装，缺失可一键安装（SSE 实时日志） */
 import React, { useEffect, useRef, useState } from 'react';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { HelpNote } from '../ui/ui.js';
 import { IconOk, IconErr } from '../ui/icons.js';
 import { t } from '../../shared/i18n/index.js';

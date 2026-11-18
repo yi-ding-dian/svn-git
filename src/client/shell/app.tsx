@@ -23,7 +23,9 @@ import { useProjectHistory } from '../repo/use-project-history.js';
 import { ModalHost, onboardText, type Op } from './modal-host.js';
 import { Sidebar, type View } from './sidebar.js';
 import { IconOk, IconErr } from '../ui/icons.js';
-import { pathAutoWidth, isBinaryFile, translateVcsError, isOutOfDateError, baseName, historyEntryKey } from '../shared/utils.js';
+import { pathAutoWidth, isBinaryFile, baseName } from '../shared/utils.js';
+import { translateVcsError, isOutOfDateError } from '../shared/vcs/errors.js';
+import { historyEntryKey } from '../repo/recent.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { useTasks, startTask, hasRunningTask, pollTransferProgress } from '../shared/tasks.js';
 import { addNotice } from '../shared/notices.js';
@@ -1401,6 +1403,7 @@ export function App() {
                   tick={tick}
                   active={view === 'browse'}
                   repoType={repo.type}
+                  remote={shareStatus ? !shareStatus.local : false}
                   repoRoot={repo.root}
                   startRel={repo.startRel}
                   onAction={handleAction}

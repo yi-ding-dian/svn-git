@@ -13,7 +13,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { Tooltip } from '../ui/tooltip.js';
 

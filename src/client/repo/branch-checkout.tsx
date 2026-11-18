@@ -6,7 +6,7 @@
  *  入口：分支管理弹窗每行「📥 检出」（Git 仓库）。 */
 import React, { useEffect, useState } from 'react';
 import { get, post, type RepoCheck } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { PickDirModal } from './pick-dir.js';
 import { FormRow } from '../ui/ui.js';
 import { CommandPreview } from '../ui/command-preview.js';

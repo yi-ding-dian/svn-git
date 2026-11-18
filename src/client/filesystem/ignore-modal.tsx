@@ -4,7 +4,7 @@ import { t } from '../../shared/i18n/index.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { isImeComposing } from '../shared/utils.js';
 import { get, post } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 
 /** 目录路径归一：'' / '.' 都表示仓库根（比较"规则落在哪"与"当前目录"时用） */
 const normDir = (s: string): string => (s === '.' || s === '' ? '' : s.replace(/^\.\//, '').replace(/\/+$/, ''));

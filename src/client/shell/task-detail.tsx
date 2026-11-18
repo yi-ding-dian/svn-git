@@ -3,7 +3,7 @@
  *  实时进度（自己有 chan 就每秒轮询，比列表快照更新）、取消按钮。
  *  由 header 的沙漏入口渲染（打开时先关任务面板——面板层级 299/300 会压住 modal 的 100）。 */
 import React, { useEffect, useState } from 'react';
-import { ModalShell } from './modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { get } from '../shared/api.js';
 import { useTasks, cancelTask, type TaskProgress as TaskProgressInfo } from '../shared/tasks.js';
 import { TaskProgress, formatDuration, formatClock } from './task-progress.js';

@@ -8,7 +8,7 @@
  *  滚动/尺寸变化时用 rAF 合批重绘。 */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
-import { Tooltip } from '../ui/tooltip.js';
+import { Tooltip } from './tooltip.js';
 
 /** 连接带宽度（px）：左右两栏之间的固定窄带，不参与左右比例拖拽 */
 export const CONNECT_WIDTH = 44;

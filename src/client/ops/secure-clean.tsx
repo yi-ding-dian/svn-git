@@ -3,7 +3,7 @@
  *  只删应用自己管理的内容；GitHub 上的公钥/Token 需用户按提示手动撤销。 */
 import React, { useState } from 'react';
 import { post } from '../shared/api.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { HelpNote } from '../ui/ui.js';
 import { t } from '../../shared/i18n/index.js';

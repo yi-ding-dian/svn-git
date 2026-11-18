@@ -6,7 +6,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { IconOk } from '../ui/icons.js';
 import { DirCheckTree } from '../ui/dir-check-tree.js';
 

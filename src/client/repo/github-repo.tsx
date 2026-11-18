@@ -5,7 +5,7 @@
  *  刷新按钮 = force 跳过服务端缓存重新拉（网络恢复后不用等缓存过期）。 */
 
 import React, { useEffect, useState } from 'react';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { get, post, type GitHubRepoResult, type GitHubIdentityResult } from '../shared/api.js';
 import { IconGitHub, IconStar, IconClock, IconEye, IconRefresh, IconExternal, IconTrash } from '../ui/icons.js';
 import { t } from '../../shared/i18n/index.js';

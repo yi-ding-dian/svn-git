@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { get } from '../shared/api.js';
 import { t } from '../../shared/i18n/index.js';
 import { DiffRender } from '../ui/diff-render.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { Tooltip } from '../ui/tooltip.js';
 
 export function RemoteConflictModal(props: { riskFiles: { path: string; lines: number[] }[]; onClose: () => void }) {

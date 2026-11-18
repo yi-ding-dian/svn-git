@@ -1,11 +1,11 @@
 /** 文件系统视图 · 树形行渲染（fs 拆分批次 3）：列表/树/过滤树三模式共用的行组件（状态徽标/名称描述/行按钮） */
 import React from 'react';
 import { t } from '../../../shared/i18n/index.js';
-import { fmtSize, statusColor } from '../../shared/utils.js';
-import { CodeBadge, DirBadge, TreeConflictBadge } from '../../ui/badges.js';
+import { formatFileSize } from '../../shared/format-size.js';
+import { CodeBadge, DirBadge, TreeConflictBadge } from '../badges.js';
 import { IconLock, MiniIcon } from '../../ui/icons.js';
 import { ThumbIcon } from './thumb.js';
-import type { VisibleRow } from '../utils.js';
+import { statusColor, type VisibleRow } from '../utils.js';
 
 /** 树形行：视觉与交互完全由 props 驱动（回调回 index/Hook 上下文） */
 export function TreeRow(props: {
@@ -114,7 +114,7 @@ export function TreeRow(props: {
           大小给固定宽度，否则 "9 B" / "1.2 MB" 长度不同会把行数列推得参差不齐 */}
       {(!props.filtered || row.lines != null) && !row.isDir && (
         <span className="dim small nowrap" style={row.lines != null ? { width: 68, textAlign: 'right' } : undefined}>
-          {fmtSize(row.size)}
+          {formatFileSize(row.size)}
         </span>
       )}
       {(!props.filtered || row.lines != null) && !row.isDir && <span className="dim small nowrap" style={{ width: 110 }}>{row.mtime}</span>}

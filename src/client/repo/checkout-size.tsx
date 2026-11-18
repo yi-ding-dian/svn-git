@@ -4,7 +4,7 @@
  *  完成后定格，可「重新检测」（服务端有缓存时秒出）。范围 = 打开时的勾选（含根目录文件）。 */
 import React, { useEffect, useState } from 'react';
 import { get } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { ResultLine } from '../ui/result-line.js';
 import { t } from '../../shared/i18n/index.js';
 

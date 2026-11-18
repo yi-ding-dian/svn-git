@@ -2,8 +2,8 @@
 import React from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { CODE_DESC } from '../shared/api.js';
-import { IconExternal } from './icons.js';
-import { Tooltip } from './tooltip.js';
+import { IconExternal } from '../ui/icons.js';
+import { Tooltip } from '../ui/tooltip.js';
 
 function CodeBadge({ code, title, onClick }: { code: string; title?: string; onClick?: (e: React.MouseEvent) => void }) {
   // ✓(无状态)不显示描边、绿色表示干净；悬浮显示状态含义

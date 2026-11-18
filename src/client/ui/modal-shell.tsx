@@ -109,8 +109,8 @@ export function ModalShell(props: {
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
-import { Tooltip, TipHint } from '../ui/tooltip.js';
-import { IconHelp } from '../ui/icons.js';
+import { Tooltip, TipHint } from './tooltip.js';
+import { IconHelp } from './icons.js';
 
 /** 边缘热区厚度(px) */
 const EDGE = 8;

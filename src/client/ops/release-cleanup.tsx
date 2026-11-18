@@ -1,19 +1,12 @@
 /** 批量清理弹窗：保留最近 N 个 Release，删除更早版本的安装包。
  *  **只删 assets**：Release 说明、tag、代码提交都保留。 */
 import React, { useEffect, useState } from 'react';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { ResultLine } from '../ui/result-line.js';
 import { get, post, type ReleaseCleanupPreview } from '../shared/api.js';
+import { formatSize } from '../shared/format-size.js';
 import { t } from '../../shared/i18n/index.js';
-
-function formatSize(n: number): string {
-  if (!n || !Number.isFinite(n)) return '0 B';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
 
 const KEEP_OPTIONS = [1, 3, 5, 10];
 
@@ -127,7 +120,7 @@ export function ReleaseCleanupModal(props: { onClose: () => void; onDone: () => 
         {!loading && !error && releases.length > 0 && (
           <>
             <div className="small" style={{ marginTop: 10 }}>
-              {t('ops.releaseCleanup.preview', { n: releases.length, m: totalAssets, size: formatSize(totalSize) })}
+              {t('ops.releaseCleanup.preview', { n: releases.length, m: totalAssets, size: formatSize(totalSize) || '0 B' })}
             </div>
             <div style={{ marginTop: 8, maxHeight: 220, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
               {releases.map((r) => (
@@ -138,7 +131,7 @@ export function ReleaseCleanupModal(props: { onClose: () => void; onDone: () => 
                 >
                   <span className="mono" style={{ flex: 1 }}>{r.tagName}</span>
                   <span className="dim">
-                    {r.assets.length} · {formatSize(r.assets.reduce((s, a) => s + a.size, 0))}
+                    {r.assets.length} · {formatSize(r.assets.reduce((s, a) => s + a.size, 0)) || '0 B'}
                   </span>
                 </div>
               ))}

@@ -10,7 +10,7 @@ import React from 'react';
 import { post } from '../shared/api.js';
 import { startTask, pollTransferProgress } from '../shared/tasks.js';
 import { joinPath, isImeComposing } from '../shared/utils.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { FormRow } from '../ui/ui.js';
 import { t } from '../../shared/i18n/index.js';
 

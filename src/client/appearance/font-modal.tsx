@@ -3,7 +3,7 @@
  * 全部即时生效（无需保存按钮），持久化由 app.tsx 的 useEffect 负责（localStorage）
  */
 import React, { useEffect, useState } from 'react';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { IconFont } from '../ui/icons.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { get } from '../shared/api.js';

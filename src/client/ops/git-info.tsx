@@ -2,7 +2,7 @@
  *  入口：工具栏 ⋯ 菜单「Git 信息与配置」（仅 Git 项目）；与 SVN 信息弹窗（repo/svn-info）对位。 */
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { FormRow } from '../ui/ui.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { isImeComposing } from '../shared/utils.js';

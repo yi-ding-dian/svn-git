@@ -9,10 +9,10 @@
  *  （比如一侧是纯新增、冲突段为空）。 */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { highlightLine } from '../shared/highlight.js';
-import { DiffConnectors } from '../shared/diff-connectors.js';
+import { DiffConnectors } from '../ui/diff-connectors.js';
 import { IconResizeHorizontal } from '../ui/icons.js';
 import { Tooltip } from '../ui/tooltip.js';
-import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
+import { ResizeCursor, useResizeCursor } from '../ui/use-resize-cursor.js';
 import { t } from '../../shared/i18n/index.js';
 import {
   blockResultLines,

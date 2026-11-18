@@ -6,7 +6,7 @@ import { highlightLine, langOf } from '../shared/highlight.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 import { IconFolder, IconOk } from '../ui/icons.js';
 import { ConfirmModal } from '../ui/prompt.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { MergeEditor } from './merge-editor.js';
 

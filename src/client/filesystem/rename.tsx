@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { shakeEl } from '../animations/index.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 
 /** 重命名/移动弹窗：只输入文件名（自动保留原目录），确认按钮悬浮显示将执行命令。

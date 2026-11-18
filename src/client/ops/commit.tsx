@@ -1,6 +1,6 @@
 /** 提交弹窗：勾选待提交文件 + 写注释 */
 import React, { useState } from 'react';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { pathAutoWidth, useCheckedSet } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { IconOk } from '../ui/icons.js';

@@ -3,7 +3,7 @@
  *  两套东西此前共用一个词，用户看到「Stash 暂存区」以为文件被收进了索引，故 2026-09-20 拆开 */
 import React, { useEffect, useState } from 'react';
 import { get, post, type StashItem } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { IconErr, IconHelp, IconStash } from '../ui/icons.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { Tooltip } from '../ui/tooltip.js';

@@ -1,7 +1,7 @@
 /** 还原清单弹窗（目录还原）：列出可还原文件，确认后只还原选中的 —— 破坏性操作前置清单 */
 import React, { useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { pathAutoWidth } from '../shared/utils.js';
 import { IconOk, IconWarn } from '../ui/icons.js';
 import { ConfirmModal } from '../ui/prompt.js';

@@ -1,6 +1,6 @@
 /** 勾选式提交弹窗：列举变更文件可勾选 + 提交信息注释 */
 import React, { useState } from 'react';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { pathAutoWidth, useCheckedSet } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { IconOk } from '../ui/icons.js';

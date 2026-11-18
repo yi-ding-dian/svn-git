@@ -3,7 +3,7 @@
  *  **检出范围树**（勾选目录按层级前缀合并展示）摊开核对，「确认检出」才真正发起后台任务，
  *  「返回修改」回检出弹窗（勾选与表单都还在）。 */
 import React from 'react';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { t } from '../../shared/i18n/index.js';
 
 interface TreeNode {

@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { get, type CodeStatsNode } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { DirCheckTree } from '../ui/dir-check-tree.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { IconFile, IconFolder, IconHome, IconStats } from '../ui/icons.js';

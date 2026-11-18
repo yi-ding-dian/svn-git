@@ -6,7 +6,7 @@
  *  入口：分支管理弹窗「工作树…」、最近项目右键「工作树管理…」。 */
 import React, { useEffect, useState } from 'react';
 import { get, post, type WorktreeEntry } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { ResultLine } from '../ui/result-line.js';
 import { t } from '../../shared/i18n/index.js';

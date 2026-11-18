@@ -1,7 +1,7 @@
 /** 关于弹窗：应用图标 + 名称 + 版本号 + 构建日期/提交（数据来自 /api/info，构建信息由 build-web.mjs 写入）
  *  以及应用自身的在线升级：检查 → 下载 → 重启（Electron 打包版；纯 Node / 源码运行只显示说明）。 */
 import React, { useEffect, useState } from 'react';
-import { ModalShell } from './modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { get, post } from '../shared/api.js';
 import { formatSize } from '../shared/format-size.js';

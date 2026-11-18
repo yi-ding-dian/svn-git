@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MouseEvent as ReactMouseEvent, MutableRefObject, RefObject, SetStateAction, UIEvent as ReactUIEvent } from 'react';
 import type { DiffLine } from '../../../shared/diff-parse.js';
-import type { InlineEditorHandle } from '../../shared/inline-editor.js';
+import type { InlineEditorHandle } from '../../ui/inline-editor.js';
 import type { DiffBlock, LeftRow, RightAnchor, RightRow } from './use-diff-rows.js';
 import type { ResizeCursorControls } from './use-diff-search.js';
 

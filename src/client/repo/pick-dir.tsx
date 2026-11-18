@@ -3,7 +3,7 @@
  *  新建文件夹/右键重命名——全应用唯一的目录选择界面（原 DirPicker 退役）。
  *  独立成文件是为了避免 open.tsx ↔ repo-create.tsx 的循环 import（open 引 repo-create 的弹窗）。 */
 import React from 'react';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { OpenBrowser } from './open.js';
 
 export function PickDirModal(props: {

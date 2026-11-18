@@ -9,7 +9,8 @@
 import React from 'react';
 import { post, get } from '../shared/api.js';
 import { startTask, pollTransferProgress } from '../shared/tasks.js';
-import { translateVcsError, joinPath } from '../shared/utils.js';
+import { joinPath } from '../shared/utils.js';
+import { translateVcsError } from '../shared/vcs/errors.js';
 import { GitPushAuthModal } from './git-auth.js';
 import { SvnCredModal } from './svn-cred.js';
 import type { GetRepoParams } from './repo-create.js';

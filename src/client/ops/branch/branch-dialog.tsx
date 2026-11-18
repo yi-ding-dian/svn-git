@@ -1,13 +1,13 @@
 /** 分支管理弹窗（容器）：加载/操作编排/列表；展示与独立流程拆到同域子文件 */
 import React, { useEffect, useRef, useState } from 'react';
 import { get, post, type BranchInfo } from '../../shared/api.js';
-import { ModalShell } from '../../shell/modal-shell.js';
+import { ModalShell } from '../../ui/modal-shell.js';
 import { IconBranch } from '../../ui/icons.js';
 import { ConfirmModal } from '../../ui/prompt.js';
 import { cmdOfRepo } from '../../shared/cmd-preview.js';
 import { isImeComposing } from '../../shared/utils.js';
 import { useTasks } from '../../shared/tasks.js';
-import { startTaskDeferred } from '../../shell/bg-defer.js';
+import { startTaskDeferred } from '../../shared/bg-defer.js';
 import { launchMagicFlight } from '../../animations/index.js';
 import { ResultLine } from '../../ui/result-line.js';
 import { t } from '../../../shared/i18n/index.js';

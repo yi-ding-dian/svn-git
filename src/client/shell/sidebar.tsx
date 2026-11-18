@@ -7,10 +7,11 @@ import { Tooltip, TipHint } from '../ui/tooltip.js';
 import { RemarkModal } from '../repo/remark.js';
 import { THEMES, THEME_PINNED } from './header/index.js';
 import { get, post, type HistoryItem, type ProjectProbe } from '../shared/api.js';
-import { baseName, historyEntryKey, historyOpenPath } from '../shared/utils.js';
+import { baseName } from '../shared/utils.js';
+import { historyEntryKey, historyOpenPath } from '../repo/recent.js';
 import { startTask, useTasks, pollTransferProgress } from '../shared/tasks.js';
 import { launchMagicFlight } from '../animations/index.js';
-import { ResizeCursor, useResizeCursor } from '../shared/use-resize-cursor.js';
+import { ResizeCursor, useResizeCursor } from '../ui/use-resize-cursor.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 主视图类型（侧边栏导航目标） */

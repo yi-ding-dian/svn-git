@@ -1,7 +1,7 @@
 /** 推送确认弹窗：未推送提交列表（含变更文件）+ 推送条件（远程落后/冲突风险）；未推送提交可右键修改注释/撤销 */
 import React, { useEffect, useState } from 'react';
 import { get, post, type LogEntry } from '../shared/api.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { ContextMenu } from '../ui/context-menu.js';
 import { ConfirmModal } from '../ui/prompt.js';
 import { ClickTip } from '../ui/ui.js';

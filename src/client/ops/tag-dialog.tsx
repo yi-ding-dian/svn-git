@@ -3,7 +3,7 @@
  *  SVN 带版本/作者/时间）。入口：工具栏「标签」。 */
 import React, { useEffect, useMemo, useState } from 'react';
 import { get, post, type SvnLayout } from '../shared/api.js';
-import { ModalShell } from '../shell/modal-shell.js';
+import { ModalShell } from '../ui/modal-shell.js';
 import { IconTag } from '../ui/icons.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { HelpNote } from '../ui/ui.js';

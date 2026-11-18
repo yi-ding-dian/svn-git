@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { get, post } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
-import { ResizableModal } from '../shell/modal-shell.js';
+import { ResizableModal } from '../ui/modal-shell.js';
 import { HelpNote } from '../ui/ui.js';
 import { ResultLine } from '../ui/result-line.js';
 import { t } from '../../shared/i18n/index.js';
