@@ -350,24 +350,59 @@ export function FsView(props: Props) {
           codes.set(it.path, it.code);
           if (it.treeConflicted) conflicted.add(it.path);
         }
-        const rank: Record<string, number> = { C: 6, '!': 5, D: 4, M: 3, A: 2, R: 1 };
+        const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
+        const rank: Record<string, number> = { C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3 };
+        /** 目录深聚合：状态码集合 + 变更项数。
+         *  口径与 /api/fs 完整数据一致：子项未版本化 '?' 与外部引用 'X' 不计入数量；
+         *  目录自身码（?/I/D 等）优先，内部操作码并入集合。 */
+        const dirAgg = (rel: string, own?: string) => {
+          const prefix = rel + '/';
+          const ops = new Set<string>();
+          let count = 0;
+          for (const [p, c] of codes) {
+            if (!p.startsWith(prefix)) continue;
+            if (!c || c === ' ' || c === 'none' || c === '?' || c === 'X') continue;
+            count++;
+            ops.add(c);
+          }
+          // 目录自身码：? / I / X 是"目录整体"的标记，优先展示且不被子项升级；
+          // 其余（M/A/D/C/R…）与子项操作一起参与最高码/集合。口径同 /api/fs 完整数据。
+          const self = own && own !== ' ' && own !== 'none' ? own : '';
+          const special = self === '?' || self === 'I' || self === 'X' ? self : '';
+          if (self && !special) ops.add(self);
+          let best = special;
+          if (!special) {
+            for (const c of ops) if ((rank[c] ?? -1) > (rank[best] ?? -1)) best = c;
+          }
+          const list = [...ops].sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b));
+          if (special === 'X' && !list.includes('X')) list.push('X');
+          if ((special === '?' || special === 'I') && list.length === 0) list.push(special);
+          return { code: best || undefined, codes: list.length ? list : undefined, count: count || undefined };
+        };
+        const sameList = (a?: string[], b?: string[]) =>
+          a === b || (!!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]));
         const apply = (d: FsData): FsData => {
           let changed = false;
           const entries = d.entries.map((e) => {
             const rel = cur ? `${cur}/${e.name}` : e.name;
-            let code = codes.get(rel);
-            // 深层状态聚合：目录自身无条目时，看子树里最高的操作状态
-            if (deep && code === undefined) {
-              const prefix = rel + '/';
-              let best = '';
-              for (const [p, c] of codes) {
-                if (p.startsWith(prefix) && c && rank[c] !== undefined && rank[c] > (rank[best] ?? -1)) {
-                  best = c;
-                }
-              }
-              code = best || undefined;
-            }
+            const own = codes.get(rel);
             const tc = conflicted.has(rel);
+            if (deep && e.isDir) {
+              // 目录：整棵子树聚合（code + codes 集合 + 变更项数）
+              const agg = dirAgg(rel, own);
+              const nextTc = tc || e.treeConflicted || undefined;
+              if (
+                (agg.code ?? '') === (e.code ?? '') &&
+                sameList(agg.codes, e.codes) &&
+                agg.count === e.count &&
+                nextTc === e.treeConflicted
+              ) {
+                return e;
+              }
+              changed = true;
+              return { ...e, code: agg.code ?? '', codes: agg.codes, count: agg.count, treeConflicted: nextTc };
+            }
+            const code = own;
             if (code === undefined || code === e.code) {
               // 状态没变：树冲突标记还没打上时补一次（light 条目初始没有）
               if (!tc || e.treeConflicted) return e;
@@ -389,12 +424,21 @@ export function FsView(props: Props) {
         };
         // deep：当前目录内部有修改时，把父目录里这个目录的角标也标出来。
         // 否则用户返回上一级，父目录仍显示旧的 ✓（进入子目录时更新了子目录缓存，但父缓存没动）。
+        // 同时把变更项数与操作码集合一并带回：返回上级时目录上的数字/徽标立即是新的。
         let selfCode = '';
+        let selfCount = 0;
+        const selfOps = new Set<string>();
         if (deep) {
           for (const c of codes.values()) {
-            if (c && rank[c] !== undefined && rank[c] > (rank[selfCode] ?? -1)) selfCode = c;
+            if (!c || c === ' ' || c === 'none' || c === '?' || c === 'X') continue;
+            selfCount++;
+            selfOps.add(c);
+            if ((rank[c] ?? -1) > (rank[selfCode] ?? -1)) selfCode = c;
           }
         }
+        const selfCodes = selfOps.size
+          ? [...selfOps].sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b))
+          : undefined;
         const idx = cur.lastIndexOf('/');
         // cur 是根目录的直接子目录（如 ConfigureTool）时没有 '/'：父目录是仓库根 ''，
         // name 就是 cur 自己；不能因为 idx<0 把 name 置空，否则父级传播被跳过。
@@ -402,7 +446,8 @@ export function FsView(props: Props) {
         const name = deep ? (idx >= 0 ? cur.slice(idx + 1) : cur) : '';
         const patchParent = (d: FsData): FsData => {
           const pe = d.entries.find((e) => e.name === name && e.isDir);
-          if (!pe || pe.code === selfCode) return d;
+          if (!pe) return d;
+          if (pe.code === selfCode && sameList(pe.codes, selfCodes) && pe.count === (selfCount || undefined)) return d;
           // 目录本身未被版本控制（I 被忽略 / ? 未版本化）时，子树聚合永远是空——它里面的
           // 文件 git 根本不跟踪，状态接口查不到。用空结果覆盖会把 I/? 冲成「干净 ✓」
           // （用户实报：进入被忽略目录再返回上级，I 变成 √）。
@@ -410,7 +455,7 @@ export function FsView(props: Props) {
           return {
             ...d,
             entries: d.entries.map((e) =>
-              e === pe ? { ...e, code: selfCode, codes: selfCode ? [selfCode] : undefined } : e,
+              e === pe ? { ...e, code: selfCode, codes: selfCodes, count: selfCount || undefined } : e,
             ),
           };
         };
@@ -490,8 +535,10 @@ export function FsView(props: Props) {
       setSel(null);
       setPreview(null);
       setError('');
-      // 预加载缓存只有目录结构（light），进入时立即查子树并聚合深层 M/A
-      refreshCodes(targetDir, targetDir !== '');
+      // 预加载缓存只有目录结构（light），进入时立即查子树并聚合深层 M/A。
+      // **根目录也查子树**：否则根下目录拿不到"内部有修改"（用户实报：浏览视图全是 ✓，
+      // 「仅修改」却能看到深层 M）。大工作副本由服务端降级浅扫描，不会真的全量。
+      refreshCodes(targetDir, true);
       // 静默预取下一层：直接拿当前目录的 entries 入队，不要求父目录未见过
       prefetchChildren(targetDir, cache.entries, true);
       // light 数据（预加载）的 code 全空，而 refreshCodes 只能补"有状态"的条目——
@@ -546,10 +593,11 @@ export function FsView(props: Props) {
     setData(light);
     setSel(null);
     setPreview(null);
-    // 两阶段②：补状态（根目录浅查直接子项、子目录查子树）。
+    // 两阶段②：补状态（查子树，把深层 M/A 聚合到直接子目录；根目录也查，
+    // 否则根下目录看不到"内部有修改"）。
     // 顶层显示「正在补充文件状态…（已 N 秒）」，大仓库也看得见在做什么；静默刷新不显示。
-    if (quiet) refreshCodes(targetDir, targetDir !== '');
-    else scanCodes(targetDir, targetDir !== '');
+    if (quiet) refreshCodes(targetDir, true);
+    else scanCodes(targetDir, true);
     // 静默预取下一层：进入目录后立刻在后台拉它的直接子目录（light，不查 SVN 状态）
     prefetchChildren(targetDir, light.entries ?? [], true);
     // 子目录且条目不多：后台再要一份完整数据（补忽略项 I/未跟踪 ? 的精确状态）；

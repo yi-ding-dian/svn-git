@@ -231,6 +231,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         items = all
           .filter((i) => {
             if (i.path === rel || !i.path.startsWith(prefix)) return false;
+            // deep：保留整棵子树，交给前端按前缀把深层状态聚合到直接子目录
+            // （根目录也要能显示"内部有修改"，否则浏览视图根下目录永远显示 ✓）
+            if (deep) return true;
             return !i.path.slice(prefix.length).includes('/');
           })
           .map((i) => ({ path: i.path, code: i.code }));
