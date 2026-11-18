@@ -72,6 +72,7 @@ export const fs = {
   // ---- 错误条 / 提示条 ----
   'fs.err.close': '关闭错误提示',
   'fs.tip.bigDir': '该目录文件较多（共 {n} 项），首次加载可能需要一点时间',
+  'fs.tip.nestedWc': '独立工作副本（不受父工作副本跟踪）',
   'fs.tip.binary': '二进制文档：右键「打开方式…」用系统程序打开',
   'fs.tip.fmOpened': '已打开文件管理器',
 

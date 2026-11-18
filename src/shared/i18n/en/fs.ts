@@ -72,6 +72,7 @@ export const fs = {
   // ---- Error bar / tip bars ----
   'fs.err.close': 'Dismiss error',
   'fs.tip.bigDir': 'This folder has many entries ({n}); the first load may take a moment',
+  'fs.tip.nestedWc': 'Standalone working copy (not tracked by the parent working copy)',
   'fs.tip.binary': 'Binary file: right-click "Open With…" to open it with a system application',
   'fs.tip.fmOpened': 'File manager opened',
 

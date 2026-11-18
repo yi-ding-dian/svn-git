@@ -261,6 +261,12 @@ export interface Vcs {
   status(pathRel?: string): Promise<FileStatus[]>;
   /** 浅状态：只查目标目录直接子项（svn status -N），供目录轮询用；git 无此能力，调用方回退 status */
   statusShallow?(pathRel?: string): Promise<FileStatus[]>;
+  /** 某个路径所属工作副本的根（不在任何工作副本里 → null）。
+   *  用于识别"嵌套/独立检出的工作副本"：返回它自己的根，而不是父工作副本根。 */
+  wcRootOf?(absPath: string): Promise<string | null>;
+  /** 在指定工作副本根下查状态（嵌套工作副本用；父 WC 的 status 不会进入别人的工作副本）。
+   *  返回的 path 相对 rootAbs；shallow=true 只列直接子项。 */
+  statusAt?(rootAbs: string, pathRel?: string, shallow?: boolean): Promise<FileStatus[]>;
   /** 是否已判定为超大工作副本（svn 专有：降级为浅扫描后为 true，调用方据此按目录查询、隐藏聚合角标） */
   isHugeWc?(): boolean;
   /** 分页拉取：offset=跳过前 N 条（git --skip）；afterRev=从该版本之后继续拉（svn -r rev-1:1，0=从头）。limit<=0=全量 */

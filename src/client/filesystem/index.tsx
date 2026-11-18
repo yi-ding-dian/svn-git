@@ -147,7 +147,7 @@ export function FsView(props: Props) {
   };
   const [focusIndex, setFocusIndex] = useState(0);
   // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
-  const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean; tc?: { state: 'missing' | 'present' | 'unknown'; inner?: boolean; innerCount?: number }; tcItem?: { fromRev?: string; fromAuthor?: string; fromDate?: string } } | null>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean; nestedWc?: boolean; tc?: { state: 'missing' | 'present' | 'unknown'; inner?: boolean; innerCount?: number }; tcItem?: { fromRev?: string; fromAuthor?: string; fromDate?: string } } | null>(null);
   // 文件搜索（工具栏）：防抖查询 + 结果下拉状态收于 useFileSearch；行数模式另走 useLineScan
   const search = useFileSearch(data?.dir ?? '');
   const lineScan = useLineScan(data?.dir ?? '');
@@ -346,9 +346,12 @@ export function FsView(props: Props) {
         const codes = new Map<string, string>();
         /** 树冲突条目：light 数据里没有这个字段，横幅与 ⚠ 角标全靠第二阶段补上 */
         const conflicted = new Set<string>();
+        /** 独立工作副本条目：父 WC 看不到它内部，状态用服务端按它自己的 WC 聚合的结果 */
+        const nestedItems = new Map<string, { code: string; codes?: string[]; count?: number; nestedWc?: boolean }>();
         for (const it of r.items) {
           codes.set(it.path, it.code);
           if (it.treeConflicted) conflicted.add(it.path);
+          if (it.nestedWc || it.codes || it.count !== undefined) nestedItems.set(it.path, it);
         }
         const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
         const rank: Record<string, number> = { C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3 };
@@ -383,26 +386,64 @@ export function FsView(props: Props) {
           a === b || (!!a && !!b && a.length === b.length && a.every((v, i) => v === b[i]));
         const apply = (d: FsData): FsData => {
           let changed = false;
+          /** 当前目录整体未版本化（服务端 wc-root 查不到）：所有条目统一 ?。
+           *  被忽略 I / 外部引用 X 保留；这是进入未版本化目录任意深度时唯一可靠的数据源。 */
+          const selfMark = r.dirSelf;
           const entries = d.entries.map((e) => {
+            if (selfMark) {
+              if (e.code === 'I' || e.code === 'X') return e;
+              if (e.code === selfMark && sameList(e.codes, [selfMark])) return e;
+              changed = true;
+              return { ...e, code: selfMark, codes: [selfMark], count: undefined };
+            }
             const rel = cur ? `${cur}/${e.name}` : e.name;
             const own = codes.get(rel);
             const tc = conflicted.has(rel);
             if (deep && e.isDir) {
+              // 独立工作副本：父 WC 看不到内部，直接用服务端按它自己 WC 聚合的 code/codes/count
+              const ownItem = nestedItems.get(rel);
+              if (ownItem?.nestedWc) {
+                const nextTc = tc || e.treeConflicted || undefined;
+                const nextCode = ownItem.code ?? '';
+                const nextCodes = ownItem.codes;
+                const nextCount = ownItem.count;
+                if (
+                  nextCode === (e.code ?? '') &&
+                  sameList(nextCodes, e.codes) &&
+                  nextCount === e.count &&
+                  nextTc === e.treeConflicted &&
+                  e.nestedWc
+                ) {
+                  return e;
+                }
+                changed = true;
+                return { ...e, code: nextCode, codes: nextCodes, count: nextCount, treeConflicted: nextTc, nestedWc: true };
+              }
               // 目录：整棵子树聚合（code + codes 集合 + 变更项数）
               const agg = dirAgg(rel, own);
               const nextTc = tc || e.treeConflicted || undefined;
+              // 没有聚合结果，但完整数据给了"目录整体"的属性码（未版本化 ? / 忽略 I / 外部 X）：
+              // 必须保留 —— fs-status 在未版本化目录内部只报目录自身，拿不到子项，
+              // 无条件覆盖会把 ? 冲成空（显示成干净的 ✓，用户实报）。
+              const keep = !agg.code && !agg.codes && (e.code === '?' || e.code === 'I' || e.code === 'X');
+              const nextCode = keep ? e.code : (agg.code ?? '');
+              const nextCodes = keep ? e.codes : agg.codes;
+              const nextCount = keep ? e.count : agg.count;
               if (
-                (agg.code ?? '') === (e.code ?? '') &&
-                sameList(agg.codes, e.codes) &&
-                agg.count === e.count &&
+                nextCode === (e.code ?? '') &&
+                sameList(nextCodes, e.codes) &&
+                nextCount === e.count &&
                 nextTc === e.treeConflicted
               ) {
                 return e;
               }
               changed = true;
-              return { ...e, code: agg.code ?? '', codes: agg.codes, count: agg.count, treeConflicted: nextTc };
+              return { ...e, code: nextCode, codes: nextCodes, count: nextCount, treeConflicted: nextTc };
             }
             const code = own;
+            // 独立工作副本：父 WC 的浅扫描永远只给 ?（它不跟踪别人的工作副本），
+            // 不能拿这个覆盖"按自身 WC 聚合"得到的 A/M/✓（否则 30 秒轮询后目录又变回 ?）
+            if (e.nestedWc && (code === undefined || code === '?')) return e;
             if (code === undefined || code === e.code) {
               // 状态没变：树冲突标记还没打上时补一次（light 条目初始没有）
               if (!tc || e.treeConflicted) return e;
@@ -2322,7 +2363,7 @@ export function FsView(props: Props) {
                     setTip({
                       x: ev.clientX, y: ev.clientY, name: e.name, isDir: e.isDir,
                       size: e.size, mtime: e.mtime, code: e.code, codes: e.codes, count: e.count,
-                      miss: e.miss,
+                      miss: e.miss, nestedWc: e.nestedWc,
                       tc: tcState(e, rel, conflictLookup),
                       tcItem: e.treeConflicted ? conflictLookup(rel).item : undefined,
                     });

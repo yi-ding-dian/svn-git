@@ -5,13 +5,43 @@ import path from 'node:path';
 import { makeGitIgnoreChecker } from '../../../vcs/ignore.js';
 import { compareName } from '../../../shared/types.js';
 import { run } from '../../../vcs/exec.js';
-import { inRepoRoot, sendJson, getStatusCached, vcsOf, MSG_OUT_OF_SCOPE, type Ctx } from '../util.js';
+import { inRepoRoot, sendJson, getStatusCached, vcsOf, realpathSafe, MSG_OUT_OF_SCOPE, type Ctx } from '../util.js';
 import { t } from '../../../shared/i18n/index.js';
 
 /** 忽略检测（svn status --no-ignore）的输出上限：超过就不解析。
  *  它只用来把被忽略的条目标成 I，而超大工作副本上这个扫描有 5MB+、解析要秒级——收益不值。
  *  实测参考：正常仓库几十 KB；某 35 万文件的工作副本 5.6MB / 4.3 万行。 */
 const MAX_IGNORE_SCAN_BYTES = 1024 * 1024;
+
+/** 目录多状态徽标显示顺序：修改 / 添加 / 删除 / 冲突 / 替换 / 缺失 / 更新 / 类型变更 */
+const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
+/** 目录聚合时取"最高"状态码的优先级（未版本化 ? / 外部 X 不参与升级） */
+const RK: Record<string, number> = { C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3 };
+
+/** 独立工作副本的状态聚合：按它自己的版本化变更取最高码 + 变更数
+ *  （内部未版本化 ? 不计入数量；它不影响目录"干净/有改动"的判定）。 */
+function aggregateNestedWc(st: { code: string }[]): { code: string; codes?: string[]; count?: number; unversioned: number } {
+  const ops = new Set<string>();
+  let count = 0;
+  let unversioned = 0;
+  for (const s of st) {
+    if (s.code === '?') {
+      unversioned++;
+      continue;
+    }
+    if (!s.code || s.code === ' ' || s.code === 'X') continue;
+    count++;
+    ops.add(s.code);
+  }
+  let best = '';
+  for (const c of ops) if ((RK[c] ?? -1) > (RK[best] ?? -1)) best = c;
+  return {
+    code: best,
+    codes: ops.size ? [...ops].sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b)) : undefined,
+    count: count || undefined,
+    unversioned,
+  };
+}
 
 /** 修改时间格式化: "2026/8/23 11:17"（不同于 toLocaleString.slice 会留下尾冒号） */
 function fmtMtime(ms: number): string {
@@ -183,20 +213,66 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
       return true;
     }
-    let items: { path: string; code: string; treeConflicted?: boolean }[] = [];
+    let items: { path: string; code: string; codes?: string[]; count?: number; treeConflicted?: boolean; nestedWc?: boolean }[] = [];
     /** 当前范围内树冲突条数：两阶段加载的第二阶段据此点亮横幅（light 数据里没有这个字段） */
     let treeConflicts = 0;
+    /** 当前目录自身未版本化（父工作副本没跟踪它）：前端把所有条目标成 ?，任意深度都成立 */
+    let dirSelf: '?' | undefined;
     const deep = url.searchParams.get('deep') === '1';
     if (repo.type === 'svn' && vcs.statusShallow) {
+      // 嵌套/独立工作副本：用它自己的工作副本根查状态（父 WC 的 status 不会进入别人的 WC）。
+      // 不存在的路径（未 add / 被排除）→ 整个目录未版本化，直接告诉前端。
+      const rootReal = realpathSafe(repo.root);
+      let wcRoot: string | null = null; // 非空 = 用这个嵌套工作副本根查状态
+      let wcRel = '';
+      if (rel && vcs.wcRootOf) {
+        const raw = await vcs.wcRootOf(abs);
+        if (!raw) dirSelf = '?'; // 本地不是工作副本的一部分（未 add / 被排除）
+        else if (raw !== rootReal) {
+          const r = path.relative(rootReal, raw).split(path.sep).join('/');
+          if (r && !r.startsWith('..')) {
+            wcRoot = raw;
+            wcRel = r;
+          }
+        }
+      }
       // deep：查当前目录子树（42ms 级），用于把深层 M 聚合到直接子目录；
       // 不 deep：只查直接子项，供 30 秒轮询用。
-      const list = deep ? await vcs.status(rel) : await vcs.statusShallow(rel);
+      const list =
+        wcRoot && vcs.statusAt
+          ? (
+              await vcs.statusAt(wcRoot, rel === wcRel ? undefined : rel.slice(wcRel.length + 1), !deep)
+            ).map((i) => ({ ...i, path: `${wcRel}/${i.path}` }))
+          : deep
+            ? await vcs.status(rel)
+            : await vcs.statusShallow(rel);
       items = list.map((i) => ({
         path: i.path,
         code: i.code,
         ...(i.treeConflicted ? { treeConflicted: true } : {}),
       }));
       treeConflicts = list.filter((i) => i.treeConflicted).length;
+      // 父 WC 认为是未版本化的**直接子目录**里，有些其实是独立检出的工作副本（自己的 .svn）。
+      // 外层列表没有完整数据可补，这里不识别就会把有效工作副本标成 ?（用户实报）。
+      if (deep && vcs.wcRootOf && vcs.statusAt) {
+        const selfPrefix = rel ? rel + '/' : '';
+        for (let idx = 0; idx < items.length; idx++) {
+          const it = items[idx]!;
+          if (it.code !== '?') continue;
+          const seg = it.path.slice(selfPrefix.length);
+          if (!seg || seg.includes('/')) continue; // 只看直接子项
+          try {
+            const cw = await vcs.wcRootOf(path.join(repo.root, it.path));
+            const cRel = cw ? path.relative(rootReal, cw).split(path.sep).join('/') : '';
+            if (cw && cw !== rootReal && cRel === it.path) {
+              const agg = aggregateNestedWc(await vcs.statusAt(cw));
+              items[idx] = { path: it.path, code: agg.code, codes: agg.codes, count: agg.count, nestedWc: true };
+            }
+          } catch {
+            /* 探测失败：保持父工作副本视角的 ? */
+          }
+        }
+      }
     } else {
       const all = (await getStatusCached(repo, true, rel)) as { path: string; code: string }[];
       // 当前目录是否落在未跟踪目录内（含自身）：git 把未跟踪目录折叠成一条 "?? dir/"
@@ -239,7 +315,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           .map((i) => ({ path: i.path, code: i.code }));
       }
     }
-    sendJson(res, 200, { items, treeConflicts });
+    sendJson(res, 200, { items, treeConflicts, ...(dirSelf ? { dirSelf } : {}) });
     return true;
   }
 
@@ -297,10 +373,35 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       sendJson(res, 200, { dir: rel, abs, root: repo.root, entries });
       return true;
     }
-    const items = (await getStatusCached(repo, force, rel)) as { path: string; code: string; isDir: boolean; treeConflicted?: boolean; origPath?: string }[];
-    const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; origPath?: string; count?: number; codes?: string[]; unversionedCount?: number; miss?: boolean; treeConflicted?: boolean; innerTreeConflict?: boolean }[] = [];
-    // 目录多状态徽标显示顺序：修改 / 添加 / 删除 / 冲突 / 替换 / 缺失 / 更新 / 类型变更
-    const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
+    // 嵌套/独立工作副本识别：父工作副本不跟踪它（父级 status 报 ?），但它本地有自己的 .svn，
+    // 内部是正常版本化的。这种目录的状态必须用**它自己的工作副本根**查，否则内部会被当成未版本化。
+    const rootReal = realpathSafe(repo.root);
+    let statusRoot = rootReal;
+    let statusRootRel = ''; // 查询根相对仓库根（'' = 父工作副本）
+    let nestedWc = false;
+    let selfWcRoot: string | null = null;
+    if (repo.type === 'svn' && vcs.wcRootOf && vcs.statusAt) {
+      selfWcRoot = await vcs.wcRootOf(abs);
+      if (selfWcRoot && selfWcRoot !== rootReal) {
+        const r = path.relative(rootReal, selfWcRoot).split(path.sep).join('/');
+        if (r && !r.startsWith('..')) {
+          statusRoot = selfWcRoot;
+          statusRootRel = r;
+          nestedWc = true;
+        }
+      }
+    }
+    const items = (
+      nestedWc && vcs.statusAt
+        ? (
+            await vcs.statusAt(
+              statusRoot,
+              rel === statusRootRel ? undefined : rel.slice(statusRootRel.length + 1),
+            )
+          ).map((i) => ({ ...i, path: `${statusRootRel}/${i.path}` }))
+        : await getStatusCached(repo, force, rel)
+    ) as { path: string; code: string; isDir: boolean; treeConflicted?: boolean; origPath?: string }[];
+    const entries: { name: string; isDir: boolean; size: number; mtime: string; code: string; origPath?: string; count?: number; codes?: string[]; unversionedCount?: number; miss?: boolean; treeConflicted?: boolean; innerTreeConflict?: boolean; nestedWc?: boolean }[] = [];
     let names: string[];
     try {
       names = fs.readdirSync(abs);
@@ -326,7 +427,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     }
     dirs.sort(compareName);
     files.sort(compareName);
-    // 目录本身或其任一祖先未版本化 → 内部全部未版本化
+    // 目录自身或其任一祖先未版本化 → 内部全部未版本化
     // （svn status 对嵌套未版本化目录可能只标记最外层，深层需沿祖先链判断）
     let unversionedAncestor = false;
     {
@@ -341,7 +442,13 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
       }
     }
-    const dirSelf = unversionedAncestor || items.find((i) => i.path === rel && i.code === '?');
+    // 当前目录自身是否未版本化（父工作副本视角）：
+    // - 嵌套工作副本内部（nestedWc）：它是版本化的（状态已用它自己的 WC 根查），不标 ?
+    // - 父 WC 内 wc-root 查不到（本地没有 .svn）→ 未 add / 被排除 → ?
+    //   （被忽略的目录例外：下面的 ignoredAncestor 会判成 I，dirSelf 要排在它之后再定）
+    // 不能用"父级 svn status -N"判断：嵌套 WC 的 -N 不列内部，深层会漏。
+    let selfUnversioned = false;
+    if (!nestedWc && rel && repo.type === 'svn' && !selfWcRoot) selfUnversioned = true;
     // 祖先目录删除调度（svn delete 目录 → 整树调度删除，status 只列目录行不递归列出内部）：
     // 内部所有条目统一显示 D（随目录从版本库移除），避免外层 D 内层 √ 的误导
     let deletedAncestor = false;
@@ -427,6 +534,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         }
       }
     }
+    // 未版本化判定要排在忽略判定之后：忽略目录内部是 I，不能显示成 ?
+    const dirSelf = unversionedAncestor || (selfUnversioned && !ignoredAncestor);
     for (const d of dirs) {
       const relDir = prefix + d;
       let code = dirSelf ? '?' : '';
@@ -435,8 +544,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       let count: number | undefined;
       let codes: string[] | undefined;
       let unversionedCount = 0;
-      // 目录自身在 status 中的条目（如 svn/git 的 '?' 未版本化目录）优先采用
-      const self = items.find((i) => i.path === relDir);
+      // 目录自身在 status 中的条目（如 svn/git 的 '?' 未版本化目录）优先采用。
+      // svn 的 dirSelf（整个目录不在版本库/被父 WC 排除）例外：排除过的路径里残留的
+      // !/A 等条目只是元数据假象，内部一律按未版本化 ? 显示（用户实报：CWBS-SCA 里出现 ! 4）。
+      const self = dirSelf && repo.type === 'svn' ? undefined : items.find((i) => i.path === relDir);
       if (self && self.code !== 'none') code = self.code;
       // 无条目且非未版本化：祖先被忽略（如 node_modules 内）→ 直接 I；否则按忽略规则判断
       if (!code && !self) {
@@ -459,7 +570,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
           }
         }
       }
-      const sub = items.filter((i) => i.path.startsWith(relDir + '/'));
+      const sub = dirSelf && repo.type === 'svn' ? [] : items.filter((i) => i.path.startsWith(relDir + '/'));
       if (sub.length > 0) {
         for (const s of sub) {
           const rk = { C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3, '?': 2 }[s.code] ?? 0;
@@ -514,6 +625,26 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       // 只在全量扫描（非超大工作副本）时有数据：浅扫描的 items 只有直接子项，sub 恒为空
       const selfConflict = self?.treeConflicted === true;
       const innerConflict = sub.some((s) => s.treeConflicted);
+      // 父工作副本未跟踪它（?），但它本地是**独立检出的工作副本**（自己的 .svn）：
+      // 父仓库里它确实是未版本化的，但内部是正常版本化的 —— 按它自己的工作副本显示，
+      // 而不是把一个有效工作副本标成未版本化（用户实报：VWEL-SCA_2.0 整个被标 ?）。
+      let nestedWcChild = false;
+      if (repo.type === 'svn' && code === '?' && vcs.wcRootOf && vcs.statusAt) {
+        try {
+          const cw = await vcs.wcRootOf(path.join(abs, d));
+          const cRel = cw ? path.relative(rootReal, cw).split(path.sep).join('/') : '';
+          if (cw && cw !== rootReal && cRel === relDir) {
+            const agg = aggregateNestedWc(await vcs.statusAt(cw));
+            code = agg.code;
+            count = agg.count;
+            codes = agg.codes;
+            unversionedCount = agg.unversioned;
+            nestedWcChild = true;
+          }
+        } catch {
+          /* 探测失败：保持父工作副本视角的 ? */
+        }
+      }
       // 目录在磁盘上存在就总是显示（svn/git status 对干净目录无条目，不 push 会丢失目录）
       entries.push({
         name: d,
@@ -526,6 +657,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         unversionedCount: unversionedCount || undefined,
         treeConflicted: selfConflict || undefined,
         innerTreeConflict: innerConflict || undefined,
+        nestedWc: nestedWcChild || undefined,
       });
     }
     for (const f of files) {
@@ -537,7 +669,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         continue;
       }
       const relFile = prefix + f;
-      const it = items.find((i) => i.path === relFile);
+      // svn 的 dirSelf（整个目录不在版本库/被排除）：内部残留的 !/A 等条目不可信，一律 ?
+      const it = dirSelf && repo.type === 'svn' ? undefined : items.find((i) => i.path === relFile);
       // **文件自己的状态优先于"目录未版本化"**：`git rm --cached -r dir` 之后，
       // 目录本身是 ?（文件还在磁盘、已脱离版本库），但里面的文件在 index 里**有独立的 D 记录**
       // （等提交的删除）。原来写成 `dirSelf ? '?' : it?.code`，把 D 盖成了 ?，

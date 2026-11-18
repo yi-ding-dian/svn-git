@@ -117,6 +117,8 @@ export interface TipData {
   codes?: string[];
   /** 磁盘上已缺失：悬浮卡第一行提示可还原 */
   miss?: boolean;
+  /** 独立检出的工作副本：父工作副本未跟踪它，状态按它自己的工作副本显示 */
+  nestedWc?: boolean;
   /** 树冲突（undefined = 不是冲突）；tcItem 带复制源明细（该目录是从哪个版本复制来的） */
   tc?: { state: TreeConflictState; inner?: boolean; innerCount?: number };
   tcItem?: { fromRev?: string; fromAuthor?: string; fromDate?: string };
@@ -158,6 +160,10 @@ export function FileTipCard(props: { tip: TipData | null }) {
         {/* （{n} 项有变更） */}
         {tip.count ? <span className="dim">{t('fs.countChangesParen', { n: tip.count })}</span> : null}
       </div>
+      {tip.nestedWc && (
+        // 独立工作副本（不受父工作副本跟踪）
+        <div className="dim" style={{ fontSize: 11, marginBottom: 4 }}>{t('fs.tip.nestedWc')}</div>
+      )}
       {tip.miss && (
         // 文件已在磁盘上缺失，右键可还原
         <div style={{ color: 'var(--danger)', marginBottom: 4 }}>{t('fs.missFileHint')}</div>

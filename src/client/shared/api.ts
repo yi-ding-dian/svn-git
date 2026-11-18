@@ -456,6 +456,8 @@ export interface FsEntry {
   treeConflicted?: boolean;
   /** 该目录**内部深层**还有树冲突（仅小仓库全量扫描时可能为真；超大工作副本浅扫描拿不到） */
   innerTreeConflict?: boolean;
+  /** 独立检出的工作副本（有自己的 .svn）：父工作副本未跟踪它，但内部按它自己的状态显示 */
+  nestedWc?: boolean;
 }
 
 export interface FsData {
@@ -596,9 +598,20 @@ export const get = {
     api<FsData>(`/api/fs?dir=${encodeURIComponent(dir ?? '')}${force ? '&force=1' : ''}${light ? '&light=1' : ''}`),
   /** 当前目录状态：deep=true 查子树（进入目录时用），否则只查直接子项（轮询用） */
   fsStatus: (dir?: string, deep = false) =>
-    api<{ items: { path: string; code: string; treeConflicted?: boolean }[]; treeConflicts?: number }>(
-      `/api/fs-status?dir=${encodeURIComponent(dir ?? '')}${deep ? '&deep=1' : ''}`,
-    ),
+    api<{
+      items: {
+        path: string;
+        code: string;
+        /** 独立工作副本的聚合结果（父工作副本看不到它内部） */
+        codes?: string[];
+        count?: number;
+        nestedWc?: boolean;
+        treeConflicted?: boolean;
+      }[];
+      treeConflicts?: number;
+      /** 当前目录自身未版本化（父工作副本没跟踪它）：所有条目统一标 ? */
+      dirSelf?: '?';
+    }>(`/api/fs-status?dir=${encodeURIComponent(dir ?? '')}${deep ? '&deep=1' : ''}`),
   /** 工作副本树冲突诊断：去服务器核对冲突路径是否还在（只在 /api/fs 报了 treeConflicts 时调用） */
   wcConflicts: (dir: string) =>
     api<{ conflicts: WcConflictItem[]; unchecked?: boolean }>(`/api/wc-conflicts?dir=${encodeURIComponent(dir)}`),

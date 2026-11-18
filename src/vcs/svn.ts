@@ -432,6 +432,36 @@ export class SvnVcs {
     return this.parseStatusXml(res.stdout);
   }
 
+  /** 某个路径所属工作副本的根（不在任何工作副本里 → null）。
+   *  用途：识别"嵌套/独立检出的工作副本"——父工作副本不跟踪它（status 显示 ?），
+   *  但它自己有 .svn、内部是正常版本化的，界面应按它自己的工作副本显示。 */
+  async wcRootOf(absPath: string): Promise<string | null> {
+    const res = await this.exec(['info', '--show-item', 'wc-root', absPath], { timeoutMs: 15_000 });
+    if (res.code !== 0) return null;
+    const p = res.stdout.trim();
+    if (!p) return null;
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return path.resolve(p);
+    }
+  }
+
+  /** 在指定工作副本根下查状态（嵌套工作副本用：父 WC 的 status 不会进入别人的工作副本）。
+   *  返回的 path 相对 rootAbs；shallow=true 时只列直接子项（轮询用）。 */
+  async statusAt(rootAbs: string, pathRel?: string, shallow = false): Promise<FileStatus[]> {
+    const args = ['status', '--xml', ...(shallow ? ['-N'] : [])];
+    if (pathRel) args.push(pathRel);
+    const res = await this.execAt(rootAbs, args, { timeoutMs: 120_000 });
+    if (res.code !== 0) {
+      const auth = this.authError(res);
+      if (auth) throw new Error(auth);
+      // svn status 失败: {err}
+      throw new Error(t('vcs.svnStatusFailed', { err: res.stderr.trim() }));
+    }
+    return this.parseStatusXml(res.stdout);
+  }
+
   /** svn status --xml 输出 → FileStatus[]（解析逻辑与是否浅扫描无关） */
   private parseStatusXml(stdout: string): FileStatus[] {
     const doc = this.xml.parse(stdout);
