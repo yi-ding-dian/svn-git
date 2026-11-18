@@ -451,23 +451,44 @@ export function PreviewPane(props: Props) {
     if (line === jumpLine) previewRefs.current.get(line - 1)?.scrollIntoView({ block: 'center' });
     else setJumpLine(line);
   };
+  /** 搜索源：编辑态搜**草稿**（InlineEditor 实时上报的 editTocText），浏览态搜当前显示文本。
+   *  编辑态此前也能点搜索，但匹配的是保存前的内容、滚动目标又是预览行（编辑态没有那些 DOM），
+   *  表现为"点了没反应"——现在两态共用这份匹配结果。 */
+  const searchSource = editing ? editTocText : (text ?? '');
   const matches = useMemo(() => {
-    if (!searchActive || !searchQ.trim()) return [] as number[];
+    if (!searchActive || !searchQ.trim()) return [] as { line: number; col: number }[];
     const q = searchQ.toLowerCase();
-    const out: number[] = [];
-    previewLines.forEach((l, i) => {
-      if (l.toLowerCase().includes(q)) out.push(i);
+    const out: { line: number; col: number }[] = [];
+    searchSource.split('\n').forEach((l, i) => {
+      const col = l.toLowerCase().indexOf(q);
+      if (col >= 0) out.push({ line: i, col });
     });
     return out;
-  }, [previewLines, searchActive, searchQ]);
+  }, [searchSource, searchActive, searchQ]);
 
   const goNextMatch = useCallback(() => {
     if (matches.length === 0) return;
     const next = (matchIdx + 1) % matches.length;
     setMatchIdx(next);
-    const el = previewRefs.current.get(matches[next]!);
+    const m = matches[next]!;
+    if (editingRef.current) {
+      // 编辑态：选中草稿里的匹配词 + 滚动居中 + 行脉冲（见 InlineEditor.selectMatch）
+      editorRef.current?.selectMatch(m.line + 1, m.col, searchQ.length);
+      return;
+    }
+    const el = previewRefs.current.get(m.line);
     el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [matches, matchIdx]);
+  }, [matches, matchIdx, searchQ]);
+  /** 编辑态搜索高亮：命中行集合 + 当前行；词级高亮由 InlineEditor 的高亮层常亮显示
+   *  （textarea 字形透明，不依赖焦点，跳到哪一行都一直看得到匹配词） */
+  const editSearch = useMemo(() => {
+    if (!searchActive || !searchQ.trim()) return undefined;
+    return {
+      query: searchQ,
+      hitLines: new Set(matches.map((m) => m.line)),
+      activeLine: matches[matchIdx]?.line ?? -1,
+    };
+  }, [searchActive, searchQ, matches, matchIdx]);
 
   /** 追溯（Blame）：逐行标注提交/作者 */
   const toggleBlame = useCallback(async () => {
@@ -739,6 +760,7 @@ export function PreviewPane(props: Props) {
           jumpLine={jumpLine}
           onDirtyChange={setEditDirty}
           onDraftChange={setEditTocText}
+          search={editSearch}
           onSaved={(m) => {
             setEditing(false);
             setReloadKey((k) => k + 1); // 重读内容（保存后预览刷新）
@@ -794,8 +816,8 @@ export function PreviewPane(props: Props) {
         ) : blameMode ? (
           // Blame 视图：行前缀显示 版本+作者（按修改人筛选后的可见行）
           blameVisible.map(({ b, i }, vi) => {
-            const isHit = searchActive && matches.includes(i);
-            const isCur = isHit && i === matches[matchIdx % Math.max(1, matches.length)];
+            const isHit = searchActive && matches.some((m) => m.line === i);
+            const isCur = isHit && matches[matchIdx % Math.max(1, matches.length)]?.line === i;
             const isJump = jumpLine != null && i === jumpLine - 1;
             const prevDate = blameVisible[vi - 1]?.b.date;
             return (
@@ -822,8 +844,8 @@ export function PreviewPane(props: Props) {
           })
         ) : (
           previewLines.map((line, i) => {
-            const isHit = searchActive && matches.includes(i);
-            const isCur = isHit && i === matches[matchIdx % Math.max(1, matches.length)];
+            const isHit = searchActive && matches.some((m) => m.line === i);
+            const isCur = isHit && matches[matchIdx % Math.max(1, matches.length)]?.line === i;
             const isJump = jumpLine != null && i === jumpLine - 1;
             return (
               <div

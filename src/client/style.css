@@ -1965,6 +1965,10 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
   overflow: auto;
 }
 .preview-edit::selection { background: rgba(88, 166, 255, .30); color: transparent; }
+/* 编辑态搜索：命中词常亮（textarea 字形透明，只有下面这层高亮层可见）。
+   颜色与预览态的 pv-hit / pv-cur 一致：普通命中淡黄、当前跳转行深黄+描边 */
+.preview-edit-hl mark { background: rgba(212, 167, 50, .25); color: inherit; border-radius: 2px; }
+.preview-edit-hl mark.edit-hit-cur { background: rgba(212, 167, 50, .55); outline: 1px solid var(--warn); }
 
 /* ---------- 后台任务：沙漏（运行中动画——上瓶沙落、下瓶沙积，循环） ---------- */
 @keyframes hg-sand-top { 0% { transform: scaleY(1); } 78%, 100% { transform: scaleY(0); } }
