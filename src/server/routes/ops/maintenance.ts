@@ -2,8 +2,11 @@
  *
  *  这类操作不提交业务改动，只修复或整理工作副本状态。 */
 import path from 'node:path';
-import { sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, invalidateStatusCache, runVcs, MSG_PATH_OUT_OF_BOUNDS } from '../util.js';
-import type { Ctx } from '../util.js';
+import { sendJson, readBody } from '../../http/response.js';
+import { vcsOf, invalidateStatusCache, runVcs } from '../../repo-context.js';
+import { inRepoRoot } from '../../path-safety.js';
+import { authErrorOf, MSG_PATH_OUT_OF_BOUNDS } from '../../errors.js';
+import type { Ctx } from '../../http/response.js';
 import { t } from '../../../shared/i18n/index.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {

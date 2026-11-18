@@ -24,7 +24,7 @@ import {
   touchViewer,
   viewerCount,
 } from '../share/session.js';
-import { readBody, sendJson, type Ctx } from './util.js';
+import { readBody, sendJson, type Ctx } from '../http/response.js';
 
 /** 本机可用的局域网 IPv4 地址（只列非回环） */
 function lanAddresses(port: number): string[] {

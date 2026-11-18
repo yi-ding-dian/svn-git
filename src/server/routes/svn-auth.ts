@@ -14,7 +14,8 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from '../../config.js';
-import { sendJson, readBody, vcsOf, type Ctx } from './util.js';
+import { sendJson, readBody, type Ctx } from '../http/response.js';
+import { vcsOf } from '../repo-context.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** svn 官方凭据缓存目录（Linux/macOS；Windows 路径不同，读不到则降级为空） */

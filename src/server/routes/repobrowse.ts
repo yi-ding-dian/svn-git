@@ -9,7 +9,8 @@ import { run, runStream, type RunResult } from '../../vcs/exec.js';
 import { resolveSvnBin } from '../../vcs/svn.js';
 import { loadConfig } from '../../config.js';
 import { decodeMixedText } from '../../shared/text.js';
-import { sendJson, readBody, isBinaryFile, type Ctx } from './util.js';
+import { sendJson, readBody, type Ctx } from '../http/response.js';
+import { isBinaryFile } from '../path-safety.js';
 import { progressStart, progressDone, progressReport } from '../../transfer-progress.js';
 import { t } from '../../shared/i18n/index.js';
 

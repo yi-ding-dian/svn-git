@@ -4,10 +4,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { platform } from '../../../platform/index.js';
-import {
-  sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, realpathSafe, invalidateStatusCache, getStatusCached, runVcs, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS, writeTextKeepEncoding, isBinaryFile,
-} from '../util.js';
-import type { Ctx } from '../util.js';
+import { sendJson, readBody } from '../../http/response.js';
+import { vcsOf, invalidateStatusCache, getStatusCached, runVcs } from '../../repo-context.js';
+import { inRepoRoot, realpathSafe, isBinaryFile } from '../../path-safety.js';
+import { authErrorOf, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS } from '../../errors.js';
+import { writeTextKeepEncoding } from '../../text-file.js';
+import type { Ctx } from '../../http/response.js';
 import { t } from '../../../shared/i18n/index.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {

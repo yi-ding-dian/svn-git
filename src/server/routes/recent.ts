@@ -1,247 +1,23 @@
 /** 最近项目域端点：打开过的仓库清单（持久化在 ~/.config/svngit/history.json）。
- *  dedupeHistory 由启动流程调用（main.tsx），不只是 HTTP 端点。 */
+ *  本文件只做 HTTP 协议转换：持久化在 recent/history-store，远程探测在 recent/probe，
+ *  就地更新在 recent/pull。 */
 
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { detectRepo } from '../../vcs/detect.js';
-import { probeProject, probeProjectCached } from '../../vcs/probe.js';
-import { createVcs, type RepoInfo } from '../../vcs/index.js';
-import type { SvnCred } from '../../vcs/svn.js';
-import { loadConfig } from '../../config.js';
-import { sendJson, readBody, currentScopes, vcsOf, realpathSafe, START_DIR, type Ctx } from './util.js';
+import { probeProjectCached } from '../../vcs/probe.js';
+import { sendJson, readBody, type Ctx } from '../http/response.js';
+import { currentScopes } from '../repo-context.js';
+import {
+  addHistory,
+  loadHistory,
+  removeHistoryItem,
+  setHistoryFav,
+  setHistoryRemark,
+  type HistoryItem,
+} from '../recent/history-store.js';
+import { remoteProbeAny } from '../recent/probe.js';
+import { pullAny } from '../recent/pull.js';
 import { t } from '../../shared/i18n/index.js';
-
-/** 最近打开的项目历史（服务端持久化：浏览器端口随机，localStorage 不可靠） */
-const HISTORY_PATH = path.join(os.homedir(), '.config', 'svngit', 'history.json');
-const HISTORY_MAX = 20;
-
-export interface HistoryItem {
-  path: string;
-  type: 'svn' | 'git' | 'wsl';
-  lastOpened: number;
-  /** 打开时的操作范围（相对仓库根的子项目路径；空/缺省 = 整个工作副本）。
-   *  大仓库里只打开 trunk/src 这类子项目时记住它，重新打开不用再逐级点进去 */
-  scope?: string;
-  /** 常用项目标记（星号，启动时优先打开） */
-  fav?: boolean;
-  /** 用户备注（侧边栏右键「备注」设置）：侧边栏显示在时间前，过长由前端 CSS 截断；空/缺省 = 无备注 */
-  remark?: string;
-}
-
-/** 读最近项目清单（github.ts 的「我的仓库」列表要拿它标出"本地已有"） */
-export function loadHistory(): HistoryItem[] {
-  try {
-    if (fs.existsSync(HISTORY_PATH)) {
-      const list = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8')) as HistoryItem[];
-      if (Array.isArray(list)) return list;
-    }
-  } catch {
-    /* 损坏则重置 */
-  }
-  return [];
-}
-
-/** 历史记录的项目身份键：**按 inode 归一，不能按路径字符串**。
- *  同一个目录可以有多个路径——bind mount（如 /data/home/x 与 /home/x，实测 inode 完全相同）、
- *  软链接、结尾斜杠等，按字符串比会当成两个项目，列表里就出现一模一样的条目（用户实报：
- *  最近项目里两个 svn-git，一个带星一个不带）。realpath 对 bind mount 无效（它只解析软链），
- *  所以必须看 dev:ino。取不到（目录已删/无权限）时退回字面路径，只归并完全相同的字符串。 */
-function historyKey(p: string, scope?: string): string {
-  try {
-    const st = fs.statSync(p);
-    // 同一工作副本的不同子项目范围视为不同条目（大仓库可同时把多个子项目放进最近列表）
-    return `${st.dev}:${st.ino}\u0000${scope ?? ''}`;
-  } catch {
-    return `${path.resolve(p)}\u0000${scope ?? ''}`;
-  }
-}
-
-/** 启动时清理历史里的重复项：同一目录只留最近打开的那条路径，常用标记合并上去
- *  （星号不能因为去重丢了）。返回清理掉的条数，0 = 本来就干净（不写文件）。 */
-export function dedupeHistory(): number {
-  try {
-    const list = loadHistory();
-    const byKey = new Map<string, HistoryItem>();
-    for (const h of list) {
-      const key = historyKey(h.path, h.scope);
-      const prev = byKey.get(key);
-      if (!prev) {
-        byKey.set(key, h);
-        continue;
-      }
-      const [keep, drop] = (h.lastOpened ?? 0) > (prev.lastOpened ?? 0) ? [h, prev] : [prev, h];
-      // fav 做「或」合并、备注取先有的那个：同一目录的两条别名记录，用户只在其中一条上设过星号/备注，
-      // 归并时必须留下，不能因为"保留的那条恰好没有"就并没了
-      byKey.set(key, { ...keep, fav: Boolean(keep.fav || drop.fav), remark: keep.remark ?? drop.remark });
-    }
-    if (byKey.size === list.length) return 0;
-    const out = [...byKey.values()].sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
-    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-    fs.writeFileSync(HISTORY_PATH, JSON.stringify(out, null, 2));
-    fs.chmodSync(HISTORY_PATH, 0o600);
-    return list.length - out.length;
-  } catch {
-    return 0; // 清理失败不影响启动
-  }
-}
-
-function addHistory(entry: { path: string; type: HistoryItem['type']; scope?: string }): void {
-  try {
-    const key = historyKey(entry.path, entry.scope);
-    const existed = loadHistory().find((h) => historyKey(h.path, h.scope) === key);
-    const list = loadHistory().filter((h) => historyKey(h.path, h.scope) !== key); // 同一条目的别名路径一并去掉，不留重复
-    // 记录被整个重新构造，**用户自己设的两样东西都得显式带过来**，否则打开一次项目就没了：
-    // 常用标记（不丢星号）+ 备注（用户实报：「更新时间后就不见了，备注」）
-    list.unshift({ ...entry, lastOpened: Date.now(), fav: existed?.fav, remark: existed?.remark });
-    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-    fs.writeFileSync(HISTORY_PATH, JSON.stringify(list.slice(0, HISTORY_MAX), null, 2));
-    fs.chmodSync(HISTORY_PATH, 0o600); // 与 config 一致，仅本人可读写
-  } catch {
-    /* 忽略写失败 */
-  }
-}
-
-/** WSL 包模式启动：把运行目录写进最近项目（type=wsl，侧边栏按文件夹名显示）。
- *  该目录天然不是 SVN/Git 工作副本，前端点击时走目录浏览而不是「打开仓库」，不会报错。
- *  更新后包目录会改成新版本号的名字，旧的 wsl 条目一并清掉，避免列表里留下失效路径。 */
-export function rememberRunDir(): void {
-  try {
-    const dir = path.resolve(START_DIR);
-    if (!fs.existsSync(path.join(dir, '.svngit-package.json'))) return;
-    const key = historyKey(dir);
-    const list = loadHistory().filter((h) => h.type !== 'wsl' && historyKey(h.path) !== key);
-    list.unshift({ path: dir, type: 'wsl', lastOpened: Date.now() });
-    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-    fs.writeFileSync(HISTORY_PATH, JSON.stringify(list.slice(0, HISTORY_MAX), null, 2), { mode: 0o600 });
-    fs.chmodSync(HISTORY_PATH, 0o600);
-  } catch {
-    /* 写失败不影响启动 */
-  }
-}
-
-/** 任意项目的远程检查（最近项目 ⬇ 待拉取）：detectRepo → 临时 VCS 实例 → preflight。
- *  preflight 自带超时（git fetch 15s / svn status -u 20s）与失败快速返回 — 不会卡请求；
- *  缓存：成功 60s / 失败 20s（打开侧边栏会成批请求，挡住重复联网）。 */
-const remoteCheckCache = new Map<string, { at: number; ok: boolean; behind: number }>();
-
-/** 缓存代次号（按目录）：invalidateRemoteProbe 时 +1。只清缓存挡不住**已经在跑**的探测——
- *  它算完会无条件写回，用更新前的 behind 把缓存重新撑满 60s（拉取期间正好有一次探测在跑，
- *  侧栏 ⬇ 就一直停在旧数字，用户实报）。探测开始时记代次，算完代次变了就不写缓存并重算一次。 */
-const remoteCheckEpoch = new Map<string, number>();
-
-/** 失效某项目的远程检查缓存（更新 / 切分支 / 合并成功后调用）。
- *  这些操作会让 remoteProbeAny 再算出的 behind 与缓存不一致；不清的话侧边栏 ⬇ 角标
- *  最多要等 60s 缓存过期才归零（用户实报"更新完仍显示 ⬇12"）。
- *  按 realpath 比对键值：历史里存的是打开时的目录，可能是仓库根的上级/子目录。 */
-export function invalidateRemoteProbe(dir: string): void {
-  const real = realpathSafe(dir);
-  const bump = (key: string) => {
-    remoteCheckCache.delete(key);
-    remoteCheckEpoch.set(key, (remoteCheckEpoch.get(key) ?? 0) + 1);
-  };
-  bump(dir); // 目录本身也记一代：此刻可能还没有缓存条目、但已有探测在跑
-  for (const key of remoteCheckCache.keys()) {
-    if (realpathSafe(key) === real) bump(key);
-  }
-}
-
-/** 取任意项目的远程检查结果：探测期间被更新失效过就重算一次（同 git.ts remoteCheck） */
-async function remoteProbeAny(dir: string): Promise<{ behind?: number; error?: string }> {
-  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return { error: 'unavailable' };
-  const repo = detectRepo(dir);
-  if (!repo) return { error: 'unavailable' };
-  let r = await remoteProbeOnce(dir, repo);
-  if (r.stale) r = await remoteProbeOnce(dir, repo);
-  return r.value;
-}
-
-async function remoteProbeOnce(
-  dir: string,
-  repo: RepoInfo,
-): Promise<{ value: { behind?: number; error?: string }; stale: boolean }> {
-  const epoch = remoteCheckEpoch.get(dir) ?? 0;
-  const hit = remoteCheckCache.get(dir);
-  if (hit && Date.now() - hit.at < (hit.ok ? 60_000 : 20_000)) {
-    return { value: hit.ok ? { behind: hit.behind } : { error: 'check-failed' }, stale: false };
-  }
-  // 凭据复用当前会话配置（同账号场景；失败快速返回，由前端标"检查失败"）
-  const cfg = loadConfig();
-  const cred: SvnCred | null = cfg.svn.username
-    ? { username: cfg.svn.username, password: cfg.svn.password, trustServerCert: cfg.svn.trustServerCert }
-    : null;
-  const stale = () => epoch !== (remoteCheckEpoch.get(dir) ?? 0);
-  try {
-    const vcs = createVcs(repo, cred);
-    // 只检查打开的项目位置（子项目条目）：大工作副本不因侧栏自动检查被全量联网扫描
-    const scope = path.relative(repo.root, path.resolve(dir));
-    const pf = await vcs.preflight(scope || undefined);
-    const isStale = stale();
-    if (!isStale) remoteCheckCache.set(dir, { at: Date.now(), ok: true, behind: pf.behind });
-    return { value: { behind: pf.behind }, stale: isStale };
-  } catch {
-    const isStale = stale();
-    if (!isStale) remoteCheckCache.set(dir, { at: Date.now(), ok: false, behind: 0 });
-    return { value: { error: 'check-failed' }, stale: isStale };
-  }
-}
-
-/** 任意项目"就地更新"（点侧边栏 ⬇）：git=pull / svn=update。
- *  **安全约束**：只更新工作区**干净**（无 tracked 改动/冲突）的项目——在用户没打开的项目里
- *  拉出合并冲突没法处理，直接拒绝并提示先打开处理；未跟踪文件不挡（pull/update 不会覆盖它们）。
- *  成功后失效该项目的远程检查缓存（⬇ 归零由前端做）。
- *  files/warnings 原样带回：前端据此在通知里展示与「手动更新」一致的**完整结果详情**
- *  （文件清单 / svn 警告——点通知弹「更新结果」窗）。 */
-async function pullAny(
-  dir: string,
-  signal?: AbortSignal,
-): Promise<{ ok: boolean; message?: string; files?: { path: string; status: string; code?: string }[]; warnings?: string[] }> {
-  try {
-    if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
-      // 该项目已打不开（目录不存在或不是工作副本）
-      return { ok: false, message: t('shell.recent.probeUnavailable') };
-    }
-    const repo = detectRepo(dir);
-    if (!repo) return { ok: false, message: t('shell.recent.probeUnavailable') };
-    const st = await probeProject(dir);
-    if ('error' in st) return { ok: false, message: t('shell.recent.probeUnavailable') };
-    if (st.changed > 0 || st.conflict > 0) {
-      // 该项目有未提交的改动，请先打开处理
-      return { ok: false, message: t('shell.recent.pullDirty') };
-    }
-    const cfg = loadConfig();
-    const cred: SvnCred | null = cfg.svn.username
-      ? { username: cfg.svn.username, password: cfg.svn.password, trustServerCert: cfg.svn.trustServerCert }
-      : null;
-    const vcs = createVcs(repo, cred);
-    // 条目记录了子项目范围：只更新该范围（svn update <scope>）。git pull 是仓库级（git 固有语义）。
-    const scope = path.relative(repo.root, path.resolve(dir));
-    const r =
-      repo.type === 'git'
-        // 当前仓库不支持拉取
-        // 通道用前端传来的 dir（不是检测出的 repo.root）：前端按同一个字符串轮询，
-        // dir 可能是大仓库的子项目路径，两者不保证相同
-        ? ((await vcs.pull?.(signal, `pull:${dir}`)) ?? { ok: false, message: t('srv.pullUnsupported') })
-        // 当前仓库不支持更新
-        : ((await vcs.update?.(scope || undefined, signal)) ?? { ok: false, message: t('srv.updateUnsupported') });
-    if (r.ok) {
-      invalidateRemoteProbe(dir); // 拉完重算（缓存失效）
-      // 拉的正好是当前打开的仓库：当前会话单例（顶栏 preflight / 侧栏 ⬇ 都读它）的缓存
-      // 也失效——本函数用的是临时实例，单例自己没经手这次 update；不清的话前端"拉完立即
-      // 重查"会命中旧 behind，⬇ 角标/顶栏横条最多滞后 1 分钟才消失（用户实报）
-      try {
-        const cur = vcsOf();
-        // dir 可能是子项目路径：与当前仓库**根**比较（同一工作副本的任意子项目都算）
-        if (realpathSafe(cur.repo.root) === realpathSafe(repo.root)) cur.vcs.invalidatePreflight?.();
-      } catch {
-        /* 无当前仓库等情况：忽略 */
-      }
-    }
-    return { ok: r.ok, message: r.message, files: 'files' in r ? r.files : undefined, warnings: r.warnings };
-  } catch (e) {
-    return { ok: false, message: (e as Error).message };
-  }
-}
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;
@@ -289,17 +65,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const body = await readBody(req);
         const hp = String(body.path ?? '');
         const hs = String(body.scope ?? '');
-        if (hp) {
-          const list = loadHistory().filter((h) => !(h.path === hp && (h.scope ?? '') === hs));
-          try {
-            fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-            fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));
-            fs.chmodSync(HISTORY_PATH, 0o600);
-          } catch {
-            /* 忽略写失败 */
-          }
-        }
-        sendJson(res, 200, { ok: true, items: loadHistory() });
+        let items: HistoryItem[] = loadHistory();
+        if (hp) items = removeHistoryItem(hp, hs);
+        sendJson(res, 200, { ok: true, items });
         return true;
       }
 
@@ -309,17 +77,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const hp = String(body.path ?? '');
         const hs = String(body.scope ?? '');
         const fav = Boolean(body.fav);
-        if (hp) {
-          const list = loadHistory().map((h) => (h.path === hp && (h.scope ?? '') === hs ? { ...h, fav } : h));
-          try {
-            fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-            fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));
-            fs.chmodSync(HISTORY_PATH, 0o600);
-          } catch {
-            /* 忽略写失败 */
-          }
-        }
-        sendJson(res, 200, { ok: true, items: loadHistory() });
+        let items: HistoryItem[] = loadHistory();
+        if (hp) items = setHistoryFav(hp, hs, fav);
+        sendJson(res, 200, { ok: true, items });
         return true;
       }
 
@@ -374,23 +134,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
         const hs = String(body.scope ?? '');
         // 60 字上限：备注显示在 160px 侧边栏里，再长也只会被截断，别让 history.json 被塞长文本
         const remark = String(body.remark ?? '').trim().slice(0, 60);
-        if (hp) {
-          const list = loadHistory().map((h) => {
-            if (h.path !== hp || (h.scope ?? '') !== hs) return h;
-            const next: HistoryItem = { ...h };
-            if (remark) next.remark = remark;
-            else delete next.remark;
-            return next;
-          });
-          try {
-            fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-            fs.writeFileSync(HISTORY_PATH, JSON.stringify(list, null, 2));
-            fs.chmodSync(HISTORY_PATH, 0o600);
-          } catch {
-            /* 忽略写失败 */
-          }
-        }
-        sendJson(res, 200, { ok: true, items: loadHistory() });
+        let items: HistoryItem[] = loadHistory();
+        if (hp) items = setHistoryRemark(hp, hs, remark);
+        sendJson(res, 200, { ok: true, items });
         return true;
       }
 

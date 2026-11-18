@@ -11,7 +11,10 @@ import { BINARY_EXTS, compareName } from '../../shared/types.js';
 import { run } from '../../vcs/exec.js';
 import { buildGitSshEnvironment, githubSshKeyArgument, isGitAuthenticationError } from '../../vcs/git-ssh.js';
 import { resolveSvnBin } from '../../vcs/svn.js';
-import { inRepoRoot, sendJson, readBody, vcsOf, START_DIR, MSG_PATH_OUT_OF_BOUNDS, type Ctx } from './util.js';
+import { inRepoRoot } from '../path-safety.js';
+import { sendJson, readBody, type Ctx } from '../http/response.js';
+import { vcsOf, START_DIR } from '../repo-context.js';
+import { MSG_PATH_OUT_OF_BOUNDS } from '../errors.js';
 import { t } from '../../shared/i18n/index.js';
 import type { RepoInfo } from '../../vcs/index.js';
 

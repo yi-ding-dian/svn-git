@@ -1,7 +1,9 @@
 /** 配置域端点：全局配置与凭据读写（config / git-auth）+ git 远程地址配置（git-config）+ git 身份（git-identity）+ 界面语言（lang）。
  * 读写 ~/.config/svngit/config.json（见 src/config.ts）；git-config / git-identity 为当前仓库的 git 配置（非 VCS 写操作，归本域）。
  * lang 放在本域：它就是 config.json 的一个字段，且改完要立刻生效（setLang 直接改主进程变量，server/vcs/main 同时切）。 */
-import { sendJson, readBody, vcsOf, MSG_UNSUPPORTED_OP } from './util.js';
+import { sendJson, readBody } from '../http/response.js';
+import { vcsOf } from '../repo-context.js';
+import { MSG_UNSUPPORTED_OP } from '../errors.js';
 import { loadConfig, saveConfig } from '../../config.js';
 import { syncTerminalSshConfig } from '../../ssh-config.js';
 import { getGithubInsteadOf, setGithubInsteadOf } from '../../git-config.js';
@@ -11,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { clearGithubIdentityCache } from './github.js';
 import { t, setLang, getLang, isLang } from '../../shared/i18n/index.js';
-import type { Ctx } from './util.js';
+import type { Ctx } from '../http/response.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;

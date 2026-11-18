@@ -26,8 +26,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { run } from '../../vcs/exec.js';
-import { sendJson, readBody, vcsOf, type Ctx } from './util.js';
-import { loadHistory } from './recent.js';
+import { sendJson, readBody, type Ctx } from '../http/response.js';
+import { vcsOf } from '../repo-context.js';
+import { loadHistory } from '../recent/history-store.js';
 import { readReleaseArtifacts, resolveDockerImages, type ReleaseDockerImage } from '../release-artifacts.js';
 import { t } from '../../shared/i18n/index.js';
 import { loadConfig } from '../../config.js';

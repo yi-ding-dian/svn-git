@@ -5,9 +5,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { run } from '../../../vcs/exec.js';
-import { sendJson, readBody, vcsOf, inRepoRoot, invalidateStatusCache, runVcs, MSG_PATH_OUT_OF_BOUNDS } from '../util.js';
+import { sendJson, readBody } from '../../http/response.js';
+import { vcsOf, invalidateStatusCache, runVcs } from '../../repo-context.js';
+import { inRepoRoot } from '../../path-safety.js';
+import { MSG_PATH_OUT_OF_BOUNDS } from '../../errors.js';
 import { getSvnIgnoreMap, isIgnoredByRules, gitGlobalExcludesFile, ensureGitGlobalExcludesFile, gitExcludePath, invalidateSvnIgnoreMap } from '../../../vcs/ignore.js';
-import type { Ctx } from '../util.js';
+import type { Ctx } from '../../http/response.js';
 import { t } from '../../../shared/i18n/index.js';
 import { detectTextEncoding, decodeText, encodeText, type TextEncoding } from '../../../shared/text.js';
 

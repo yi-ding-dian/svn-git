@@ -1,7 +1,6 @@
 /** 入口：启动本地 HTTP 服务。Electron 打包版用内嵌窗口展示（不依赖系统浏览器）；纯 node 用外部浏览器 */
 import path from 'node:path';
 import fs from 'node:fs';
-import os from 'node:os';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 import { createRequire } from 'node:module';
@@ -11,7 +10,7 @@ import { killAllChildren } from '../vcs/exec.js';
 import { recoverInflight } from '../inflight.js';
 import { detectRepo } from '../vcs/detect.js';
 import { platform } from '../platform/index.js';
-import { dedupeHistory } from '../server/routes/recent.js';
+import { dedupeHistory, loadHistory } from '../server/recent/history-store.js';
 import { loadConfig } from '../config.js';
 import { t, setLang } from '../shared/i18n/index.js';
 import { TITLE_BAR_HEIGHT } from '../shared/titlebar.js';
@@ -160,19 +159,12 @@ async function boot() {
   let repo = detectRepo(START_DIR);
   // 启动目录不是仓库时，优先打开最近使用的常用项目（星号标记）；显式指定目录则尊重指定
   if (!repo) {
-    try {
-      const histPath = path.join(os.homedir(), '.config', 'svngit', 'history.json');
-      if (fs.existsSync(histPath)) {
-        const hist = JSON.parse(fs.readFileSync(histPath, 'utf8')) as { path: string; fav?: boolean; lastOpened: number }[];
-        const favs = (Array.isArray(hist) ? hist : []).filter((h) => h.fav && h.path);
-        if (favs.length) {
-          favs.sort((a, b) => b.lastOpened - a.lastOpened); // 最近打开的常用项目优先
-          process.env.SVNGIT_REPO_DIR = favs[0]!.path;
-          repo = detectRepo(favs[0]!.path);
-        }
-      }
-    } catch {
-      /* 历史文件损坏时忽略，走默认启动 */
+    // 走 history-store 的统一读取入口；文件损坏时它返回空清单（等同旧行为的 catch 忽略）
+    const favs = loadHistory().filter((h) => h.fav && h.path);
+    if (favs.length) {
+      favs.sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0)); // 最近打开的常用项目优先
+      process.env.SVNGIT_REPO_DIR = favs[0]!.path;
+      repo = detectRepo(favs[0]!.path);
     }
   }
   // （检测到 {type} 仓库: {root}）

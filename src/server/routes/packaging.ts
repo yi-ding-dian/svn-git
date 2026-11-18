@@ -15,7 +15,8 @@ import {
   type BuildScriptHit,
 } from '../build-script.js';
 import { readReleaseArtifacts } from '../release-artifacts.js';
-import { readBody, sendJson, vcsOf, type Ctx } from './util.js';
+import { readBody, sendJson, type Ctx } from '../http/response.js';
+import { vcsOf } from '../repo-context.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 产物候选目录（仓库相对）：本项目 deploy/release；my-Agent 用 build/dist-electron；

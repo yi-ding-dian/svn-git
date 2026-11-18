@@ -5,7 +5,10 @@ import path from 'node:path';
 import { makeGitIgnoreChecker } from '../../../vcs/ignore.js';
 import { compareName } from '../../../shared/types.js';
 import { run } from '../../../vcs/exec.js';
-import { inRepoRoot, sendJson, getStatusCached, vcsOf, realpathSafe, MSG_OUT_OF_SCOPE, type Ctx } from '../util.js';
+import { inRepoRoot, realpathSafe } from '../../path-safety.js';
+import { sendJson, type Ctx } from '../../http/response.js';
+import { getStatusCached, vcsOf } from '../../repo-context.js';
+import { MSG_OUT_OF_SCOPE } from '../../errors.js';
 import { t } from '../../../shared/i18n/index.js';
 
 /** 忽略检测（svn status --no-ignore）的输出上限：超过就不解析。

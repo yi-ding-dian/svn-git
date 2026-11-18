@@ -4,11 +4,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { run } from '../../vcs/exec.js';
 import { platform } from '../../platform/index.js';
-import { sendJson, readBody, vcsOf, inRepoRoot, isBinaryFile, readTextFile, runVcs, currentScopes, writeTextKeepEncoding, MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE } from './util.js';
+import { sendJson, readBody } from '../http/response.js';
+import { vcsOf, runVcs, currentScopes } from '../repo-context.js';
+import { inRepoRoot, isBinaryFile } from '../path-safety.js';
+import { readTextFile, writeTextKeepEncoding } from '../text-file.js';
+import { MSG_PATH_OUT_OF_BOUNDS, MSG_OUT_OF_SCOPE } from '../errors.js';
 import { detectTextEncoding } from '../../shared/text.js';
 import { diffChangedLines } from '../../vcs/diff-lines.js';
 import { t } from '../../shared/i18n/index.js';
-import type { Ctx } from './util.js';
+import type { Ctx } from '../http/response.js';
 
 
 export async function handle(ctx: Ctx): Promise<boolean> {

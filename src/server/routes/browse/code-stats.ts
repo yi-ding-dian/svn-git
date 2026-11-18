@@ -18,7 +18,10 @@ import path from 'node:path';
 import { compareName } from '../../../shared/types.js';
 import type { RepoInfo } from '../../../vcs/index.js';
 import { t } from '../../../shared/i18n/index.js';
-import { MSG_OUT_OF_SCOPE, resolveRepoPath, sendJson, vcsOf, type Ctx } from '../util.js';
+import { MSG_OUT_OF_SCOPE } from '../../errors.js';
+import { resolveRepoPath } from '../../path-safety.js';
+import { sendJson, type Ctx } from '../../http/response.js';
+import { vcsOf } from '../../repo-context.js';
 import { MAX_FILE_BYTES, cacheGet, cacheSet, collectCandidates, countFileLines } from './line-scan.js';
 
 /** 并发读：与行数过滤保持一致 */

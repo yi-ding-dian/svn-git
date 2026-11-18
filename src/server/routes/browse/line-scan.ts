@@ -16,14 +16,10 @@ import { run } from '../../../vcs/exec.js';
 import type { RepoInfo } from '../../../vcs/index.js';
 import { compareName, type LineOperator } from '../../../shared/types.js';
 import { t } from '../../../shared/i18n/index.js';
-import {
-  getStatusCached,
-  resolveRepoPath,
-  sendJson,
-  vcsOf,
-  MSG_OUT_OF_SCOPE,
-  type Ctx,
-} from '../util.js';
+import { getStatusCached, vcsOf } from '../../repo-context.js';
+import { resolveRepoPath } from '../../path-safety.js';
+import { sendJson, type Ctx } from '../../http/response.js';
+import { MSG_OUT_OF_SCOPE } from '../../errors.js';
 
 /** 单文件读取上限：超过不读（大日志/生成物行数没有「大代码文件」的排查价值） */
 export const MAX_FILE_BYTES = 32 * 1024 * 1024;

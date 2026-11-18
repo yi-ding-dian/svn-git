@@ -3,7 +3,7 @@
  *  真正的检查/下载/安装在 main（electron-updater 只能在 Electron 主进程跑），
  *  这里只做 HTTP 转发和加速设置读写——和 /api/pick-dir 的注入方式一致。
  *  纯 Node（WSL 包）或源码运行时没有注入处理器，返回 unsupported，前端只显示说明。 */
-import { sendJson, readBody, type Ctx } from './util.js';
+import { sendJson, readBody, type Ctx } from '../http/response.js';
 import { loadConfig, saveConfig } from '../../config.js';
 import { t } from '../../shared/i18n/index.js';
 import type { AppUpdateHandlers, AppUpdateProxySettings, AppUpdateStatus } from '../../shared/app-update.js';

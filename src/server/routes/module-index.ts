@@ -6,7 +6,9 @@ import fs from 'node:fs';
 import { decodeText } from '../../shared/text.js';
 import os from 'node:os';
 import path from 'node:path';
-import { sendJson, readBody, repoInfo, resolveRepoPath, type Ctx } from './util.js';
+import { sendJson, readBody, type Ctx } from '../http/response.js';
+import { repoInfo } from '../repo-context.js';
+import { resolveRepoPath } from '../path-safety.js';
 import type { RepoInfo } from '../../vcs/types.js';
 import { t } from '../../shared/i18n/index.js';
 

@@ -7,7 +7,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run } from '../../vcs/exec.js';
-import { sendJson, readBody, repoInfo, type Ctx } from './util.js';
+import { sendJson, readBody, type Ctx } from '../http/response.js';
+import { repoInfo } from '../repo-context.js';
 import { loadConfig } from '../../config.js';
 import { t } from '../../shared/i18n/index.js';
 import {

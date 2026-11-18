@@ -3,9 +3,12 @@
  *  这几条共享同一套入参（paths）+ 越界校验 + 成功后的状态缓存失效，放在同一文件；
  *  文件级读写、忽略规则、清理/锁见同目录其它模块。 */
 import path from 'node:path';
-import { sendJson, readBody, vcsOf, inRepoRoot, authErrorOf, invalidateStatusCache, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS } from '../util.js';
-import { invalidateRemoteProbe } from '../recent.js';
-import type { Ctx } from '../util.js';
+import { sendJson, readBody } from '../../http/response.js';
+import { vcsOf, invalidateStatusCache } from '../../repo-context.js';
+import { inRepoRoot } from '../../path-safety.js';
+import { authErrorOf, MSG_UNSUPPORTED_OP, MSG_PATH_OUT_OF_BOUNDS } from '../../errors.js';
+import { invalidateRemoteProbe } from '../../recent/probe.js';
+import type { Ctx } from '../../http/response.js';
 import { t } from '../../../shared/i18n/index.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {

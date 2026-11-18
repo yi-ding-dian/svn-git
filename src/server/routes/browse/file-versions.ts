@@ -1,7 +1,11 @@
 /** 文件版本端点：工作区文件指纹与两版本并排对比（BASE/HEAD vs 工作区）。 */
 import fs from 'node:fs';
 import path from 'node:path';
-import { inRepoRoot, sendJson, readTextFileChecked, vcsOf, MSG_OUT_OF_SCOPE, type Ctx } from '../util.js';
+import { inRepoRoot } from '../../path-safety.js';
+import { sendJson, type Ctx } from '../../http/response.js';
+import { readTextFileChecked } from '../../text-file.js';
+import { vcsOf } from '../../repo-context.js';
+import { MSG_OUT_OF_SCOPE } from '../../errors.js';
 import { t } from '../../../shared/i18n/index.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {

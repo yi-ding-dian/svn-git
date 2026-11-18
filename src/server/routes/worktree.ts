@@ -1,6 +1,7 @@
 /** 工作树管理域端点：列出 / 移除 / 清理失效记录（Git 专有）。 */
-import { sendJson, readBody, vcsOf, runVcs } from './util.js';
-import type { Ctx } from './util.js';
+import { sendJson, readBody } from '../http/response.js';
+import { vcsOf, runVcs } from '../repo-context.js';
+import type { Ctx } from '../http/response.js';
 import { t } from '../../shared/i18n/index.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {

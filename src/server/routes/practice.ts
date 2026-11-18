@@ -1,8 +1,8 @@
 /** 练习仓库端点：能力探测 + 创建（创建成功后由前端调用 /api/open 打开） */
-import { sendJson, readBody } from './util.js';
+import { sendJson, readBody } from '../http/response.js';
 import { t } from '../../shared/i18n/index.js';
 import { generatePracticeRepo, probePractice } from '../../practice/index.js';
-import type { Ctx } from './util.js';
+import type { Ctx } from '../http/response.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;

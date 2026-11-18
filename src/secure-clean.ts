@@ -9,9 +9,9 @@
  *  GitHub 上的公钥和 Token 无法从本机撤销，所以返回被删公钥的内容，
  *  由前端提示用户到 GitHub 手动删除/撤销。 */
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { loadConfig, saveConfig } from './config.js';
+import { clearHistoryFile } from './server/recent/history-store.js';
 import { syncTerminalSshConfig } from './ssh-config.js';
 import { setGithubInsteadOf } from './git-config.js';
 
@@ -104,7 +104,7 @@ export function secureClean(opts: SecureCleanOptions): SecureCleanResult {
 
   if (opts.clearHistory) {
     try {
-      fs.rmSync(path.join(os.homedir(), '.config', 'svngit', 'history.json'), { force: true });
+      clearHistoryFile();
       removed.push('history');
     } catch (err) {
       failed.push({ item: 'history', error: errorOf(err) });

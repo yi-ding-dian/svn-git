@@ -9,9 +9,12 @@
  */
 import path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
-import { sendJson, vcsOf, inRepoRoot, MSG_OUT_OF_SCOPE } from './util.js';
+import { sendJson } from '../http/response.js';
+import { vcsOf } from '../repo-context.js';
+import { inRepoRoot } from '../path-safety.js';
+import { MSG_OUT_OF_SCOPE } from '../errors.js';
 import { run } from '../../vcs/exec.js';
-import type { Ctx } from './util.js';
+import type { Ctx } from '../http/response.js';
 
 /** svn status --xml 解析器（只取本模块要的字段，不引 vcs 层那份带业务映射的） */
 const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });

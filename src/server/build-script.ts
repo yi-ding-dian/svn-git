@@ -3,7 +3,7 @@
  *  只认固定白名单，不接受客户端传入路径。 */
 import fs from 'node:fs';
 import path from 'node:path';
-import { inRepoRoot } from './routes/util.js';
+import { inRepoRoot } from './path-safety.js';
 
 export type BuildScriptKind = 'sh' | 'bat';
 

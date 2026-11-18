@@ -3,7 +3,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isBinaryFile, inRepoRoot, sendJson, getStatusCached, currentScopes, vcsOf, repoInfo, START_DIR, MSG_PATH_OUT_OF_BOUNDS, INSTANCE_ID, type Ctx } from './util.js';
+import { isBinaryFile, inRepoRoot } from '../path-safety.js';
+import { sendJson, type Ctx } from '../http/response.js';
+import { getStatusCached, currentScopes, vcsOf, repoInfo, START_DIR, INSTANCE_ID } from '../repo-context.js';
+import { MSG_PATH_OUT_OF_BOUNDS } from '../errors.js';
 import { t } from '../../shared/i18n/index.js';
 import { detectBuildScript } from '../build-script.js';
 

@@ -2,7 +2,7 @@
  *
  *  域内按"操作对象"分层：仓库级操作 core、文件级操作 file-operations、忽略规则 ignore、
  *  维护类（清理/锁）maintenance。新增端点放对应文件，入口不用改。 */
-import type { Ctx } from '../util.js';
+import type { Ctx } from '../../http/response.js';
 import { handle as handleCore } from './core.js';
 import { handle as handleFileOperations } from './file-operations.js';
 import { handle as handleIgnore } from './ignore.js';

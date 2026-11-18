@@ -2,7 +2,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { detectTextEncoding } from '../../../shared/text.js';
-import { isBinaryFile, inRepoRoot, sendJson, readTextFileChecked, MAX_READ_BYTES, TOO_LARGE_PLACEHOLDER, vcsOf, MSG_PATH_OUT_OF_BOUNDS, type Ctx } from '../util.js';
+import { isBinaryFile, inRepoRoot } from '../../path-safety.js';
+import { sendJson, type Ctx } from '../../http/response.js';
+import { readTextFileChecked, MAX_READ_BYTES, TOO_LARGE_PLACEHOLDER } from '../../text-file.js';
+import { vcsOf } from '../../repo-context.js';
+import { MSG_PATH_OUT_OF_BOUNDS } from '../../errors.js';
 import { t } from '../../../shared/i18n/index.js';
 import { streamZip } from './zip.js';
 

@@ -18,9 +18,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type http from 'node:http';
-import { sendJson, readBody, vcsOf, inRepoRoot, MSG_PATH_OUT_OF_BOUNDS } from './util.js';
+import { sendJson, readBody } from '../http/response.js';
+import { vcsOf } from '../repo-context.js';
+import { inRepoRoot } from '../path-safety.js';
+import { MSG_PATH_OUT_OF_BOUNDS } from '../errors.js';
 import { t } from '../../shared/i18n/index.js';
-import type { Ctx } from './util.js';
+import type { Ctx } from '../http/response.js';
 
 /** dir/path 拼成绝对路径并校验落在仓库根内；越界或不合法返回 null。
  *  dir 为相对仓库根的目录（'' = 根），rel 是相对 dir 的路径（可含子目录）。 */

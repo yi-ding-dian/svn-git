@@ -1,6 +1,6 @@
 /** 浏览域端点：目录与文件内容的读取（列表/树/搜索/预览/历史版本内容）。
  *  只读，不含写操作（见 ops.ts）与系统集成（见 sys.ts）。 */
-import type { Ctx } from '../util.js';
+import type { Ctx } from '../../http/response.js';
 import { handle as handleSearch } from './search.js';
 import { handle as handleDirectoryList } from './directory-list.js';
 import { handle as handleFileContent } from './file-content.js';

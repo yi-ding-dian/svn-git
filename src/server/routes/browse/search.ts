@@ -6,8 +6,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { decodeMixedText } from '../../../shared/text.js';
 import { run } from '../../../vcs/exec.js';
-import { inRepoRoot, sendJson, vcsOf, MSG_OUT_OF_SCOPE } from '../util.js';
-import type { Ctx } from '../util.js';
+import { inRepoRoot } from '../../path-safety.js';
+import { sendJson } from '../../http/response.js';
+import { vcsOf } from '../../repo-context.js';
+import { MSG_OUT_OF_SCOPE } from '../../errors.js';
+import type { Ctx } from '../../http/response.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { res, url } = ctx;

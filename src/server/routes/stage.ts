@@ -1,9 +1,10 @@
 /** hunk 级部分提交端点：读取文件的分块差异 + 把选中的块应用到暂存区。
  *  解析与 patch 拼接在 vcs/hunks.ts 的纯函数里（可单测），本模块只做参数校验与转发。
  */
-import { sendJson, readBody, vcsOf } from './util.js';
+import { sendJson, readBody } from '../http/response.js';
+import { vcsOf } from '../repo-context.js';
 import { t } from '../../shared/i18n/index.js';
-import type { Ctx } from './util.js';
+import type { Ctx } from '../http/response.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url, p } = ctx;

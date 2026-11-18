@@ -1,11 +1,13 @@
 /** 版本管理扩展域端点：branches / branch / tags / tag / stash / git 子操作 */
-import { sendJson, readBody, vcsOf, authErrorOf, invalidateStatusCache, runVcs, MSG_UNSUPPORTED_OP } from './util.js';
+import { sendJson, readBody } from '../http/response.js';
+import { vcsOf, invalidateStatusCache, runVcs } from '../repo-context.js';
+import { authErrorOf, MSG_UNSUPPORTED_OP } from '../errors.js';
 import { progressDone } from '../../transfer-progress.js';
-import { invalidateRemoteProbe } from './recent.js';
+import { invalidateRemoteProbe } from '../../server/recent/probe.js';
 import { findCacheCreds } from './svn-auth.js';
 import { t } from '../../shared/i18n/index.js';
 import type { VcsResult } from '../../vcs/index.js';
-import type { Ctx } from './util.js';
+import type { Ctx } from '../http/response.js';
 
 export async function handle(ctx: Ctx): Promise<boolean> {
   const { req, res, url } = ctx;

@@ -22,7 +22,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { run } from '../../vcs/exec.js';
-import { sendJson, readBody, vcsOf, inRepoRoot, invalidateStatusCache, type Ctx } from './util.js';
+import { sendJson, readBody, type Ctx } from '../http/response.js';
+import { vcsOf, invalidateStatusCache } from '../repo-context.js';
+import { inRepoRoot } from '../path-safety.js';
 import { t } from '../../shared/i18n/index.js';
 
 /** 命令超时：30 秒（用户定的）。超时只是兜底 —— 长命令随时可以 Ctrl+C 中断 */
