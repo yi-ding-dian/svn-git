@@ -11,6 +11,7 @@
  *  原先这里没接 abort：取消后 svn checkout 会在后台跑到 10 分钟上限，还会留下半个工作副本。 */
 import fs from 'node:fs';
 import type http from 'node:http';
+import { pathToFileURL } from 'node:url';
 import { run } from '../../vcs/exec.js';
 import { resolveSvnBin, classifySvnError } from '../../vcs/svn.js';
 import { svnNetArgs } from '../../vcs/svn/net.js';
@@ -89,7 +90,9 @@ export async function createSvnRepo(p: SvnCreateParams, res: http.ServerResponse
       // svnadmin create 失败
       result = { ok: false, message: r.stderr.trim() || t('srv.svnadminFailed') };
     } else {
-      let wcUrl = `file://${target}`;
+      // 用 pathToFileURL 而不是拼 `file://${target}`：Windows 下 target 是反斜杠路径，
+      // 直接拼出的 URL 不合法（svn 报 E170000），且空格/中文不会转义。
+      let wcUrl = pathToFileURL(target).href;
       const standard = body.standard !== false;
       if (standard) {
         // 标准布局：创建 trunk/branches/tags（svn 分支机制依赖目录约定）

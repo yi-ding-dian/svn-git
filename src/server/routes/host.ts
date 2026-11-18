@@ -11,6 +11,7 @@ import { BINARY_EXTS, compareName } from '../../shared/types.js';
 import { run } from '../../vcs/exec.js';
 import { buildGitSshEnvironment, githubSshKeyArgument, isGitAuthenticationError } from '../../vcs/git-ssh.js';
 import { resolveSvnBin } from '../../vcs/svn.js';
+import { isAuthLike } from '../../vcs/auth-errors.js';
 import { inRepoRoot } from '../path-safety.js';
 import { sendJson, readBody, type Ctx } from '../http/response.js';
 import { vcsOf, START_DIR } from '../repo-context.js';
@@ -421,7 +422,7 @@ export async function handle(ctx: Ctx): Promise<boolean> {
               const errText = r.stderr.trim();
               if (r.code === 0) {
                 ok = true; reason = ''; // 一切正常：不返回文本（前端按空串判断"无可说"；返回固定文案会因语言切换导致比较失效）
-              } else if (/E170001|Authorization failed|Authentication failed/i.test(errText)) {
+              } else if (isAuthLike(errText)) {
                 // 已连通（认证失败，请检查账号）
                 ok = true; reason = t('srv.netAuthFailAccount');
               } else {

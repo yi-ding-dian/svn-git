@@ -165,7 +165,7 @@ export async function checkoutRemote(p: RemoteCheckoutParams, signal: AbortSigna
   /** 收集一条检出命令的输出：stdout 里 `A/U 路径` 行 → 清单（上限 2000 条，路径转相对 target；
    *  超出只计总数）；stderr 非空行 → svn 警告（上限 50 条）。检出命令一律不加 -q——清单就靠这些行。 */
   const collectR = (rr: RunResult): RunResult => {
-    for (const raw of rr.stdout.split('\n')) {
+    for (const raw of rr.stdout.split(/\r?\n/)) {
       const m = /^([ADUGECR])\s+(.+)$/.exec(raw);
       if (!m) {
         // 非状态行里的"警告类"（Skipped 'path' -- … 等，常见于外部定义失败）：归入警告区
@@ -180,7 +180,7 @@ export async function checkoutRemote(p: RemoteCheckoutParams, signal: AbortSigna
       const abs = path.resolve(os.tmpdir(), p);
       coFiles.push({ code: m[1]!, path: abs.startsWith(target + path.sep) ? abs.slice(target.length + 1) : p });
     }
-    for (const line of rr.stderr.split('\n')) {
+    for (const line of rr.stderr.split(/\r?\n/)) {
       const s = line.trim();
       // 全收（含 E 错误行）：失败 message 只留第一行摘要，完整多行信息这里是唯一的完整展示位
       if (s && coWarnings.length < 50) coWarnings.push(s);

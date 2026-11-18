@@ -8,6 +8,7 @@ import path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import { detectRepo } from './detect.js';
 import { run } from './exec.js';
+import { GIT_UNMERGED } from './status-codes.js';
 
 export interface ProjectProbe {
   type: 'git' | 'svn';
@@ -26,9 +27,6 @@ export interface ProjectProbe {
 export type ProbeResult = ProjectProbe | { error: string };
 
 const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' });
-
-/** git porcelain 两字母冲突码 */
-const CONFLICT = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
 
 /** 探测一次（不吃缓存）：路径不存在 / 非工作副本 → { error }。
  *  dir 是**打开的项目位置**（可能是工作副本里的子项目）：状态只统计该范围，
@@ -74,7 +72,7 @@ async function probeGit(root: string, scope: string): Promise<ProbeResult> {
     }
     const xy = line.slice(0, 2);
     if (xy === '??') untracked += 1;
-    else if (CONFLICT.has(xy)) conflict += 1;
+    else if (GIT_UNMERGED.has(xy)) conflict += 1;
     else changed += 1;
   }
   return { type: 'git', branch, ahead, behind, changed, untracked, conflict };

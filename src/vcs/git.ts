@@ -8,6 +8,8 @@ import { decodeText, detectTextEncoding } from '../shared/text.js';
 import { parseDiff, buildPatch, blobOf, type ParsedDiff } from './hunks.js';
 import { markHunkStaged, hunkStagedOf, clearHunkStaged } from './stage-registry.js';
 import { buildGitSshEnvironment, githubSshKeyArgument } from './git-ssh.js';
+import { GIT_UNMERGED, mapGitCode } from './status-codes.js';
+import { isGitAuthError } from './auth-errors.js';
 import { loadConfig } from '../config.js';
 import { progressStart, progressDone, progressFromStderr, progressAttachManifest, progressClearManifest } from '../transfer-progress.js';
 import type { UpdateManifest } from '../transfer-progress.js';
@@ -119,39 +121,6 @@ function parseGitLog(stdout: string): LogEntry[] {
     }
   }
   return out;
-}
-
-/** git 未合并（冲突）状态：porcelain v1 的**两列组合**，共 7 种。
- *  注意不能按单列映射 —— `AA`（双方新增）按列拆开是 A+A，会被当成"新增"，
- *  于是 add/add、delete/delete 这类冲突在文件列表里没有 C 标、也不会进「解决冲突」列表
- *  （用户实报：add/add 冲突文件根本没出现在解决器里）。 */
-const UNMERGED = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
-
-/** git porcelain 状态码（单列） -> 统一语义码 */
-function mapCode(x: string): string {
-  switch (x) {
-    case 'M':
-    case 'T':
-      return 'M';
-    case 'A':
-      return 'A';
-    case 'D':
-      return 'D';
-    case '?':
-      return '?';
-    case 'U':
-      return 'C';
-    case 'R':
-      return 'R';
-    case 'C':
-      return 'A';
-    case '!':
-      return '!';
-    case 'I':
-      return 'I';
-    default:
-      return ' ';
-  }
 }
 
 /** 解析 porcelain 路径（可能被 C 风格引号包裹） */
@@ -354,10 +323,10 @@ export class GitVcs {
       let relPath = unquote(pname.trim());
       // 未跟踪目录输出 "?? dir/" 带尾部斜杠：去掉，统一为无斜杠路径（否则状态匹配/拼接会双斜杠）
       if (relPath.endsWith('/')) relPath = relPath.slice(0, -1);
-      const main = mapCode(xy[0] ?? ' ');
-      const wc = mapCode(xy[1] ?? ' ');
+      const main = mapGitCode(xy[0] ?? ' ');
+      const wc = mapGitCode(xy[1] ?? ' ');
       // 未合并状态整对判断：AA/DD/AU/UA/UD/DU 拆成单列会丢掉"冲突"语义
-      let code = UNMERGED.has(xy) ? 'C' : main === ' ' ? wc : main;
+      let code = GIT_UNMERGED.has(xy) ? 'C' : main === ' ' ? wc : main;
       // worktree 列删除(" D"=磁盘删除,index/版本库还在)是「缺失」而非版本控制删除：
       // 更新(git pull/checkout)即可恢复，与 svn 的 '!' 语义一致；只有 index 列 D(git rm)才是真删除
       if (code === 'D' && xy[0] !== 'D') code = '!';
@@ -1016,17 +985,13 @@ export class GitVcs {
         }
         return r;
       });
-    const isAuthErr = (text: string) =>
-      // i18n-ignore: 解析 git 输出的英文报错
-      /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(text);
-
     let res = await pullOnce();
     // 更新已取消
     if (res.aborted) return { ok: false, message: t('vcs.updateCancelled') };
     // 认证失败：用已保存的凭据（GIT_ASKPASS）自动重试一次——与 push / fetchRemote 同一套机制。
     // 没有这段时 pull 永远带不上设置里存的 Token：https 远程只会报
     // "could not read Username ... terminal prompts disabled"（用户实报：推送正常、更新必失败）
-    let authFailed = res.code !== 0 && isAuthErr(res.stderr + res.stdout);
+    let authFailed = res.code !== 0 && isGitAuthError(res.stderr + res.stdout);
     const cred = loadConfig().git;
     if (authFailed && cred?.username && cred?.password) {
       const ask = createAskPass(cred);
@@ -1038,7 +1003,7 @@ export class GitVcs {
       // 更新已取消
       if (res.aborted) return { ok: false, message: t('vcs.updateCancelled') };
       // 按**重试这次**的结果重新判定：凭据过期/无权访问时仍算认证失败，要引导用户去改
-      authFailed = res.code !== 0 && isAuthErr(res.stderr + res.stdout);
+      authFailed = res.code !== 0 && isGitAuthError(res.stderr + res.stdout);
     }
     if (res.code !== 0) {
       if (!authFailed) {
@@ -1290,7 +1255,7 @@ export class GitVcs {
       }
     }
     const errText = res.stderr + res.stdout;
-    const isAuthError = /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(errText);
+    const isAuthError = isGitAuthError(errText);
     if (isAuthError && cred?.username && cred?.password) {
       // 已有保存的凭据 → 用 GIT_ASKPASS 重试一次。
       // 注意重试必须同样带 -u origin <分支>：无上游分支时无 -u 的 push 会再次报"没有上游分支",
@@ -1310,7 +1275,7 @@ export class GitVcs {
       // 403 无写权限都会被无条件当成"认证失败"弹认证窗误导用户（实测：推他人仓库/断网都弹了认证窗）。
       // 非认证类失败（网络/403）不带 authType，交给上层显示原报错或走 Fork 引导
       const retryErr = retry.stderr + retry.stdout;
-      const retryAuth = /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(retryErr); // i18n-ignore: 解析 git push 的中英文报错
+      const retryAuth = isGitAuthError(retryErr);
       // git push 失败
       return {
         ok: false,
@@ -1474,7 +1439,7 @@ export class GitVcs {
     if (res.aborted) return { ok: false, message: t('vcs.pushCancelled') };
     if (res.code === 0) return { ok: true, message: okMsg };
     const errText = res.stderr + res.stdout;
-    const isAuthError = /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(errText);
+    const isAuthError = isGitAuthError(errText);
     if (isAuthError && cred?.username && cred?.password) {
       const ask = createAskPass(cred);
       const retry = await this.exec(args, { timeoutMs: 600_000, signal, env: { GIT_ASKPASS: ask.path } });
@@ -1509,7 +1474,7 @@ export class GitVcs {
     if (res.aborted) return { ok: false, message: t('vcs.fetchCancelled') };
     if (res.code !== 0) {
       const cred = loadConfig().git;
-      const isAuthError = /Authentication failed|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|HTTP 401|HTTP 403/i.test(res.stderr + res.stdout);
+      const isAuthError = isGitAuthError(res.stderr + res.stdout);
       if (isAuthError && cred?.username && cred?.password) {
         const ask = createAskPass(cred);
         res = await runFetch({ GIT_ASKPASS: ask.path });

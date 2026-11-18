@@ -43,6 +43,8 @@ export function startServer(): Promise<ServerHandle> {
       serveStatic(res, p);
     } catch (err) {
       const e = err as Error;
+      // 500 必须留痕：响应体只回 message，服务端不记日志的话线上问题无从排查
+      console.error(`[500] ${req.method} ${p} -> ${e.message}`, e.stack ?? '');
       const auth = isAuthError(e);
       sendJson(res, 500, { error: e.message, authError: auth });
     }

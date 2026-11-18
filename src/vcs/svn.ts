@@ -3,6 +3,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { XMLParser } from 'fast-xml-parser';
 import { run, runStream, type RunResult } from './exec.js';
+import { classifySvnError } from './auth-errors.js';
+import { SVN_ITEM_MAP } from './status-codes.js';
 import { invalidateSvnIgnoreMap } from './ignore.js';
 import { t } from '../shared/i18n/index.js';
 import { progressDone, progressReport, progressStart, progressStepsStart, progressStepsAdvance } from '../transfer-progress.js';
@@ -38,54 +40,10 @@ export interface SvnCred {
   trustServerCert?: boolean;
 }
 
-/** svn 认证类错误的分类结果：code = 最内层错误码（svn 错误是层层包裹的栈，最内层才是根因） */
-export interface SvnErrorDetail {
-  code?: string;
-  /** auth=账号密码错 / authz=账号没有该路径权限 / proxy=代理要求认证 */
-  kind: 'auth' | 'authz' | 'proxy';
-}
-
-/** 从 svn 输出里识别认证类错误，非认证错误返回 null。
- *  **为什么取最后一个 E 码**：认证失败时 svn 输出的是错误栈——
- *    svn: E170013: Unable to connect to a repository at URL '...'
- *    svn: E215004: No more credentials or we tried too many times.
- *    svn: E170001: Authentication failed
- *  旧实现取第一个码，永远拿到外层 E170013：界面显示「认证失败（E170013）」，
- *  既盖住真正的 E170001/E215004，又让人误以为是网络问题（用户实报）。
- *  按文案先分代理/权限——三者都可能带 E170001，不能只看码。 */
-export function classifySvnError(text: string): SvnErrorDetail | null {
-  const codes = [...text.matchAll(/E\d{6}/g)].map((m) => m[0]);
-  const code = codes.length ? codes[codes.length - 1] : undefined;
-  // 代理：407 / Proxy Authentication Required → svn 报 "HTTP proxy authorization failed"
-  if (/proxy (?:authorization|authentication) failed|proxy authentication required|HTTP 407/i.test(text)) {
-    return { code, kind: 'proxy' };
-  }
-  // 授权（密码对但没有该路径读权限）必须排在认证前：两种情况都可能报 E170001。
-  // E220001 / "Item is not readable"（本地化后是「条目不可读」）是路径无权访问的典型报错
-  if (/authorization failed|item is not readable|not readable|条目不可读/i.test(text)) {
-    return { code, kind: 'authz' };
-  }
-  // 认证：E215004（没有更多凭据/试太多次）经常是失败输出的最内层码
-  if (/authentication failed|E170001|E215004/i.test(text)) return { code, kind: 'auth' };
-  return null;
-}
-
-
-/** svn status --xml 的 item 单词 -> 统一状态码 */
-const ITEM_MAP: Record<string, string> = {
-  modified: 'M',
-  added: 'A',
-  deleted: 'D',
-  unversioned: '?',
-  missing: '!',
-  conflicted: 'C',
-  replaced: 'R',
-  external: 'X',
-  ignored: 'I',
-  incomplete: '!',
-  obstructed: '~',
-  merged: 'M',
-};
+/** 兼容旧路径：认证分类与状态码映射统一收敛到 ./auth-errors.js / ./status-codes.js，
+ *  server/repo-setup 等处仍从 svn.ts 取 classifySvnError。 */
+export { classifySvnError } from './auth-errors.js';
+export type { SvnErrorDetail } from './auth-errors.js';
 
 /** 超大工作副本阈值：svn status --xml 输出超过这个字节数就降级为浅扫描。
  *  判据只用输出大小——耗时上正常仓库(0.35s)与超大仓库(0.96s)分不开，文件数也分不开(4.8万 vs 35万)，
@@ -481,14 +439,14 @@ export class SvnVcs {
         const wc = e['wc-status'] ?? {};
         const item = String(wc['@_item'] ?? 'none');
         if (item === 'none' || item === 'normal') continue; // 无变化条目
-        const code = ITEM_MAP[item] ?? '?';
+        const code = SVN_ITEM_MAP[item] ?? '?';
         const isDir = String(wc['@_kind'] ?? e['@_kind'] ?? 'file') === 'dir';
         list.push({
           path: relPath,
           code,
           isDir,
           absPath: path.join(this.repo.root, relPath),
-          // item=incomplete 表示"工作副本不完整"（上次操作被中断），被 ITEM_MAP 映射成 '!'，
+          // item=incomplete 表示"工作副本不完整"（上次操作被中断），被 SVN_ITEM_MAP 映射成 '!'，
           // 但成因和"文件真的缺失"完全不同——修法是 svn cleanup 而非 checkout，故单独带出来
           incomplete: item === 'incomplete',
           locked: String(wc['@_wc-locked'] ?? 'false') === 'true',

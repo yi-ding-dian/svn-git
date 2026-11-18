@@ -9,17 +9,13 @@ import { inRepoRoot, realpathSafe } from '../../path-safety.js';
 import { sendJson, type Ctx } from '../../http/response.js';
 import { getStatusCached, vcsOf } from '../../repo-context.js';
 import { MSG_OUT_OF_SCOPE } from '../../errors.js';
+import { CODES_ORDER, CODE_RANK } from '../../../vcs/status-codes.js';
 import { t } from '../../../shared/i18n/index.js';
 
 /** 忽略检测（svn status --no-ignore）的输出上限：超过就不解析。
  *  它只用来把被忽略的条目标成 I，而超大工作副本上这个扫描有 5MB+、解析要秒级——收益不值。
  *  实测参考：正常仓库几十 KB；某 35 万文件的工作副本 5.6MB / 4.3 万行。 */
 const MAX_IGNORE_SCAN_BYTES = 1024 * 1024;
-
-/** 目录多状态徽标显示顺序：修改 / 添加 / 删除 / 冲突 / 替换 / 缺失 / 更新 / 类型变更 */
-const CODES_ORDER = ['M', 'A', 'D', 'C', 'R', '!', 'U', '~'];
-/** 目录聚合时取"最高"状态码的优先级（未版本化 ? / 外部 X 不参与升级） */
-const RK: Record<string, number> = { C: 10, '!': 9, D: 8, M: 7, A: 6, R: 5, '~': 4, U: 3 };
 
 /** 独立工作副本的状态聚合：按它自己的版本化变更取最高码 + 变更数
  *  （内部未版本化 ? 不计入数量；它不影响目录"干净/有改动"的判定）。 */
@@ -37,7 +33,7 @@ function aggregateNestedWc(st: { code: string }[]): { code: string; codes?: stri
     ops.add(s.code);
   }
   let best = '';
-  for (const c of ops) if ((RK[c] ?? -1) > (RK[best] ?? -1)) best = c;
+  for (const c of ops) if ((CODE_RANK[c] ?? -1) > (CODE_RANK[best] ?? -1)) best = c;
   return {
     code: best,
     codes: ops.size ? [...ops].sort((a, b) => CODES_ORDER.indexOf(a) - CODES_ORDER.indexOf(b)) : undefined,
