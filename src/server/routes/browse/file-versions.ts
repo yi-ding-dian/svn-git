@@ -38,8 +38,17 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     const a = url.searchParams.get('a') || undefined;
     const b = url.searchParams.get('b') || undefined;
     const abs = path.join(repo.root, rel);
+    if (!rel) {
+      sendJson(res, 400, { error: t('srv.missingPathParam') });
+      return true;
+    }
     if (!inRepoRoot(repo.root, abs)) {
       sendJson(res, 403, { error: MSG_OUT_OF_SCOPE() });
+      return true;
+    }
+    // 目录没有"文件版本"语义：直接 400，避免 read 时抛 EISDIR 变成 500
+    if (!a && !b && fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
+      sendJson(res, 400, { error: t('srv.missingPathParam') });
       return true;
     }
     // 工作区模式且文件不存在（路径错误）→ 明确报错，避免空白对比

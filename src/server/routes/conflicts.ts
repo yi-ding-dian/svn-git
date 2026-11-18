@@ -171,6 +171,10 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       if (p === '/api/blame') {
         const { vcs } = vcsOf();
         const pathRel = url.searchParams.get('path') ?? '';
+        if (!pathRel) {
+          sendJson(res, 400, { error: t('srv.missingPathParam') });
+          return true;
+        }
         try {
           const lines = await vcs.blame(pathRel);
           sendJson(res, 200, { lines });
