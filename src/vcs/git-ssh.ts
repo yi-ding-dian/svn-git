@@ -49,7 +49,9 @@ export function githubSshKeyArgument(repoRoot: string, origin: string): string {
 export function buildGitSshEnvironment(keyArgument: string, extra?: Record<string, string>): Record<string, string> {
   return {
     GIT_TERMINAL_PROMPT: '0',
-    GIT_SSH_COMMAND: `ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new${keyArgument}`,
+    // ConnectTimeout：网络不通时 15s 失败，而不是卡到 10 分钟的推送超时；
+    // ServerAlive*：连接建立后若对端无响应，约 60s 内断开（弱网/断流场景）
+    GIT_SSH_COMMAND: `ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=4${keyArgument}`,
     ...extra,
   };
 }

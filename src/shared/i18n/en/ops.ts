@@ -570,6 +570,8 @@ export const ops = {
   'ops.push.checkFailed': 'Could not check the remote status; you may try pushing directly',
   'ops.push.conflictRisk': '⚠ The following files were modified on both sides and may conflict when pulling after the push:',
   'ops.push.unpushedList': 'Unpushed commits (click to expand the changed files):',
+  'ops.push.newBranchNotice': '⚠ This branch does not exist on the remote; pushing will create it there',
+  'ops.push.confirmNew': 'Create & Push ({n})',
   'ops.push.truncated': 'Showing the latest {n} of {total} unpushed commits',
   'ops.push.noUnpushed': 'No unpushed commits',
   'ops.push.tipHead': '(the latest unpushed commit; right-click to edit the message or undo it)',

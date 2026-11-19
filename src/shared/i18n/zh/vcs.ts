@@ -178,6 +178,7 @@ export const vcs = {
   'vcs.gitMvFailed': 'git mv 失败',
   'vcs.noRemotePush': '此仓库未配置远程（origin），无法推送。',
   'vcs.pushCancelled': '推送已取消',
+  'vcs.pushTimeout': '推送超时（10 分钟未完成），可能是网络中断，可重试',
   'vcs.pushOk': '推送成功',
   'vcs.gitPushFailed': 'git push 失败',
   'vcs.gitLsTreeFailed': 'git ls-tree 失败: {err}',

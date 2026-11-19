@@ -87,7 +87,7 @@ export interface VcsResult {
   /** 结构化错误分类：AUTH=认证失败（服务层据 code 透传 authError,不再靠正则匹配中文文案）；
    *  NO_IDENTITY=git 身份未配置（user.name/email 缺失，commit 被 git 拒绝）——前端据此弹「设置身份」窗，
    *  而不是把 git 的原始报错糊给用户 */
-  code?: 'AUTH' | 'ABORTED' | 'NO_CHANGES' | 'NO_IDENTITY';
+  code?: 'AUTH' | 'ABORTED' | 'NO_CHANGES' | 'NO_IDENTITY' | 'TIMEOUT';
   /** 命令输出的警告行（如 svn W205011 外部定义失败），原样保留，便于界面展示 */
   warnings?: string[];
 }
@@ -146,6 +146,8 @@ export interface PreflightResult {
   lockedByOthers?: string[];
   updatedFiles: string[];
   remoteLogs: LogEntry[];
+  /** 当前分支在远端不存在（首次推送会在远端创建它）；svn 不返回 */
+  newBranch?: boolean;
 }
 
 /** branchList 返回：svn 多 layout 字段 */

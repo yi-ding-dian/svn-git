@@ -224,6 +224,11 @@ export function PushConfirmModal(props: {
               // 远程状态检查失败，可尝试直接推送
               <div className="dim small">{t('ops.push.checkFailed')}</div>
             )}
+            {pf?.newBranch && (
+              <div className="small" style={{ marginTop: 6 }}>
+                {t('ops.push.newBranchNotice')}
+              </div>
+            )}
             {pf && pf.conflictRisk.length > 0 && !hideRisk && (
               <div className="error" style={{ margin: '8px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ flex: 1, minWidth: 0 }}>
@@ -345,7 +350,7 @@ export function PushConfirmModal(props: {
             title={pushCmd}
           >
             {/* 确认推送（{n}） */}
-            {t('ops.push.confirm', { n: unpushedTotal })}
+            {t(pf?.newBranch ? 'ops.push.confirmNew' : 'ops.push.confirm', { n: unpushedTotal })}
           </button>
         </div>
       </ResizableModal>

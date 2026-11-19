@@ -208,6 +208,8 @@ export const getRepo = {
       updatedFiles: string[];
       /** 远程新提交（按提交分组显示，含作者/时间/消息/变更文件） */
       remoteLogs?: LogEntry[];
+      /** 当前分支在远端不存在（推送会创建它） */
+      newBranch?: boolean;
     }>('/api/preflight', { signal }),
   branches: () => api<BranchInfo>('/api/branches'),
   switchCheck: (branch: string) =>

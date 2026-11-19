@@ -175,6 +175,7 @@ export const vcs = {
   'vcs.gitMvFailed': 'git mv failed',
   'vcs.noRemotePush': 'This repository has no remote (origin), so it cannot push.',
   'vcs.pushCancelled': 'Push cancelled',
+  'vcs.pushTimeout': 'Push timed out after 10 minutes — the connection may have dropped; please retry',
   'vcs.pushOk': 'Pushed successfully',
   'vcs.gitPushFailed': 'git push failed',
   'vcs.gitLsTreeFailed': 'git ls-tree failed: {err}',

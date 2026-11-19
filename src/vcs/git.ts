@@ -163,6 +163,22 @@ function gitSubcommandIndex(args: string[]): number {
   return i;
 }
 
+/** 从 git 的 stderr 中提取真正的错误行。
+ *  `git push` 的进度（Enumerating/Counting/Writing…）也写在 stderr 且排在最前面，
+ *  直接展示整段 stderr 时用户只看到进度、看不到真正原因（实报：推送失败只显示 Counting objects）。
+ *  过滤进度行后优先取最后一条 fatal/error/remote/!, 没有就取最后一条非进度行。 */
+function cleanGitError(text: string): string {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const noise =
+    /^(Enumerating|Counting|Compressing|Writing|Total |remote: (Counting|Compressing|Resolving)|Receiving objects|Resolving deltas|Unpacking objects|Delta compression|Checking connectivity|Finding sources|Updating files)/i;
+  const rest = lines.filter((l) => !noise.test(l));
+  const important = rest.filter((l) => /^(fatal|error|remote:|!|To |Username for|Password for)/i.test(l));
+  return (important[important.length - 1] ?? rest[rest.length - 1] ?? '').trim();
+}
+
 export class GitVcs {
   /** origin 地址缓存：判断是否 GitHub（只有 GitHub 才注入项目私钥）。
    *  用单独的 run 读取而不是 this.exec——exec 本身要用它判断，会递归。
@@ -422,6 +438,14 @@ export class GitVcs {
    *   有（新仓库首推前：origin 配好了但还没 push/fetch 出任何远程引用）→ 全部提交都是待推送；
    *   没有（纯本地仓库）→ 没有"已推送"的概念。两种由调用方区分
    */
+  /** 当前分支在远端是否存在（"新分支，推送会创建它"的提示用） */
+  private async hasRemoteBranch(): Promise<boolean> {
+    const br = (await this.exec(['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
+    if (!br || br === 'HEAD') return false;
+    const r = await this.exec(['rev-parse', '--verify', `refs/remotes/origin/${br}`]);
+    return r.code === 0;
+  }
+
   private async unpushedRange(): Promise<string | null> {
     const up = await this.exec(['rev-parse', '--symbolic-full-name', '@{upstream}']);
     if (up.code === 0) return '@{u}';
@@ -1247,6 +1271,8 @@ export class GitVcs {
     let res = await this.exec(['push'], { timeoutMs: 600_000, signal });
     // 推送已取消（code=ABORTED：前端据此区分"用户主动取消"与"失败"，取消不走 Fork 引导等后续判断）
     if (res.aborted) return { ok: false, message: t('vcs.pushCancelled'), code: 'ABORTED' };
+    // 超时被杀：stderr 里只有进度行，不单独提示的话用户只会看到一串 Counting objects
+    if (res.timedOut) return { ok: false, message: t('vcs.pushTimeout'), code: 'TIMEOUT' };
     // 推送成功
     if (res.code === 0) return { ok: true, message: t('vcs.pushOk') };
     // 无上游分支：自动 git push -u origin <当前分支>（-u 建立上游跟踪，角标才能正确归零；与 pull 的无上游自动重试一致）
@@ -1256,6 +1282,7 @@ export class GitVcs {
         const r2 = await this.exec(['push', '-u', 'origin', branch], { timeoutMs: 600_000, signal });
         // 推送已取消（同上：ABORTED 标识）
         if (r2.aborted) return { ok: false, message: t('vcs.pushCancelled'), code: 'ABORTED' };
+        if (r2.timedOut) return { ok: false, message: t('vcs.pushTimeout'), code: 'TIMEOUT' };
         // 推送成功
         if (r2.code === 0) return { ok: true, message: t('vcs.pushOk') };
         res = r2;
@@ -1276,6 +1303,7 @@ export class GitVcs {
       ask.cleanup();
       // 推送已取消（同上：ABORTED 标识）
       if (retry.aborted) return { ok: false, message: t('vcs.pushCancelled'), code: 'ABORTED' };
+      if (retry.timedOut) return { ok: false, message: t('vcs.pushTimeout'), code: 'TIMEOUT' };
       // 推送成功
       if (retry.code === 0) return { ok: true, message: t('vcs.pushOk') };
       // 重试仍失败：按**重试这次**的错误重新分类——不加这一步的话，网络故障（连接超时/失败）与
@@ -1286,7 +1314,7 @@ export class GitVcs {
       // git push 失败
       return {
         ok: false,
-        message: retry.stderr.trim() || t('vcs.gitPushFailed'),
+        message: cleanGitError(retryErr) || t('vcs.gitPushFailed'),
         authType: retryAuth ? authTypeOf(await this.remote()) : undefined,
         code: retryAuth ? 'AUTH' : undefined,
       };
@@ -1294,7 +1322,7 @@ export class GitVcs {
     return {
       ok: false,
       // git push 失败
-      message: res.stderr.trim() || t('vcs.gitPushFailed'),
+      message: cleanGitError(res.stderr + res.stdout) || t('vcs.gitPushFailed'),
       authType: isAuthError ? authTypeOf(await this.remote()) : undefined,
       code: isAuthError ? 'AUTH' : undefined,
     };
@@ -1455,12 +1483,12 @@ export class GitVcs {
       if (retry.aborted) return { ok: false, message: t('vcs.pushCancelled') };
       if (retry.code === 0) return { ok: true, message: okMsg };
       // git push 失败
-      return { ok: false, message: retry.stderr.trim() || t('vcs.gitPushFailed'), authType: authTypeOf(await this.remote()), code: 'AUTH' };
+      return { ok: false, message: cleanGitError(retry.stderr + retry.stdout) || t('vcs.gitPushFailed'), authType: authTypeOf(await this.remote()), code: 'AUTH' };
     }
     return {
       ok: false,
       // git push 失败
-      message: res.stderr.trim() || t('vcs.gitPushFailed'),
+      message: cleanGitError(res.stderr + res.stdout) || t('vcs.gitPushFailed'),
       authType: isAuthError ? authTypeOf(await this.remote()) : undefined,
       code: isAuthError ? 'AUTH' : undefined,
     };
@@ -2105,6 +2133,7 @@ export class GitVcs {
     conflictRisk: string[];
     updatedFiles: string[];
     remoteLogs: LogEntry[];
+    newBranch: boolean;
   }> {
     // 远程信息走缓存（fetch 是网络请求：弱网 15s 超时会堵住"提交"弹窗秒开）
     const remote = await this.remoteCheck();
@@ -2120,6 +2149,9 @@ export class GitVcs {
       if (xy[0] !== '?' && xy[0] !== '!') localChanged.add(p);
     }
     const conflictRisk = [...localChanged].filter((p) => remote.updatedFiles.includes(p));
+    // 新分支提示：远端没有同名分支时，推送会在远端创建它（有 origin 才判断；纯本地仓库不提示）
+    const hasOrigin = (await this.exec(['remote', 'get-url', 'origin'])).code === 0;
+    const newBranch = hasOrigin && !(await this.hasRemoteBranch());
     return {
       remoteHasUpdate: remote.behind > 0,
       behind: remote.behind,
@@ -2127,6 +2159,7 @@ export class GitVcs {
       conflictRisk,
       updatedFiles: [...remote.updatedFiles],
       remoteLogs: remote.remoteLogs,
+      newBranch,
     };
   }
 
