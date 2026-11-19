@@ -418,6 +418,14 @@ export const fs = {
   'fs.pv.mdPreviewTitle': 'Markdown 渲染预览',
   'fs.pv.viewRaw': '📄 查看原文',
   'fs.pv.previewToggle': '👁 预览',
+  // md 预览正文布局：居中（与全屏同一阅读列）/ 靠左（铺满预览区）
+  'fs.pv.mdLayoutCenter': '↔ 居中',
+  'fs.pv.mdLayoutLeft': '⇤ 靠左',
+  'fs.pv.mdLayoutTitle': '正文布局：靠左 / 居中（全屏同样生效）',
+  // 全屏 + 靠左：右侧留白比例（给目录）；按钮固定叫「留白」，点开选大小，0 = 铺满
+  'fs.pv.mdGutterButton': '留白',
+  'fs.pv.mdGutterNone': '0（铺满）',
+  'fs.pv.mdGutterTitle': '正文右侧留白：点开选择比例，0 = 铺满（全屏浏览、靠左布局）',
   'fs.pv.editTitle': '选择用哪个程序打开来编辑这个文件；改完回到这里按「刷新」即可看到变更',
   'fs.pv.edit': '编辑',
   'fs.pv.editing': '编辑中',
@@ -511,6 +519,9 @@ export const fs = {
   // ---- md 预览：文档目录（右上角按钮 → 折叠树浮层，点条目跳到对应标题）----
   'fs.pv.tocCount': '目录 ({n})',
   'fs.pv.tocTitle': '文档目录（点击展开 / 收起）',
+  // 右键目录按钮：固定后点正文 / 滚正文目录都不消失，并跟随当前章节
+  'fs.pv.tocPin': '固定目录',
+  'fs.pv.tocUnpin': '取消固定目录',
   // ---- 代码大纲（非 md：函数 / 类 / 方法，点击跳到源码行）----
   'fs.pv.outlineCount': '大纲 ({n})',
   'fs.pv.outlineTitle': '代码大纲：函数 / 类 / 方法（点击跳到对应行）',

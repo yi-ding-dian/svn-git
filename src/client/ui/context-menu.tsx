@@ -50,9 +50,13 @@ export function ContextMenu(props: {
   items: CtxMenuItem[];
   onClose: () => void;
   mask?: boolean;
+  /** 层级（默认 300，遮罩 299）：菜单本身要在所有同级浮层之上；
+   *  例如目录浮层也是 300 且 DOM 更靠后，右键固定菜单要传更高值才点得到 */
+  zIndex?: number;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }) {
+  const z = props.zIndex ?? 300;
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [pinIdx, setPinIdx] = useState<number | null>(null); // 点击展开锁定的子菜单项
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -87,7 +91,7 @@ export function ContextMenu(props: {
     <>
       {props.mask && (
         <div
-          style={{ position: 'fixed', inset: 0, zIndex: 299 }}
+          style={{ position: 'fixed', inset: 0, zIndex: z - 1 }}
           onClick={props.onClose}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -98,7 +102,7 @@ export function ContextMenu(props: {
       <div
         ref={menuRef}
         className="ctx-menu"
-        style={{ left: at.left, top: at.top }}
+        style={{ left: at.left, top: at.top, zIndex: z }}
         onMouseEnter={props.onMouseEnter}
         onMouseLeave={props.onMouseLeave}
       >

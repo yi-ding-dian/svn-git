@@ -418,6 +418,14 @@ export const fs = {
   'fs.pv.mdPreviewTitle': 'Markdown rendered preview',
   'fs.pv.viewRaw': '📄 View Source',
   'fs.pv.previewToggle': '👁 Preview',
+  // Markdown preview content layout: centered (same reading column as fullscreen) / left (fill the pane)
+  'fs.pv.mdLayoutCenter': '↔ Center',
+  'fs.pv.mdLayoutLeft': '⇤ Left',
+  'fs.pv.mdLayoutTitle': 'Content layout: left-aligned / centered (applies in fullscreen too)',
+  // Fullscreen + left layout: right-side gutter ratio (for the outline); button says "Gutter", pick a size, 0 = full width
+  'fs.pv.mdGutterButton': 'Gutter',
+  'fs.pv.mdGutterNone': '0 (full width)',
+  'fs.pv.mdGutterTitle': 'Right-side gutter: pick a ratio, 0 = full width (fullscreen, left layout)',
   'fs.pv.editTitle': 'Choose which application to open and edit this file with; press "Refresh" here afterwards to see the changes',
   'fs.pv.edit': 'Edit',
   'fs.pv.editing': 'Editing',
@@ -511,6 +519,9 @@ export const fs = {
   // ---- Markdown preview: document outline ----
   'fs.pv.tocCount': 'Contents ({n})',
   'fs.pv.tocTitle': 'Document outline (click to expand / collapse)',
+  // Right-click the outline button: pinned floating outline ignores clicks/scrolls in the text and follows the current section
+  'fs.pv.tocPin': 'Pin outline',
+  'fs.pv.tocUnpin': 'Unpin outline',
   // ---- Code outline (non-Markdown: functions / classes / methods) ----
   'fs.pv.outlineCount': 'Outline ({n})',
   'fs.pv.outlineTitle': 'Code outline: functions / classes / methods (click to jump to a line)',

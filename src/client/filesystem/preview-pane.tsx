@@ -19,10 +19,12 @@ import { useContentCopyMenu } from '../ui/content-copy.js';
 import { renderMarkdown } from '../shared/markdown.js';
 import { MdThemePopover } from '../ui/md-theme-popover.js';
 import { loadMdTheme, saveMdTheme, mdThemeVars, mdThemeName } from '../shared/md-theme.js';
+import { loadMdLayout, saveMdLayout, loadMdGutter, saveMdGutter, type MdLayout, type MdGutter } from '../shared/md-layout.js';
 import { MdTocPopover } from '../ui/md-toc.js';
 import { useMdToc } from '../ui/use-md-toc.js';
 import { useSourceToc } from '../ui/use-source-toc.js';
 import { useSourceOutline } from '../ui/use-source-outline.js';
+import { useTocPinned, setTocPinned } from '../ui/use-toc-pinned.js';
 
 /** 追溯日期列配色：按日期序号在色环上按**黄金角**取色——相邻日期的颜色差得最开，
  *  同一天永远同色；固定 S/L（低饱和暗色）保证 5 个浅色主题下都够对比度、又不抢语法高亮 */
@@ -199,10 +201,26 @@ export function PreviewPane(props: Props) {
   const [full, setFull] = useState(false);
   /** md 阅读主题（只染文档区，与界面主题无关）；localStorage 持久化，「跟随界面」= 'follow' */
   const [mdTheme, setMdTheme] = useState(loadMdTheme);
+  /** md 正文布局（全屏与非全屏共用）：居中阅读列 / 靠左铺满；localStorage 持久化 */
+  const [mdLayout, setMdLayout] = useState<MdLayout>(loadMdLayout);
+  /** 全屏 + 靠左时右侧留白比例（满宽 / 1/5 / 1/4 / 1/3，默认 1/3）；非全屏不使用 */
+  const [mdGutter, setMdGutter] = useState<MdGutter>(loadMdGutter);
+  /** 留白比例菜单位置（null = 未打开） */
+  const [gutterMenu, setGutterMenu] = useState<{ x: number; y: number } | null>(null);
   /** md 主题气泡位置（null = 未打开） */
   const [mdThemePop, setMdThemePop] = useState<{ x: number; y: number } | null>(null);
   /** 文档目录气泡：只记按钮底边 y（水平位置由浮层自己贴窗口右侧算） */
   const [tocPop, setTocPop] = useState<{ y: number; x: number } | null>(null);
+  /** 目录按钮的右键菜单（展开时才弹）：固定 / 取消固定。未展开不提供菜单（用户定稿）。 */
+  const [tocPinMenu, setTocPinMenu] = useState<{ x: number; y: number } | null>(null);
+  /** 目录固定状态（阅读/编辑/diff 共用，存 localStorage） */
+  const tocPinned = useTocPinned();
+  /** 右键目录按钮：展开时弹固定菜单；未展开只吞掉浏览器默认菜单（不提供功能） */
+  const onTocButtonContext = (e: React.MouseEvent, open: boolean) => {
+    e.preventDefault();
+    if (!open) return;
+    setTocPinMenu({ x: e.clientX, y: e.clientY });
+  };
   /** 目录条目 / md 正文容器：公共 hook（渲染后从 DOM 提取标题并挂锚点，文件预览与差异预览共用） */
   const {
     bodyRef: mdBodyRef,
@@ -600,6 +618,36 @@ export function PreviewPane(props: Props) {
             </button>
           </Tooltip>
         )}
+        {isMd && mdPreview && (
+          // 正文布局（紧挨主题按钮，全屏也显示）：居中（默认，1280px 阅读列）/ 靠左（铺满）
+          <Tooltip content={t('fs.pv.mdLayoutTitle')}>
+            <button
+              className="mini"
+              onClick={() => {
+                const next: MdLayout = mdLayout === 'center' ? 'left' : 'center';
+                setMdLayout(next);
+                saveMdLayout(next);
+              }}
+            >
+              {mdLayout === 'center' ? t('fs.pv.mdLayoutLeft') : t('fs.pv.mdLayoutCenter')}
+            </button>
+          </Tooltip>
+        )}
+        {isMd && mdPreview && full && mdLayout === 'left' && (
+          // 全屏 + 靠左：右侧留白比例（满宽 / 1/5 / 1/4 / 1/3），给目录浮层腾地方；非全屏不提供
+          <Tooltip content={t('fs.pv.mdGutterTitle')}>
+            <button
+              className="mini"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                setGutterMenu({ x: r.left, y: r.bottom + 4 });
+              }}
+            >
+              {/* ▥ 留白：点开菜单选比例（0 = 铺满） */}
+              ▥ {t('fs.pv.mdGutterButton')}
+            </button>
+          </Tooltip>
+        )}
         <span className="grow" />
         <Tooltip content={full ? t('fs.pv.exitFullTitle') : t('fs.pv.fullTitle')}>
           <button
@@ -624,12 +672,14 @@ export function PreviewPane(props: Props) {
           // 文档目录（点击展开 / 收起）
           <Tooltip content={t('fs.pv.tocTitle')}>
             <button
-              className={`mini ${tocPop ? 'primary' : ''}`}
+              className={`mini ${tocPop ? 'primary toc-anchor-on' : ''}`}
               onClick={(e) => {
                 const r = e.currentTarget.getBoundingClientRect();
                 // 按钮底边 + 左边缘：浮层贴按钮正下方、左缘对齐向右展开（用户定稿：尽量靠右、不偏离按钮）
                 setTocPop((v) => (v ? null : { y: r.bottom + 4, x: r.left }));
               }}
+              // 右键：展开后可固定 / 取消固定（未展开不提供）
+              onContextMenu={(e) => onTocButtonContext(e, Boolean(tocPop))}
             >
               {/* ☰ 目录 ({n}) */}
               ☰ {t('fs.pv.tocCount', { n: tocItems.length })}
@@ -726,6 +776,46 @@ export function PreviewPane(props: Props) {
           /* mask：点菜单外面 = 不想编辑了，菜单关掉（用户实报：点其他地方菜单不消失） */
           <ContextMenu x={editMenu.x} y={editMenu.y} items={editMenu.items} onClose={() => setEditMenu(null)} mask />
         )}
+        {/* 目录按钮右键菜单：固定后点正文/滚正文目录都不消失，并跟随当前章节 */}
+        {tocPinMenu && (
+          <ContextMenu
+            x={tocPinMenu.x}
+            y={tocPinMenu.y}
+            mask
+            zIndex={400}
+            onClose={() => setTocPinMenu(null)}
+            items={[
+              {
+                label: tocPinned ? t('fs.pv.tocUnpin') : t('fs.pv.tocPin'),
+                action: () => setTocPinned(!tocPinned),
+              },
+            ]}
+          />
+        )}
+        {/* 全屏靠左的右侧留白比例：满宽 / 1/5 / 1/4 / 1/3（当前项打勾） */}
+        {gutterMenu && (
+          <ContextMenu
+            x={gutterMenu.x}
+            y={gutterMenu.y}
+            mask
+            zIndex={400}
+            onClose={() => setGutterMenu(null)}
+            items={([
+              { v: 0, label: t('fs.pv.mdGutterNone') },
+              { v: 20, label: '1/5' },
+              { v: 25, label: '1/4' },
+              { v: 33, label: '1/3' },
+            ] as { v: MdGutter; label: string }[]).map(({ v, label }) => ({
+              // 当前项：左侧图标列打绿色 √（不拼进文字，保持各档对齐）
+              icon: v === mdGutter ? <span style={{ color: 'var(--ok)' }}>✓</span> : undefined,
+              label,
+              action: () => {
+                setMdGutter(v);
+                saveMdGutter(v);
+              },
+            }))}
+          />
+        )}
         {/* 内容区右键：复制所选内容 / 复制全部内容 */}
         {copyMenu.menuElement}
       </div>
@@ -788,9 +878,18 @@ export function PreviewPane(props: Props) {
       // data-content-zoom：鼠标在这里时 Ctrl+滚轮只缩放文件内容（app.tsx 的全局监听按它区分）
       <div
         // 全屏 + 代码/追溯：标记 pv-code-full，靠左铺满（阅读列居中只留给 Markdown 正文）
-        className={`diff${full && !mdPreview ? ' pv-code-full' : ''}`}
+        // md 预览「居中」布局：与全屏同一阅读列（1280px），靠左则不套这一层
+        className={`diff${full && !mdPreview ? ' pv-code-full' : ''}${mdPreview && mdLayout === 'center' ? ' pv-md-center' : ''}`}
         data-content-zoom=""
-        style={{ flex: 1, overflow: 'auto', ...mdVars }}
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          ...mdVars,
+          // 全屏 + 靠左 + 留白：右侧按所选比例空出来给目录浮层（不压字）
+          ...(full && mdPreview && mdLayout === 'left' && mdGutter > 0
+            ? { paddingRight: `max(14px, ${mdGutter}%)` }
+            : null),
+        }}
         // 图片没有可复制的文字，保留浏览器原生右键行为
         onContextMenu={target.img ? undefined : copyMenu.openMenu}
         onMouseDownCapture={target.img ? undefined : copyMenu.captureSelection}
@@ -887,6 +986,8 @@ export function PreviewPane(props: Props) {
           x={tocPop.x}
           items={tocItems}
           activeId={tocActiveId}
+          // 只有文件浏览的阅读目录可固定（编辑态 / diff 的目录保持原行为）
+          pinnable
           onJump={jumpToc}
           onClose={() => setTocPop(null)}
         />

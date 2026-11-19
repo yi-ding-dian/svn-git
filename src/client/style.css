@@ -1647,6 +1647,9 @@ textarea:focus, input:focus { outline: none; border-color: var(--accent); }
 textarea { resize: vertical; font-family: inherit; }
 /* ---------- md 目录浮层（预览区右上角「目录」按钮展开的折叠树） ---------- */
 .md-toc { padding: 4px 0; }
+/* 浮层展开时（遮罩 z-index 299）目录按钮浮在遮罩之上：可以直接点它收起、右键固定。
+   否则遮罩盖住按钮，展开后再也点不到它（右键固定也就无从操作）。 */
+.toc-anchor-on { position: relative; z-index: 300; }
 /* 覆盖 .ctx-item 的 10px 间距：三角与标题要贴紧，层级感靠行首缩进（组件里按标题级别算） */
 .md-toc-row { gap: 2px; }
 .md-toc-arrow {
@@ -1719,8 +1722,13 @@ textarea { resize: vertical; font-family: inherit; }
 /* 工具栏自带底色压在文档区上方：md 阅读主题可能把文档染成深色，而界面可能是浅色，
    工具栏跟着文档走会看不见按钮字 */
 .pv-full > .row { padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--border); }
-/* 文档区铺满工具栏以下（去掉卡片边框/圆角）；阅读列最宽 1280px 居中，滚动条仍贴窗口边 */
-.pv-full .diff { border: 0; border-radius: 0; padding: 12px max(14px, calc((100% - 1280px) / 2)); }
+/* 文档区铺满工具栏以下（去掉卡片边框/圆角）；md 阅读列居中/靠左统一由 .pv-md-center 决定
+   （全屏与非全屏用同一个布局偏好，用户要求全屏也能切换） */
+.pv-full .diff { border: 0; border-radius: 0; }
+/* md 预览选「居中」：1280px 阅读列、两侧留白（全屏与非全屏一致）；
+   不加这个类 = 「靠左」，保持 .diff 原本的 12px 内边距、铺满 */
+.diff.pv-md-center { padding: 12px max(14px, calc((100% - 1280px) / 2)); }
+/* 全屏 + 靠左的「右侧留白」比例由组件内联 padding-right 控制（满宽 / 1/5 / 1/4 / 1/3） */
 /* 全屏的代码 / 追溯视图：靠左铺满，不套阅读列——那是给 Markdown 正文的。
    1920 宽窗口下 `(100% - 1280) / 2` = 左边空 320px，日期/版本/作者列被整块挤到中间（用户实报） */
 .pv-full .diff.pv-code-full { padding: 12px 14px; }

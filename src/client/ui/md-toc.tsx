@@ -9,6 +9,7 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { t } from '../../shared/i18n/index.js';
 import { Tooltip } from './tooltip.js';
+import { useTocPinned } from './use-toc-pinned.js';
 
 /** 目录条目（DOM 上已按 id 挂好锚点） */
 export interface TocItem {
@@ -26,10 +27,16 @@ export function MdTocPopover(props: {
   items: TocItem[];
   /** 当前阅读到的那一节（滚动跟踪由 use-md-toc 提供）：打开时滚到它，并常驻淡底高亮 */
   activeId?: string | null;
+  /** 允许固定（只有文件浏览的 md 目录传：「刚好阅读」这一场景；编辑态 / diff 不启用） */
+  pinnable?: boolean;
   onJump: (id: string) => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  /** 固定（右键工具栏目录按钮切换）：遮罩不拦鼠标、目录跟随正文滚动。
+   *  只在调用方允许的场景（文件浏览预览）生效；编辑态 / diff 浮层保持原行为。 */
+  const globalPinned = useTocPinned();
+  const pinned = props.pinnable ? globalPinned : false;
   // 初值藏在屏外：水平位置要量出宽度才能定，首帧若先画在右边会闪一下（useLayoutEffect 会赶在绘制前修正）
   const [pos, setPos] = useState({ left: -9999, top: props.y });
   /** 被折叠的条目下标。默认全展开 —— 文档通常不长，一眼看全比一层层点开快 */
@@ -61,6 +68,22 @@ export function MdTocPopover(props: {
     box.scrollTop = Math.max(0, row.offsetTop - box.clientHeight / 3);
   }, [props.activeId, pos]);
 
+  /** 固定后跟随阅读位置：当前章节滚出浮层可视区时把它带回 1/3 处（平滑）；
+   *  已在可视区就不动——避免抢用户手动翻目录的手。 */
+  useLayoutEffect(() => {
+    if (!pinned || !props.activeId) return;
+    const box = ref.current;
+    if (!box) return;
+    const row = box.querySelector<HTMLElement>('[data-cur="1"]');
+    if (!row) return;
+    const rh = row.offsetHeight || 1;
+    const top = row.offsetTop;
+    const viewTop = box.scrollTop;
+    const viewBottom = viewTop + box.clientHeight;
+    if (top >= viewTop + 4 && top + rh <= viewBottom - 4) return;
+    box.scrollTo({ top: Math.max(0, top - box.clientHeight / 3), behavior: 'smooth' });
+  }, [pinned, props.activeId]);
+
   const items = props.items;
   /** 第 i 项有没有子级：后面紧跟一项、且层级更深 */
   const hasChild = (i: number): boolean => i + 1 < items.length && items[i + 1]!.level > items[i]!.level;
@@ -83,7 +106,9 @@ export function MdTocPopover(props: {
   return (
     <>
       <div
-        style={{ position: 'fixed', inset: 0, zIndex: 299 }}
+        // 固定后遮罩透明化（不拦事件）：点击正文、选中文字、滚轮滚正文都照常，
+        // 目录也就不会因为"点了外面"而消失；关闭走 Esc / 目录按钮
+        style={{ position: 'fixed', inset: 0, zIndex: 299, pointerEvents: pinned ? 'none' : undefined }}
         onClick={props.onClose}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -93,7 +118,15 @@ export function MdTocPopover(props: {
       <div
         ref={ref}
         className="ctx-menu md-toc"
-        style={{ left: pos.left, top: pos.top, maxHeight: '60vh', overflowY: 'auto', minWidth: 200, maxWidth: 380 }}
+        style={{
+          left: pos.left,
+          top: pos.top,
+          // 高度固定一屏六成：固定/未固定都一样（用户定稿：固定只影响关闭与跟随，不改尺寸）
+          maxHeight: '60vh',
+          overflowY: 'auto',
+          minWidth: 200,
+          maxWidth: 380,
+        }}
       >
         {rows.map(({ item, i }) => (
           <div
