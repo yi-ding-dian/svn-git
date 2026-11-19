@@ -31,14 +31,30 @@ export const ops = {
   // ---- 提交注释输入块（commit-comment）----
   'ops.commitComment.label': '📝 提交注释',
   'ops.commitComment.required': '（必填）',
+  // 类型快捷按钮（点击插入中文前缀，提交注释规范固定为中文五类）
+  'ops.commitComment.prefixFix': '修复',
+  'ops.commitComment.prefixAdd': '新增',
+  'ops.commitComment.prefixImprove': '优化',
+  'ops.commitComment.prefixRefactor': '重构',
+  'ops.commitComment.prefixCleanup': '清理',
+  // 悬浮解释：什么情况下用这个类型（对照提交注释规范）
+  'ops.commitComment.tipFix': '坏的修好了（例：修复：刷新后最近项目角标不更新）',
+  'ops.commitComment.tipAdd': '别人能感知到的新能力（例：新增：仓库浏览支持搜索当前目录）',
+  'ops.commitComment.tipImprove': '原来能用、改得更好：体验 / 性能 / 文案（例：优化：通知气泡点按即收回）',
+  'ops.commitComment.tipRefactor': '外面看不出行为变化的结构调整（例：重构：任务 store 收敛为模块级单例）',
+  'ops.commitComment.tipCleanup': '删死代码 / 死文件 / 无用依赖（例：清理：删除 task-banner 死文件）',
+  // 字数提示（只算标题，超过建议长度变黄，不拦截）
+  'ops.commitComment.chars': '{n} 字',
+  // 正文（可选）：对应提交注释规范的「为什么改、取舍、坑」
+  'ops.commitComment.bodyPlaceholder': '正文（可选）：为什么改、关键取舍、踩过的坑；有关联任务可写「关联：TASK-123」',
 
   // ---- 提交弹窗（commit）----
   'ops.commit.title': '📝 提交',
   'ops.commit.stagedLabel': '📁 待提交',
   'ops.commit.fileUnit': '个文件',
   'ops.commit.err.noMessage': '提交信息不能为空',
-  'ops.commit.msgPlaceholder': '简要说明本次提交内容，如：修复xxx问题、新增xxx功能…',
-  'ops.commit.msgPlaceholderLong': '简要说明本次提交内容，如：修复xxx问题、新增xxx功能、重构xxx模块…',
+  'ops.commit.msgPlaceholder': '标题：一句话说明本次改动，如「修复：登录按钮无响应」…',
+  'ops.commit.msgPlaceholderLong': '标题：一句话说明改动，如「修复：登录按钮无响应」「新增：仓库搜索」…',
   'ops.commit.busy': '⏳ 提交中…',
   'ops.commit.confirm': '确认提交',
 

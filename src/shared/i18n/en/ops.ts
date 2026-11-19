@@ -27,14 +27,30 @@ export const ops = {
   // ---- 提交注释输入块（commit-comment）----
   'ops.commitComment.label': '📝 Commit Message',
   'ops.commitComment.required': '(required)',
+  // Type shortcut buttons (insert the canonical Chinese prefix; the commit message convention is Chinese)
+  'ops.commitComment.prefixFix': 'Fix',
+  'ops.commitComment.prefixAdd': 'Add',
+  'ops.commitComment.prefixImprove': 'Improve',
+  'ops.commitComment.prefixRefactor': 'Refactor',
+  'ops.commitComment.prefixCleanup': 'Cleanup',
+  // Tooltip: when to use each type (mirrors the commit message convention)
+  'ops.commitComment.tipFix': 'Something broken is fixed (e.g. Fix: recent-project badge not updating after refresh)',
+  'ops.commitComment.tipAdd': 'A new capability users can perceive (e.g. Add: search the current directory in repo browse)',
+  'ops.commitComment.tipImprove': 'Already works, made better: UX / performance / wording (e.g. Improve: notification bubble collapses on click)',
+  'ops.commitComment.tipRefactor': 'Structural change with no visible behavior difference (e.g. Refactor: task store becomes a module-level singleton)',
+  'ops.commitComment.tipCleanup': 'Remove dead code / dead files / unused dependencies (e.g. Cleanup: delete the dead task-banner file)',
+  // Character count (title only; turns yellow past the suggested length; never blocks)
+  'ops.commitComment.chars': '{n} chars',
+  // Body (optional): the "why / trade-offs / pitfalls" part of a commit message
+  'ops.commitComment.bodyPlaceholder': 'Details (optional): why, trade-offs, pitfalls; add "Refs: TASK-123" for a related task',
 
   // ---- 提交弹窗（commit）----
   'ops.commit.title': '📝 Commit',
   'ops.commit.stagedLabel': '📁 Ready to commit',
   'ops.commit.fileUnit': 'files',
   'ops.commit.err.noMessage': 'Commit message cannot be empty',
-  'ops.commit.msgPlaceholder': 'Briefly describe this commit, e.g. fix xxx, add xxx…',
-  'ops.commit.msgPlaceholderLong': 'Briefly describe this commit, e.g. fix xxx, add xxx, refactor xxx…',
+  'ops.commit.msgPlaceholder': 'Title: one line about this commit, e.g. "Fix: login button unresponsive"…',
+  'ops.commit.msgPlaceholderLong': 'Title: one-line summary, e.g. "Fix: login button unresponsive"…',
   'ops.commit.busy': '⏳ Committing…',
   'ops.commit.confirm': 'Commit',
 

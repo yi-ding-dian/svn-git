@@ -712,12 +712,14 @@ export function useRepoActions(opts: RepoActionsOptions) {
         // git 身份未配置（git 拒绝提交，报 NO_IDENTITY）：不糊原始报错，改弹「设置身份」窗，
         // 保存后自动重试本次提交（重试逻辑在 modal-host，凭这里带上的 retry 数据原样重放）
         setModal({ type: 'git-identity', retry: { paths, message, stagedOnly: [] } });
-        return; // 提前返回：下面的 setModal(null) 会把刚弹的身份窗关掉
+        return false; // 提前返回：下面的 setModal(null) 会把刚弹的身份窗关掉
       } else {
         showCommitFail(r.message, paths);
       }
       if (r.authError) setModal({ type: 'svn-info' });
       setModal(null);
+      // 调用方据此清提交注释草稿（失败保留，重试不用重写）
+      return r.ok;
     },
     [refresh, showCommitFail, showToast, setModal]
   );
@@ -802,13 +804,17 @@ export function useRepoActions(opts: RepoActionsOptions) {
         } else if (r.code === 'NO_IDENTITY') {
           // 同 doCommit：身份未配置 → 弹「设置身份」窗（勾选清单/消息原样带上，保存后自动重试）
           setModal({ type: 'git-identity', retry: { paths, message, stagedOnly } });
+          return false;
         } else {
           showCommitFail(r.message, paths);
         }
         if (r.authError) setModal({ type: 'svn-info' });
+        // 调用方据此清提交注释草稿（失败保留，重试不用重写）
+        return r.ok;
       } catch (e) {
         // 提交失败: {msg}
         showCommitFail(t('shell.commit.failMsg', { msg: (e as Error).message }), paths);
+        return false;
       }
     },
     [refresh, repo?.type, showCommitFail, showToast, setModal]

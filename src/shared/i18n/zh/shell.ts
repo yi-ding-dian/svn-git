@@ -458,7 +458,6 @@ export const shell = {
   'shell.commit.confirmMsgA': '确认提交以下 ',
   'shell.commit.confirmMsgB': ' 个文件？',
   'shell.commit.confirmStaged': '其中 {n} 个只提交选中的部分改动',
-  'shell.commit.note': '注释：{msg}',
   'shell.commit.confirmBtn': '确认提交',
   'shell.commit.backBtn': '返回修改',
 } as const;

@@ -53,6 +53,8 @@ import { OpenModal } from '../repo/open.js';
 import { IconOk } from '../ui/icons.js';
 import { pathAutoWidth, baseName } from '../shared/utils.js';
 import { translateVcsError } from '../shared/vcs/errors.js';
+import { renderMarkdown } from '../shared/markdown.js';
+import { clearCommitDraft } from '../ops/commit-draft.js';
 import { useGetRepoTask, GetRepoAuthModal } from '../repo/get-repo-task.js';
 import type { View } from './sidebar.js';
 import { t } from '../../shared/i18n/index.js';
@@ -253,8 +255,13 @@ export function ModalHost(props: ModalHostProps) {
         <CommitModal
           repoType={repo?.type ?? ''}
           paths={modal.paths}
+          draftRoot={info?.root ?? ''}
           onClose={() => setModal(null)}
-          onDone={async (msg, paths) => doCommit(paths, msg)}
+          onDone={async (msg, paths) => {
+            const ok = await doCommit(paths, msg);
+            // 提交成功才清草稿；失败（含身份未配置）保留，重试不用重写
+            if (ok === true && info?.root) clearCommitDraft(info.root);
+          }}
         />
       )}
       {modal?.type === 'svn-info' && (
@@ -634,6 +641,7 @@ export function ModalHost(props: ModalHostProps) {
           checked={modal.checked}
           stagedOnly={modal.stagedOnly}
           msg={modal.msg}
+          draftRoot={info?.root ?? ''}
           onClose={() => setModal(null)}
           onDiff={(path, checked, stagedOnly, msg) => {
             // 双击文件 → 打开差异视图；返回时恢复本弹窗（含勾选、已部分暂存，**以及已写好的提交注释**）
@@ -677,10 +685,12 @@ export function ModalHost(props: ModalHostProps) {
                     ))}
                   </div>
                   {msg && (
-                    <div className="dim small mt8" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                      {/* 注释：{msg} */}
-                      {t('shell.commit.note', { msg })}
-                    </div>
+                    // 与历史详情的提交信息同一套渲染（breaks: 单换行也换行）；
+                    // small + commit-msg-compact：字号与段/列表间距收紧到历史面板的阅读密度
+                    <div
+                      className="md-render commit-msg-md dim small commit-msg-compact mt8"
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(msg, { breaks: true }) }}
+                    />
                   )}
                 </>
               ),
@@ -690,7 +700,11 @@ export function ModalHost(props: ModalHostProps) {
               secondaryLabel: t('shell.commit.backBtn'),
               // 返回修改：回到「提交修改的文件」弹窗（保留原目录、列表、勾选与注释）
               secondaryAction: () => setModal({ type: 'commit-select', dir: modal.dir, dirLabel: modal.dirLabel, items: modal.items, checked: paths, stagedOnly, msg }),
-              action: () => void doCommitSelected(paths, msg, stagedOnly),
+              action: () =>
+                void doCommitSelected(paths, msg, stagedOnly).then((ok) => {
+                  // 提交成功才清草稿（失败保留，返回修改时还能用）
+                  if (ok === true && info?.root) clearCommitDraft(info.root);
+                }),
             })
           }
         />

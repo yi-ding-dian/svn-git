@@ -1681,6 +1681,17 @@ textarea { resize: vertical; font-family: inherit; }
 .commit-msg-md { padding: 0; }
 .commit-msg-md > :first-child { margin-top: 0; }
 .commit-msg-md > :last-child { margin-bottom: 0; }
+/* 提交确认弹窗里的提交信息：与历史详情的阅读密度一致——标题后紧跟正文，
+   不因段落/列表的默认 margin 空出一行。选择器带 .md-render 提高特异性（要压过后面的 .md-render p） */
+.md-render.commit-msg-compact p { margin: 0; }
+.md-render.commit-msg-compact ul,
+.md-render.commit-msg-compact ol { margin: 0; padding-left: 18px; }
+.md-render.commit-msg-compact li { margin: 0; }
+.md-render.commit-msg-compact li > p { margin: 0; }
+/* 行距再收紧一点：确认弹窗空间该留给文件列表，标题与正文之间不要像空了一行。
+   white-space: normal 必须写：ConfirmModal 的 body 是 pre-wrap（给纯文本保留换行），
+   会把渲染后 HTML 里标签之间的换行当成空行显示（与 .tip-md 同一坑） */
+.commit-msg-compact { line-height: 1.4; white-space: normal; }
 .md-render h1, .md-render h2, .md-render h3, .md-render h4, .md-render h5, .md-render h6 { margin: 14px 0 6px; line-height: 1.4; }
 .md-render h1 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
 .md-render h2 { font-size: 1.28em; }
@@ -1802,6 +1813,21 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 .cmt-label { font-size: 0.88em; color: var(--dim); margin-bottom: 6px; font-weight: 600; flex-shrink: 0; }
 .cmt-text { border: 1px solid var(--border); transition: border-color .15s; }
 .cmt-text:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,166,255,.15); }
+/* 空内容失焦：红边提醒（提交按钮同时会被禁用） */
+.cmt-text.invalid { border-color: var(--err); }
+.cmt-text.invalid:focus { border-color: var(--err); box-shadow: 0 0 0 2px rgba(248,81,73,.15); }
+/* 提交注释的类型快捷按钮组（五类前缀） */
+.cmt-prefixes { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.cmt-prefix { padding: 0 6px; height: 20px; line-height: 18px; font-size: 12px; font-weight: 400; }
+/* 标题单行输入：占满左侧，右侧留给字数 */
+.cmt-title { flex: 1; min-width: 0; }
+/* 正文自动高度（组件按内容算 height）：关掉手动拖拽，避免和自动高度打架 */
+.cmt-body { resize: none; }
+/* 固定行高：组件按 line-height 算 3~10 行的高度，normal 会让实际行高与计算对不上 */
+.cmt-title, .cmt-body { line-height: 1.5; }
+/* 字数提示：超长变黄（只提醒不拦截） */
+.cmt-len { font-size: 12px; color: var(--dim); flex-shrink: 0; }
+.cmt-len.over { color: var(--warn); }
 
 .form-row { margin-bottom: 12px; }
 .form-row label { display: block; color: var(--dim); margin-bottom: 4px; font-size: 13px; }

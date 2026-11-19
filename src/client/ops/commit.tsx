@@ -6,14 +6,19 @@ import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { IconOk } from '../ui/icons.js';
 import { t } from '../../shared/i18n/index.js';
 import { CommitCommentBox } from './commit-comment.js';
+import { cleanCommitMessage } from './commit-message.js';
 
 export function CommitModal(props: {
   repoType: string;
   paths: string[];
+  /** 项目根：提交注释草稿按项目隔离（关掉/取消不丢，提交成功清除） */
+  draftRoot?: string;
   onClose: () => void;
   onDone: (msg: string, paths: string[]) => void;
 }) {
   const [msg, setMsg] = useState('');
+  /** 标题是否有内容（正文不能替代标题）：提交按钮据此禁用 */
+  const [msgValid, setMsgValid] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   // 待提交文件勾选：默认全部勾选；"全选/全不选"按钮二次点击反向
@@ -21,7 +26,7 @@ export function CommitModal(props: {
   const allChecked = props.paths.length > 0 && checked.size === props.paths.length;
 
   const submit = async () => {
-    if (!msg.trim()) {
+    if (!msgValid) {
       // 提交信息不能为空
       setErr(t('ops.commit.err.noMessage'));
       return;
@@ -33,7 +38,7 @@ export function CommitModal(props: {
     }
     setBusy(true);
     try {
-      await props.onDone(msg, props.paths.filter((p) => checked.has(p)));
+      await props.onDone(cleanCommitMessage(msg), props.paths.filter((p) => checked.has(p)));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -86,8 +91,10 @@ export function CommitModal(props: {
             value={msg}
             onChange={setMsg}
             onSubmit={() => void submit()}
-            rows={5}
-            // 简要说明本次提交内容，如：修复xxx问题、新增xxx功能、重构xxx模块…
+            onValidityChange={setMsgValid}
+            rows={3}
+            draftRoot={props.draftRoot}
+            // 标题：一句话说明改动，如「修复：登录按钮无响应」…
             placeholder={t('ops.commit.msgPlaceholderLong')}
             autoFocus
           />
@@ -107,7 +114,7 @@ export function CommitModal(props: {
           <button
             className="primary"
             onClick={() => void submit()}
-            disabled={busy || !msg.trim() || checked.size === 0}
+            disabled={busy || !msgValid || checked.size === 0}
             title={`${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: msg.trim() || '…' }) ?? ''}`}
           >
             {busy ? (

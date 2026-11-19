@@ -8,6 +8,7 @@ import { Tooltip } from '../ui/tooltip.js';
 import { t } from '../../shared/i18n/index.js';
 import { StageHunksModal } from './stage-hunks.js';
 import { CommitCommentBox } from './commit-comment.js';
+import { cleanCommitMessage } from './commit-message.js';
 
 /** 勾选式提交弹窗：列举变更文件可勾选 + 提交信息注释 */
 export function CommitSelectModal(props: {
@@ -20,6 +21,8 @@ export function CommitSelectModal(props: {
   stagedOnly?: string[];
   /** 恢复写好的提交注释：去看差异 / 去提交确认再返回时，注释不能丢（用户实报"返回发现注释清空了"） */
   msg?: string;
+  /** 项目根：提交注释草稿按项目隔离（关掉/取消不丢，提交成功清除） */
+  draftRoot?: string;
   /** 双击文件查看差异（path, 当前勾选快照, 已部分暂存列表, 当前注释） */
   onDiff?: (path: string, checked: string[], stagedOnly: string[], msg: string) => void;
   onClose: () => void;
@@ -27,6 +30,8 @@ export function CommitSelectModal(props: {
 }) {
   const { checked, setChecked, toggle } = useCheckedSet(props.checked ?? props.items.map((i) => i.path));
   const [msg, setMsg] = useState(props.msg ?? '');
+  /** 标题是否有内容（正文不能替代标题）：提交按钮据此禁用 */
+  const [msgValid, setMsgValid] = useState(false);
   const [err, setErr] = useState('');
   /** 已部分暂存（hunk 级）的文件；先在本地维护，随 onConfirm 一并交出去，App 再持久到弹窗状态里 */
   const [stagedLocal, setStagedLocal] = useState<string[]>(props.stagedOnly ?? []);
@@ -77,12 +82,12 @@ export function CommitSelectModal(props: {
       setErr(t('ops.err.needFile'));
       return;
     }
-    if (!msg.trim()) {
+    if (!msgValid) {
       // 请填写提交信息
       setErr(t('ops.commitSelect.err.noMessage'));
       return;
     }
-    props.onConfirm([...checked], msg.trim(), stagedLocal);
+    props.onConfirm([...checked], cleanCommitMessage(msg), stagedLocal);
   };
 
   // 弹窗宽度自适应最长文件名（公式见 utils.pathAutoWidth）
@@ -215,8 +220,10 @@ export function CommitSelectModal(props: {
               value={msg}
               onChange={setMsg}
               onSubmit={submit}
+              onValidityChange={setMsgValid}
               rows={3}
-              // 简要说明本次提交内容，如：修复xxx问题、新增xxx功能…
+              draftRoot={props.draftRoot}
+              // 标题：一句话说明本次改动，如「修复：登录按钮无响应」…
               placeholder={t('ops.commit.msgPlaceholder')}
             />
           </div>
@@ -236,7 +243,7 @@ export function CommitSelectModal(props: {
           <button
             className="primary"
             onClick={submit}
-            disabled={props.items.length === 0}
+            disabled={props.items.length === 0 || !msgValid}
             title={`${cmdOfRepo(props.repoType as 'git' | 'svn', 'commit', { msg: '…' }) ?? ''}`}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>

@@ -450,7 +450,6 @@ export const shell = {
   'shell.commit.confirmMsgA': 'Commit the following ',
   'shell.commit.confirmMsgB': ' file?| files?',
   'shell.commit.confirmStaged': '{n} of them will commit only the selected partial changes',
-  'shell.commit.note': 'Comment: {msg}',
   'shell.commit.confirmBtn': 'Commit',
   'shell.commit.backBtn': 'Back to Edit',
 };
