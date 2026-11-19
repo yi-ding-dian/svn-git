@@ -175,8 +175,12 @@ function cleanGitError(text: string): string {
   const noise =
     /^(Enumerating|Counting|Compressing|Writing|Total |remote: (Counting|Compressing|Resolving)|Receiving objects|Resolving deltas|Unpacking objects|Delta compression|Checking connectivity|Finding sources|Updating files)/i;
   const rest = lines.filter((l) => !noise.test(l));
-  const important = rest.filter((l) => /^(fatal|error|remote:|!|To |Username for|Password for)/i.test(l));
-  return (important[important.length - 1] ?? rest[rest.length - 1] ?? '').trim();
+  // 「error: failed to push some refs to …」是通用总结，会盖住真正原因（如 ! [remote rejected] …）。
+  // 先剔除通用行，再优先取最后一条 fatal/error/remote/!；全都剔没了才回退到通用行。
+  const generic = /^(error: failed to push some refs|To \S+|Everything up-to-date|hint:)/i;
+  const candidates = rest.filter((l) => !generic.test(l));
+  const important = candidates.filter((l) => /^(fatal|error|remote:|!|Username for|Password for)/i.test(l));
+  return (important[important.length - 1] ?? candidates[candidates.length - 1] ?? rest[rest.length - 1] ?? '').trim();
 }
 
 export class GitVcs {
