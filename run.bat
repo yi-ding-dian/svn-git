@@ -17,7 +17,7 @@ if not exist "node_modules" set "NEED_INSTALL=1"
 if not exist "node_modules\.package-lock.json" set "NEED_INSTALL=1"
 if not defined NEED_INSTALL for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "if ((Get-Item -LiteralPath 'package-lock.json').LastWriteTime -gt (Get-Item -LiteralPath 'node_modules\.package-lock.json').LastWriteTime) { '1' }"`) do set "NEED_INSTALL=%%i"
 if defined NEED_INSTALL (
-  echo [1/3] 依赖缺失或已过期(package-lock.json 有更新),安装依赖 npm install ...
+  echo [1/3] 依赖缺失或已过期^(package-lock.json 有更新^),安装依赖 npm install ...
   call npm install
   if errorlevel 1 goto :err_install
 ) else (
