@@ -303,6 +303,8 @@ export const shell = {
   'shell.recent.remoteFailed': 'Remote check failed (network or credential issue)',
   'shell.recent.pullTip': 'Click to update this project (pull new remote commits)',
   'shell.recent.pullDirty': 'This project has uncommitted changes — open it and resolve first',
+  // Local changes overlap with incoming remote updates: updating would conflict
+  'shell.recent.pullOverlap': 'These files have local changes and remote updates — updating would conflict. Open the project and resolve them first: {list}',
   'shell.recent.tipChanged': 'Uncommitted: {n} file(s)',
   'shell.recent.tipUntracked': 'Untracked: {n} file(s)',
   'shell.recent.tipConflict': 'Conflicts: {n} file(s)',

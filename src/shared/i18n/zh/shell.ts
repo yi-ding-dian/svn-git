@@ -310,6 +310,8 @@ export const shell = {
   'shell.recent.pullTip': '点击更新该项目（拉取远程新提交）',
   // 拒绝就地更新（脏工作区）：避免在没打开的项目里拉出合并冲突
   'shell.recent.pullDirty': '该项目有未提交的改动，请先打开处理',
+  // 有本地改动但预检发现与服务器更新有交集：这些文件更新会冲突
+  'shell.recent.pullOverlap': '这些文件本地有改动、服务器也有更新，更新会冲突，请先打开项目处理：{list}',
   'shell.recent.tipChanged': '未提交：{n} 个文件',
   'shell.recent.tipUntracked': '未跟踪：{n} 个文件',
   'shell.recent.tipConflict': '冲突：{n} 个文件',

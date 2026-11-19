@@ -30,7 +30,8 @@ export async function pullAny(
     if (!repo) return { ok: false, message: t('shell.recent.probeUnavailable') };
     const st = await probeProject(dir);
     if ('error' in st) return { ok: false, message: t('shell.recent.probeUnavailable') };
-    if (st.changed > 0 || st.conflict > 0) {
+    // 冲突未解决：合并/更新只会把状态弄得更乱，必须先打开项目处理
+    if (st.conflict > 0) {
       // 该项目有未提交的改动，请先打开处理
       return { ok: false, message: t('shell.recent.pullDirty') };
     }
@@ -41,6 +42,19 @@ export async function pullAny(
     const vcs = createVcs(repo, cred);
     // 条目记录了子项目范围：只更新该范围（svn update <scope>）。git pull 是仓库级（git 固有语义）。
     const scope = path.relative(repo.root, path.resolve(dir));
+    // 有本地改动时不一律拒绝：只有「服务器这次要更新的文件」与「本地改动的文件」有交集才会冲突。
+    // preflight 正好给出这个交集（git：fetch 后 diff；svn：status -u 的 * 标记 ∩ 本地状态），
+    // 交集为空就照常更新，本地改动不受影响。
+    if (st.changed > 0) {
+      // git pull 是仓库级（dir 可能只是大仓库的子目录，scope 外的本地改动同样参与合并）；
+      // svn update 只作用于该 scope
+      const pre = await vcs.preflight(repo.type === 'git' ? undefined : scope || undefined);
+      if (pre.conflictRisk.length > 0) {
+        const list = pre.conflictRisk.slice(0, 5).join(t('vcs.pathListSep'));
+        // 这些文件本地有改动、服务器也有更新，更新会冲突
+        return { ok: false, message: t('shell.recent.pullOverlap', { list }) };
+      }
+    }
     const r =
       repo.type === 'git'
         // 当前仓库不支持拉取
