@@ -5,9 +5,10 @@ import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { absPath } from '../shared/utils.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
-import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconTrash, IconDiff, IconFile, IconIgnore, IconEyeClosed, IconExternal, IconLock, IconUnlock, IconTerminal, IconErr } from '../ui/icons.js';
+import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconTrash, IconDiff, IconFile, IconIgnore, IconEyeClosed, IconExternal, IconLock, IconUnlock, IconTerminal, IconErr, IconClock } from '../ui/icons.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
+import { addSession } from '../shared/file-sessions.js';
 import type { Clip, ClipItem } from './use-file-transfer.js';
 import { multiRevertName, removableFromRepo, renameableCode, renameItem, joinPaths, revertName, type Mode } from './utils.js';
 
@@ -637,5 +638,23 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       void navigator.clipboard?.writeText(row.name).then(() => s.onToast(t('fs.menu.nameCopied')));
     },
   });
+  // 稍后看（目录）：把这个目录挂到右侧胶囊（书签式，点胶囊直接进入该目录）；放在整个菜单最后
+  if (row.isDir && s.root) {
+    items.push({ sep: true });
+    items.push({
+      icon: <IconClock />,
+      label: t('fs.session.later'),
+      action: () =>
+        addSession({
+          kind: 'dir',
+          root: s.root!,
+          type: s.repoType,
+          rel: row.rel,
+          name: row.name,
+          mode: 'raw',
+          ts: Date.now(),
+        }),
+    });
+  }
   return items;
 }

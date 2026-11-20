@@ -441,6 +441,8 @@ export const fs = {
   'fs.session.unsaved': 'Unsaved',
   'fs.session.editing': 'Editing',
   'fs.session.preview': 'Preview',
+  'fs.session.openDir': 'Open containing folder',
+  'fs.session.later': 'Later',
   'fs.session.delete': 'Delete',
   'fs.pv.hintFull': 'Esc exits fullscreen · ',
   'fs.pv.hint': '← back to list · / search',

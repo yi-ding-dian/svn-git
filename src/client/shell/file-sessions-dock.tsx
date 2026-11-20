@@ -44,7 +44,11 @@ const DRAG_THRESHOLD = 5;
 /** 未拖动过的胶囊默认堆叠间距（px） */
 const STACK_GAP = 56;
 
-export function FileSessionsDock(props: { onOpen: (s: FileSession) => void }) {
+export function FileSessionsDock(props: {
+  onOpen: (s: FileSession) => void;
+  /** 打开文件所在目录（切到项目、进入目录并选中文件，不打开预览） */
+  onOpenDir: (s: FileSession) => void;
+}) {
   const sessions = useSyncExternalStore(subscribeSessions, getSessions);
   /** 右键菜单（删除会话） */
   const [menu, setMenu] = useState<{ x: number; y: number; s: FileSession } | null>(null);
@@ -119,13 +123,15 @@ export function FileSessionsDock(props: { onOpen: (s: FileSession) => void }) {
         {sessions.map((s, index) => {
           const key = `${s.root}:${s.rel}`;
           const state =
-            s.mode === 'editing'
-              ? s.dirty
-                ? t('fs.session.unsaved')
-                : t('fs.session.editing')
-              : s.mode === 'md'
-                ? t('fs.session.preview')
-                : ''; // 原文查看不显示状态（只留项目名 + 文件名）
+            s.kind === 'dir'
+              ? '' // 目录书签不显示状态（用 📁 前缀区分）
+              : s.mode === 'editing'
+                ? s.dirty
+                  ? t('fs.session.unsaved')
+                  : t('fs.session.editing')
+                : s.mode === 'md'
+                  ? t('fs.session.preview')
+                  : ''; // 原文查看不显示状态（只留项目名 + 文件名）
           return (
             <button
               key={key}
@@ -151,8 +157,8 @@ export function FileSessionsDock(props: { onOpen: (s: FileSession) => void }) {
             >
               {/* 项目名（路径最后一段） */}
               <span className="fsession-proj">{s.root.split(/[\\/]/).filter(Boolean).pop() ?? s.root}</span>
-              {/* 文件名 */}
-              <span className="fsession-name">{s.name}</span>
+              {/* 文件名（目录书签加 📁 前缀） */}
+              <span className="fsession-name">{s.kind === 'dir' ? '📁 ' : ''}{s.name}</span>
               {/* 状态：未保存 / 编辑中 / 预览（原文查看不显示） */}
               {state && <span className={`fsession-state${s.dirty ? ' dirty' : ''}`}>{state}</span>}
             </button>
@@ -168,6 +174,10 @@ export function FileSessionsDock(props: { onOpen: (s: FileSession) => void }) {
           compact
           onClose={() => setMenu(null)}
           items={[
+            {
+              label: t('fs.session.openDir'),
+              action: () => props.onOpenDir(menu.s),
+            },
             {
               label: t('fs.session.delete'),
               action: () => {

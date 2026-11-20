@@ -441,6 +441,8 @@ export const fs = {
   'fs.session.unsaved': '未保存',
   'fs.session.editing': '编辑中',
   'fs.session.preview': '预览',
+  'fs.session.openDir': '打开所在目录',
+  'fs.session.later': '稍后看',
   'fs.session.delete': '删除',
   'fs.pv.hintFull': 'Esc 退出全屏 · ',
   'fs.pv.hint': '← 键返回列表 · / 搜索',

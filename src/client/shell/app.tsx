@@ -33,7 +33,14 @@ import { useEnvCheck } from './use-env-check.js';
 import { useRepoActions } from './use-repo-actions.js';
 import { useLang } from '../shared/use-lang.js';
 import { FileSessionsDock } from './file-sessions-dock.js';
-import { addSession, captureActiveSession, setPendingSession, openSessionInPlace } from '../shared/file-sessions.js';
+import {
+  addSession,
+  captureActiveSession,
+  setPendingSession,
+  openSessionInPlace,
+  setPendingDir,
+  openDirInPlace,
+} from '../shared/file-sessions.js';
 import { t } from '../../shared/i18n/index.js';
 
 export function App() {
@@ -572,6 +579,20 @@ export function App() {
       {/* 右侧文件会话胶囊：切换项目后一键回到刚才的浏览/编辑现场 */}
       <FileSessionsDock
         onOpen={(s) => {
+          // 目录书签：不进目录，在父目录里选中它并刷新一次（点条目才进入）
+          if (s.kind === 'dir') {
+            const parent = s.rel.includes('/') ? s.rel.slice(0, s.rel.lastIndexOf('/')) : '';
+            const payload = { root: s.root, dir: parent, selectRel: s.rel };
+            if (info?.root && s.root === info.root) {
+              setView('browse');
+              refresh(); // 刷新一次列表状态
+              window.setTimeout(() => openDirInPlace(payload), 0);
+            } else {
+              setPendingDir(payload);
+              void openHistoryItem({ path: s.root, type: s.type });
+            }
+            return;
+          }
           // 同一项目：直接打开（不切项目、不重挂载），先把当前现场挂起
           if (info?.root && s.root === info.root) {
             const cur = captureActiveSession();
@@ -585,6 +606,25 @@ export function App() {
           const snap = captureActiveSession();
           if (snap && snap.root !== s.root) addSession(snap);
           setPendingSession(s);
+          void openHistoryItem({ path: s.root, type: s.type });
+        }}
+        onOpenDir={(s) => {
+          // 目录书签：打开的就是这个目录本身；文件：打开它所在的目录并选中它
+          const dir =
+            s.kind === 'dir'
+              ? s.rel
+              : s.rel.includes('/')
+                ? s.rel.slice(0, s.rel.lastIndexOf('/'))
+                : '';
+          const payload = { root: s.root, dir, selectRel: s.kind === 'dir' ? undefined : s.rel };
+          // 同一项目：直接定位到目录并选中文件（不切项目、不打开预览）
+          if (info?.root && s.root === info.root) {
+            setView('browse');
+            window.setTimeout(() => openDirInPlace(payload), 0);
+            return;
+          }
+          // 跨项目：切换项目后由文件视图消费
+          setPendingDir(payload);
           void openHistoryItem({ path: s.root, type: s.type });
         }}
       />

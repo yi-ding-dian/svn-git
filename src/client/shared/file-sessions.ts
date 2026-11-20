@@ -8,6 +8,8 @@
  *  只覆盖文件浏览预览（原文 / md 预览 / 编辑态）；diff、历史等视图不参与。
  */
 export interface FileSession {
+  /** 文件现场（默认）还是目录书签：目录点胶囊直接进入该目录，不打开文件 */
+  kind?: 'file' | 'dir';
   /** 项目根（工作副本路径） */
   root: string;
   type: 'svn' | 'git';
@@ -151,4 +153,29 @@ export function takePendingSession(): FileSession | null {
 export const OPEN_SESSION_EVENT = 'svngit-open-session';
 export function openSessionInPlace(s: FileSession): void {
   window.dispatchEvent(new CustomEvent<FileSession>(OPEN_SESSION_EVENT, { detail: s }));
+}
+
+/** 「打开所在目录」：切到该项目并进入文件所在目录、选中文件（不打开预览） */
+export interface PendingDir {
+  root: string;
+  /** 文件所在目录（相对仓库根；根目录为空串） */
+  dir: string;
+  /** 要选中的文件（相对仓库根） */
+  selectRel?: string;
+}
+
+let pendingDir: PendingDir | null = null;
+export function setPendingDir(d: PendingDir | null): void {
+  pendingDir = d;
+}
+export function takePendingDir(): PendingDir | null {
+  const d = pendingDir;
+  pendingDir = null;
+  return d;
+}
+
+/** 同项目内直接打开目录（不切项目、不重挂载） */
+export const OPEN_DIR_EVENT = 'svngit-open-dir';
+export function openDirInPlace(d: PendingDir): void {
+  window.dispatchEvent(new CustomEvent<PendingDir>(OPEN_DIR_EVENT, { detail: d }));
 }

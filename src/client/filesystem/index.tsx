@@ -44,7 +44,14 @@ import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { ModalShell } from '../ui/modal-shell.js';
 import { FormRow } from '../ui/ui.js';
 import { ConfirmModal } from '../ui/prompt.js';
-import { takePendingSession, removeSession, OPEN_SESSION_EVENT, type FileSession } from '../shared/file-sessions.js';
+import {
+  takePendingSession,
+  OPEN_SESSION_EVENT,
+  takePendingDir,
+  OPEN_DIR_EVENT,
+  type FileSession,
+  type PendingDir,
+} from '../shared/file-sessions.js';
 import { PreviewPane } from './preview-pane.js';
 
 interface Props {
@@ -114,8 +121,7 @@ export function FsView(props: Props) {
         rel: p.rel,
         restore: { mode: p.mode, line: p.line, scrollTop: p.scrollTop },
       });
-      // 已成功打开：该会话的胶囊移除（草稿仍保留，保存成功后清除）
-      removeSession(p.root, p.rel);
+      // 胶囊保留：点开只是恢复现场，只有右键「删除」才移除会话
     },
     [props.repoRoot],
   );
@@ -596,6 +602,37 @@ export function FsView(props: Props) {
     relOf,
   });
   clearPendingLocateRef.current = () => setPendingLocate(null);
+
+  /** 应用「打开所在目录」：切到文件所在目录并选中它（不打开预览） */
+  const applyOpenDir = useCallback(
+    (p: PendingDir) => {
+      if (!props.repoRoot || p.root !== props.repoRoot) return;
+      keepPreviewRef.current = false;
+      setPreview(null);
+      // 定位逻辑会按 rel 的父目录切目录并选中（列表/网格/树都支持）
+      if (p.selectRel) setPendingLocate({ rel: p.selectRel, at: Date.now(), only: [p.selectRel] });
+      else setDir(p.dir);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setter 为稳定引用
+    [props.repoRoot, setPendingLocate],
+  );
+
+  /** 跨项目「打开所在目录」：切换后本组件重挂载，取出待打开的目录 */
+  useEffect(() => {
+    const d = takePendingDir();
+    if (d) applyOpenDir(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 挂载时消费一次
+  }, []);
+
+  /** 同项目「打开所在目录」：胶囊右键派发事件，直接定位 */
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const d = (e as CustomEvent<PendingDir>).detail;
+      if (d) applyOpenDir(d);
+    };
+    window.addEventListener(OPEN_DIR_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_DIR_EVENT, onOpen);
+  }, [applyOpenDir]);
 
   // ---------- 键盘导航 ----------
   // 行数模式的结果也是树：键盘 ↑↓/Enter 走同一套行模型，不能落到背后那份普通树上
