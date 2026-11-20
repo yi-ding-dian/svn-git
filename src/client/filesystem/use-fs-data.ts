@@ -27,6 +27,8 @@ export function useFsData(opts: {
   repoType: 'svn' | 'git';
   repoRoot?: string | null;
   startRel?: string | null;
+  /** 挂载时恢复的初始目录（项目上次浏览位置）；缺省 = startRel */
+  initialDir?: string;
   dir: string;
   setDir: React.Dispatch<React.SetStateAction<string>>;
   expanded: Set<string>;
@@ -53,6 +55,7 @@ export function useFsData(opts: {
     repoType,
     repoRoot,
     startRel,
+    initialDir,
     dir,
     setDir,
     expanded,
@@ -257,7 +260,7 @@ export function useFsData(opts: {
     // 切回：恢复该项目上次的缓存（存在则进入目录命中缓存，秒开）
     const restored = repoRoot ? cacheByRootRef.current.get(repoRoot) : undefined;
     restoredAtSwitchRef.current = Boolean(restored);
-    const targetDir = startRel ?? '';
+    const targetDir = initialDir ?? startRel ?? '';
     const restoredMap = restored ? new Map(restored) : new Map();
     setDir(targetDir);
     setSel(null);
@@ -312,7 +315,7 @@ export function useFsData(opts: {
   useEffect(() => {
     if (!repoRoot || !restoredAtSwitchRef.current) return;
     const root = repoRoot;
-    const targetDir = startRel ?? '';
+    const targetDir = initialDir ?? startRel ?? '';
     // 让恢复的缓存先完成首帧渲染，再在后台请求（不闪加载条、不打断界面）
     const timer = window.setTimeout(() => {
       if (repoRootRef.current !== root) return; // 等待期间又切走了：这次强刷作废

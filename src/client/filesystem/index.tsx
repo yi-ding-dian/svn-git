@@ -49,6 +49,8 @@ import {
   OPEN_SESSION_EVENT,
   takePendingDir,
   OPEN_DIR_EVENT,
+  loadListPos,
+  saveListPos,
   type FileSession,
   type PendingDir,
 } from '../shared/file-sessions.js';
@@ -105,7 +107,65 @@ function ActionBtn(props: {
 const KEY_HINT_SEEN = 'svngit:fs-key-hint-seen';
 
 export function FsView(props: Props) {
-  const [dir, setDir] = useState(props.startRel ?? ''); // 列表模式当前目录(初始 = 操作范围,大仓库子项目)
+  /** 挂载时读取该项目上次的列表位置（切项目回来 / 胶囊恢复）；切换项目时组件重挂载会重新读 */
+  const [initialListPos] = useState(() => (props.repoRoot ? loadListPos(props.repoRoot) : null));
+  /** 挂载时恢复的初始目录（项目上次浏览位置；超出操作范围则回退到 startRel） */
+  const [initialDir] = useState(() => {
+    const saved = initialListPos;
+    const base = props.startRel ?? '';
+    if (saved && (!base || saved.dir === base || saved.dir.startsWith(base + '/'))) return saved.dir;
+    return props.startRel ?? '';
+  });
+  const [dir, setDir] = useState(initialDir);
+  /** 列表/树/网格共用的滚动容器：记住滚动位置、恢复上次位置 */
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  /** 待恢复的列表滚动位置（挂载或胶囊恢复时设置；列表渲染出来后应用一次） */
+  const restoreScrollRef = useRef<number | null>(initialListPos?.scrollTop ?? null);
+  const scrollSaveRaf = useRef(0);
+  const dirRef = useRef(dir);
+  dirRef.current = dir;
+  const lastDirRef = useRef(dir);
+
+  /** 绑定滚动容器：有暂存位置就等列表渲染出来后应用一次 */
+  const attachListScroll = (el: HTMLDivElement | null) => {
+    listScrollRef.current = el;
+    if (!el) return;
+    const top = restoreScrollRef.current;
+    if (top == null) return;
+    restoreScrollRef.current = null;
+    let tries = 0;
+    const apply = () => {
+      if (listScrollRef.current !== el) return;
+      // 内容还没渲染到足够高时先等（数据两阶段加载）；最多等约 30 帧
+      if (el.scrollHeight >= top + el.clientHeight || tries++ > 30) {
+        el.scrollTop = top;
+        return;
+      }
+      requestAnimationFrame(apply);
+    };
+    requestAnimationFrame(apply);
+  };
+  /** 滚动时记住位置（每帧最多写一次；目录变化在下面的 effect 里记住） */
+  const onListScroll = () => {
+    if (!props.repoRoot || scrollSaveRaf.current) return;
+    scrollSaveRaf.current = requestAnimationFrame(() => {
+      scrollSaveRaf.current = 0;
+      saveListPos(props.repoRoot!, { dir: dirRef.current, scrollTop: listScrollRef.current?.scrollTop ?? 0 });
+    });
+  };
+  useEffect(
+    () => () => {
+      if (scrollSaveRaf.current) cancelAnimationFrame(scrollSaveRaf.current);
+    },
+    [],
+  );
+  /** 切目录：把新目录记下来（滚动位置从顶部开始） */
+  useEffect(() => {
+    if (!props.repoRoot) return;
+    if (lastDirRef.current === dir) return;
+    lastDirRef.current = dir;
+    saveListPos(props.repoRoot, { dir, scrollTop: 0 });
+  }, [dir, props.repoRoot]);
 
   /** 恢复预览期间保持：数据层加载/切项目会 setPreview(null)，别把刚恢复的预览关掉 */
   const keepPreviewRef = useRef(false);
@@ -115,6 +175,10 @@ export function FsView(props: Props) {
     (p: FileSession) => {
       // 不属于当前项目（切换失败/打开的仓库根不同）：忽略，会话仍留在胶囊里可重试
       if (!props.repoRoot || p.root !== props.repoRoot) return;
+      // 恢复挂起时的列表位置：目录 + 滚动（关闭预览后回到原位）
+      const targetDir = p.listDir ?? (p.rel.includes('/') ? p.rel.slice(0, p.rel.lastIndexOf('/')) : '');
+      if (targetDir !== dirRef.current) setDir(targetDir);
+      restoreScrollRef.current = p.listScroll ?? null;
       keepPreviewRef.current = true;
       setPreview({
         name: p.name,
@@ -233,6 +297,7 @@ export function FsView(props: Props) {
     repoType: props.repoType,
     repoRoot: props.repoRoot,
     startRel: props.startRel,
+    initialDir,
     dir,
     setDir,
     expanded,
@@ -1085,6 +1150,7 @@ export function FsView(props: Props) {
     return (
       <div
         key={rel}
+        data-fs-rel={rel} /* 动画域/会话恢复按它定位行（树视图的 TreeRow 同款；列表模式原先漏了） */
         data-dir-rel={e.isDir ? rel : undefined} /* 拖入落点：容器按事件委托读它 */
         className={`tree-row ${isMatch ? 'search-hit' : ''}${pulseRels.includes(rel) ? ' file-pulse' : ''}${e.miss ? ' miss' : ''}${drop.hoverDir === rel ? ' dir-drop-hover' : ''}${cutRels.has(rel) ? ' clip-cut' : ''}${dragRels.has(rel) ? ' drag-src' : ''}`}
         draggable={!(inline?.kind === 'rename' && inline.rel === rel)} /* 正在就地改名时不拖：否则没法用鼠标选名字里的字 */
@@ -1538,6 +1604,8 @@ export function FsView(props: Props) {
               {...drop.fileAreaProps}
               className={`list${drop.dragging ? ' fs-drop-active' : ''}`}
               style={{ overflow: 'auto', flex: 1 }}
+              ref={attachListScroll}
+              onScroll={onListScroll}
               onContextMenu={onBlankContext}
               onClick={(ev) => {
                 if (ev.target === ev.currentTarget) {
@@ -1588,6 +1656,8 @@ export function FsView(props: Props) {
             {...drop.fileAreaProps}
             className={`list${drop.dragging ? ' fs-drop-active' : ''}`}
             style={{ overflow: 'auto', flex: 1 }}
+            ref={attachListScroll}
+            onScroll={onListScroll}
             onContextMenu={onBlankContext}
             onClick={(ev) => {
               if (ev.target === ev.currentTarget) {
@@ -1633,8 +1703,10 @@ export function FsView(props: Props) {
             className={`grid-view${drop.dragging ? ' fs-drop-active' : ''}`}
             onContextMenu={onBlankContext}
             ref={(el) => {
-              if (el) gridRef.current = el;
+              gridRef.current = el;
+              attachListScroll(el);
             }}
+            onScroll={onListScroll}
             onMouseDown={(ev) => {
               // 空白处按下启动框选（点击条目由条目自身处理）；仅左键——右键按下会打开菜单，
               // 若也启动框选，菜单打开后无按键移动鼠标就会画出"幽灵框选"

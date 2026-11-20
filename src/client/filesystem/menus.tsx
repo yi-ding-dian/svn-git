@@ -8,7 +8,7 @@ import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, IconFolder, IconPlus, IconRevert, IconClean, IconTrash, IconDiff, IconFile, IconIgnore, IconEyeClosed, IconExternal, IconLock, IconUnlock, IconTerminal, IconErr, IconLater } from '../ui/icons.js';
 import type { CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
-import { addSession } from '../shared/file-sessions.js';
+import { addSession, loadListPos } from '../shared/file-sessions.js';
 import { flyToSessionPill, findRowEl } from '../animations/index.js';
 import type { Clip, ClipItem } from './use-file-transfer.js';
 import { multiRevertName, removableFromRepo, renameableCode, renameItem, joinPaths, revertName, type Mode } from './utils.js';
@@ -648,6 +648,8 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
       label: t('fs.session.later'),
       action: (e) => {
         const key = `${s.root}:${row.rel}`;
+        // 记下当前列表的浏览位置（目录 + 滚动），点胶囊恢复时一起还原
+        const pos = loadListPos(s.root!);
         addSession({
           kind: row.isDir ? 'dir' : 'file',
           root: s.root!,
@@ -655,6 +657,8 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
           rel: row.rel,
           name: row.name,
           mode: 'raw',
+          listDir: pos?.dir,
+          listScroll: pos?.scrollTop,
           ts: Date.now(),
         });
         // 从文件/文件夹那一行的位置起飞（右键菜单点在行上，但起点应是文件本身）；行找不到时退回点击位置

@@ -24,6 +24,9 @@ export interface FileSession {
   line?: number;
   /** 预览容器的滚动位置 */
   scrollTop?: number;
+  /** 挂起时文件列表所在的目录（相对仓库根）与列表滚动位置：恢复时一起还原 */
+  listDir?: string;
+  listScroll?: number;
   /** 挂起时间（排序/淘汰最旧用） */
   ts: number;
 }
@@ -135,7 +138,37 @@ export function patchActiveSession(patch: Partial<FileSession>): void {
   if (active) active = { ...active, ...patch };
 }
 export function captureActiveSession(): FileSession | null {
-  return active ? { ...active } : null;
+  if (!active) return null;
+  // 带出该项目文件列表的浏览位置（目录 + 滚动），恢复时一起还原
+  const pos = loadListPos(active.root);
+  return { ...active, listDir: pos?.dir, listScroll: pos?.scrollTop };
+}
+
+/** 文件列表的浏览位置（按项目根）：切换项目/胶囊恢复时回到上次的目录与滚动 */
+export interface ListPos {
+  dir: string;
+  scrollTop: number;
+}
+
+const listPosKey = (root: string) => `svngit-fs-pos:${root}`;
+
+export function loadListPos(root: string): ListPos | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(listPosKey(root)) ?? 'null') as Partial<ListPos> | null;
+    return v && typeof v.dir === 'string' && typeof v.scrollTop === 'number'
+      ? { dir: v.dir, scrollTop: v.scrollTop }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveListPos(root: string, pos: ListPos): void {
+  try {
+    localStorage.setItem(listPosKey(root), JSON.stringify(pos));
+  } catch {
+    /* 隐私模式等：本次会话内仍生效 */
+  }
 }
 
 /** 点胶囊后待打开的文件：FsView 重挂载时消费（只消费一次） */
