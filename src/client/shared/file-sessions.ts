@@ -1,6 +1,6 @@
 /** 文件浏览会话与编辑草稿（localStorage）：
  *
- *  - sessions：切换项目时挂起的「刚才在看/编辑什么」（右侧悬浮胶囊），最多 5 个；
+ *  - sessions：切换项目时挂起的「刚才在看/编辑什么」（右侧悬浮胶囊），最多 10 个；
  *  - drafts：每个文件的未保存编辑内容，按「项目 + 文件」隔离，所有编辑自动保存；
  *  - active：当前预览的快照（切换项目前 capture，写入 sessions）；
  *  - pending：点胶囊后等待文件视图打开的目标（切项目重挂载时消费）。
@@ -30,7 +30,7 @@ export interface FileSession {
 
 const SESS_KEY = 'svngit-file-sessions';
 const DRAFT_PREFIX = 'svngit-file-draft:';
-const MAX_SESSIONS = 5;
+const MAX_SESSIONS = 10;
 /** 草稿上限：localStorage 只有几 MB，超大文件（接近 InlineEditor 的编辑上限）不存 */
 const MAX_DRAFT_CHARS = 1_000_000;
 
@@ -72,7 +72,7 @@ export function getSessions(): FileSession[] {
   return sessions;
 }
 
-/** 挂起一个会话：同项目同文件只保留最新，最多 5 个（超出淘汰最旧） */
+/** 挂起一个会话：同项目同文件只保留最新，最多 10 个（超出淘汰最旧） */
 export function addSession(s: FileSession): void {
   const rest = getSessions().filter((x) => !(x.root === s.root && x.rel === s.rel));
   sessions = [s, ...rest].slice(0, MAX_SESSIONS);

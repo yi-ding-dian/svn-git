@@ -1,6 +1,6 @@
 /** 右侧文件会话胶囊：切换项目时挂起的「刚才在看/编辑什么」。
  *
- *  出现在窗口右缘（垂直居中偏上），最多 5 个（数据层控制）。
+ *  出现在窗口右缘（垂直居中偏上），最多 10 个（数据层控制）。
  *  点击 → 切回对应项目并打开文件（恢复模式/草稿/光标/滚动）；同一项目内直接打开不切项目；
  *  右键 → 删除会话（草稿按约定保留，下次打开文件仍可恢复）；
  *  每个胶囊可独立拖动（位置分别记住；拖动超过阈值不会触发点击）。
@@ -137,6 +137,7 @@ export function FileSessionsDock(props: {
               key={key}
               className={`fsession${draggingKey === key ? ' dragging' : ''}`}
               style={styleOf(key, index)}
+              data-session-pill={key}
               title={`${s.root}\n${s.rel}${state ? `\n${state}` : ''}`}
               onPointerDown={(e) => onDown(e, key)}
               onPointerMove={onMove}

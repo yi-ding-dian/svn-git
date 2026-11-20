@@ -27,7 +27,8 @@ export interface CtxMenuItem {
   title?: string;
   /** 禁用（灰显、不响应点击）；配合 title 时用自定义浮层显示原因 */
   disabled?: boolean;
-  action?: () => void;
+  /** 点击动作（可收到点击事件：需要从点击位置起飞的动画等） */
+  action?: (e?: React.MouseEvent) => void;
   /** 二级子菜单（悬浮/点击右侧展开,如「打开方式」） */
   submenu?: CtxMenuItem[];
   /** 在二级子菜单里执行 action 后**不关闭菜单**（用于「更多…」原地展开全部） */
@@ -123,7 +124,7 @@ export function ContextMenu(props: {
               title={it.disabled ? undefined : it.cmd ? `${it.title ?? ''}\n${it.cmd}` : it.title}
               onMouseDown={it.disabled ? undefined : it.onMouseDown}
               onMouseUp={it.disabled ? undefined : it.onDragEnd}
-              onClick={() => {
+              onClick={(e) => {
                 if (it.disabled) return;
                 if (it.submenu) {
                   setHoverIdx(i);
@@ -132,7 +133,7 @@ export function ContextMenu(props: {
                 }
                 // 先关菜单再执行动作（各调用方原有行为一致：关闭优先）
                 props.onClose();
-                it.action?.();
+                it.action?.(e);
               }}
               onMouseEnter={() => setHoverIdx(it.submenu ? i : null)}
             >
@@ -202,7 +203,7 @@ function SubmenuPane(props: {
             // 「更多…」原地展开：阻止冒泡到 window 的全局 click 关闭监听
             if (s.keepOpen) e.stopPropagation();
             if (!s.keepOpen) props.onAction();
-            s.action?.();
+            s.action?.(e);
           }}
         >
           <span className="ctx-icon">{s.icon}</span>

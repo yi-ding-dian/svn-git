@@ -335,6 +335,22 @@ export function IconClock({ size = 14 }: IconProps) {
   );
 }
 
+/** 稍后看：琥珀色书签（与「查看历史」的时钟区分开） */
+export function IconLater({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ verticalAlign: 'middle', flexShrink: 0 }}>
+      <path
+        d="M7 4h10a1 1 0 0 1 1 1v16l-6-4-6 4V5a1 1 0 0 1 1-1z"
+        stroke="#d29922"
+        strokeWidth="2"
+        fill="none"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 /** 忽略：紫色斜杠眼睛 */
 export function IconEyeOff({ size = 14 }: IconProps) {
   return (

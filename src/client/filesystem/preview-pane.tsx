@@ -25,6 +25,7 @@ import { useMdToc } from '../ui/use-md-toc.js';
 import { useSourceToc } from '../ui/use-source-toc.js';
 import { useSourceOutline } from '../ui/use-source-outline.js';
 import { useTocPinned, setTocPinned } from '../ui/use-toc-pinned.js';
+import { flyToSessionPill } from '../animations/index.js';
 import {
   loadFileDraft,
   saveFileDraft,
@@ -413,10 +414,14 @@ export function PreviewPane(props: Props) {
     patchActiveSession({ scrollTop: diffRef.current?.scrollTop ?? 0 });
   };
 
-  /** 「稍后看」：把当前文件（含模式/草稿/光标/滚动）挂到右侧胶囊，回到文件列表 */
-  const later = () => {
+  /** 「稍后看」：把当前文件（含模式/草稿/光标/滚动）挂到右侧胶囊，回到文件列表。
+   *  from 传鼠标坐标：点击瞬间发射一条飞行线飞向新出现的胶囊（像「更新仓库」的起飞特效） */
+  const later = (from: { x: number; y: number }) => {
     const snap = captureActiveSession();
-    if (snap) addSession(snap);
+    if (snap) {
+      addSession(snap);
+      flyToSessionPill(from, `${snap.root}:${snap.rel}`);
+    }
     props.onClose();
   };
 
@@ -712,7 +717,7 @@ export function PreviewPane(props: Props) {
         )}
         {/* 稍后看：把当前文件挂到右侧胶囊，回到列表 */}
         <Tooltip content={t('fs.pv.laterTip')}>
-          <button className="mini" onClick={later}>{t('fs.pv.later')}</button>
+          <button className="mini" onClick={(e) => later({ x: e.clientX, y: e.clientY })}>{t('fs.pv.later')}</button>
         </Tooltip>
         {isMd && mdPreview && (
           // 正文布局（紧挨主题按钮，全屏也显示）：居中（默认，1280px 阅读列）/ 靠左（铺满）
@@ -859,7 +864,7 @@ export function PreviewPane(props: Props) {
             </button>
             {/* 稍后看：挂到右侧胶囊（草稿已自动保存），回到列表 */}
             <Tooltip content={t('fs.pv.laterTip')}>
-              <button className="mini" onClick={later}>{t('fs.pv.later')}</button>
+              <button className="mini" onClick={(e) => later({ x: e.clientX, y: e.clientY })}>{t('fs.pv.later')}</button>
             </Tooltip>
             {/* 取消 */}
             <button
