@@ -59,12 +59,18 @@ export function AboutModal(props: {
   // 检查/下载中轮询状态（主进程自动检查可能先于弹窗开始，这里把结果接上来）
   const phase = update?.phase;
   useEffect(() => {
-    if (phase !== 'downloading' && phase !== 'checking') return;
+    // 发布日志是检查完成（available）之后主进程才异步补拉的：这里要多轮询一小会儿，
+    // 否则拿到 available 快照时 notes 还没到、轮询又已停止，日志永远不显示（用户实报）。
+    const waitingNotes = phase === 'available' && !update?.notes;
+    if (phase !== 'downloading' && phase !== 'checking' && !waitingNotes) return;
+    const started = Date.now();
     const timer = window.setInterval(() => {
       get.appUpdateStatus().then(setUpdate).catch(() => {});
+      // 拉不到日志（网络/Release 无正文）时最多等 10 秒，之后停止轮询
+      if (waitingNotes && Date.now() - started > 10_000) window.clearInterval(timer);
     }, 700);
     return () => window.clearInterval(timer);
-  }, [phase]);
+  }, [phase, update?.notes]);
 
   const check = async () => {
     setBusy(true);
