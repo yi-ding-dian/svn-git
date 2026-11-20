@@ -4,6 +4,7 @@
 export { launchMagicFlight } from './magic-flight.js';
 export type { FlightTarget } from './magic-flight.js';
 export { flyToSessionPill } from './flight-to-pill.js';
+export { findRowEl } from './shared.js';
 export { flashBreadcrumbs } from './motion.js';
 export { flyRowsToTrash } from './trash-fly.js';
 export { stampAddedRows } from './add-stamp.js';

@@ -432,6 +432,12 @@ export const fs = {
   'fs.pv.editingEnc': '编辑中 · 按 {enc} 保存',
   'fs.pv.keepCrlf': '保持 CRLF 行尾',
   'fs.pv.saveBtn': '💾 保存',
+  // 编辑态「返回」：未保存时确认
+  'fs.pv.editBack': '返回',
+  'fs.pv.unsavedTitle': '未保存的修改',
+  'fs.pv.unsavedAsk': '当前修改还没有保存，要先保存再返回吗？',
+  'fs.pv.saveAndBack': '保存并返回',
+  'fs.pv.discardAndBack': '不保存，直接返回',
   // 「稍后看」：把当前文件挂到右侧胶囊，回到列表
   'fs.pv.later': '⧉ 稍后看',
   'fs.pv.laterTip': '把当前文件挂到右侧胶囊，稍后点一下回来',

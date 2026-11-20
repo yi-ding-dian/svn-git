@@ -10,6 +10,7 @@ import { t } from '../../shared/i18n/index.js';
 import { get, post } from '../shared/api.js';
 import { isImeComposing } from '../shared/utils.js';
 import { ContextMenu, type CtxMenuItem } from '../ui/context-menu.js';
+import { ConfirmModal } from '../ui/prompt.js';
 import { Tooltip } from '../ui/tooltip.js';
 import { AppIcon } from '../ui/ui.js';
 import { IconExternal, IconRename } from '../ui/icons.js';
@@ -145,6 +146,10 @@ export function PreviewPane(props: Props) {
   /** 编辑器的命令式句柄（保存按钮触发）+ 脏状态（保存按钮点亮） */
   const editorRef = useRef<InlineEditorHandle>(null);
   const [editDirty, setEditDirty] = useState(false);
+  /** 编辑态「返回」：有未保存修改时先弹确认（保存并返回 / 不保存返回） */
+  const [backAsk, setBackAsk] = useState(false);
+  const backAskRef = useRef(false);
+  backAskRef.current = backAsk;
   /** 本文件的本地未保存草稿（所有编辑自动保存；恢复编辑时作为初始内容） */
   const [draftText, setDraftText] = useState<string | null>(null);
   /** 编辑光标行（挂起会话记录"编辑到哪一行"） */
@@ -452,6 +457,26 @@ export function PreviewPane(props: Props) {
     setEditDirty(false); // 干净进入（保存按钮先灭，改了才亮）——有草稿时编辑器挂载后会立刻点亮
     setEditing(true);
   };
+  /** 编辑态「返回」：无未保存修改直接退出；有则先确认（保存并返回 / 不保存返回） */
+  const leaveEdit = () => {
+    // 退出编辑 = 放弃本地草稿（保存过的内容已写盘，草稿无需保留）
+    if (props.repoRoot) clearFileDraft(props.repoRoot, target.rel);
+    setEditing(false);
+  };
+  const onEditBack = () => {
+    if (!editDirty) {
+      leaveEdit();
+      return;
+    }
+    setBackAsk(true);
+  };
+  /** 保存成功后再退出；保存失败留在编辑态（错误条已提示） */
+  const saveAndBack = async () => {
+    setBackAsk(false);
+    const ok = await editorRef.current?.save();
+    if (ok) leaveEdit();
+  };
+
   /** md-render 容器点击：图片则放大查看；代码块的「复制」按钮则复制该块代码（事件代理——
    *  按钮由 renderMarkdown 输出的 HTML 生成，React 事件照样能冒泡到这里） */
   const onMdRenderClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -505,6 +530,8 @@ export function PreviewPane(props: Props) {
       if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 输入框内不拦截（搜索框自身 onKeyDown 处理 Enter/Esc）
       // 图片放大有独立的 Esc 监听（只关灯箱）；这里先让位，否则一次 Esc 会把灯箱和预览一起关
       if (imgViewerRef.current) return;
+      // 「返回」的未保存确认弹窗开着：Esc 交给弹窗自己处理，别再触发编辑态的提示
+      if (backAskRef.current) return;
       if (mdPopRef.current) {
         if (e.key === 'Escape') setMdThemePop(null); // 气泡开着：Esc 只关气泡，不连预览一起关
         return;
@@ -667,6 +694,12 @@ export function PreviewPane(props: Props) {
         ) : (
           // 🔍 搜索 (/)
           <button className="mini" onClick={() => setSearchActive(true)}>{t('fs.pv.searchBtn')}</button>
+        )}
+        {/* 编辑态「稍后看」：紧挨搜索按钮（与浏览态的位置习惯一致） */}
+        {editing && (
+          <Tooltip content={t('fs.pv.laterTip')}>
+            <button className="mini" onClick={(e) => later({ x: e.clientX, y: e.clientY })}>{t('fs.pv.later')}</button>
+          </Tooltip>
         )}
         {!editing && (
           <>
@@ -862,21 +895,8 @@ export function PreviewPane(props: Props) {
             >
               {t('fs.pv.saveBtn')}
             </button>
-            {/* 稍后看：挂到右侧胶囊（草稿已自动保存），回到列表 */}
-            <Tooltip content={t('fs.pv.laterTip')}>
-              <button className="mini" onClick={(e) => later({ x: e.clientX, y: e.clientY })}>{t('fs.pv.later')}</button>
-            </Tooltip>
-            {/* 取消 */}
-            <button
-              className="mini"
-              onClick={() => {
-                // 取消 = 放弃本次未保存修改：草稿一并清掉，下次进入不再恢复
-                if (props.repoRoot) clearFileDraft(props.repoRoot, target.rel);
-                setEditing(false);
-              }}
-            >
-              {t('common.cancel')}
-            </button>
+            {/* 返回：有未保存修改时先问是否保存 */}
+            <button className="mini" onClick={onEditBack}>{t('fs.pv.editBack')}</button>
           </>
         ) : (
           <>
@@ -932,6 +952,22 @@ export function PreviewPane(props: Props) {
         )}
         {/* 内容区右键：复制所选内容 / 复制全部内容 */}
         {copyMenu.menuElement}
+        {/* 编辑态「返回」：有未保存修改时确认 */}
+        {backAsk && (
+          <ConfirmModal
+            title={t('fs.pv.unsavedTitle')}
+            message={t('fs.pv.unsavedAsk')}
+            confirmLabel={t('fs.pv.saveAndBack')}
+            secondaryLabel={t('fs.pv.discardAndBack')}
+            secondaryDanger
+            onConfirm={() => void saveAndBack()}
+            onSecondary={() => {
+              setBackAsk(false);
+              leaveEdit();
+            }}
+            onCancel={() => setBackAsk(false)}
+          />
+        )}
       </div>
       {/* 追溯的修改人筛选条：默认"全部"（不过滤）；点某个人只看他改的行，可多选叠加。
           只有一个修改人也显示（用户要在第一眼看到"这些行是谁改的"），只是点了也不过滤 */}

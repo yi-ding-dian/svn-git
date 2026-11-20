@@ -58,8 +58,9 @@ const EditHlLine = React.memo(function EditHlLine({
 });
 
 export interface InlineEditorHandle {
-  /** 保存（调用方按钮触发）：行尾还原 → 写回 → onSaved / onError */
-  save: () => void;
+  /** 保存（调用方按钮触发）：行尾还原 → 写回 → onSaved / onError；
+   *  返回是否写盘成功（「返回前保存」流程要等它完成再退出编辑） */
+  save: () => Promise<boolean>;
   /** 光标定位到指定行（1-based）+ 滚动居中；
    *  flashRange 给了就**整段行脉冲高亮**（diff 里点左栏/刻度指认改动块用——块级、像非编辑态） */
   gotoLine: (line: number, flashRange?: { from: number; to: number }) => void;
@@ -230,21 +231,25 @@ export const InlineEditor = forwardRef<
     () => ({
       save: () => {
         const content = draft.replace(/\r?\n/g, props.eol);
-        void post
+        return post
           .writeFile(props.rel, content)
           .then((r) => {
             if (!r.ok) {
               // 保存失败
               props.onError(r.message || t('fs.pv.saveFailed'));
-              return;
+              return false;
             }
             // 已保存（把刚写盘的草稿一并带回：父级据此同步正文，不依赖异步上报的 state）
             props.onSaved(r.message || t('fs.pv.saved'), draft);
             // 基线前移：保存后不退出编辑，按钮变灰；继续改会重新变亮
             setSavedText(draft);
+            return true;
           })
           // 保存失败: {msg}
-          .catch((e: Error) => props.onError(t('fs.pv.saveFailedMsg', { msg: e.message })));
+          .catch((e: Error) => {
+            props.onError(t('fs.pv.saveFailedMsg', { msg: e.message }));
+            return false;
+          });
       },
       gotoLine,
       selectMatch,

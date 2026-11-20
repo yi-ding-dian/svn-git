@@ -9,7 +9,7 @@ import { IconDownload, IconUpload, IconHistory, IconCopy, IconCut, IconPaste, Ic
 import type { CtxMenuItem } from '../ui/context-menu.js';
 import { AppIcon } from '../ui/ui.js';
 import { addSession } from '../shared/file-sessions.js';
-import { flyToSessionPill } from '../animations/index.js';
+import { flyToSessionPill, findRowEl } from '../animations/index.js';
 import type { Clip, ClipItem } from './use-file-transfer.js';
 import { multiRevertName, removableFromRepo, renameableCode, renameItem, joinPaths, revertName, type Mode } from './utils.js';
 
@@ -657,9 +657,14 @@ export function buildRowItems(row: { isDir: boolean; code: string; rel: string; 
           mode: 'raw',
           ts: Date.now(),
         });
-        // 从菜单点击位置起飞，飞向右侧新出现的胶囊
+        // 从文件/文件夹那一行的位置起飞（右键菜单点在行上，但起点应是文件本身）；行找不到时退回点击位置
+        const rowRect = findRowEl(row.rel)?.getBoundingClientRect();
         flyToSessionPill(
-          e ? { x: e.clientX, y: e.clientY } : { x: window.innerWidth - 80, y: window.innerHeight / 2 },
+          rowRect
+            ? { x: rowRect.left + rowRect.width / 2, y: rowRect.top + rowRect.height / 2 }
+            : e
+              ? { x: e.clientX, y: e.clientY }
+              : { x: window.innerWidth - 80, y: window.innerHeight / 2 },
           key,
         );
       },

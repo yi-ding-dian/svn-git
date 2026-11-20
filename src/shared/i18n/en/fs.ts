@@ -432,6 +432,12 @@ export const fs = {
   'fs.pv.editingEnc': 'Editing · save as {enc}',
   'fs.pv.keepCrlf': 'keep CRLF endings',
   'fs.pv.saveBtn': '💾 Save',
+  // Edit mode "Back": confirm when there are unsaved changes
+  'fs.pv.editBack': 'Back',
+  'fs.pv.unsavedTitle': 'Unsaved changes',
+  'fs.pv.unsavedAsk': 'You have unsaved changes. Save before going back?',
+  'fs.pv.saveAndBack': 'Save and go back',
+  'fs.pv.discardAndBack': 'Discard and go back',
   // "Later": pin the current file to the right-hand pill and go back to the list
   'fs.pv.later': '⧉ Later',
   'fs.pv.laterTip': 'Pin the current file to the right-hand pill and come back later',
