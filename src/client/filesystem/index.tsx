@@ -44,6 +44,7 @@ import { cmdOfRepo } from '../shared/cmd-preview.js';
 import { ModalShell } from '../ui/modal-shell.js';
 import { FormRow } from '../ui/ui.js';
 import { ConfirmModal } from '../ui/prompt.js';
+import { takePendingSession, removeSession, OPEN_SESSION_EVENT, type FileSession } from '../shared/file-sessions.js';
 import { PreviewPane } from './preview-pane.js';
 
 interface Props {
@@ -98,9 +99,55 @@ const KEY_HINT_SEEN = 'svngit:fs-key-hint-seen';
 
 export function FsView(props: Props) {
   const [dir, setDir] = useState(props.startRel ?? ''); // 列表模式当前目录(初始 = 操作范围,大仓库子项目)
+
+  /** 恢复预览期间保持：数据层加载/切项目会 setPreview(null)，别把刚恢复的预览关掉 */
+  const keepPreviewRef = useRef(false);
+
+  /** 应用一个挂起会话：打开文件并恢复模式/草稿/位置（同项目、跨项目共用） */
+  const applySession = useCallback(
+    (p: FileSession) => {
+      // 不属于当前项目（切换失败/打开的仓库根不同）：忽略，会话仍留在胶囊里可重试
+      if (!props.repoRoot || p.root !== props.repoRoot) return;
+      keepPreviewRef.current = true;
+      setPreview({
+        name: p.name,
+        rel: p.rel,
+        restore: { mode: p.mode, line: p.line, scrollTop: p.scrollTop },
+      });
+      // 已成功打开：该会话的胶囊移除（草稿仍保留，保存成功后清除）
+      removeSession(p.root, p.rel);
+    },
+    [props.repoRoot],
+  );
+
+  /** 跨项目恢复：切换后本组件重挂载，取出待打开的文件快照 */
+  useEffect(() => {
+    const p = takePendingSession();
+    if (p) applySession(p);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 挂载时消费一次
+  }, []);
+
+  /** 同项目恢复：胶囊点击派发事件，直接打开（不切项目、不重挂载） */
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const p = (e as CustomEvent<FileSession>).detail;
+      if (p) applySession(p);
+    };
+    window.addEventListener(OPEN_SESSION_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_SESSION_EVENT, onOpen);
+  }, [applySession]);
   const [sel, setSel] = useState<FsEntry | null>(null);
   // 预览目标（文本/图片等实际内容与 md/blame/搜索状态都在 PreviewPane 内；此处只做开关与目标，供目录切换/刷新时关闭）
-  const [preview, setPreview] = useState<{ name: string; rel: string; img?: boolean; code?: string; line?: number; worktree?: boolean } | null>(null);
+  const [preview, setPreview] = useState<{
+    name: string;
+    rel: string;
+    img?: boolean;
+    code?: string;
+    line?: number;
+    worktree?: boolean;
+    /** 从挂起会话恢复：打开后切到对应模式并定位 */
+    restore?: { mode: 'raw' | 'md' | 'editing'; line?: number; scrollTop?: number };
+  } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
   const [mode, setMode] = useState<Mode>('browse');
@@ -185,6 +232,8 @@ export function FsView(props: Props) {
     expanded,
     setSel,
     setPreview,
+    // 从胶囊恢复的预览：数据层加载期间不要关
+    keepPreview: () => keepPreviewRef.current,
     clearPendingLocate,
     refreshCodes,
     scanCodes,
@@ -484,6 +533,7 @@ export function FsView(props: Props) {
   /** 打开文件：有变更 → diff；无变更/未版本化 → 原文预览（内容由 PreviewPane 自行读取渲染） */
   const openFile = useCallback(
     (name: string, code: string, rel: string) => {
+      keepPreviewRef.current = false; // 用户主动打开别的文件：恢复期的保护结束
       setTip(null); // 双击打开时关闭悬浮卡片（视图切换后不会再触发 mouseleave,需主动清）
       // 图片文件：双击直接看图（不读文本/diff,避免二进制乱码与"不支持文本对比"提示）
       if (isImageFile(rel)) {
@@ -1719,13 +1769,17 @@ export function FsView(props: Props) {
           <PreviewPane
             target={preview}
             active={props.active}
+            repoRoot={props.repoRoot ?? undefined}
+            repoType={props.repoType}
             onClose={() => {
+              keepPreviewRef.current = false;
               setPreview(null);
               // 返回列表后恢复搜索下拉——用户定稿「返回后保持搜索列表显示，除非清空搜索内容」
               if (search.fileQuery.trim()) search.setShowResults(true);
             }}
             onError={(msg) => setError(msg)}
             onOpenError={(msg) => {
+              keepPreviewRef.current = false;
               setError(msg);
               setPreview(null); // 文本读取失败：红条提示并退回列表（对应旧 openFile 读取失败后的终态）
               if (search.fileQuery.trim()) search.setShowResults(true);

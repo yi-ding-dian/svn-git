@@ -33,6 +33,9 @@ export function useFsData(opts: {
   /** load 只会清空选择/预览，因此只要求能接收 null */
   setSel: (v: null) => void;
   setPreview: (v: null) => void;
+  /** 是否暂时保留已打开的预览（从悬浮胶囊恢复文件时，数据层加载/切项目会清预览，
+   *  恢复的预览不能被这一步关掉；用户主动关闭/打开别的文件后由调用方置回 false） */
+  keepPreview?: () => boolean;
   /** 清掉残留定位（原 setPendingLocate(null)） */
   clearPendingLocate: () => void;
   refreshCodes: (cur: string, deep?: boolean) => Promise<void> | void;
@@ -55,6 +58,7 @@ export function useFsData(opts: {
     expanded,
     setSel,
     setPreview,
+    keepPreview,
     clearPendingLocate,
     refreshCodes,
     scanCodes,
@@ -100,7 +104,8 @@ export function useFsData(opts: {
     if (!force && cache) {
       setData(cache);
       setSel(null);
-      setPreview(null);
+      // 恢复预览（悬浮胶囊）期间不能被数据加载关掉
+      if (!keepPreview?.()) setPreview(null);
       setError('');
       // 预加载缓存只有目录结构（light），进入时立即查子树并聚合深层 M/A。
       // **根目录也查子树**：否则根下目录拿不到"内部有修改"（用户实报：浏览视图全是 ✓，
@@ -159,7 +164,8 @@ export function useFsData(opts: {
     setNodeData((m) => new Map(m).set(targetDir, light));
     setData(light);
     setSel(null);
-    setPreview(null);
+    // 恢复预览（悬浮胶囊）期间不能被数据加载关掉
+    if (!keepPreview?.()) setPreview(null);
     // 两阶段②：补状态（查子树，把深层 M/A 聚合到直接子目录；根目录也查，
     // 否则根下目录看不到"内部有修改"）。
     // 顶层显示「正在补充文件状态…（已 N 秒）」，大仓库也看得见在做什么；静默刷新不显示。
@@ -255,7 +261,8 @@ export function useFsData(opts: {
     const restoredMap = restored ? new Map(restored) : new Map();
     setDir(targetDir);
     setSel(null);
-    setPreview(null);
+    // 恢复预览（悬浮胶囊）期间不能被数据加载关掉
+    if (!keepPreview?.()) setPreview(null);
     setNodeData(restoredMap);
     // nodeDataRef 下一渲染才更新；这里先写，供下面的 load 读（否则读到上一个项目的缓存）
     nodeDataRef.current = restoredMap;

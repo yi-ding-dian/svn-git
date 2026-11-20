@@ -1387,6 +1387,10 @@ body.drag-trash-hot .drag-src {
   border-radius: 10px; box-shadow: 0 10px 36px rgba(0,0,0,.28);
   padding: 6px; z-index: 300; min-width: 160px; font-size: 0.95em;
 }
+/* 紧凑菜单：单条简单操作（如胶囊右键）用——去掉图标列留白、缩小尺寸 */
+.ctx-menu.compact { padding: 3px; min-width: 0; border-radius: 8px; font-size: 12px; }
+.ctx-menu.compact .ctx-item { padding: 5px 9px; gap: 0; border-radius: 5px; }
+.ctx-menu.compact .ctx-icon { display: none; }
 .ctx-item {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px; border-radius: 6px; cursor: pointer; user-select: none;
@@ -1670,6 +1674,29 @@ textarea { resize: vertical; font-family: inherit; }
   flex: 1; min-width: 0; cursor: pointer;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* ---------- 右侧文件会话胶囊（切换项目后回到刚才的浏览/编辑现场） ---------- */
+.fsessions {
+  /* 只做拖动时的文字选中/触屏手势抑制；胶囊各自 fixed 定位（可单独拖动） */
+  user-select: none; touch-action: none;
+}
+.fsession {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  position: fixed; z-index: 280;
+  padding: 6px 10px; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; cursor: grab;
+  box-shadow: 0 4px 14px rgba(0,0,0,.12); font-size: 12px; text-align: left;
+  max-width: 220px;
+  /* 半透明：不遮挡右侧内容；悬停时恢复不透明，方便看清 */
+  opacity: .8;
+  transition: opacity .15s, border-color .15s;
+}
+.fsession.dragging { cursor: grabbing; opacity: 1; }
+.fsession:hover { opacity: 1; border-color: var(--accent); }
+.fsession-proj { font-weight: 700; font-size: 11px; color: var(--dim); }
+.fsession-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fsession-state { font-size: 11px; color: var(--accent); }
+.fsession-state.dirty { color: var(--warn); }
 
 /* ---------- Markdown 渲染预览（marked 输出原生标签） ---------- */
 .md-render { padding: 8px 14px; line-height: 1.75; word-break: break-word; }

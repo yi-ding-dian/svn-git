@@ -432,6 +432,16 @@ export const fs = {
   'fs.pv.editingEnc': 'Editing · save as {enc}',
   'fs.pv.keepCrlf': 'keep CRLF endings',
   'fs.pv.saveBtn': '💾 Save',
+  // "Later": pin the current file to the right-hand pill and go back to the list
+  'fs.pv.later': '⧉ Later',
+  'fs.pv.laterTip': 'Pin the current file to the right-hand pill and come back later',
+  // Restored a local unsaved draft
+  'fs.pv.draftRestored': 'Restored the unsaved draft',
+  // File session pills on the right (jump back to what you were viewing/editing after switching projects)
+  'fs.session.unsaved': 'Unsaved',
+  'fs.session.editing': 'Editing',
+  'fs.session.preview': 'Preview',
+  'fs.session.delete': 'Delete',
   'fs.pv.hintFull': 'Esc exits fullscreen · ',
   'fs.pv.hint': '← back to list · / search',
   'fs.pv.back': '← Back to List',

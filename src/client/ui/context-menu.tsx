@@ -53,6 +53,8 @@ export function ContextMenu(props: {
   /** 层级（默认 300，遮罩 299）：菜单本身要在所有同级浮层之上；
    *  例如目录浮层也是 300 且 DOM 更靠后，右键固定菜单要传更高值才点得到 */
   zIndex?: number;
+  /** 紧凑样式：去掉图标列的左侧留白、缩小内边距/字号（单条简单菜单用） */
+  compact?: boolean;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }) {
@@ -101,7 +103,7 @@ export function ContextMenu(props: {
       )}
       <div
         ref={menuRef}
-        className="ctx-menu"
+        className={`ctx-menu${props.compact ? ' compact' : ''}`}
         style={{ left: at.left, top: at.top, zIndex: z }}
         onMouseEnter={props.onMouseEnter}
         onMouseLeave={props.onMouseLeave}

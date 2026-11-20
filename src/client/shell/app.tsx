@@ -32,6 +32,8 @@ import { useShareWatch } from './use-share-watch.js';
 import { useEnvCheck } from './use-env-check.js';
 import { useRepoActions } from './use-repo-actions.js';
 import { useLang } from '../shared/use-lang.js';
+import { FileSessionsDock } from './file-sessions-dock.js';
+import { addSession, captureActiveSession, setPendingSession, openSessionInPlace } from '../shared/file-sessions.js';
 import { t } from '../../shared/i18n/index.js';
 
 export function App() {
@@ -488,7 +490,15 @@ export function App() {
           <div className="content" style={{ flex: 1 }}>
             <OpenView
               startDir={info?.home ?? info?.startDir ?? ''}
-              onOpened={(r) => { setInfo(r); setOnboard(null); refresh(); loadHistory(); }}
+              onOpened={(r) => {
+                // 打开项目同样是切换：把当前文件预览/编辑现场挂到右侧胶囊
+                const snap = captureActiveSession();
+                if (snap && (!r.root || snap.root !== r.root)) addSession(snap);
+                setInfo(r);
+                setOnboard(null);
+                refresh();
+                loadHistory();
+              }}
               onCreatedRepo={(r) => setOnboard(onboardText(r))}
               onToast={showToast}
               onOpenPractice={() => setModal({ type: 'practice' })}
@@ -557,6 +567,26 @@ export function App() {
         appearance={{ fontSize, setFontSize, uiFont, setUiFont, codeFont, setCodeFont }}
         theme={{ current: theme, myThemes, setTheme, previewTheme, saveMyTheme, deleteMyTheme }}
         actions={{ doCommit, doCommitSelected, runOp, refresh, loadHistory, gotoDiff, pushNow }}
+      />
+
+      {/* 右侧文件会话胶囊：切换项目后一键回到刚才的浏览/编辑现场 */}
+      <FileSessionsDock
+        onOpen={(s) => {
+          // 同一项目：直接打开（不切项目、不重挂载），先把当前现场挂起
+          if (info?.root && s.root === info.root) {
+            const cur = captureActiveSession();
+            if (cur && cur.rel !== s.rel) addSession(cur);
+            setView('browse'); // 若在历史/diff，先回到文件视图
+            // 等视图切换渲染完成后再派发，确保文件视图能收到
+            window.setTimeout(() => openSessionInPlace(s), 0);
+            return;
+          }
+          // 跨项目：当前如果也在另一个项目的预览里，先把它也挂起（别丢现场）
+          const snap = captureActiveSession();
+          if (snap && snap.root !== s.root) addSession(snap);
+          setPendingSession(s);
+          void openHistoryItem({ path: s.root, type: s.type });
+        }}
       />
     </div>
   );

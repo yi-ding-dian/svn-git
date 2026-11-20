@@ -432,6 +432,16 @@ export const fs = {
   'fs.pv.editingEnc': '编辑中 · 按 {enc} 保存',
   'fs.pv.keepCrlf': '保持 CRLF 行尾',
   'fs.pv.saveBtn': '💾 保存',
+  // 「稍后看」：把当前文件挂到右侧胶囊，回到列表
+  'fs.pv.later': '⧉ 稍后看',
+  'fs.pv.laterTip': '把当前文件挂到右侧胶囊，稍后点一下回来',
+  // 从本地草稿恢复编辑时提示
+  'fs.pv.draftRestored': '已恢复未保存的草稿',
+  // 右侧文件会话胶囊（切换项目后点一下回到刚才的浏览/编辑现场）
+  'fs.session.unsaved': '未保存',
+  'fs.session.editing': '编辑中',
+  'fs.session.preview': '预览',
+  'fs.session.delete': '删除',
   'fs.pv.hintFull': 'Esc 退出全屏 · ',
   'fs.pv.hint': '← 键返回列表 · / 搜索',
   'fs.pv.back': '← 返回列表',

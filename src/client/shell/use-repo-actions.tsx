@@ -23,6 +23,7 @@ import {
 import { translateVcsError, isOutOfDateError } from '../shared/vcs/errors.js';
 import { IconErr } from '../ui/icons.js';
 import { pathAutoWidth, baseName } from '../shared/utils.js';
+import { addSession, captureActiveSession } from '../shared/file-sessions.js';
 import { t, type I18nKey } from '../../shared/i18n/index.js';
 
 /** 短操作进行中提示的文案 key（revert/delete/add 等没有独立进度窗，靠它防"点了没反应"）。
@@ -102,6 +103,15 @@ export function useRepoActions(opts: RepoActionsOptions) {
       try {
         // 记录里带了操作范围（上次打开的是子项目）：拼回子目录再打开，恢复范围
         const openPath = h.scope ? `${h.path.replace(/[\\/]+$/, '')}/${h.scope.replace(/\\/g, '/')}` : h.path;
+        // 切项目前挂起当前文件预览/编辑现场（右侧悬浮胶囊）；目标属于当前项目时不挂
+        const snap = captureActiveSession();
+        if (snap) {
+          const targetPath = openPath.replace(/\\/g, '/');
+          const cur = snap.root.replace(/\\/g, '/');
+          const sameProject =
+            targetPath === cur || targetPath.startsWith(cur + '/') || cur.startsWith(targetPath + '/');
+          if (!sameProject) addSession(snap);
+        }
         const opened = await post.open(openPath);
         const r = await get.info();
         if (r.type) {

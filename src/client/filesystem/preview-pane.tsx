@@ -25,6 +25,15 @@ import { useMdToc } from '../ui/use-md-toc.js';
 import { useSourceToc } from '../ui/use-source-toc.js';
 import { useSourceOutline } from '../ui/use-source-outline.js';
 import { useTocPinned, setTocPinned } from '../ui/use-toc-pinned.js';
+import {
+  loadFileDraft,
+  saveFileDraft,
+  clearFileDraft,
+  setActiveSession,
+  patchActiveSession,
+  addSession,
+  captureActiveSession,
+} from '../shared/file-sessions.js';
 
 /** 追溯日期列配色：按日期序号在色环上按**黄金角**取色——相邻日期的颜色差得最开，
  *  同一天永远同色；固定 S/L（低饱和暗色）保证 5 个浅色主题下都够对比度、又不抢语法高亮 */
@@ -44,6 +53,8 @@ export interface PreviewTarget {
   line?: number;
   /** 内容搜索跳入：读**工作区**版本（搜的是工作区内容，打开的必须同一份；否则行号对不上） */
   worktree?: boolean;
+  /** 从挂起会话恢复：打开后切到对应模式并定位 */
+  restore?: { mode: 'raw' | 'md' | 'editing'; line?: number; scrollTop?: number };
 }
 
 interface Props {
@@ -60,6 +71,9 @@ interface Props {
   onSaved?: (msg: string) => void;
   /** 复制结果提示（内容区右键菜单 / Ctrl+A 后的复制走全局 toast） */
   onToast?: (msg: string, err?: boolean) => void;
+  /** 当前项目根/类型：编辑草稿按项目隔离，会话快照也带上它 */
+  repoRoot?: string;
+  repoType?: 'svn' | 'git';
 }
 
 export function PreviewPane(props: Props) {
@@ -130,6 +144,14 @@ export function PreviewPane(props: Props) {
   /** 编辑器的命令式句柄（保存按钮触发）+ 脏状态（保存按钮点亮） */
   const editorRef = useRef<InlineEditorHandle>(null);
   const [editDirty, setEditDirty] = useState(false);
+  /** 本文件的本地未保存草稿（所有编辑自动保存；恢复编辑时作为初始内容） */
+  const [draftText, setDraftText] = useState<string | null>(null);
+  /** 编辑光标行（挂起会话记录"编辑到哪一行"） */
+  const [cursorLine, setCursorLine] = useState<number | undefined>(undefined);
+  /** 预览滚动容器：会话记录/恢复滚动位置 */
+  const diffRef = useRef<HTMLDivElement | null>(null);
+  /** 挂起会话的恢复只应用一次（文本加载后） */
+  const restoreDone = useRef(false);
   /** 内容区右键菜单：无选区只有「复制全部内容」，有选区再加「复制所选内容」（复制全文用原文，不含行号） */
   const copyMenu = useContentCopyMenu(() => text ?? '', props.onToast);
   /** 原文的行尾风格：**textarea 会把 CRLF 规范化成 LF**（浏览器行为），保存前得按这个还原，
@@ -302,6 +324,10 @@ export function PreviewPane(props: Props) {
     setEditDirty(false);
     setEditMenu(null);
     setJumpLine(target.line); // 内容搜索跳入的定位行（普通打开为 undefined）
+    // 本文件的未保存草稿（所有编辑自动保存；切项目/刷新后仍能恢复）
+    setDraftText(props.repoRoot ? loadFileDraft(props.repoRoot, target.rel) : null);
+    setCursorLine(undefined);
+    restoreDone.current = false;
     setImgViewer(null);
     if (target.img) {
       setText(null);
@@ -330,6 +356,70 @@ export function PreviewPane(props: Props) {
     };
   }, [target]); // eslint-disable-line react-hooks/exhaustive-deps -- target 每次打开都是新对象
 
+  /** 从挂起会话恢复：文本就绪后切到对应模式并定位（只应用一次） */
+  useEffect(() => {
+    const r = target.restore;
+    if (!r || restoreDone.current || text === null) return;
+    restoreDone.current = true;
+    if (r.mode === 'editing') {
+      if (draftText && draftText !== text) props.onToast?.(t('fs.pv.draftRestored'));
+      if (r.line) setJumpLine(r.line);
+      setEditing(true);
+    } else {
+      if (r.mode === 'md') setMdPreview(true);
+      if (r.scrollTop != null) {
+        const top = r.scrollTop;
+        requestAnimationFrame(() => {
+          const el = diffRef.current;
+          if (el) el.scrollTop = top;
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 文本就绪后应用一次
+  }, [text, target, draftText]);
+
+  /** 把当前预览状态报到会话模块：切换项目时 capture 成右侧悬浮胶囊（diff 等视图不经过这里） */
+  useEffect(() => {
+    if (!props.repoRoot || !props.repoType || target.img) return;
+    const mode = editing ? 'editing' : mdPreview ? 'md' : 'raw';
+    setActiveSession({
+      root: props.repoRoot,
+      type: props.repoType,
+      rel: target.rel,
+      name: target.name,
+      mode,
+      dirty: editing ? editDirty : Boolean(draftText && text !== null && draftText !== text),
+      line: editing ? cursorLine : jumpLine,
+      scrollTop: diffRef.current?.scrollTop,
+      ts: Date.now(),
+    });
+  }, [
+    target,
+    editing,
+    mdPreview,
+    editDirty,
+    cursorLine,
+    jumpLine,
+    draftText,
+    text,
+    props.repoRoot,
+    props.repoType,
+  ]);
+  // 离开预览（组件卸载）时清掉活动快照，避免切到别处后还挂着旧文件
+  useEffect(() => () => setActiveSession(null), []);
+
+  /** 预览滚动：只更新会话快照的滚动位置（不触发渲染） */
+  const onDiffScroll = () => {
+    patchActiveSession({ scrollTop: diffRef.current?.scrollTop ?? 0 });
+  };
+
+  /** 「稍后看」：把当前文件（含模式/草稿/光标/滚动）挂到右侧胶囊，回到文件列表 */
+  const later = () => {
+    const snap = captureActiveSession();
+    if (snap) addSession(snap);
+    props.onClose();
+  };
+
   /** 进入内联编辑（「编辑」菜单的第一项）。**只对 UTF-8 开**，原因见 openEditMenu */
   const startEdit = () => {
     setEditMenu(null);
@@ -352,7 +442,9 @@ export function PreviewPane(props: Props) {
       props.onError(t('fs.pv.tooLargeNoEdit'));
       return;
     }
-    setEditDirty(false); // 干净进入（保存按钮先灭，改了才亮）
+    // 有未保存草稿：进入编辑即恢复，并提示来源
+    if (draftText && draftText !== text) props.onToast?.(t('fs.pv.draftRestored'));
+    setEditDirty(false); // 干净进入（保存按钮先灭，改了才亮）——有草稿时编辑器挂载后会立刻点亮
     setEditing(true);
   };
   /** md-render 容器点击：图片则放大查看；代码块的「复制」按钮则复制该块代码（事件代理——
@@ -618,6 +710,10 @@ export function PreviewPane(props: Props) {
             </button>
           </Tooltip>
         )}
+        {/* 稍后看：把当前文件挂到右侧胶囊，回到列表 */}
+        <Tooltip content={t('fs.pv.laterTip')}>
+          <button className="mini" onClick={later}>{t('fs.pv.later')}</button>
+        </Tooltip>
         {isMd && mdPreview && (
           // 正文布局（紧挨主题按钮，全屏也显示）：居中（默认，1280px 阅读列）/ 靠左（铺满）
           <Tooltip content={t('fs.pv.mdLayoutTitle')}>
@@ -761,8 +857,21 @@ export function PreviewPane(props: Props) {
             >
               {t('fs.pv.saveBtn')}
             </button>
+            {/* 稍后看：挂到右侧胶囊（草稿已自动保存），回到列表 */}
+            <Tooltip content={t('fs.pv.laterTip')}>
+              <button className="mini" onClick={later}>{t('fs.pv.later')}</button>
+            </Tooltip>
             {/* 取消 */}
-            <button className="mini" onClick={() => setEditing(false)}>{t('common.cancel')}</button>
+            <button
+              className="mini"
+              onClick={() => {
+                // 取消 = 放弃本次未保存修改：草稿一并清掉，下次进入不再恢复
+                if (props.repoRoot) clearFileDraft(props.repoRoot, target.rel);
+                setEditing(false);
+              }}
+            >
+              {t('common.cancel')}
+            </button>
           </>
         ) : (
           <>
@@ -858,18 +967,26 @@ export function PreviewPane(props: Props) {
           key={`${target.rel}${target.worktree ? '#worktree' : ''}`}
           ref={editorRef}
           rel={target.rel}
-          initialText={text ?? ''}
+          initialText={draftText ?? text ?? ''}
+          // 脏检测基准仍是磁盘原文：有草稿时一进入编辑就显示「有修改」
+          baselineText={text ?? undefined}
           eol={eolRef.current}
           fileName={target.name}
           jumpLine={jumpLine}
           onDirtyChange={setEditDirty}
-          onDraftChange={setEditTocText}
+          onDraftChange={(draft) => {
+            setEditTocText(draft);
+            // 所有编辑自动保存草稿（按项目 + 文件隔离）：切项目/刷新后仍能恢复
+            if (props.repoRoot) saveFileDraft(props.repoRoot, target.rel, draft);
+          }}
+          onCursorLine={setCursorLine}
           search={editSearch}
           onSaved={(m, saved) => {
             // 保存后**保持编辑态**（编辑器内部已把基线前移，保存按钮变灰）；
             // 同步正文：之后切「查看原文/预览」或退出编辑时显示的是刚保存的内容。
             // 用回调带回的 saved（就是本次写盘内容），不要读 editTocText —— 闭包里的 state 可能还是旧值
             setText(saved);
+            if (props.repoRoot) clearFileDraft(props.repoRoot, target.rel); // 已写盘：草稿清掉
             props.onSaved?.(m);
           }}
           onError={(m) => props.onError(m)}
@@ -880,6 +997,8 @@ export function PreviewPane(props: Props) {
         // 全屏 + 代码/追溯：标记 pv-code-full，靠左铺满（阅读列居中只留给 Markdown 正文）
         // md 预览「居中」布局：与全屏同一阅读列（1280px），靠左则不套这一层
         className={`diff${full && !mdPreview ? ' pv-code-full' : ''}${mdPreview && mdLayout === 'center' ? ' pv-md-center' : ''}`}
+        ref={diffRef}
+        onScroll={onDiffScroll}
         data-content-zoom=""
         style={{
           flex: 1,

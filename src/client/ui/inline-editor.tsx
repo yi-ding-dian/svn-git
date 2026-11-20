@@ -75,6 +75,9 @@ export const InlineEditor = forwardRef<
     rel: string;
     /** 初始文本（原文；CRLF 由 eol 描述） */
     initialText: string;
+    /** 脏检测基准（磁盘原文）：有未保存草稿时 initialText 是草稿，基准仍是磁盘内容，
+     *  进入编辑就应显示「有修改」；缺省 = initialText（无草稿的常规情况） */
+    baselineText?: string;
     /** 原文行尾风格（保存时还原——textarea 会把 CRLF 规范化成 LF） */
     eol: '\n' | '\r\n';
     /** 文件名（语法高亮语言判定用） */
@@ -88,6 +91,8 @@ export const InlineEditor = forwardRef<
     /** 编辑态搜索（调用方算好的命中行）：命中词常亮，当前跳转行深色。
      *  只把词传给命中行——未命中行的 memo 不因搜索词变化重渲染。 */
     search?: { query: string; hitLines: Set<number>; activeLine: number };
+    /** 光标所在行变化（1-based）：切换项目挂起会话时记录"编辑到哪一行" */
+    onCursorLine?: (line: number) => void;
     /** 保存成功：message 给提示；text 是**刚写盘的草稿**（LF）——
      *  调用方要同步正文时直接用它，别依赖 onDraftChange 的 state（回调闭包里可能还是旧值） */
     onSaved: (message: string, text: string) => void;
@@ -135,6 +140,11 @@ export const InlineEditor = forwardRef<
     };
   }, [draft]);
   const hlRef = useRef<HTMLDivElement | null>(null);
+  /** 上报光标行（1-based）：切换项目挂起会话时记录编辑位置 */
+  const reportCursor = (ta: HTMLTextAreaElement) => {
+    if (!props.onCursorLine) return;
+    props.onCursorLine(ta.value.slice(0, ta.selectionStart).split('\n').length);
+  };
   /** 三件套滚动同步：高亮层横竖都跟（wrap=off 有横向滚动），行号列只跟纵向 */
   const syncScroll = () => {
     if (!taRef.current) return;
@@ -144,9 +154,11 @@ export const InlineEditor = forwardRef<
       hlRef.current.scrollLeft = taRef.current.scrollLeft;
     }
   };
-  /** 脏检测基准：初始文本 LF 规范化；**保存成功后更新为已保存的草稿**——
-   *  这样保存后留在编辑态，按钮自动变灰，下一次修改再亮起。 */
-  const [savedText, setSavedText] = useState(props.initialText.replace(/\r\n/g, '\n'));
+  /** 脏检测基准：磁盘原文 LF 规范化（有草稿时 initialText 是草稿，基准仍是原文）；
+   *  **保存成功后更新为已保存的草稿**——保存后留在编辑态，按钮自动变灰。 */
+  const [savedText, setSavedText] = useState(
+    (props.baselineText ?? props.initialText).replace(/\r\n/g, '\n'),
+  );
   const dirty = draft !== savedText;
   useEffect(() => {
     props.onDirtyChange(dirty);
@@ -280,6 +292,9 @@ export const InlineEditor = forwardRef<
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onScroll={syncScroll}
+          onSelect={(e) => reportCursor(e.currentTarget)}
+          onKeyUp={(e) => reportCursor(e.currentTarget)}
+          onClick={(e) => reportCursor(e.currentTarget)}
           wrap="off"
           spellCheck={false}
           autoFocus
