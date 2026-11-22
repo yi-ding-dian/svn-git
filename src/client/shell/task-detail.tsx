@@ -56,7 +56,15 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
   const elapsed = Math.max(0, Math.floor(((task.endedAt ?? Date.now()) - task.startedAt) / 1000));
   // 检出结果详情（后端随任务带回，kind='checkout'）：完成后像「更新结果」窗一样列文件清单 + svn 警告
   const detail = task.data as
-    | { kind?: string; dir?: string; files?: { code: string; path: string }[]; fileTotal?: number; warnings?: string[] }
+    | {
+        kind?: string;
+        dir?: string;
+        files?: { code: string; path: string }[];
+        fileTotal?: number;
+        warnings?: string[];
+        /** 失败时的原始命令输出（获取仓库任务带回；没有就退回 message） */
+        errorDetail?: string;
+      }
     | undefined;
   const isCheckout = detail?.kind === 'checkout';
   const files = !running && isCheckout ? (detail?.files ?? []) : [];
@@ -67,6 +75,9 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
   for (const f of files) stats.set(f.code, (stats.get(f.code) ?? 0) + 1);
   /** 更新清单（拉取前预扫描）：git 不提供单文件实时进度，这里列的是"这次会下哪些文件" */
   const manifest = progress?.manifest;
+  /** 失败原因：优先原始命令输出（克隆的 stderr 含走到哪一步 + 末尾的 fatal 行），
+   *  没有就退回归纳后的 message——任务面板行放不下，这里必须给全文 */
+  const errorText = task.status === 'error' ? detail?.errorDetail || task.message || '' : '';
   const manifestTotal = manifest ? manifest.counts.A + manifest.counts.M + manifest.counts.D : 0;
   /** 单文件大小：KB/MB/GB（总大小用 TaskProgress 的 size 口径，这里要能显示 3 KB 这种小文件） */
   const fmtFileSize = (n: number) =>
@@ -141,6 +152,16 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
           <span className="mono" style={{ wordBreak: 'break-all' }}>{task.chan.replace(/^pull:/, '')}</span>
         </div>
       ) : null}
+      {/* 失败原因：任务面板行只有一行、且被省略号截断（首行永远是 `Cloning into…`）——
+          详情窗必须把真正的原因（末尾的 fatal/error 行）原样露出来 */}
+      {errorText && (
+        <div className="error" style={{ marginBottom: 10 }}>
+          <div className="small" style={{ fontWeight: 600, marginBottom: 6 }}>{t('shell.tasks.detailErrorDetail')}</div>
+          <div className="mono small" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 220, overflow: 'auto', lineHeight: 1.6 }}>
+            {errorText}
+          </div>
+        </div>
+      )}
       {/* 无进度的任务（如部分本地操作）不显示进度区；已完成时定格数值（不显"正在…"） */}
       {progress && (
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>

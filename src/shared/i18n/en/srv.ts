@@ -47,6 +47,7 @@ export const srv = {
   'srv.clonedTo': 'Cloned to {path}',
   'srv.remnantCleaned': ' (cleaned up the leftover directory from the interrupted fetch)',
   'srv.cloneFailed': 'Clone failed',
+  'srv.cloneFailedReason': 'Clone failed: {reason}',
   'srv.initedRepo': 'Initialized repository {path}',
   'srv.initCommitFailed': ' (repository created, but committing existing files failed: {msg})',
   'srv.gitInitFailed': 'git init failed',

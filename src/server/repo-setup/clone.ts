@@ -47,6 +47,26 @@ export interface RepoCreateResult {
   commitError?: string;
   /** 是否自动生成了 .gitignore */
   gitignoreWritten?: boolean;
+  /** 失败时的**原始命令输出**（含进度行）：任务详情窗据此展示"真正发生了什么"。
+   *  message 只是提炼后的一句话，进度输出全在 stderr 里，直接用整段当消息会把原因藏到看不见的地方。 */
+  errorDetail?: string;
+}
+
+/** 从 git 的 stderr 里提炼"一句话原因"。
+ *  clone/fetch 的进度输出（`Cloning into…` / `Receiving objects…`）**也在 stderr 里**，整段拿去做消息
+ *  等于把真正的原因（末尾的 `fatal:` / `remote: error:`）截断在界面外——取最后一条错误行；
+ *  一条都没有（进程被外部杀掉等）才退回最后一条非空行。中文本地化输出也要认（致命错误：）。 */
+export function summarizeGitFailure(stderr: string): string {
+  const lines = stderr
+    .split(/[\r\n]+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  // `remote: error:` 是远端报的（如 GH001 大文件、钩子拒绝），同样算原因
+  const errorLine = /(?:^|[\s:：])(?:fatal|error|致命错误|错误)\s*[:：]/i;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (errorLine.test(lines[i]!)) return lines[i]!;
+  }
+  return lines[lines.length - 1] ?? '';
 }
 
 export async function createGitRepo(p: GitCreateParams, res: http.ServerResponse): Promise<RepoCreateResult> {
@@ -202,8 +222,17 @@ export async function createGitRepo(p: GitCreateParams, res: http.ServerResponse
       result = { ok: true, message: t('srv.clonedTo', { path: target }) + (cleanedRemnant ? t('srv.remnantCleaned') : ''), repoDir: target };
     } else {
       cleanupTarget(); // 失败也别留半个仓库，否则下次重试会撞"目录已存在"
-      // 克隆失败
-      result = { ok: false, message: r.stderr.trim() || t('srv.cloneFailed'), authError: authFail || undefined, authType: authFail ? authTypeOf(url) : undefined };
+      // 原因提炼成一行（进度输出也在 stderr 里，整段当消息等于把原因藏在末尾看不到）；
+      // 完整原文交给 errorDetail，任务详情窗里可展开看走到哪一步断的。
+      const reason = summarizeGitFailure(r.stderr);
+      result = {
+        ok: false,
+        // 克隆失败：{reason} / 克隆失败
+        message: reason ? t('srv.cloneFailedReason', { reason }) : t('srv.cloneFailed'),
+        errorDetail: r.stderr.trim() || undefined,
+        authError: authFail || undefined,
+        authType: authFail ? authTypeOf(url) : undefined,
+      };
     }
     askPass?.cleanup(); // 临时 askpass 脚本（含凭据）用完即删
   } else {

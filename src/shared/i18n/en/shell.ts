@@ -134,6 +134,7 @@ export const shell = {
   'shell.tasks.detailDone': 'Completed',
   'shell.tasks.detailCancelled': 'Cancelled',
   'shell.tasks.detailError': 'Failed',
+  'shell.tasks.detailErrorDetail': '⚠ Error details (raw output)',
   'shell.tasks.detailTarget': 'Target',
   // {n} files checked out · {size}
   'shell.tasks.checkoutFiles': '{n} files checked out · {size}',

@@ -463,6 +463,8 @@ export const postRepo = {
         committed?: boolean;
         commitError?: string;
         gitignoreWritten?: boolean;
+        /** 失败时的原始命令输出（任务详情窗展开看；message 是提炼后的一句话） */
+        errorDetail?: string;
       }
     >(
       '/api/repo-create',

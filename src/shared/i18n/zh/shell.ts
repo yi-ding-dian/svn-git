@@ -136,6 +136,8 @@ export const shell = {
   'shell.tasks.detailDone': '已完成',
   'shell.tasks.detailCancelled': '已取消',
   'shell.tasks.detailError': '失败',
+  // ⚠ 错误详情（原文输出，可滚动）
+  'shell.tasks.detailErrorDetail': '⚠ 错误详情（原文输出）',
   'shell.tasks.detailTarget': '目标',
   // 已检出 {n} 个文件 · {size}
   'shell.tasks.checkoutFiles': '已检出 {n} 个文件 · {size}',

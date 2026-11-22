@@ -70,7 +70,8 @@ export function startGetRepoTask(
           } else {
             hooks.onAuthNeeded({ type: r.authType, error: r.message, retry: () => startGetRepoTask(p, hooks) });
           }
-          return { ok: false, message: r.message };
+          // 原始输出随任务走（任务详情窗展示失败原因；认证框只关心 message）
+          return { ok: false, message: r.message, data: { kind: 'get', target, errorDetail: r.errorDetail } };
         }
         // 完成即打开（弹窗早就关了，与它无关）：打开服务端返回的仓库路径（git/svn 均为目标目录），
         // 没返回时兜底拼路径
@@ -90,7 +91,7 @@ export function startGetRepoTask(
           }
           hooks.onCreated(r.repoDir ?? target);
         }
-        return { ok: r.ok, message: r.message };
+        return { ok: r.ok, message: r.message, data: { kind: 'get', target, errorDetail: r.errorDetail } };
       } finally {
         stopPoll?.(); // 任务收尾就停轮询（真在跑时才挂上，见下）
       }
