@@ -59,7 +59,8 @@ export async function githubFetch(pathname: string, signal: AbortSignal, token =
     // 404：仓库不存在（带凭据）或私有不可见（匿名）；403/429：多为限流（两种身份文案不同）
     if (res.status === 404) throw new Error(token ? t('srv.githubNotFound') : t('srv.githubNotFoundAnon'));
     if (res.status === 403 || res.status === 429) throw new Error(token ? t('srv.githubRateLimitedAuth') : t('srv.githubRateLimited'));
-    throw new Error(`HTTP ${res.status}`);
+    // 其他未覆盖的状态码也给出可读文案，不把裸 "HTTP 4xx" 甩给用户
+    throw new Error(t('srv.githubHttpError', { status: res.status }));
   }
   return res.json();
 }

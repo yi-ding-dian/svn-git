@@ -16,6 +16,11 @@ export const srv = {
   'srv.lang.invalid': '语言不受支持',
   // 服务端日志：当前项目路径下检测不到工作副本（瞬时路径问题/项目失效）
   'srv.noRepoDetect': '未检测到当前项目的工作副本（当前项目路径：{dir}）',
+  // GitHub 接口异常（未覆盖的状态码）
+  'srv.githubHttpError': 'GitHub 接口返回异常（HTTP {status}）',
+  // 初始化仓库（git add / commit）失败时的兜底文案
+  'srv.cloneGitAddFailed': '初始化仓库时 git add 失败',
+  'srv.cloneGitCommitFailed': '初始化仓库时 git commit 失败',
 
   // ---- 通用（多路由复用）----
   'srv.unknownAction': '未知操作',

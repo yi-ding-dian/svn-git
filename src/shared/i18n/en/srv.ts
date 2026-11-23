@@ -4,6 +4,11 @@ export const srv = {
   'srv.lang.invalid': 'Unsupported language',
   // Server log: no working copy found for the current project path
   'srv.noRepoDetect': 'No working copy found for the current project path: {dir}',
+  // GitHub API error (uncovered status codes)
+  'srv.githubHttpError': 'GitHub API error (HTTP {status})',
+  // Fallback messages when initializing a repository fails
+  'srv.cloneGitAddFailed': 'git add failed while initializing the repository',
+  'srv.cloneGitCommitFailed': 'git commit failed while initializing the repository',
 
   // ---- 通用（多路由复用）----
   'srv.unknownAction': 'Unknown action',

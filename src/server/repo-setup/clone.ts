@@ -10,11 +10,11 @@ import { pathToFileURL } from 'node:url';
 import type http from 'node:http';
 import { run, type RunResult } from '../../vcs/exec.js';
 import { createAskPass, authTypeOf } from '../../vcs/git.js';
+import { t } from '../../shared/i18n/index.js';
 import { loadConfig } from '../../config.js';
 import { markInflight, clearInflight } from '../../inflight.js';
 import { progressStart, progressSetTotal, progressDone, progressFromStderr } from '../../transfer-progress.js';
 import { githubRepoBytes } from '../github/repo-info.js';
-import { t } from '../../shared/i18n/index.js';
 import { removeLeftoverTarget } from './leftover.js';
 
 /** 路由层解析好的获取参数（字段含义见 routes/repo-create.ts 的协议转换） */
@@ -289,7 +289,7 @@ export async function createGitRepo(p: GitCreateParams, res: http.ServerResponse
           gitignoreWritten = true;
         }
         const add = await run('git', ['-C', target, 'add', '-A'], { timeoutMs: 120_000 });
-        if (add.code !== 0) throw new Error(add.stderr.trim() || 'git add failed');
+        if (add.code !== 0) throw new Error(add.stderr.trim() || t('srv.cloneGitAddFailed'));
         const status = await run('git', ['-C', target, 'status', '--porcelain'], {
           timeoutMs: 15_000,
         });
@@ -316,7 +316,7 @@ export async function createGitRepo(p: GitCreateParams, res: http.ServerResponse
             ],
             { timeoutMs: 120_000 },
           );
-          if (commit.code !== 0) throw new Error(commit.stderr.trim() || 'git commit failed');
+          if (commit.code !== 0) throw new Error(commit.stderr.trim() || t('srv.cloneGitCommitFailed'));
           committed = true;
         }
       } catch (e) {
