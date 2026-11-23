@@ -10,13 +10,20 @@ import type { SvnCred } from '../vcs/svn.js';
 import type { Ctx } from './http/response.js';
 import { sendJson } from './http/response.js';
 import { MSG_UNSUPPORTED_OP, authErrorOf } from './errors.js';
+import { t } from '../shared/i18n/index.js';
 
 /** 启动目录（Electron 传入） */
 export const  START_DIR = process.env.SVNGIT_DIR ?? process.cwd();
 
 export function  repoInfo(): RepoInfo | null {
   const dir = process.env.SVNGIT_REPO_DIR ?? START_DIR;
-  return detectRepo(dir);
+  const first = detectRepo(dir);
+  if (first) return first;
+  // 瞬时失败（WSL 路径映射/挂载抖动/切项目竞态）：再检测一次；
+  // 仍失败则留一行日志（带上当前项目路径），方便用户反馈时定位是哪条路径/什么环境
+  const retry = detectRepo(dir);
+  if (!retry) console.warn(t('srv.noRepoDetect', { dir }));
+  return retry;
 }
 
 /** 按仓库复用 Vcs 实例。preflight / remote 缓存是**实例字段**（svn.ts preflightCache、

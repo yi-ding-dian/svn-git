@@ -2,6 +2,8 @@
 export const srv = {
   // ---- 语言（原有）----
   'srv.lang.invalid': 'Unsupported language',
+  // Server log: no working copy found for the current project path
+  'srv.noRepoDetect': 'No working copy found for the current project path: {dir}',
 
   // ---- 通用（多路由复用）----
   'srv.unknownAction': 'Unknown action',

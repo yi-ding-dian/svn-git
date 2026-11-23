@@ -33,6 +33,8 @@ export const common = {
   // ---- Network / app-level messages (client/shared/api.ts) ----
   'common.cancelled': 'Canceled',
   'common.serviceDown': 'Cannot reach the service (it may have stopped). Restart the app, or check the terminal window it was launched from.',
+  // The server could not detect a working copy for the current project
+  'common.noRepo': 'The current project is not a valid SVN/Git working copy — please reopen the project',
 
   // ---- Common svn/git errors (client/shared/utils.ts translateVcsError) ----
   'common.vcsErr.noCommand': '⚠ svn/git command not found. Install it as described in the banner at the top, then try again',

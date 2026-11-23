@@ -167,6 +167,13 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(path, init, false);
+}
+
+/** 实际请求：NO_REPO 自动重试一次。
+ *  切项目的竞态、WSL 路径映射/挂载抖动会让服务端瞬时检测不到工作副本，
+ *  隔 300ms 的第二次请求通常就恢复了；仍失败才把可操作提示交给用户。 */
+async function request<T>(path: string, init: RequestInit | undefined, retried: boolean): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, init);
@@ -186,7 +193,19 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok || data?.error) {
     const msg = data?.error || `HTTP ${res.status}`;
-    throw new ApiError(msg, Boolean(data?.authError), false, Boolean(data?.shareDenied));
+    // 瞬时检测失败：自动重试一次（用户已取消则不重试）
+    if (msg === 'NO_REPO' && !retried) {
+      if (init?.signal?.aborted) throw new ApiError(t('common.cancelled'), false, true);
+      await new Promise((r) => setTimeout(r, 300));
+      return request<T>(path, init, true);
+    }
+    // 仍失败：NO_REPO 换成可操作的中文提示，不再把内部错误码甩给用户
+    throw new ApiError(
+      msg === 'NO_REPO' ? t('common.noRepo') : msg,
+      Boolean(data?.authError),
+      false,
+      Boolean(data?.shareDenied),
+    );
   }
   return data as T;
 }

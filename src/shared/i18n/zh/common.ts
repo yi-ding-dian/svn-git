@@ -39,6 +39,8 @@ export const common = {
   // （随语言变），要用 ApiError.cancelled 标志（见 api.ts）。
   'common.cancelled': '已取消',
   'common.serviceDown': '无法连接服务（服务可能已停止）。请重新启动应用，或检查启动它的终端窗口',
+  // 服务端检测不到当前项目的工作副本（瞬时路径问题/项目失效）
+  'common.noRepo': '当前项目不是有效的 SVN/Git 工作副本，请重新打开项目',
 
   // ---- 常见 svn/git 错误 → 提示（client/shared/utils.ts translateVcsError）----
   // ⚠️ 左侧正则匹配的是**命令输出的英文错误码/原文**，不是文案；这里只搬右侧提示。
