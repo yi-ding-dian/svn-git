@@ -1642,7 +1642,7 @@ body.resizing .sb-resizer-grip { opacity: 0; }
 }
 .modal .foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
 
-textarea, input[type=text], input[type=password] {
+textarea, input[type=text], input[type=password], input[type=number] {
   width: 100%; background: var(--panel2); color: var(--text);
   border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
   font-size: var(--font-size, 14px); /* 跟随界面字号设置（此前写死 14px，调大字号时输入框不跟） */
