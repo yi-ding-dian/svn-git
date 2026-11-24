@@ -1045,6 +1045,18 @@ body.drag-trash-hot .drag-src {
   border-bottom: 1px solid var(--border); background: var(--panel);
 }
 .blame-filter .mini { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 追溯行悬浮：版本/作者/日期 + 提交说明（说明按版本懒加载，内容可能多行） */
+.blame-tip {
+  position: fixed; z-index: 350; pointer-events: none;
+  max-width: 430px; max-height: 240px; overflow: hidden;
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  padding: 8px 10px; font-size: 12px; line-height: 1.55;
+  white-space: pre-wrap; word-break: break-word;
+}
+.blame-tip-head { color: var(--dim); margin-bottom: 4px; }
+.blame-tip-msg { max-height: 180px; overflow: hidden; }
 .pv-full > .blame-filter { padding: 6px 14px; }
 .pv-hit { background: rgba(212, 167, 50, .25); }
 .pv-cur { background: rgba(212, 167, 50, .55); outline: 1px solid var(--warn); }

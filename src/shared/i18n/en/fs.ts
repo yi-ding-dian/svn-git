@@ -402,6 +402,9 @@ export const fs = {
   // —— blame author filter ——
   'fs.pv.blameAuthors': 'Authors',
   'fs.pv.blameAll': 'All',
+  // Blame hover: loading commit message / no message for this revision
+  'fs.pv.blameMsgLoading': 'Loading commit message…',
+  'fs.pv.blameMsgEmpty': '(No commit message)',
   'fs.pv.blameAllTip': 'Show everyone’s changes (no filter)',
   'fs.pv.blameAuthorTip': 'Show only the {n} lines changed by {name} (multi-select)',
   'fs.pv.blameFiltered': 'Filtered: showing {shown} / {total} lines',

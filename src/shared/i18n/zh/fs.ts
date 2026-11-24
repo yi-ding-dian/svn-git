@@ -402,6 +402,9 @@ export const fs = {
   // —— 追溯的修改人筛选 ——
   'fs.pv.blameAuthors': '修改人',
   'fs.pv.blameAll': '全部',
+  // 追溯行悬浮：提交说明加载中 / 该版本没有说明
+  'fs.pv.blameMsgLoading': '读取提交说明…',
+  'fs.pv.blameMsgEmpty': '（无提交说明）',
   'fs.pv.blameAllTip': '显示所有人的修改（不过滤）',
   'fs.pv.blameAuthorTip': '只显示 {name} 修改的 {n} 行（可多选）',
   'fs.pv.blameFiltered': '已筛选：显示 {shown} / {total} 行',

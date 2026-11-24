@@ -556,6 +556,14 @@ export class SvnVcs {
     return this.toWcRelLogs(this.parseLogXml(res.stdout), await this.wcPrefix());
   }
 
+  /** 读取单个版本的提交说明（追溯行悬浮显示用）；失败返回空串（悬浮里只显示版本/作者/日期） */
+  async commitMessage(rev: string): Promise<string> {
+    const res = await this.exec(['log', '-r', rev, '--xml'], { timeoutMs: 20_000 });
+    if (res.code !== 0) return '';
+    const [e] = this.parseLogXml(res.stdout);
+    return e?.msg?.trim() ?? '';
+  }
+
   /** svn diff：工作区 vs 版本库，或 -r A:B 版本间；可限定路径 */
   async diff(a?: string, b?: string, pathRel?: string): Promise<{ ok: boolean; output: string; error?: string }> {
     const args = ['diff'];

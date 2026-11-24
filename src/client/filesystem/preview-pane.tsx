@@ -88,6 +88,21 @@ export function PreviewPane(props: Props) {
   const [mdPreview, setMdPreview] = useState(false);
   const [blameMode, setBlameMode] = useState(false);
   const [blameData, setBlameData] = useState<{ rev: string; author: string; date: string; line: number; text: string }[]>([]);
+  /** 追溯行悬浮：版本/作者/日期 + 提交说明（按 rev 缓存，悬浮时才取） */
+  const [blameTip, setBlameTip] = useState<{
+    x: number;
+    y: number;
+    rev: string;
+    author: string;
+    date: string;
+    msg?: string;
+  } | null>(null);
+  const blameMsgCache = useRef(new Map<string, string>());
+  const blameMsgLoading = useRef(new Set<string>());
+  /** 浮层位置直接改 DOM（高频 mousemove 不 setState，避免整块预览重渲染） */
+  const blameTipEl = useRef<HTMLDivElement | null>(null);
+  const blameTipPos = useRef({ x: 0, y: 0 });
+  const blameTipRaf = useRef(0);
   /** 追溯的修改人筛选：空集 = 不过滤（默认显示所有人的代码）；可多选，点一次加、再点一次取消 */
   const [authorFilter, setAuthorFilter] = useState<Set<string>>(new Set());
   /** 追溯日期 → 颜色：同一天同色；按日期先后取色，相邻两天必然不同色 */
@@ -418,6 +433,66 @@ export function PreviewPane(props: Props) {
   const onDiffScroll = () => {
     patchActiveSession({ scrollTop: diffRef.current?.scrollTop ?? 0 });
   };
+
+  /** 浮层位置跟随鼠标（只改 DOM，不触发渲染） */
+  const moveBlameTip = () => {
+    blameTipRaf.current = 0;
+    const el = blameTipEl.current;
+    if (!el) return;
+    const left = Math.min(blameTipPos.current.x + 14, Math.max(8, window.innerWidth - 440));
+    const top = Math.min(blameTipPos.current.y + 18, Math.max(8, window.innerHeight - 180));
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  };
+
+  /** 追溯行悬浮（事件委托）：只在**左侧信息列**（时间/版本/作者/行号）显示提交说明；
+   *  鼠标落在代码文本区（.pv-src）或行外时隐藏 */
+  const onBlameMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!blameMode) return;
+    const target = e.target as HTMLElement;
+    const el = target.closest<HTMLElement>('[data-blame-rev]');
+    if (!el || target.closest('.pv-src')) {
+      setBlameTip(null);
+      return;
+    }
+    const rev = el.dataset.blameRev ?? '';
+    const author = el.dataset.blameAuthor ?? '';
+    const date = el.dataset.blameDate ?? '';
+    blameTipPos.current = { x: e.clientX, y: e.clientY };
+    const cached = blameMsgCache.current.get(rev);
+    setBlameTip((cur) =>
+      // 同一行：位置交给 rAF 直接改 DOM，状态不变化（避免高频重渲染）
+      cur && cur.rev === rev ? cur : { x: e.clientX, y: e.clientY, rev, author, date, msg: cached },
+    );
+    if (!blameTipRaf.current) blameTipRaf.current = requestAnimationFrame(moveBlameTip);
+    if (cached === undefined && !blameMsgLoading.current.has(rev)) {
+      blameMsgLoading.current.add(rev);
+      void get
+        .commitMessage(rev)
+        .then((r) => blameMsgCache.current.set(rev, r.message ?? ''))
+        .catch(() => blameMsgCache.current.set(rev, ''))
+        .finally(() => {
+          blameMsgLoading.current.delete(rev);
+          setBlameTip((cur) => (cur && cur.rev === rev ? { ...cur, msg: blameMsgCache.current.get(rev) ?? '' } : cur));
+        });
+    }
+  };
+  const hideBlameTip = () => setBlameTip(null);
+  // 退出追溯 / 关闭预览时清掉浮层与未执行的 rAF
+  useEffect(() => {
+    if (blameMode) return;
+    setBlameTip(null);
+    if (blameTipRaf.current) {
+      cancelAnimationFrame(blameTipRaf.current);
+      blameTipRaf.current = 0;
+    }
+  }, [blameMode]);
+  useEffect(
+    () => () => {
+      if (blameTipRaf.current) cancelAnimationFrame(blameTipRaf.current);
+    },
+    [],
+  );
 
   /** 「稍后看」：把当前文件（含模式/草稿/光标/滚动）挂到右侧胶囊，回到文件列表。
    *  from 传鼠标坐标：点击瞬间发射一条飞行线飞向新出现的胶囊（像「更新仓库」的起飞特效） */
@@ -952,6 +1027,27 @@ export function PreviewPane(props: Props) {
         )}
         {/* 内容区右键：复制所选内容 / 复制全部内容 */}
         {copyMenu.menuElement}
+        {/* 追溯行悬浮：版本/作者/日期 + 提交说明（说明按版本缓存、悬浮时才取） */}
+        {blameMode && blameTip && (
+          <div
+            ref={blameTipEl}
+            className="blame-tip"
+            style={{
+              left: Math.min(blameTip.x + 14, Math.max(8, window.innerWidth - 440)),
+              top: Math.min(blameTip.y + 18, Math.max(8, window.innerHeight - 180)),
+            }}
+          >
+            <div className="blame-tip-head">
+              {blameTip.rev} · {blameTip.author}
+              {blameTip.date ? ` · ${blameTip.date}` : ''}
+            </div>
+            <div className="blame-tip-msg">
+              {blameTip.msg === undefined
+                ? t('fs.pv.blameMsgLoading')
+                : blameTip.msg || t('fs.pv.blameMsgEmpty')}
+            </div>
+          </div>
+        )}
         {/* 编辑态「返回」：有未保存修改时确认 */}
         {backAsk && (
           <ConfirmModal
@@ -1040,6 +1136,9 @@ export function PreviewPane(props: Props) {
         className={`diff${full && !mdPreview ? ' pv-code-full' : ''}${mdPreview && mdLayout === 'center' ? ' pv-md-center' : ''}`}
         ref={diffRef}
         onScroll={onDiffScroll}
+        // 追溯视图：悬浮行显示提交说明（事件委托；其它模式里 handler 直接返回）
+        onMouseMove={onBlameMove}
+        onMouseLeave={hideBlameTip}
         data-content-zoom=""
         style={{
           flex: 1,
@@ -1102,7 +1201,9 @@ export function PreviewPane(props: Props) {
                   if (el) previewRefs.current.set(i, el);
                 }}
                 className={`pv-line ${isHit ? 'pv-hit' : ''} ${isCur ? 'pv-cur' : ''} ${isJump ? 'pv-jump' : ''}`}
-                title={`${b.rev} · ${b.author}${b.date ? ' · ' + b.date : ''}`}
+                data-blame-rev={b.rev}
+                data-blame-author={b.author}
+                data-blame-date={b.date || undefined}
               >
                 {/* 日期列：同一批（同一天连着）只在第一行显示，其余留空保持对齐；
                     颜色按日期区分，同一天永远同色 */}

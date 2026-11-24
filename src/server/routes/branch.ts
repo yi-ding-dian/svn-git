@@ -271,13 +271,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       }
 
       if (p === '/api/commit-message') {
-        // 读取提交的完整说明（标题+正文，仅 git）：「修改注释」弹窗回显（列表接口只带标题）
-        const { vcs, repo } = vcsOf();
-        if (repo.type !== 'git') {
-          // 仅 Git 仓库支持
-          sendJson(res, 400, { error: t('srv.gitOnly') });
-          return true;
-        }
+        // 读取提交的完整说明（标题+正文）：「修改注释」弹窗回显、追溯行悬浮显示（列表接口只带标题）
+        const { vcs } = vcsOf();
         const rev = String(url.searchParams.get('rev') ?? '').trim();
         if (!rev) {
           // 缺少 rev 参数
