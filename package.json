@@ -1,6 +1,6 @@
 {
   "name": "svngit",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "SVN/Git 图形化版本管理工具（浏览器界面，双引擎并发防护）",
   "author": {
     "name": "yi-ding-dian",
