@@ -76,6 +76,8 @@ interface Props {
   onToast: (msg: string, err?: boolean) => void;
   /** 当前浏览目录变化时上报（App 记住"文件夹视图停在哪"，切「历史」时按它过滤） */
   onDirChange?: (dir: string) => void;
+  /** 从对比视图进入的全屏退出时：回到对比视图 */
+  onReturnToDiff?: () => void;
 }
 
 
@@ -183,7 +185,10 @@ export function FsView(props: Props) {
       setPreview({
         name: p.name,
         rel: p.rel,
+        ...(p.worktree ? { worktree: true } : null),
         restore: { mode: p.mode, line: p.line, scrollTop: p.scrollTop },
+        full: p.full,
+        fromDiff: p.fromDiff,
       });
       // 胶囊保留：点开只是恢复现场，只有右键「删除」才移除会话
     },
@@ -217,6 +222,10 @@ export function FsView(props: Props) {
     worktree?: boolean;
     /** 从挂起会话恢复：打开后切到对应模式并定位 */
     restore?: { mode: 'raw' | 'md' | 'editing'; line?: number; scrollTop?: number };
+    /** 打开即全屏（对比视图「全屏」复用文件预览） */
+    full?: boolean;
+    /** 从对比视图进入：退出全屏时返回对比 */
+    fromDiff?: boolean;
   } | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [filters, setFilters] = useState<Set<Filter>>(new Set());
@@ -1880,6 +1889,11 @@ export function FsView(props: Props) {
             active={props.active}
             repoRoot={props.repoRoot ?? undefined}
             repoType={props.repoType}
+            onExitFull={() => {
+              // 从对比视图进入的全屏：退出全屏 = 关闭预览并回到对比
+              setPreview(null);
+              props.onReturnToDiff?.();
+            }}
             onClose={() => {
               keepPreviewRef.current = false;
               setPreview(null);

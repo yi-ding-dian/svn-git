@@ -57,6 +57,10 @@ export interface PreviewTarget {
   worktree?: boolean;
   /** 从挂起会话恢复：打开后切到对应模式并定位 */
   restore?: { mode: 'raw' | 'md' | 'editing'; line?: number; scrollTop?: number };
+  /** 打开即全屏浏览（对比视图「全屏」复用文件预览） */
+  full?: boolean;
+  /** 从对比视图进入：退出全屏时回到对比（由父级处理） */
+  fromDiff?: boolean;
 }
 
 interface Props {
@@ -73,6 +77,8 @@ interface Props {
   onSaved?: (msg: string) => void;
   /** 复制结果提示（内容区右键菜单 / Ctrl+A 后的复制走全局 toast） */
   onToast?: (msg: string, err?: boolean) => void;
+  /** 从对比视图进入的全屏退出时：父级返回对比视图（并关闭文件预览） */
+  onExitFull?: () => void;
   /** 当前项目根/类型：编辑草稿按项目隔离，会话快照也带上它 */
   repoRoot?: string;
   repoType?: 'svn' | 'git';
@@ -169,8 +175,12 @@ export function PreviewPane(props: Props) {
   const [draftText, setDraftText] = useState<string | null>(null);
   /** 编辑光标行（挂起会话记录"编辑到哪一行"） */
   const [cursorLine, setCursorLine] = useState<number | undefined>(undefined);
+  /** 当前显示内容：有未保存草稿时优先显示草稿（编辑 ↔ 预览实时切换） */
+  const displayText = draftText ?? text;
   /** 预览滚动容器：会话记录/恢复滚动位置 */
   const diffRef = useRef<HTMLDivElement | null>(null);
+  /** 编辑 → md 预览：退出编辑后要滚到的渲染标题下标（源码行对应的最近标题） */
+  const mdExitScrollIdxRef = useRef<number | null>(null);
   /** 挂起会话的恢复只应用一次（文本加载后） */
   const restoreDone = useRef(false);
   /** 内容区右键菜单：无选区只有「复制全部内容」，有选区再加「复制所选内容」（复制全文用原文，不含行号） */
@@ -242,6 +252,18 @@ export function PreviewPane(props: Props) {
   };
   /** 全屏浏览：面板浮到最上层铺满窗口（长文阅读用）。只切 className，DOM 不重挂 → 滚动位置不丢 */
   const [full, setFull] = useState(false);
+  /** 从对比视图进入全屏：退出全屏 = 回到对比（父级切视图），不留在文件预览 */
+  const fromDiffRef = useRef(Boolean(target.fromDiff));
+  fromDiffRef.current = Boolean(target.fromDiff);
+  /** 全屏切换（按钮与 Esc 共用）：对比进来的退出时交给父级返回对比 */
+  const toggleFull = () => {
+    if (!fullRef.current) {
+      setFull(true);
+      return;
+    }
+    if (fromDiffRef.current) props.onExitFull?.();
+    else setFull(false);
+  };
   /** md 阅读主题（只染文档区，与界面主题无关）；localStorage 持久化，「跟随界面」= 'follow' */
   const [mdTheme, setMdTheme] = useState(loadMdTheme);
   /** md 正文布局（全屏与非全屏共用）：居中阅读列 / 靠左铺满；localStorage 持久化 */
@@ -278,6 +300,8 @@ export function PreviewPane(props: Props) {
   const [editTocText, setEditTocText] = useState('');
   const [editTocPop, setEditTocPop] = useState<{ y: number; x: number } | null>(null);
   const editTocItems = useSourceToc(editing ? editTocText : '');
+  /** 当前**正文源码**的标题（含行号）：md 预览切到编辑时，把阅读位置换算成源码行 */
+  const sourceTocItems = useSourceToc(displayText ?? '');
   /** 代码大纲浮层位置（浏览态 / 编辑态各一） */
   const [outlinePop, setOutlinePop] = useState<{ y: number; x: number } | null>(null);
   const [editOutlinePop, setEditOutlinePop] = useState<{ y: number; x: number } | null>(null);
@@ -299,7 +323,7 @@ export function PreviewPane(props: Props) {
   const [fileTruncated, setFileTruncated] = useState(false);
   const isMd = target.name.toLowerCase().endsWith('.md');
   /** 代码大纲（非 md）：浏览态与编辑态各一份——编辑态按草稿防抖解析，点条目让编辑器跳行 */
-  const outlineItems = useSourceOutline(text ?? '', target.name, !editing && !isMd);
+  const outlineItems = useSourceOutline(displayText ?? '', target.name, !editing && !isMd);
   const editOutlineItems = useSourceOutline(editing ? editTocText : '', target.name, editing && !isMd);
   /** md 阅读主题的 inline 变量（只打给 md 的预览容器；「跟随界面」为 undefined 不覆盖） */
   const mdVars = isMd ? mdThemeVars(mdTheme) : undefined;
@@ -312,7 +336,7 @@ export function PreviewPane(props: Props) {
       return;
     }
     rescanToc();
-  }, [text, mdPreview, mdTheme, clearToc, rescanToc]);
+  }, [displayText, mdPreview, mdTheme, clearToc, rescanToc]);
 
   /** 离开预览态（切「查看原文」）时收起目录气泡：此时正文容器已卸载，
    *  mdBodyRef 变 null，条目点下去也是"完全没反应"。 */
@@ -331,7 +355,7 @@ export function PreviewPane(props: Props) {
   // 目标变化（FsView 每次打开都写入新对象）→ 重置内部模式并重新读取内容
   useEffect(() => {
     setMdPreview(false); // 重新打开文件回到原文模式
-    setFull(false); // 重新打开文件退出全屏（换文件后满窗弹着会不知道在看哪个）
+    setFull(Boolean(target.full)); // 重新打开文件按目标设置全屏（对比视图「全屏」复用）
     setMdThemePop(null); // 关掉可能开着的 md 主题气泡（主题本身是持久偏好，不重置）
     setBlameMode(false);
     setBlameData([]);
@@ -428,6 +452,27 @@ export function PreviewPane(props: Props) {
   ]);
   // 离开预览（组件卸载）时清掉活动快照，避免切到别处后还挂着旧文件
   useEffect(() => () => setActiveSession(null), []);
+
+  /** 编辑 → md 预览：等渲染内容挂好标题锚点后，滚到编辑时所处章节 */
+  useEffect(() => {
+    if (editing || !mdPreview) return;
+    const idx = mdExitScrollIdxRef.current;
+    if (idx == null) return;
+    let tries = 0;
+    const run = () => {
+      const diff = diffRef.current;
+      const head = diff?.querySelector<HTMLElement>(`#md-h-${idx}`);
+      if (!diff || !head) {
+        if (tries++ < 10) requestAnimationFrame(run);
+        return;
+      }
+      mdExitScrollIdxRef.current = null;
+      const dr = diff.getBoundingClientRect();
+      const hr = head.getBoundingClientRect();
+      diff.scrollTop += hr.top - dr.top - 8; // 标题贴顶（留一点余量）
+    };
+    requestAnimationFrame(run);
+  }, [editing, mdPreview, text, mdTheme]);
 
   /** 预览滚动：只更新会话快照的滚动位置（不触发渲染） */
   const onDiffScroll = () => {
@@ -527,13 +572,60 @@ export function PreviewPane(props: Props) {
       props.onError(t('fs.pv.tooLargeNoEdit'));
       return;
     }
+    // 从预览切回编辑（或恢复草稿）时重读本地草稿：拿到切换前的最新修改
+    if (props.repoRoot) {
+      const d = loadFileDraft(props.repoRoot, target.rel);
+      if (d !== null) setDraftText(d);
+    }
     // 有未保存草稿：进入编辑即恢复，并提示来源
     if (draftText && draftText !== text) props.onToast?.(t('fs.pv.draftRestored'));
+    // md 预览 → 编辑：保持当前阅读位置（当前章节标题对应的源码行，编辑器进入时定位到该行）
+    if (mdPreview) {
+      const idx = tocItems.findIndex((h) => h.id === tocActiveId);
+      const line = idx >= 0 ? Number(sourceTocItems[idx]?.id ?? 0) : 0;
+      if (line > 0) setJumpLine(line);
+    }
     setEditDirty(false); // 干净进入（保存按钮先灭，改了才亮）——有草稿时编辑器挂载后会立刻点亮
     setEditing(true);
   };
+  /** md 预览切换（浏览态：预览/原文；编辑态：编辑 → 预览，保留草稿实时切换） */
+  const toggleMdPreview = () => {
+    if (editing) {
+      // 编辑 → 预览：不清草稿（自动保存的修改继续显示在预览里），按光标位置滚到对应章节
+      const line = cursorLine ?? jumpLine ?? 1;
+      if (line > 1) {
+        let idx = -1;
+        sourceTocItems.forEach((it, i) => {
+          if (Number(it.id) <= line) idx = i;
+        });
+        mdExitScrollIdxRef.current = idx >= 0 ? idx : null;
+      } else {
+        mdExitScrollIdxRef.current = null;
+      }
+      setEditing(false);
+      setMdPreview(true);
+      return;
+    }
+    setMdPreview((v) => !v);
+  };
+
   /** 编辑态「返回」：无未保存修改直接退出；有则先确认（保存并返回 / 不保存返回） */
   const leaveEdit = () => {
+    // 编辑 → 预览：保持编辑时的位置（md 预览按最近的源码标题，原文按行）
+    const line = cursorLine ?? jumpLine ?? 1;
+    if (line > 1) {
+      if (mdPreview) {
+        let idx = -1;
+        sourceTocItems.forEach((it, i) => {
+          if (Number(it.id) <= line) idx = i;
+        });
+        mdExitScrollIdxRef.current = idx >= 0 ? idx : null;
+      } else {
+        setJumpLine(line); // 原文：jumpLine 的 effect 会滚动到该行
+      }
+    } else if (mdPreview) {
+      mdExitScrollIdxRef.current = null; // 第一行之前：退出后回到顶部
+    }
     // 退出编辑 = 放弃本地草稿（保存过的内容已写盘，草稿无需保留）
     if (props.repoRoot) clearFileDraft(props.repoRoot, target.rel);
     setEditing(false);
@@ -625,7 +717,7 @@ export function PreviewPane(props: Props) {
       // 全屏（浏览或编辑）：Esc 先退全屏（编辑态退全屏不影响草稿）
       if (fullRef.current && e.key === 'Escape') {
         e.preventDefault();
-        setFull(false);
+        toggleFull();
         return;
       }
       // 编辑态：Esc 不退出（避免静默丢草稿）；有改动时提示先保存或点「取消」
@@ -655,7 +747,7 @@ export function PreviewPane(props: Props) {
   }, [props.active]); // eslint-disable-line react-hooks/exhaustive-deps -- 回调 setter 均稳定，无需重复绑定
 
   // ---------- 原文预览搜索 ----------
-  const previewLines = useMemo(() => (text ?? '').split('\n'), [text]);
+  const previewLines = useMemo(() => (displayText ?? '').split('\n'), [displayText]);
 
   // 内容搜索跳入：文本就绪后把定位行滚到视野中间。**不用 smooth**——行离得远时平滑滚动要滚很久，
   // 用户还会以为界面在卡；直接跳到位（block:'center'）更快也更明确
@@ -672,7 +764,7 @@ export function PreviewPane(props: Props) {
   /** 搜索源：编辑态搜**草稿**（InlineEditor 实时上报的 editTocText），浏览态搜当前显示文本。
    *  编辑态此前也能点搜索，但匹配的是保存前的内容、滚动目标又是预览行（编辑态没有那些 DOM），
    *  表现为"点了没反应"——现在两态共用这份匹配结果。 */
-  const searchSource = editing ? editTocText : (text ?? '');
+  const searchSource = editing ? editTocText : (displayText ?? '');
   const matches = useMemo(() => {
     if (!searchActive || !searchQ.trim()) return [] as { line: number; col: number }[];
     const q = searchQ.toLowerCase();
@@ -861,7 +953,7 @@ export function PreviewPane(props: Props) {
         <Tooltip content={full ? t('fs.pv.exitFullTitle') : t('fs.pv.fullTitle')}>
           <button
             className={`mini ${full ? 'primary' : ''}`}
-            onClick={() => setFull((v) => !v)}
+            onClick={toggleFull}
             // 退出全屏（Esc） / 铺满窗口阅读长文，Esc 退出
           >
             {/* 退出全屏 / 全屏浏览 */}
@@ -871,9 +963,9 @@ export function PreviewPane(props: Props) {
         {isMd && (
           // Markdown 渲染预览
           <Tooltip content={t('fs.pv.mdPreviewTitle')}>
-            <button className="mini" onClick={() => setMdPreview((v) => !v)}>
-              {/* 📄 查看原文 / 👁 预览 */}
-              {mdPreview ? t('fs.pv.viewRaw') : t('fs.pv.previewToggle')}
+            <button className="mini" onClick={toggleMdPreview}>
+              {/* 编辑中 → 预览；预览中 → 查看原文；原文 → 预览（编辑 ↔ 预览实时切换） */}
+              {editing ? t('fs.pv.previewToggle') : mdPreview ? t('fs.pv.viewRaw') : t('fs.pv.previewToggle')}
             </button>
           </Tooltip>
         )}
@@ -892,6 +984,17 @@ export function PreviewPane(props: Props) {
             >
               {/* ☰ 目录 ({n}) */}
               ☰ {t('fs.pv.tocCount', { n: tocItems.length })}
+            </button>
+          </Tooltip>
+        )}
+        {isMd && mdPreview && !editing && (
+          // 预览态直接切编辑：紧挨目录按钮右侧（与编辑态「预览」按钮同一位置）
+          <Tooltip content={t('fs.pv.editHere')}>
+            <button className="mini" onClick={(ev) => void openEditMenu(ev)}>
+              <span className="row" style={{ gap: 4, alignItems: 'center' }}>
+                <IconRename size={14} />
+                {t('fs.pv.edit')}
+              </span>
             </button>
           </Tooltip>
         )}
@@ -955,9 +1058,15 @@ export function PreviewPane(props: Props) {
                 </button>
               </Tooltip>
             )}
+            {/* 编辑态「预览」：紧挨目录按钮右侧，与预览态的「编辑」按钮同一位置（实时切换、保留草稿） */}
+            {isMd && (
+              <Tooltip content={t('fs.pv.mdPreviewTitle')}>
+                <button className="mini" onClick={toggleMdPreview}>{t('fs.pv.previewToggle')}</button>
+              </Tooltip>
+            )}
             {/* 编辑态全屏：与全屏浏览同一套（pv-full），铺满窗口写/看长文；Esc 退出 */}
             <Tooltip content={full ? t('fs.pv.exitFullTitle') : t('fs.pv.fullEditTitle')}>
-              <button className={`mini ${full ? 'primary' : ''}`} onClick={() => setFull((v) => !v)}>
+              <button className={`mini ${full ? 'primary' : ''}`} onClick={toggleFull}>
                 {/* ⛶ 退出全屏 / ⛶ 全屏编辑 */}
                 ⛶ {full ? t('fs.pv.exitFull') : t('fs.pv.fullEdit')}
               </button>
@@ -1113,6 +1222,7 @@ export function PreviewPane(props: Props) {
           onDirtyChange={setEditDirty}
           onDraftChange={(draft) => {
             setEditTocText(draft);
+            setDraftText(draft); // 预览实时显示草稿（编辑 ↔ 预览切换不丢修改）
             // 所有编辑自动保存草稿（按项目 + 文件隔离）：切项目/刷新后仍能恢复
             if (props.repoRoot) saveFileDraft(props.repoRoot, target.rel, draft);
           }}
@@ -1123,6 +1233,7 @@ export function PreviewPane(props: Props) {
             // 同步正文：之后切「查看原文/预览」或退出编辑时显示的是刚保存的内容。
             // 用回调带回的 saved（就是本次写盘内容），不要读 editTocText —— 闭包里的 state 可能还是旧值
             setText(saved);
+            setDraftText(null); // 已写盘：不再显示草稿
             if (props.repoRoot) clearFileDraft(props.repoRoot, target.rel); // 已写盘：草稿清掉
             props.onSaved?.(m);
           }}
@@ -1181,7 +1292,7 @@ export function PreviewPane(props: Props) {
             ref={mdBodyRef}
             onClick={onMdRenderClick}
             dangerouslySetInnerHTML={{
-              __html: renderMarkdown(text, {
+              __html: renderMarkdown(displayText ?? '', {
                 baseDir: target.rel.includes('/') ? target.rel.slice(0, target.rel.lastIndexOf('/')) : '',
                 copyBtn: true, // 代码块右上角带「复制」按钮（点击在 onMdRenderClick 代理处理）
               }),

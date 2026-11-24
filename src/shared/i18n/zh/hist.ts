@@ -24,6 +24,9 @@ export const hist = {
   'hist.loadAllCount': '加载全部提交（共 {n} 条）',
   'hist.unpushedTip': '未推送：本地领先远程 {n} 个提交',
   'hist.dragResizer': '拖动调整左右栏宽度',
+  // 全屏查看/编辑整个工作区文件（复用文件预览的全屏）
+  'hist.fullFile': '全屏',
+  'hist.fullFileTip': '全屏查看/编辑整个文件（与文件预览的全屏相同）',
 
   // ---- 提交详情（右栏）----
   'hist.selectHint': '选择提交查看详情',

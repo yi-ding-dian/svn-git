@@ -27,6 +27,12 @@ export interface FileSession {
   /** 挂起时文件列表所在的目录（相对仓库根）与列表滚动位置：恢复时一起还原 */
   listDir?: string;
   listScroll?: number;
+  /** 打开即进入全屏浏览/编辑（对比视图的「全屏」复用文件预览全屏） */
+  full?: boolean;
+  /** 从对比视图进入：退出全屏时返回对比视图（而不是留在文件预览） */
+  fromDiff?: boolean;
+  /** 读工作区版本（对比视图全屏看的是工作区内容，不是 HEAD） */
+  worktree?: boolean;
   /** 挂起时间（排序/淘汰最旧用） */
   ts: number;
 }

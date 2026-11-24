@@ -25,6 +25,9 @@ export const hist = {
   'hist.loadAllCount': 'Load All Commits ({n} total)',
   'hist.unpushedTip': 'Not pushed: {n} commit ahead of the remote|Not pushed: {n} commits ahead of the remote',
   'hist.dragResizer': 'Drag to resize the panes',
+  // View/edit the whole working-tree file fullscreen (reuses the file preview fullscreen)
+  'hist.fullFile': 'Fullscreen',
+  'hist.fullFileTip': 'View and edit the whole file fullscreen (same as the file preview fullscreen)',
 
   // ---- 提交详情（右栏）----
   'hist.selectHint': 'Select a commit to view details',

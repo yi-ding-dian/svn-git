@@ -36,6 +36,8 @@ interface Props {
   readOnly?: boolean;
   /** 覆盖版本行标签（历史提交弹窗用人类可读文案）；不传则用 file-versions 返回的原始版本号 */
   labels?: DiffLabels;
+  /** 全屏查看/编辑整个工作区文件（与文件预览的全屏完全相同；历史只读时不提供） */
+  onFullscreen?: (path: string) => void;
 }
 
 export function DiffView(props: Props) {
@@ -459,6 +461,7 @@ export function DiffView(props: Props) {
             previewR={previewR}
             setPreviewR={setPreviewR}
             readOnly={props.readOnly}
+            onFullscreen={props.onFullscreen}
             tocL={{ count: tocLeftItems.length, open: Boolean(tocPopL), onToggle: (pos) => setTocPopL((v) => (v ? null : pos)) }}
             tocR={{ count: tocRightItems.length, open: Boolean(tocPopR), onToggle: (pos) => setTocPopR((v) => (v ? null : pos)) }}
             targetPath={props.target!.path!}

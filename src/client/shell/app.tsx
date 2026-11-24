@@ -451,6 +451,22 @@ export function App() {
                   tick={tick}
                   active={view === 'diff'}
                   onToast={showToast}
+                  // 全屏查看/编辑整个工作区文件：复用文件预览的全屏（切到文件视图打开并全屏）
+                  onFullscreen={(path) => {
+                    const name = path.split('/').pop() ?? path;
+                    setView('browse');
+                    openSessionInPlace({
+                      root: info?.root ?? '',
+                      type: repo?.type ?? 'git',
+                      rel: path,
+                      name,
+                      mode: 'raw',
+                      full: true,
+                      fromDiff: true,
+                      worktree: true, // 对比里看的是工作区内容（含未提交修改），不是 HEAD
+                      ts: Date.now(),
+                    });
+                  }}
                   onBack={() => {
                     setView(diffFrom);
                     // 从「提交修改的文件」弹窗双击进入差异：返回时恢复该弹窗
@@ -489,6 +505,8 @@ export function App() {
                   onCommitSelect={openCommitSelect}
                   onUpdateDir={doUpdateDir}
                   onToast={showToast}
+                  // 从对比视图进入的全屏退出时：回到对比视图（DiffView 常驻，位置保留）
+                  onReturnToDiff={() => setView('diff')}
                 />
               </div>
             </div>

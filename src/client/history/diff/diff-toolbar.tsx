@@ -120,8 +120,10 @@ export function DiffPaneHeaders(props: {
   tocR?: { count: number; open: boolean; onToggle: (pos: { x: number; y: number }) => void };
   /** 当前文件路径：编辑态代码大纲按扩展名选语言规则 */
   targetPath: string;
+  /** 全屏查看/编辑整个工作区文件（与文件预览的全屏相同；历史只读不传） */
+  onFullscreen?: (path: string) => void;
 }) {
-  const { versions, labels, embedded, sideMode, blocks, curBlock, goPrevBlock, goNextBlock, showAll, syncMode, setSyncMode, onToggleShowAll, search, edit, isMd, previewL, setPreviewL, previewR, setPreviewR, readOnly, tocL, tocR, targetPath } = props;
+  const { versions, labels, embedded, sideMode, blocks, curBlock, goPrevBlock, goNextBlock, showAll, syncMode, setSyncMode, onToggleShowAll, search, edit, isMd, previewL, setPreviewL, previewR, setPreviewR, readOnly, tocL, tocR, targetPath, onFullscreen } = props;
 
   /** 编辑态目录（md）：正文在编辑器里，条目按草稿源码实时解析，点一条让编辑器跳到那一行 */
   const editTocItems = useSourceToc(edit.editing ? edit.draftText : '');
@@ -319,6 +321,14 @@ export function DiffPaneHeaders(props: {
                 <button className={`mini${edit.editDirty ? ' primary' : ''}`} onClick={() => edit.editorRef.current?.save()}>{t('fs.pv.saveBtn')}</button>
                 {/* 取消：丢弃修改，回到差异视图 */}
                 <button className="mini" onClick={edit.cancelEdit}>{t('common.cancel')}</button>
+                {/* 右栏全屏：编辑态也保留，铺满窗口写/看长文（Esc 退出） */}
+                {!readOnly && onFullscreen && (
+                  <Tooltip content={t('hist.fullFileTip')}>
+                    <button className="mini" onClick={() => onFullscreen(targetPath)}>
+                      {t('hist.fullFile')}
+                    </button>
+                  </Tooltip>
+                )}
               </>
             ) : (
             <>
@@ -375,6 +385,14 @@ export function DiffPaneHeaders(props: {
                 <button className="mini" onClick={() => setPreviewR((v) => !v)}>
                   {/* 返回对比 / 预览 */}
                   {previewR ? t('hist.backToCompare') : `👁 ${t('common.preview')}`}
+                </button>
+              </Tooltip>
+            )}
+            {/* 右栏全屏：紧挨预览按钮（用户定稿），工作区栏铺满窗口，仍可预览/编辑（Esc 退出） */}
+            {!readOnly && onFullscreen && (
+              <Tooltip content={t('hist.fullFileTip')}>
+                <button className="mini" onClick={() => onFullscreen(targetPath)}>
+                  {t('hist.fullFile')}
                 </button>
               </Tooltip>
             )}
