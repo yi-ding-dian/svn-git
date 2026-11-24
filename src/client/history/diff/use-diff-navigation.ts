@@ -270,23 +270,35 @@ export function useDiffNavigation(args: {
     if (lh > 0) setLeftLineH(lh);
   }, [leftPane]);
 
-  // 左右栏比例拖拽
+  // 左右栏比例拖拽：拖动期间**只改左栏 DOM 的宽度**（不 setState），松手时一次性同步——
+  // 大 diff 每帧重渲染整棵行树（含连线/刻度）会明显卡顿（用户实报）
   const [leftRatio, setLeftRatio] = useState(50);
-  const dragState = useRef<{ startX: number; startRatio: number } | null>(null);
+  const leftRatioRef = useRef(leftRatio);
+  leftRatioRef.current = leftRatio;
+  const dragState = useRef<{ startX: number; startRatio: number; el: HTMLElement | null } | null>(null);
   const startDrag = (e: ReactMouseEvent) => {
-    dragState.current = { startX: e.clientX, startRatio: leftRatio };
+    // 左栏是手柄的前一个元素（DOM 顺序：左栏 → 拖拽手柄 → 连接带 → 右栏）
+    const el = (e.currentTarget as HTMLElement).previousElementSibling as HTMLElement | null;
+    dragState.current = { startX: e.clientX, startRatio: leftRatio, el };
     startResizeCursor(e.clientX, e.clientY);
   };
   useEffect(() => {
     const move = (e: MouseEvent) => {
-      if (!dragState.current) return;
+      const d = dragState.current;
+      if (!d) return;
       moveResizeCursor(e.clientX, e.clientY);
-      const delta = ((e.clientX - dragState.current.startX) / window.innerWidth) * 100;
-      setLeftRatio(Math.min(85, Math.max(15, dragState.current.startRatio + delta)));
+      const delta = ((e.clientX - d.startX) / window.innerWidth) * 100;
+      const ratio = Math.min(85, Math.max(15, d.startRatio + delta));
+      leftRatioRef.current = ratio;
+      if (d.el) d.el.style.width = `${ratio}%`;
+      else setLeftRatio(ratio);
     };
     const up = () => {
+      const d = dragState.current;
       dragState.current = null;
       stopResizeCursor();
+      // 松手时把最终比例写回 React：触发一次重渲染，连线/刻度按新宽度重算
+      if (d) setLeftRatio(leftRatioRef.current);
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
