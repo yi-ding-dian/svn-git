@@ -37,6 +37,8 @@ export function TreeRow(props: {
   onDragEnd?: () => void;
   /** 就地重命名中：名字位置换成这个输入框（节点与行为由上层给） */
   renaming?: React.ReactNode;
+  /** 该文件在编辑器里有未保存草稿（磁盘上的大小不含它，需明确标出来） */
+  draft?: boolean;
 }) {
   const { row } = props;
   return (
@@ -89,6 +91,8 @@ export function TreeRow(props: {
       />
       <span className={`name ${row.isDir ? 'dir' : 'file'}`} style={{ flex: 1, color: statusColor(row.isDir ? row.codes?.[0] : row.code) }}>
         {props.renaming ?? row.name}
+        {/* 磁盘上没有、只存在编辑器草稿里的修改：大小列（0 B 等）照磁盘显示，靠这个标记说明 */}
+        {!props.renaming && props.draft && <span className="draft-mark" title={t('fs.draft.tip')}> · {t('fs.draft.mark')}</span>}
         {/* （{n} 项） */}
         {row.count ? <span className="count"> {t('fs.countItems', { n: row.count })}</span> : null}
         {props.desc && (

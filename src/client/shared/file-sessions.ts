@@ -117,6 +117,9 @@ export function loadFileDraft(root: string, rel: string): string | null {
   }
 }
 
+/** 草稿增删事件：文件列表据此刷新"未保存"标记（同页面 localStorage 不触发 storage 事件，需自己发） */
+export const DRAFT_CHANGED_EVENT = 'svngit-draft-changed';
+
 export function saveFileDraft(root: string, rel: string, text: string): void {
   if (text.length > MAX_DRAFT_CHARS) return; // 超大文件不占本地存储（编辑本身也有限制）
   try {
@@ -124,6 +127,7 @@ export function saveFileDraft(root: string, rel: string, text: string): void {
   } catch {
     /* 存储满/隐私模式：草稿静默失效 */
   }
+  window.dispatchEvent(new CustomEvent(DRAFT_CHANGED_EVENT));
 }
 
 export function clearFileDraft(root: string, rel: string): void {
@@ -132,6 +136,29 @@ export function clearFileDraft(root: string, rel: string): void {
   } catch {
     /* 同上 */
   }
+  window.dispatchEvent(new CustomEvent(DRAFT_CHANGED_EVENT));
+}
+
+/** 当前项目下有未保存草稿的文件（相对仓库根）。
+ *  只读 localStorage 的 key（不取值）：草稿正文可能接近 1MB，列表刷新时逐条读内容没必要；
+ *  key 本身就是 JSON([root, rel])，解析即可定位到文件。 */
+export function listDraftRels(root: string): Set<string> {
+  const out = new Set<string>();
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(DRAFT_PREFIX)) continue;
+      try {
+        const v = JSON.parse(k.slice(DRAFT_PREFIX.length)) as unknown;
+        if (Array.isArray(v) && v[0] === root && typeof v[1] === 'string') out.add(v[1]);
+      } catch {
+        /* 坏 key（被截断/别的程序写的）：忽略 */
+      }
+    }
+  } catch {
+    /* 隐私模式读不了：不标 */
+  }
+  return out;
 }
 
 /** 当前预览快照（PreviewPane 随状态更新；切换项目前由 capture 取走） */

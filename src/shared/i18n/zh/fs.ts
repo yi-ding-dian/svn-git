@@ -446,6 +446,9 @@ export const fs = {
   'fs.pv.laterTip': '把当前文件挂到右侧胶囊，稍后点一下回来',
   // 从本地草稿恢复编辑时提示
   'fs.pv.draftRestored': '已恢复未保存的草稿',
+  // 文件列表里「有未保存草稿」的标记：草稿只在本机，磁盘上还没写入
+  'fs.draft.mark': '未保存',
+  'fs.draft.tip': '编辑器中有未保存的修改，打开文件并保存后才写入磁盘',
   // 右侧文件会话胶囊（切换项目后点一下回到刚才的浏览/编辑现场）
   'fs.session.unsaved': '未保存',
   'fs.session.editing': '编辑中',

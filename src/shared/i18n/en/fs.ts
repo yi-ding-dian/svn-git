@@ -446,6 +446,9 @@ export const fs = {
   'fs.pv.laterTip': 'Pin the current file to the right-hand pill and come back later',
   // Restored a local unsaved draft
   'fs.pv.draftRestored': 'Restored the unsaved draft',
+  // "Unsaved draft" mark in the file list: the draft is local only, not yet on disk
+  'fs.draft.mark': 'Unsaved',
+  'fs.draft.tip': 'There are unsaved edits in the editor; they are written to disk only after you save',
   // File session pills on the right (jump back to what you were viewing/editing after switching projects)
   'fs.session.unsaved': 'Unsaved',
   'fs.session.editing': 'Editing',

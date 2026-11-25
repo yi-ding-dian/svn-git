@@ -39,6 +39,8 @@ export function GridItem(props: {
   tc?: { state: TreeConflictState; inner?: boolean; innerCount?: number };
   /** 拖拽悬停在本格子（仅目录可投放）：高亮提示落点 */
   dropHover?: boolean;
+  /** 该文件在编辑器里有未保存草稿（磁盘上的大小不含它，需明确标出来） */
+  draft?: boolean;
 }) {
   const e = props.entry;
   const dirCodes =
@@ -100,7 +102,13 @@ export function GridItem(props: {
           {props.renaming ?? e.name}
         </span>
       </Tooltip>
-      {!e.isDir && <span className="dim small nowrap">{formatFileSize(e.size)}</span>}
+      {!e.isDir && (
+        <span className="dim small nowrap">
+          {formatFileSize(e.size)}
+          {/* 磁盘大小 + 「未保存」：草稿只在本机，大小列不能代表编辑中的内容 */}
+          {props.draft && <span className="draft-mark" title={t('fs.draft.tip')}> · {t('fs.draft.mark')}</span>}
+        </span>
+      )}
     </div>
   );
 }
@@ -117,6 +125,8 @@ export interface TipData {
   codes?: string[];
   /** 磁盘上已缺失：悬浮卡第一行提示可还原 */
   miss?: boolean;
+  /** 编辑器里有未保存草稿（磁盘上没有这些内容） */
+  draft?: boolean;
   /** 独立检出的工作副本：父工作副本未跟踪它，状态按它自己的工作副本显示 */
   nestedWc?: boolean;
   /** 树冲突（undefined = 不是冲突）；tcItem 带复制源明细（该目录是从哪个版本复制来的） */
@@ -167,6 +177,10 @@ export function FileTipCard(props: { tip: TipData | null }) {
       {tip.miss && (
         // 文件已在磁盘上缺失，右键可还原
         <div style={{ color: 'var(--danger)', marginBottom: 4 }}>{t('fs.missFileHint')}</div>
+      )}
+      {tip.draft && (
+        // 编辑器中有未保存的修改，打开文件并保存后才写入磁盘
+        <div style={{ color: 'var(--warn)', marginBottom: 4 }}>{t('fs.draft.tip')}</div>
       )}
       {tip.tc ? (
         <>

@@ -638,6 +638,8 @@ body {
 .tree-row .name.dir { color: var(--accent); font-weight: 600; }
 .tree-row .name.file { color: var(--text); }
 .tree-row .count { color: var(--dim); font-size: 12px; }
+/* 有未保存草稿：内容只在本机编辑器草稿里，磁盘文件还没写入（大小列照磁盘显示，可能 0 B） */
+.draft-mark { color: var(--warn); font-size: 11px; }
 .tree-row .actions { display: none; gap: 4px; margin-left: auto; }
 .tree-row:hover .actions { display: flex; }
 .tree-row.selected { background: var(--panel2); outline: 1px solid var(--border); }

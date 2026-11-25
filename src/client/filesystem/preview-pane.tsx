@@ -370,7 +370,8 @@ export function PreviewPane(props: Props) {
     setEditMenu(null);
     setJumpLine(target.line); // 内容搜索跳入的定位行（普通打开为 undefined）
     // 本文件的未保存草稿（所有编辑自动保存；切项目/刷新后仍能恢复）
-    setDraftText(props.repoRoot ? loadFileDraft(props.repoRoot, target.rel) : null);
+    const draft = props.repoRoot ? loadFileDraft(props.repoRoot, target.rel) : null;
+    setDraftText(draft);
     setCursorLine(undefined);
     restoreDone.current = false;
     setImgViewer(null);
@@ -392,6 +393,13 @@ export function PreviewPane(props: Props) {
         setFileTruncated(!!r.truncated);
         eolRef.current = r.output.includes('\r\n') ? '\r\n' : '\n'; // 记下原文行尾
         setText(r.output);
+        // 有未保存草稿 → 直接进编辑态，接着上次的修改继续改（用户要求：列表已标「未保存」，
+        // 双击进去不该还停在只读原文）。守卫与「编辑」菜单一致：非 UTF-8 / 超限文件不给内联编辑；
+        // 草稿与磁盘一致（已无实际修改）也不进。胶囊恢复（target.restore）按它自己的模式走，不抢。
+        if (!target.restore && draft !== null && draft !== r.output && !r.encoding && !r.truncated) {
+          props.onToast?.(t('fs.pv.draftRestored'));
+          setEditing(true);
+        }
       })
       .catch((err: Error) => {
         if (!cancelled) props.onOpenError(err.message); // 读取失败：父级红条 + 退回列表（旧 openFile 同款终态）

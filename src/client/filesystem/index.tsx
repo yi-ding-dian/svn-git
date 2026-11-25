@@ -51,6 +51,8 @@ import {
   OPEN_DIR_EVENT,
   loadListPos,
   saveListPos,
+  listDraftRels,
+  DRAFT_CHANGED_EVENT,
   type FileSession,
   type PendingDir,
 } from '../shared/file-sessions.js';
@@ -237,7 +239,7 @@ export function FsView(props: Props) {
   const shiftAnchorRef = useRef<string | null>(null); // Shift 范围选择锚点（上次单击项）
   const [focusIndex, setFocusIndex] = useState(0);
   // 网格目录悬浮提示（替代原生 title：状态字母带颜色、紧凑排列）
-  const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean; nestedWc?: boolean; tc?: { state: 'missing' | 'present' | 'unknown'; inner?: boolean; innerCount?: number }; tcItem?: { fromRev?: string; fromAuthor?: string; fromDate?: string } } | null>(null);
+  const [tip, setTip] = useState<{ x: number; y: number; name: string; isDir?: boolean; count?: number; size?: number; mtime?: string; code?: string; codes?: string[]; miss?: boolean; nestedWc?: boolean; draft?: boolean; tc?: { state: 'missing' | 'present' | 'unknown'; inner?: boolean; innerCount?: number }; tcItem?: { fromRev?: string; fromAuthor?: string; fromDate?: string } } | null>(null);
   /** 忽略写入去向的说明（JSX 用；状态本身在 useIgnoreFlow 里）。每次渲染重建，故可直接 t() */
   const IGNORE_WHERE_LABEL: Record<'gitignore' | 'global' | 'exclude', string> = {
     // 仓库 .gitignore（随仓库分发）
@@ -332,6 +334,22 @@ export function FsView(props: Props) {
   refreshCodesRef.current = refreshCodesImpl;
   scanCodesRef.current = scanCodesImpl;
   const { data, nodeData, error, setError, fsLoading, bigTip, load, loadNode, invalidateCache, reloadOpenNodes } = dataLayer;
+
+  // 有未保存草稿的文件（相对仓库根的 rel 集合）：编辑内容自动存本地草稿，磁盘文件本身还没写，
+  // 列表大小照磁盘显示（可能 0 B）会让人以为数据丢了——列表/网格据此标「未保存」（用户实报）。
+  // 草稿增删时 saveFileDraft/clearFileDraft 发事件，这里重算（只读 key 不读正文，开销很小）。
+  const [draftRels, setDraftRels] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const root = props.repoRoot ?? data?.root ?? '';
+    if (!root) {
+      setDraftRels(new Set());
+      return;
+    }
+    const sync = () => setDraftRels(listDraftRels(root));
+    sync();
+    window.addEventListener(DRAFT_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(DRAFT_CHANGED_EVENT, sync);
+  }, [props.repoRoot, data?.root]);
 
   // 文件搜索（工具栏）：防抖查询 + 结果下拉状态收于 useFileSearch；行数模式另走 useLineScan
   const search = useFileSearch(data?.dir ?? '');
@@ -515,6 +533,7 @@ export function FsView(props: Props) {
       pulse={pulseRels.includes(row.rel)}
       clipCut={cutRels.has(row.rel)}
       dragSrc={dragRels.has(row.rel)}
+      draft={!row.isDir && draftRels.has(row.rel)}
       dropHover={drop.hoverDir === row.rel}
       onDragStart={(ev) => onRowDragStart(ev, row.rel, row.name, row.isDir, row.code)}
       onDragEnd={onRowDragEnd}
@@ -1814,6 +1833,7 @@ export function FsView(props: Props) {
                   pulse={pulseRels.includes(rel)}
                   clipCut={cutRels.has(rel)}
                   dragSrc={dragRels.has(rel)}
+                  draft={!e.isDir && draftRels.has(rel)}
                   dropHover={drop.hoverDir === rel}
                   onDragStart={(ev) => onRowDragStart(ev, rel, e.name, e.isDir, e.code)}
                   onDragEnd={onRowDragEnd}
@@ -1840,6 +1860,7 @@ export function FsView(props: Props) {
                       x: ev.clientX, y: ev.clientY, name: e.name, isDir: e.isDir,
                       size: e.size, mtime: e.mtime, code: e.code, codes: e.codes, count: e.count,
                       miss: e.miss, nestedWc: e.nestedWc,
+                      draft: !e.isDir && draftRels.has(rel),
                       tc: tcState(e, rel, conflictLookup),
                       tcItem: e.treeConflicted ? conflictLookup(rel).item : undefined,
                     });
