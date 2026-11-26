@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type http from 'node:http';
 import { sendJson, readBody } from '../http/response.js';
-import { vcsOf } from '../repo-context.js';
+import { vcsOf, invalidateStatusCache } from '../repo-context.js';
 import { inRepoRoot } from '../path-safety.js';
 import { MSG_PATH_OUT_OF_BOUNDS } from '../errors.js';
 import { t } from '../../shared/i18n/index.js';
@@ -126,6 +126,9 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       sendJson(res, 500, { ok: false, error: t('srv.writeFailed', { msg: (e as Error).message }) });
       return true;
     }
+    // 磁盘文件集变了（新文件 ? / 覆盖后 M），状态缓存必须失效：
+    // 否则前端落地后的刷新仍拿旧状态，新文件没有 code，列表显示成干净的 ✓（用户实报）
+    invalidateStatusCache(repo.root);
     // 已上传
     sendJson(res, 200, { ok: true, savedAs: path.relative(repo.root, abs), message: t('srv.uploaded') });
     return true;
@@ -180,6 +183,8 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       sendJson(res, 500, { ok: false, error: t('srv.copyFailed', { msg: (e as Error).message }) });
       return true;
     }
+    // 同 /api/upload：落盘后状态集变了，30s 缓存不失效会让新文件显示成干净的 ✓（用户实报）
+    invalidateStatusCache(repo.root);
     // 已复制
     sendJson(res, 200, { ok: true, savedAs: path.relative(repo.root, abs), message: t('srv.copied') });
     return true;

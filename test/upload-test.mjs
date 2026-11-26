@@ -167,7 +167,32 @@ try {
   const tracked = lines.filter((l) => !l.startsWith('??'));
   check('上传的文件均为未跟踪 ?（未进 index）', lines.length > 0 && tracked.length === 0, `status=${JSON.stringify(lines.slice(0, 4))}`);
 
-  // ---------- 8. 覆盖时不残留临时文件 ----------
+  // ---------- 8. 落地后状态缓存失效：拖入完成后列表立刻看到 ?，不是干净 ✓（用户实报） ----------
+  const fsStatus = async (dir = '') => {
+    const r = await fetch(`${B}/api/fs-status?dir=${encodeURIComponent(dir)}`);
+    return (await r.json()).items ?? [];
+  };
+  await fsStatus(''); // 先把当前状态塞进 30s 缓存（模拟列表已打开时的状态）
+  r = await upload('', 'fresh-after-cache.txt', 'fresh\n');
+  let statusItems = await fsStatus('');
+  check(
+    '上传后状态缓存失效（新文件立即可见 ?）',
+    r.code === 200 && statusItems.some((it) => it.path === 'fresh-after-cache.txt' && it.code === '?'),
+    `items=${JSON.stringify(statusItems.slice(0, 3))}`,
+  );
+  const SRC2 = path.join(os.tmpdir(), 'svngit-cache-src.txt');
+  fs.writeFileSync(SRC2, 'CACHED\n');
+  await fsStatus(''); // 再次预热缓存
+  cp = await copyInto('', SRC2, 'copied-after-cache.txt');
+  statusItems = await fsStatus('');
+  check(
+    'copy-into 后状态缓存失效（新文件立即可见 ?）',
+    cp.code === 200 && statusItems.some((it) => it.path === 'copied-after-cache.txt' && it.code === '?'),
+    `items=${JSON.stringify(statusItems.slice(0, 3))}`,
+  );
+  fs.rmSync(SRC2, { force: true });
+
+  // ---------- 9. 覆盖时不残留临时文件 ----------
   const leftovers = fs.readdirSync(REPO).filter((f) => f.includes('.tmp') || f.includes('.part'));
   check('无临时/半截文件残留', leftovers.length === 0, leftovers.join(','));
 } catch (e) {
