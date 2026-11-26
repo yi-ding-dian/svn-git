@@ -1540,10 +1540,26 @@ export function FsView(props: Props) {
           <div className="fs-drag-bar">
             <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
             <span>
-              {/* 正在上传 {done}/{total}… / 正在上传 {done}/{total} · {pct}%…（当前文件字节进度） */}
-              {drop.progress.pct === undefined
-                ? t('fs.drop.uploading', { done: drop.progress.done, total: drop.progress.total })
-                : t('fs.drop.uploadingPct', { done: drop.progress.done, total: drop.progress.total, pct: drop.progress.pct })}
+              {/* 正在上传 1/3 · big.bin（60.0 MB）· 45% · 5.2 MB/s…：
+                  文件名/大小/当前文件字节进度/上传速度（速度平滑后才出现；
+                  copy-into 快路径没有字节进度，只显示文件名+大小） */}
+              {t(
+                drop.progress.pct !== undefined
+                  ? drop.progress.speed
+                    ? 'fs.drop.uploadingSpeed'
+                    : 'fs.drop.uploadingPct'
+                  : drop.progress.size > 0
+                    ? 'fs.drop.uploadingSize'
+                    : 'fs.drop.uploading',
+                {
+                  done: drop.progress.done,
+                  total: drop.progress.total,
+                  name: drop.progress.name,
+                  size: formatFileSize(drop.progress.size),
+                  pct: drop.progress.pct ?? 0,
+                  speed: formatFileSize(drop.progress.speed ?? 0),
+                },
+              )}
             </span>
           </div>
         )}

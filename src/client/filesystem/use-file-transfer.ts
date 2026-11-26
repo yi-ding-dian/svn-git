@@ -117,8 +117,20 @@ export function useDropUpload(opts: {
   const { dir, askConflict, onDone, readOnly, onBlocked, onMoveDrop } = opts;
   const [dragging, setDragging] = useState(false); // 外部文件悬停中（显示"松开即复制到…"横幅）
   const [hoverDir, setHoverDir] = useState<string | null>(null);
-  /** 上传进度：done/total 是文件个数；pct 是**当前文件**的字节百分比（仅浏览器上传有，copy-into 快路径没有） */
-  const [progress, setProgress] = useState<{ done: number; total: number; pct?: number } | null>(null);
+  /** 上传进度：done/total 是文件个数；name/size 是当前文件；pct 是**当前文件**的字节百分比
+   *  （仅浏览器上传有，copy-into 快路径没有） */
+  const [progress, setProgress] = useState<{
+    done: number;
+    total: number;
+    /** 当前文件相对目标目录的路径 */
+    name: string;
+    /** 当前文件字节数（目录拖入时可能拿不到，为 0 → 不显示大小） */
+    size: number;
+    /** 当前文件百分比（仅浏览器上传有） */
+    pct?: number;
+    /** 当前上传速度（字节/秒，平滑后；仅浏览器上传有） */
+    speed?: number;
+  } | null>(null);
   const busy = useRef(false);
 
   // 拦住浏览器默认的「拖入即用文件替换当前页面」——拖到文件区以外也不该把界面冲掉。
@@ -150,22 +162,49 @@ export function useDropUpload(opts: {
         const failed: string[] = [];
         const saved: string[] = []; // 成功落盘的相对仓库根路径（savedAs），供调用方选中定位
         let okCount = 0;
-        setProgress({ done: 0, total: items.length });
+        setProgress({ done: 0, total: items.length, name: '', size: 0 });
         // 逐个传：单个失败不中断整批，最后汇总（回滚已传文件反而更让人意外）
         for (let i = 0; i < items.length; i++) {
           const it = items[i]!;
+          // 用户在弹窗里给这一项改了名字 → 按新名字落盘（改名即改请求里的相对路径）
+          const rel = choice.renames?.[it.path] ?? it.path;
+          // 进度横幅一进入这个文件就带上名字/大小（字节百分比由 XHR 回调补）；
+          // 目录拖入时 File.size 可能为 0 → 界面不显示大小
+          setProgress({ done: i, total: items.length, name: rel, size: it.file.size });
           // 当前文件的字节进度（仅浏览器上传有；copy-into 快路径没有）。
-          // onprogress 每几十毫秒就回调一次，按 1% 节流——否则整个 FsView 跟着狂重渲染。
-          let lastPct = -1;
+          // **按时间节流（≥200ms），不按百分比**：大文件 1% 可能要好几秒，期间速度会僵住不动。
+          // 速度取两次采样的差值（≥300ms 一次）再做 EMA 平滑——直接算瞬时值会抖得看不清。
+          let lastLoaded = 0;
+          let lastTime = 0;
+          let emaSpeed = 0;
+          let lastRender = 0;
           const onProg = (loaded: number, totalBytes: number) => {
-            const pct = totalBytes > 0 ? Math.floor((loaded / totalBytes) * 100) : 0;
-            if (pct === lastPct) return;
-            lastPct = pct;
-            setProgress({ done: i, total: items.length, pct });
+            const now = performance.now();
+            if (lastTime === 0) {
+              lastTime = now;
+              lastLoaded = loaded;
+            }
+            const dt = now - lastTime;
+            if (dt >= 300 && loaded > lastLoaded) {
+              const inst = ((loaded - lastLoaded) * 1000) / dt;
+              emaSpeed = emaSpeed > 0 ? emaSpeed * 0.7 + inst * 0.3 : inst;
+              lastTime = now;
+              lastLoaded = loaded;
+            }
+            // 最后一帧（100%）总是渲染，其余按 200ms 节流
+            if (now - lastRender < 200 && loaded < totalBytes) return;
+            lastRender = now;
+            const pct = totalBytes > 0 ? Math.min(100, Math.floor((loaded / totalBytes) * 100)) : 0;
+            setProgress({
+              done: i,
+              total: items.length,
+              name: rel,
+              size: totalBytes,
+              pct,
+              speed: emaSpeed > 0 ? Math.round(emaSpeed) : undefined,
+            });
           };
           try {
-            // 用户在弹窗里给这一项改了名字 → 按新名字落盘（改名即改请求里的相对路径）
-            const rel = choice.renames?.[it.path] ?? it.path;
             // 有源路径（打包版）就走复制：不传内容，顺带保留权限位与时间戳
             const r = it.srcPath
               ? await post.copyInto(targetDir, it.srcPath, rel, choice.mode)
@@ -177,7 +216,7 @@ export function useDropUpload(opts: {
           } catch (e) {
             failed.push(`${it.path}：${(e as Error).message}`);
           }
-          setProgress({ done: i + 1, total: items.length });
+          setProgress({ done: i + 1, total: items.length, name: rel, size: it.file.size });
         }
         onDone(okCount, failed, saved);
       } catch (e) {

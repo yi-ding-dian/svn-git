@@ -298,9 +298,13 @@ export const fs = {
 
   // ---- Drop upload / clipboard transfer (use-file-transfer.ts / index.tsx) ----
   'fs.drop.hint': 'Release to copy into {dest}',
-  'fs.drop.uploading': 'Uploading {done}/{total}…',
-  // "Uploading 1/3 · 45%": pct is the byte progress of the current file (browser uploads only)
-  'fs.drop.uploadingPct': 'Uploading {done}/{total} · {pct}%…',
+  // Upload progress banner: "Uploading 1/3 · big.bin (60.0 MB) · 45%"; the size part is omitted when unknown (folders)
+  'fs.drop.uploading': 'Uploading {done}/{total} · {name}…',
+  'fs.drop.uploadingSize': 'Uploading {done}/{total} · {name} ({size})…',
+  // pct is the byte progress of the current file (browser uploads only)
+  'fs.drop.uploadingPct': 'Uploading {done}/{total} · {name} ({size}) · {pct}%…',
+  // The speed appears once a sample has been smoothed (not within the first few hundred ms)
+  'fs.drop.uploadingSpeed': 'Uploading {done}/{total} · {name} ({size}) · {pct}% · {speed}/s…',
   // Remote share is read-only: the drop is rejected
   'fs.drop.readOnly': 'Shared in read-only mode; uploads are not allowed',
   'fs.drop.precheckFailed': 'Pre-check failed: {msg}',
