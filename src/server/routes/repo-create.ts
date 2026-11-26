@@ -6,6 +6,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { detectRepo } from '../../vcs/detect.js';
 import { run } from '../../vcs/exec.js';
+import { verifyRemote } from '../../vcs/verify-remote.js';
+import { loadConfig } from '../../config.js';
 import { t } from '../../shared/i18n/index.js';
 import { sendJson, readBody, type Ctx } from '../http/response.js';
 import { createGitRepo, type RepoCreateResult } from '../repo-setup/clone.js';
@@ -133,6 +135,38 @@ export async function handle(ctx: Ctx): Promise<boolean> {
       inRepo: inRepo ? { type: inRepo.type, root: inRepo.root } : null,
       preview,
     });
+    return true;
+  }
+
+  if (p === '/api/verify-repo' && req.method === 'POST') {
+    // 获取仓库前的轻量认证预检（不依赖当前打开的仓库，也不写任何东西）：
+    // 通过才真正克隆/检出，密码错时不用白跑一趟。临时密码只在本次请求内存里。
+    const body = await readBody(req);
+    const type = String(body.type ?? '');
+    const url = String(body.url ?? '').trim();
+    if (type !== 'git' && type !== 'svn') {
+      // 未知仓库类型
+      sendJson(res, 400, { error: t('srv.unknownRepoType') });
+      return true;
+    }
+    if (!url) {
+      // 仓库地址不合法
+      sendJson(res, 400, { error: t('srv.badRepoUrl') });
+      return true;
+    }
+    const cfg = loadConfig();
+    // 本次填的临时账号优先；没填用已保存配置（与检出时的取用口径一致）
+    const user = String(body.username ?? '').trim() || (type === 'svn' ? cfg.svn.username : (cfg.git?.username ?? ''));
+    const pass = String(body.password ?? '') || (type === 'svn' ? cfg.svn.password : (cfg.git?.password ?? ''));
+    sendJson(
+      res,
+      200,
+      await verifyRemote(type, url, {
+        username: user,
+        password: pass,
+        trustServerCert: type === 'svn' ? cfg.svn.trustServerCert : false,
+      }),
+    );
     return true;
   }
 

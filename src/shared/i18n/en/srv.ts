@@ -200,6 +200,10 @@ export const srv = {
   'srv.netAuthFailToken': 'Reachable (authentication failed; check the token)',
   'srv.netAuthFailAccount': 'Reachable (authentication failed; check your account)',
   'srv.connectFailed': 'Connection failed',
+  // Pre-fetch credential check failed: wrong credentials or no access (leads to the auth dialog)
+  'srv.verifyAuthFailed': 'Authentication failed: wrong username/password, or this account has no access to the repository',
+  // Pre-fetch check could not reach the URL / server error (an auth dialog would not help)
+  'srv.verifyConnectFailed': 'Connection failed: check the repository URL and your network',
   'srv.noRepoUrl': 'Repository URL not configured',
 
   // ---- 模块索引（module-index.ts）----

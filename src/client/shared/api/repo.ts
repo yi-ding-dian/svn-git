@@ -473,4 +473,11 @@ export const postRepo = {
   /** 创建/获取前置风险检测（目标已存在、位于仓库内等），供二次确认展示 */
   repoCheck: (type: 'git' | 'svn', dir: string, name: string, url = '') =>
     api<RepoCheck>('/api/repo-create/check', json({ type, dir, name, url })),
+  /** 获取仓库前的轻量认证预检：地址可达 + 账号有读权限（svn info / git ls-remote，不取数据）。
+   *  cred 省略时用已保存的配置账号；AUTH = 凭据/权限问题，NET = 地址不可达（弹认证框没用） */
+  verifyRemote: (type: 'git' | 'svn', url: string, cred?: { username?: string; password?: string }, signal?: AbortSignal) =>
+    api<{ ok: boolean; code?: 'AUTH' | 'NET'; message?: string }>(
+      '/api/verify-repo',
+      json({ type, url, username: cred?.username, password: cred?.password }, signal),
+    ),
 };

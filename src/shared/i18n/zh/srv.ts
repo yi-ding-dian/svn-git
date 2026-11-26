@@ -214,6 +214,10 @@ export const srv = {
   'srv.netAuthFailToken': '已连通（认证失败，需检查令牌）',
   'srv.netAuthFailAccount': '已连通（认证失败，请检查账号）',
   'srv.connectFailed': '连接失败',
+  // 获取仓库前的认证预检失败：凭据/权限问题（会引导到账号输入框）
+  'srv.verifyAuthFailed': '认证失败：账号或密码错误，或该账号没有此仓库的访问权限',
+  // 预检时地址不可达/服务器错误（弹认证框没用）
+  'srv.verifyConnectFailed': '连接失败：请检查仓库地址与网络',
   'srv.noRepoUrl': '未配置仓库 URL',
 
   // ---- 模块索引（module-index.ts）----

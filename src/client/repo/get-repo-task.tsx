@@ -26,6 +26,13 @@ export interface GetAuthAsk {
   retry: (cred?: { username: string; password: string }, save?: boolean) => void;
 }
 
+/** 预检失败时弹哪个 git 认证框：按 URL 判断（与后端 authTypeOf 同口径） */
+function gitAuthTypeOf(url: string): 'github' | 'ssh' | 'server' {
+  const u = url.trim();
+  if (/^ssh:\/\//i.test(u) || /^[^@\s/]+@[^:\s/]+:/.test(u)) return 'ssh';
+  return /github\.com/i.test(u) ? 'github' : 'server';
+}
+
 /** 发起获取（克隆/检出）后台任务。**立刻返回**——弹窗该在此时关掉，进度由顶栏沙漏接管。 */
 export function startGetRepoTask(
   p: GetRepoParams,
@@ -50,6 +57,33 @@ export function startGetRepoTask(
     retry: () => startGetRepoTask(p, hooks),
     run: async (signal) => {
       try {
+        // 获取前预检：只探测「地址可达 + 账号有读权限」（svn info / git ls-remote，不取数据），
+        // 通过才真正克隆/检出。密码错/无权限时直接引导认证框，不再"先跑一半检出才报错"（用户实报）。
+        // worktree 模式在当前仓库内建共享工作树，不访问远程，跳过。
+        if (p.mode !== 'worktree') {
+          const v = await post.verifyRemote(p.type, p.url, p.svnCred, signal);
+          if (!v.ok) {
+            const message = v.message ?? t('srv.verifyConnectFailed');
+            // 只有认证/权限类才弹账号框；地址不可达/服务器错误弹了也没用，交给铃铛展示原因
+            if (v.code === 'AUTH') {
+              if (p.type === 'svn') {
+                hooks.onAuthNeeded({
+                  type: 'svn',
+                  error: message,
+                  user: p.svnCred?.username ?? '',
+                  retry: (cred, save) => startGetRepoTask({ ...p, svnCred: cred, saveSvnCred: save }, hooks),
+                });
+              } else {
+                hooks.onAuthNeeded({
+                  type: gitAuthTypeOf(p.url),
+                  error: message,
+                  retry: () => startGetRepoTask(p, hooks),
+                });
+              }
+            }
+            return { ok: false, message, data: { kind: 'get', target, errorDetail: message } };
+          }
+        }
         const r = await post.repoCreate(p.type, p.dir, p.name, p.url, true, signal, p.ref, p.depth, {
           checkout: p.checkout,
           mode: p.mode,
