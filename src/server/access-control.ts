@@ -86,11 +86,9 @@ export function checkAccess(req: http.IncomingMessage, p: string): AccessResult 
   // 语言包：远程页面在加入会话前就要读取（只放行 GET；POST 改语言仍受只读/会话约束）
   if (p === '/api/lang' && req.method === 'GET') return { ok: true, local, ip, readOnly: true };
 
-  // 切换项目：由共享配置决定；只读模式下也允许（属于浏览行为，不写仓库）
+  // 切换项目：属于浏览行为（不写仓库），只读模式下也允许；仍需已加入会话。
+  // **没有单独开关**：远程能切哪个项目由「最近项目 + 打开项目」自身决定（用户要求取消该限制）
   if (p === '/api/open' && req.method === 'POST') {
-    if (!cfg.allowSwitchProject) {
-      return { ok: false, status: 403, error: t('share.switchDisabled'), local, ip, readOnly: cfg.readOnly };
-    }
     if (!touchViewer(ip)) {
       return { ok: false, status: 401, error: t('share.joinRequired'), local, ip, readOnly: cfg.readOnly };
     }

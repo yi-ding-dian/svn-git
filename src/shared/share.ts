@@ -17,9 +17,6 @@ export interface ShareConfig {
   maxViewers: number;
   /** 远程是否只读。当前产品只支持只读，保留字段便于以后扩展 */
   readOnly: boolean;
-  /** 允许远程切换当前项目（默认 false：访客固定看主机当前项目）。
-   *  开启后服务端唯一的「当前项目」会被访客切换，主机界面也会跟着变。 */
-  allowSwitchProject: boolean;
 }
 
 export const DEFAULT_SHARE: ShareConfig = {
@@ -28,7 +25,6 @@ export const DEFAULT_SHARE: ShareConfig = {
   // 本机不占名额；默认只允许 1 个远程访问者（按 IP 计）
   maxViewers: 1,
   readOnly: true,
-  allowSwitchProject: false,
 };
 
 /** 本机通知事件：远程有人加入/离开时产生，本机前端轮询后写入「铃铛」通知 */
@@ -52,8 +48,6 @@ export interface ShareAccess {
   /** 人数上限；0 = 不限 */
   max: number;
   mode: ShareMode;
-  /** 远程是否允许切换当前项目 */
-  allowSwitchProject: boolean;
 }
 
 /** 共享配置弹窗数据（GET /api/share，仅本机） */

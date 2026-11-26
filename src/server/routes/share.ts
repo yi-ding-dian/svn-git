@@ -53,7 +53,6 @@ function parseShare(body: Record<string, unknown>): { cfg: ShareConfig; badRule?
       maxViewers: Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 100) : DEFAULT_SHARE.maxViewers,
       // 默认为只读；只有显式传 false 才开放远程写操作
       readOnly: body.readOnly !== false,
-      allowSwitchProject: body.allowSwitchProject === true,
     },
     badRule,
   };
@@ -87,7 +86,6 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     viewers: viewerCount(),
     max: cfg.maxViewers,
     mode: cfg.mode,
-    allowSwitchProject: cfg.allowSwitchProject,
   };
 
   // ---------- 配置读写 / 重启：仅本机 ----------

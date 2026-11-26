@@ -24,7 +24,6 @@ export function ShareDialog(props: { onClose: () => void }) {
   const [allowText, setAllowText] = useState('');
   const [maxViewers, setMaxViewers] = useState(DEFAULT_SHARE.maxViewers);
   const [readOnly, setReadOnly] = useState(true);
-  const [allowSwitchProject, setAllowSwitchProject] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [err, setErr] = useState('');
@@ -40,7 +39,6 @@ export function ShareDialog(props: { onClose: () => void }) {
         setAllowText(s.config.allow.join('\n'));
         setMaxViewers(s.config.maxViewers);
         setReadOnly(s.config.readOnly);
-        setAllowSwitchProject(s.config.allowSwitchProject);
         setLoading(false);
       })
       .catch((e: Error) => {
@@ -62,7 +60,7 @@ export function ShareDialog(props: { onClose: () => void }) {
       .map((s) => s.trim())
       .filter(Boolean);
     try {
-      await post.shareSave({ mode, allow, maxViewers, readOnly, allowSwitchProject });
+      await post.shareSave({ mode, allow, maxViewers, readOnly });
     } catch (e) {
       setErr((e as Error).message);
       setBusy(false);
@@ -174,19 +172,6 @@ export function ShareDialog(props: { onClose: () => void }) {
               </label>
             ))}
           </div>
-
-          <label className="row" style={{ gap: 8, cursor: 'pointer', alignItems: 'flex-start' }}>
-            <input
-              type="checkbox"
-              checked={allowSwitchProject}
-              onChange={(e) => setAllowSwitchProject(e.target.checked)}
-              style={{ marginTop: 3 }}
-            />
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: 'block', fontWeight: 600 }}>{t('share.allowSwitchProject')}</span>
-              <span className="dim small">{t('share.allowSwitchProjectHint')}</span>
-            </span>
-          </label>
 
           <label className="row" style={{ gap: 10 }}>
             <span className="small" style={{ fontWeight: 600 }}>{t('share.maxViewers')}</span>

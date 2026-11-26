@@ -66,9 +66,6 @@ function readShare(data: unknown): ShareConfig {
     allow,
     maxViewers: Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 100) : DEFAULT_SHARE.maxViewers,
     readOnly: raw.readOnly === undefined ? DEFAULT_SHARE.readOnly : Boolean(raw.readOnly),
-    allowSwitchProject: raw.allowSwitchProject === undefined
-      ? DEFAULT_SHARE.allowSwitchProject
-      : Boolean(raw.allowSwitchProject),
   };
 }
 
