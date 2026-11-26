@@ -69,7 +69,8 @@ export function TaskDetailModal(props: { taskId: number; onClose: () => void }) 
   const isCheckout = detail?.kind === 'checkout';
   const files = !running && isCheckout ? (detail?.files ?? []) : [];
   const fileTotal = detail?.fileTotal ?? files.length;
-  const warnings = !running && isCheckout ? (detail?.warnings ?? []) : [];
+  // 警告：检出路径（checkout）与获取仓库（get，如 SVN 外部引用 E205011 同步失败但主体成功）都会带
+  const warnings = !running ? (detail?.warnings ?? []) : [];
   /** 状态字母统计（A 新增 / U 更新 / …） */
   const stats = new Map<string, number>();
   for (const f of files) stats.set(f.code, (stats.get(f.code) ?? 0) + 1);

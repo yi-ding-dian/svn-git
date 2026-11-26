@@ -428,13 +428,16 @@ export function GetRepoDialog(props: {
   const [msgErr, setMsgErr] = useState(false);
   /** 前置检测中（repoCheck——几百毫秒）：按钮禁用 +「获取中…」文案 */
   const [checkBusy, setCheckBusy] = useState(false);
+  /** 获取前认证预检进行中（账号框里的「获取」按钮显示「验证中…」并禁用） */
+  const [verifyBusy, setVerifyBusy] = useState(false);
   const [picker, setPicker] = useState(false);
   /** 二次确认数据（SVN 时附带本次临时凭据：确认后随任务带走） */
   const [pending, setPending] = useState<
     (RepoCheck & { cred?: { username: string; password: string }; save?: boolean }) | null
   >(null);
-  /** SVN 账号预弹框：工具配置和系统凭据缓存都没有账号时弹出（认证失败后的重试框在任务侧，见 get-repo-task） */
-  const [svnAsk, setSvnAsk] = useState<{ user: string } | null>(null);
+  /** SVN 账号预弹框：工具配置和系统凭据缓存都没有账号时弹出（认证失败后的重试框在任务侧，见 get-repo-task）。
+   *  error = 预检失败原因（账号不对/没权限），直接显示在框里，不用等跑一次检出 */
+  const [svnAsk, setSvnAsk] = useState<{ user: string; error?: string } | null>(null);
 
   /** 浏览：以当前目录输入框为起点；路径不存在时提示，不打开浏览窗 */
   const openPicker = () => {
@@ -465,6 +468,56 @@ export function GetRepoDialog(props: {
       .finally(() => setCheckBusy(false));
   };
 
+  /** 远程仓库地址（含 git 的 scp 形式）；本地路径 / file:// 不需要认证预检 */
+  const isRemoteUrl = (u: string): boolean => {
+    if (!u || /^file:/i.test(u)) return false;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) return true;
+    return /^[^@\s/]+@[^:\s/]+:/.test(u);
+  };
+
+  /** 获取前预检：账号密码/权限通过才弹「确认获取」；失败直接提示，不再弹一次没用的确认框
+   *  （用户要求：确认框之前就把账号问题解决掉）。
+   *  cred 为空 = 用已保存的配置账号（匿名获取也走这里）。 */
+  const verifyThenConfirm = (
+    cred?: { username: string; password: string },
+    save = false,
+    presetUser = '',
+  ) => {
+    let began = false;
+    // 验证期间先清掉上一次的失败原因（弹窗里的错误条已手动关闭/开始输入时也会先消失；
+    // 这样这次再失败时 props.error 从「无 → 有」变化，能重新显示出来）
+    setSvnAsk((cur) => (cur ? { ...cur, error: undefined } : cur));
+    setVerifyBusy(true);
+    setCheckBusy(true);
+    void post
+      .verifyRemote(type, url.trim(), cred)
+      .then((v) => {
+        if (v.ok) {
+          began = true;
+          setSvnAsk(null);
+          checkAndConfirm(cred, save); // 内部自己管理 checkBusy
+          return;
+        }
+        if (v.code === 'AUTH' && type === 'svn') {
+          // 认证/权限问题：留在（或弹出）账号框并显示原因，不弹确认框
+          setSvnAsk({ user: cred?.username ?? presetUser, error: v.message ?? t('srv.verifyAuthFailed') });
+        } else {
+          // 地址不可达 / 服务器错误（或 Git 凭据问题）：弹账号框没用，表单里直接报
+          setSvnAsk(null);
+          setMsg(v.message ?? t('srv.verifyConnectFailed'));
+          setMsgErr(true);
+        }
+      })
+      .catch((e: Error) => {
+        setMsg(e.message);
+        setMsgErr(true);
+      })
+      .finally(() => {
+        setVerifyBusy(false);
+        if (!began) setCheckBusy(false);
+      });
+  };
+
   const submit = () => {
     if (!url.trim()) {
       // 请填写地址（URL）
@@ -478,25 +531,30 @@ export function GetRepoDialog(props: {
       setMsgErr(true);
       return;
     }
-    // SVN（网络仓库）：获取前查有没有可用身份——工具配置和 svn 官方凭据缓存都为空才预弹账号框。
-    // 有任一就直接跑：匿名可读的服务器 / 别处登录过的缓存账号不该被强制输账号。
-    // file:// 本地仓库不需要认证，跳过检测。
-    if (type === 'svn' && /^(https?|svn):\/\//i.test(url.trim())) {
+    if (!isRemoteUrl(url.trim())) {
+      // 本地路径 / file://：不需要认证预检，直接二次确认
+      checkAndConfirm();
+      return;
+    }
+    // SVN（网络仓库）：先查有没有可用身份——工具配置和 svn 官方凭据缓存都为空才预弹账号框；
+    // 有任一 → 先用它做认证预检，通过才弹确认框
+    if (type === 'svn') {
       setCheckBusy(true);
       void get
         .svnIdentity(url.trim())
         .then((id) => {
-          if (!id.config && !id.cache) {
-            setSvnAsk({ user: '' });
-            setCheckBusy(false);
-          } else {
-            checkAndConfirm(); // 内部自己管理 checkBusy
-          }
+          setCheckBusy(false);
+          if (!id.config && !id.cache) setSvnAsk({ user: '' });
+          else verifyThenConfirm(undefined, false, id.config?.username ?? id.cache?.username ?? '');
         })
-        .catch(() => checkAndConfirm()); // 身份查询失败不挡路：直接按原流程获取
+        .catch(() => {
+          setCheckBusy(false);
+          verifyThenConfirm();
+        });
       return;
     }
-    checkAndConfirm();
+    // Git：用已保存凭据先验证（没有凭据时公开仓库也能通过；私有仓库失败直接在表单提示）
+    verifyThenConfirm();
   };
 
   /** 二次确认通过 → 把参数交给调用方发起后台任务，本弹窗立刻关闭。
@@ -660,19 +718,15 @@ export function GetRepoDialog(props: {
           onCancel={() => setPending(null)}
         />
       )}
-      {/* SVN 账号（获取前预弹）：填了 → 带临时凭据走二次确认；匿名 → 不记账号直接走 */}
+      {/* SVN 账号（获取前预弹）：提交后**先验证**——不通过留在框内报错，通过才进「确认获取」 */}
       {svnAsk && (
         <SvnCredModal
           username={svnAsk.user}
+          error={svnAsk.error}
+          verifying={verifyBusy}
           allowAnonymous
-          onAnonymous={() => {
-            setSvnAsk(null);
-            checkAndConfirm();
-          }}
-          onSubmit={(cred, save) => {
-            setSvnAsk(null);
-            checkAndConfirm(cred, save);
-          }}
+          onAnonymous={() => verifyThenConfirm()}
+          onSubmit={(cred, save) => verifyThenConfirm(cred, save)}
           onClose={() => setSvnAsk(null)}
         />
       )}

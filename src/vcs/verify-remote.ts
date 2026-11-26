@@ -54,7 +54,7 @@ export async function verifyRemote(
     }
     const res = await run(await resolveSvnBin(), args.concat(u), {
       stdinData: user ? `${cred.password ?? ''}\n` : undefined,
-      timeoutMs: 20_000,
+      timeoutMs: 8_000,
       signal,
       decode: 'auto',
     });
@@ -86,7 +86,7 @@ export async function verifyRemote(
       ask = createAskPass({ username: cred.username, password: cred.password });
       env.GIT_ASKPASS = ask.path;
     }
-    const res = await run('git', ['ls-remote', '--heads', u], { env, timeoutMs: 20_000, signal, decode: 'auto' });
+    const res = await run('git', ['ls-remote', '--heads', u], { env, timeoutMs: 8_000, signal, decode: 'auto' });
     if (res.code === 0) return { ok: true };
     const text = (res.stderr + '\n' + res.stdout).trim();
     if (isGitAuthError(text)) return { ok: false, code: 'AUTH', message: t('srv.verifyAuthFailed') };

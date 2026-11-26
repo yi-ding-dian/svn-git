@@ -138,6 +138,8 @@ export const shell = {
   'shell.tasks.detailTarget': 'Target',
   // {n} files checked out · {size}
   'shell.tasks.checkoutFiles': '{n} files checked out · {size}',
+  // Byte size not scanned yet (early checkout): file count only, avoid "0.0 MB"
+  'shell.tasks.checkoutFilesNoSize': '{n} files checked out',
   'shell.tasks.switchFiles': '{n} files processed',
   // ---- Update manifest pre-scanned before a pull (GitHub remotes only; git's protocol has no file names/progress) ----
   'shell.tasks.manifestSummary': 'This update: {n} files · {size}',

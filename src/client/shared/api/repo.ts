@@ -465,6 +465,11 @@ export const postRepo = {
         gitignoreWritten?: boolean;
         /** 失败时的原始命令输出（任务详情窗展开看；message 是提炼后的一句话） */
         errorDetail?: string;
+        /** 检出警告（如 SVN 外部引用 E205011 同步失败）：任务详情窗黄框展示 */
+        warnings?: string[];
+        /** 检出到的文件清单（SVN 检出收集；详情窗列清单用） */
+        files?: { code: string; path: string }[];
+        fileTotal?: number;
       }
     >(
       '/api/repo-create',

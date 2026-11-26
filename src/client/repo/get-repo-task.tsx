@@ -8,7 +8,7 @@
  *  完成/失败进铃铛（App 统一通知），认证失败由本文件末尾的 GetRepoAuthModal 引导、保存后自动重试。 */
 import React from 'react';
 import { post, get } from '../shared/api.js';
-import { startTask, pollTransferProgress } from '../shared/tasks.js';
+import { startTask, pollTransferProgress, setTaskProgress } from '../shared/tasks.js';
 import { joinPath } from '../shared/utils.js';
 import { translateVcsError } from '../shared/vcs/errors.js';
 import { GitPushAuthModal } from './git-auth.js';
@@ -45,9 +45,28 @@ export function startGetRepoTask(
   },
 ): void {
   const target = joinPath(p.dir, p.name);
-  /** 进度轮询的停止函数（startTask 返回 id 之后才挂得上，见下） */
+  /** 进度轮询的停止函数（预检通过、真正开始获取时才挂上） */
   let stopPoll: (() => void) | null = null;
-  const taskId = startTask({
+  /** 预检阶段的步骤：预检期间目标目录还不存在，传输进度扫不到任何东西，面板会只剩一个
+   *  「总耗时」看着像卡死（用户实报）。这里用阶段文案补上"在验证账号与权限 · 12s"；
+   *  预检通过后 clone/checkout 自己的文件/字节进度会接管（服务端 progressStart 覆盖） */
+  const steps = [t('repo.get.stepVerify'), t('repo.get.stepFetch')];
+  const stepStartedAt = [Date.now()];
+  let taskId = 0;
+  const setStep = (n: number) => {
+    while (stepStartedAt.length <= n) stepStartedAt.push(Date.now());
+    setTaskProgress(taskId, {
+      phase: 'waiting',
+      bytes: 0,
+      speed: 0,
+      total: 0,
+      steps,
+      currentStep: n,
+      stepStartedAt: [...stepStartedAt],
+    });
+  };
+  /** 任务结束时清掉阶段进度（成功/失败都撤），面板只留结果与耗时 */
+  taskId = startTask({
     kind: 'get',
     // 任务标题：获取仓库 · {name}（标签检出时由调用方覆盖为「检出标签 · 标签名」）
     title: `${p.title ?? t('repo.get.title')} · ${p.name}`,
@@ -83,7 +102,10 @@ export function startGetRepoTask(
             }
             return { ok: false, message, data: { kind: 'get', target, errorDetail: message } };
           }
+          setStep(1); // 预检通过 → 进入获取（clone/checkout 的文件进度一上来就会取代它）
         }
+        // 真正开始获取后才轮询传输进度：预检期间目录不存在，轮询拿不到数据只会把阶段文案清掉
+        stopPoll = pollTransferProgress(taskId, target);
         const r = await post.repoCreate(p.type, p.dir, p.name, p.url, true, signal, p.ref, p.depth, {
           checkout: p.checkout,
           mode: p.mode,
@@ -125,15 +147,16 @@ export function startGetRepoTask(
           }
           hooks.onCreated(r.repoDir ?? target);
         }
-        return { ok: r.ok, message: r.message, data: { kind: 'get', target, errorDetail: r.errorDetail } };
+        // warnings：外部引用（svn:externals）同步失败等"主体成功但有问题"的明细（详情窗黄框）
+        return { ok: r.ok, message: r.message, data: { kind: 'get', target, errorDetail: r.errorDetail, warnings: r.warnings } };
       } finally {
-        stopPoll?.(); // 任务收尾就停轮询（真在跑时才挂上，见下）
+        stopPoll?.(); // 任务收尾就停轮询（真在跑时才挂上）
+        setTaskProgress(taskId, null); // 进度/阶段都撤掉：结束的面板只留结果与耗时
       }
     },
   });
-  // 进度轮询挂在 startTask **之后**：run 是被同步调起的，在里面拿不到自己的 id。
-  // 通道 = 目标目录（同时可能有多个获取在跑，各论各的）
-  stopPoll = pollTransferProgress(taskId, target);
+  // 阶段进度从"验证账号与权限"开始（发布任务同款：startTask 返回 id 后才能写）
+  setStep(0);
   // 弹窗刚关，给一句"去哪儿找它"（顶栏沙漏 = 进度与取消入口）
   hooks.onToast(t('repo.get.started', { name: p.name }));
 }

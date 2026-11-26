@@ -141,6 +141,8 @@ export const shell = {
   'shell.tasks.detailTarget': '目标',
   // 已检出 {n} 个文件 · {size}
   'shell.tasks.checkoutFiles': '已检出 {n} 个文件 · {size}',
+  // 字节数还没扫到（检出早期）：只显示文件数，避免 "0.0 MB"
+  'shell.tasks.checkoutFilesNoSize': '已检出 {n} 个文件',
   'shell.tasks.switchFiles': '已处理 {n} 个文件',
   // ---- 拉取前预扫描的更新清单（GitHub 远端；git 协议不提供文件名与单文件进度）----
   'shell.tasks.manifestSummary': '本次更新 {n} 个文件 · {size}',

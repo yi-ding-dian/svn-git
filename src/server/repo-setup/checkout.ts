@@ -1,20 +1,25 @@
 /** SVN 仓库获取：远程 checkout 工作副本 + 本地 svnadmin create（含标准布局与初始工作副本）。
  *
  *  **与仓库浏览的远程检出（vcs/svn/checkout.ts）不是同一套行为**，不要为了"看起来像"把它们合并：
- *  - 这里跑 `checkout -q`，不输出/收集文件清单，也不登记传输进度；超时上限 10 分钟；
+ *  - 这里不加 `-q`：`A/U 路径` 行用于实时统计已检出文件数（进度），但不收集文件清单；
+ *    超时上限 10 分钟；扫盘只补字节数（svn 1.8+ install 前工作目录可能是空的）；
  *  - 这里**不做**「目标已存在且非空」预检（原行为：交给 svn 自己报错）；
  *  - 认证失败用 classifySvnError（auth/authz，排除 proxy），响应带 authType='svn'；
- *  - 没有 externals E205011 特判（失败就是失败）、没有稀疏检出（include）。
+ *  - externals E205011 特判：.svn 已建立 = 主体检出成功，按成功返回并把失败明细放进 warnings
+ *    （与浏览检出的 vcs/svn/checkout.ts 同策略）；没有稀疏检出（include）。
  *  共用部分已抽到 vcs/svn/net.ts（网络参数）与 vcs/leftover.ts（半截目录清理）。
  *
  *  客户端断开要真的停：与 git 克隆同一套（用户点「取消」/关弹窗 → 停掉 svn 并清半截目录）。
  *  原先这里没接 abort：取消后 svn checkout 会在后台跑到 10 分钟上限，还会留下半个工作副本。 */
 import fs from 'node:fs';
+import path from 'node:path';
 import type http from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { run } from '../../vcs/exec.js';
 import { resolveSvnBin, classifySvnError } from '../../vcs/svn.js';
 import { svnNetArgs } from '../../vcs/svn/net.js';
+import { scanDirStat } from '../../vcs/svn/scan-dir.js';
+import { progressStart, progressDone, progressReport } from '../../transfer-progress.js';
 import { loadConfig } from '../../config.js';
 import { markInflight, clearInflight } from '../../inflight.js';
 import { t } from '../../shared/i18n/index.js';
@@ -53,13 +58,50 @@ export async function createSvnRepo(p: SvnCreateParams, res: http.ServerResponse
     const svnUser = tempUser || cfg.svn.username;
     const svnPass = tempUser ? String(body.password ?? '') : cfg.svn.password;
     const svnNet = svnNetArgs({ user: svnUser, tempUser, trustServerCert: cfg.svn.trustServerCert });
-    const r = await run(await resolveSvnBin(), ['checkout', '-q', ...svnNet, url, target], {
-      timeoutMs: 600_000,
-      signal: ac.signal,
-      stdinData: svnUser ? svnPass + '\n' : undefined,
-    });
-    res.off('close', onClose);
-    clearInflight(target); // 检出跑完了（成功/失败/取消都算）：撤掉登记
+    // 进度：svn checkout **逐文件实时输出 `A/U 路径` 行**，按行计数最真实——文件数随下载逐个增长。
+    // 扫盘只用来补字节数：svn 1.8+ 先把内容放 `.svn/tmp`、install 阶段才出现在工作目录，
+    // 所以检出期间目录可能是空的，单靠扫盘会一直显示 0（实测）。
+    // 没有进度时报面板全程只有「总耗时」（用户实报：获取大仓库一分多钟只有秒数在动）
+    progressStart(target);
+    let lineFiles = 0;
+    let scannedBytes = 0;
+    const report = (scannedFiles = 0) => progressReport(target, Math.max(lineFiles, scannedFiles), scannedBytes);
+    let scanning = false;
+    const scanTimer = setInterval(() => {
+      if (scanning) return;
+      scanning = true;
+      void scanDirStat(target)
+        .then(({ files, bytes }) => {
+          scannedBytes = bytes;
+          report(files);
+        })
+        .catch(() => {
+          /* 这一轮扫不动就跳过 */
+        })
+        .finally(() => {
+          scanning = false;
+        });
+    }, 1500);
+    let r: Awaited<ReturnType<typeof run>>;
+    try {
+      r = await run(await resolveSvnBin(), ['checkout', ...svnNet, url, target], {
+        timeoutMs: 600_000,
+        signal: ac.signal,
+        stdinData: svnUser ? svnPass + '\n' : undefined,
+        // 不加 -q：A/U 行就是"已检出多少个文件"的进度来源（清单在 stdout，数量以万计也只有几 MB）
+        onStdoutLine: (line) => {
+          if (/^[ADUGECR]\s+/.test(line)) {
+            lineFiles += 1;
+            report();
+          }
+        },
+      });
+    } finally {
+      clearInterval(scanTimer);
+      progressDone(target); // 进度通道撤掉（成功/失败/取消都算）
+      res.off('close', onClose);
+      clearInflight(target); // 检出跑完了（成功/失败/取消都算）：撤掉登记
+    }
     if (r.aborted || r.timedOut) {
       // 只清"这次刚建出来的"：原本就存在的目录一个字节都不许动（同 git 克隆的守卫）
       if (!targetExistedBefore) removeLeftoverTarget(target);
@@ -71,6 +113,20 @@ export async function createSvnRepo(p: SvnCreateParams, res: http.ServerResponse
     } else if (r.code === 0) {
       // 已检出 SVN 工作副本 {path}
       result = { ok: true, message: t('srv.svnCheckedOut', { path: target }) + (cleanedRemnant ? t('srv.remnantCleaned') : ''), repoDir: target };
+    } else if (/E205011/.test(r.stderr + r.stdout) && fs.existsSync(path.join(target, '.svn'))) {
+      // 外部引用（svn:externals）处理失败：**主内容已完整检出、工作副本可用**，按成功返回
+      // （与「浏览仓库 → 检出」的 vcs/svn/checkout.ts 同一策略；否则用户看到"工作副本明明可用
+      // 却打红 ✗"，还连带丢掉自动打开/记入最近项目——用户实报 E205011）
+      const warnLines = (r.stderr.trim() || r.stdout.trim())
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      result = {
+        ok: true,
+        message: t('srv.svnCheckedOutExternals', { path: target }) + (cleanedRemnant ? t('srv.remnantCleaned') : ''),
+        repoDir: target,
+        warnings: warnLines.length ? warnLines : undefined,
+      };
     } else {
       // svn checkout 失败。认证/授权失败（密码错、匿名无读权限）→ 带 authError 回前端弹账号框；
       // 代理认证失败不在此列（那是系统代理设置问题，弹 SVN 账号框没用）

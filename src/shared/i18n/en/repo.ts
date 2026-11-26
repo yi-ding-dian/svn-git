@@ -387,9 +387,13 @@ export const repo = {
   'repo.get.needUrl': 'Please fill in the URL',
   'repo.get.needTargetName': 'Please fill in the target and name',
   'repo.get.getting': 'Fetching…',
+  'repo.get.verifying': 'Verifying…',
   'repo.get.get': 'Get',
   // The dialog closes right after "Get"; this tells the user where the task went
   'repo.get.started': 'Getting {name} in the background (see progress and cancel from the hourglass in the top bar)',
+  // Task steps: credential pre-check (read-only metadata) → actual clone/checkout (then file/byte progress takes over)
+  'repo.get.stepVerify': 'Verifying account and permissions',
+  'repo.get.stepFetch': 'Fetching repository data',
   'repo.get.help':
     'Two options: Git clone = git clone (copy from a URL to your machine); SVN checkout = svn checkout (fetch a working copy from the server; the target directory is the local name).',
   'repo.get.typeGit': 'Git Clone',

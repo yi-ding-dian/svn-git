@@ -50,6 +50,8 @@ export interface RepoCreateResult {
   /** 失败时的**原始命令输出**（含进度行）：任务详情窗据此展示"真正发生了什么"。
    *  message 只是提炼后的一句话，进度输出全在 stderr 里，直接用整段当消息会把原因藏到看不见的地方。 */
   errorDetail?: string;
+  /** 主体成功但需要注意的问题（如 SVN 外部引用 E205011 同步失败）：任务详情窗黄框展示 */
+  warnings?: string[];
 }
 
 /** 从 git 的 stderr 里提炼"一句话原因"。

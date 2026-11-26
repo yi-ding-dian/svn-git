@@ -165,13 +165,16 @@ export function TaskProgress(props: { p: TaskProgressInfo; /** 任务已完成�
           {p.objectsTotal ? ` · ${t('shell.tasks.progressObjects', { done: (p.objectsDone ?? 0).toLocaleString(), total: p.objectsTotal.toLocaleString() })}` : ''}
         </div>
       )}
-      {/* 已检出 {n} 个文件 · {size}（SVN 检出：后端周期扫盘上报）；
-          切换分支同一条通道只报文件数（没有字节/总大小） */}
+      {/* 已检出 {n} 个文件 · {size}（SVN 检出：后端按输出行实时计数，字节由扫盘补）；
+          切换分支同一条通道只报文件数（没有字节/总大小）。
+          字节还没扫到（检出早期 / svn install 前工作目录为空）时只显示文件数，不显示 "0.0 MB" */}
       {p.files !== undefined && (
         <div className="dim small">
           {p.phase === 'switch'
             ? t('shell.tasks.switchFiles', { n: p.files.toLocaleString() })
-            : t('shell.tasks.checkoutFiles', { n: p.files.toLocaleString(), size: size(p.bytes) })}
+            : p.bytes > 0
+              ? t('shell.tasks.checkoutFiles', { n: p.files.toLocaleString(), size: size(p.bytes) })
+              : t('shell.tasks.checkoutFilesNoSize', { n: p.files.toLocaleString() })}
         </div>
       )}
       {/* 本次更新文件清单的摘要（拉取前预扫描；只有 GitHub 远端有）。完整清单在任务详情弹窗 */}

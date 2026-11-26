@@ -142,25 +142,27 @@ export function pollTransferProgress(id: number, chan: string): () => void {
   const timer = setInterval(() => {
     void get
       .transferProgress(chan)
-      .then((r) =>
-        setTaskProgress(
-          id,
-          r.ok
-            ? {
-                phase: r.phase!,
-                bytes: r.bytes ?? 0,
-                speed: r.speed ?? 0,
-                total: r.total ?? 0,
-                files: r.files,
-                steps: r.steps,
-                currentStep: r.currentStep,
-                objectsDone: r.objectsDone,
-                objectsTotal: r.objectsTotal,
-                manifest: r.manifest,
-              }
-            : null,
-        ),
-      )
+      .then((r) => {
+        if (r.ok) {
+          setTaskProgress(id, {
+            phase: r.phase!,
+            bytes: r.bytes ?? 0,
+            speed: r.speed ?? 0,
+            total: r.total ?? 0,
+            files: r.files,
+            steps: r.steps,
+            currentStep: r.currentStep,
+            objectsDone: r.objectsDone,
+            objectsTotal: r.objectsTotal,
+            manifest: r.manifest,
+          });
+          return;
+        }
+        // 服务端没有传输进度（SVN 检出未上报 / 已收尾）：**保留已设置的阶段文案**，
+        // 否则预检阶段的「正在验证账号与权限」会被每秒清空，面板只剩「总耗时」（用户实报）
+        const cur = tasks.find((x) => x.id === id)?.progress;
+        if (!cur?.steps) setTaskProgress(id, null);
+      })
       .catch(() => {
         /* 轮询失败不打扰：面板退化成只有标题与已用秒数 */
       });

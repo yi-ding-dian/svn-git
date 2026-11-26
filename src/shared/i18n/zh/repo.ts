@@ -390,9 +390,13 @@ export const repo = {
   'repo.get.needUrl': '请填写地址（URL）',
   'repo.get.needTargetName': '请填写目标和名称',
   'repo.get.getting': '获取中…',
+  'repo.get.verifying': '验证中…',
   'repo.get.get': '获取',
   // 点「获取」后弹窗立刻关闭，任务在后台跑——这句告诉用户去哪儿找它
   'repo.get.started': '获取仓库 · {name} 已在后台运行（顶栏沙漏可看进度并取消）',
+  // 获取任务的阶段文案：预检（只读元数据，秒级）→ 真正克隆/检出（之后由文件/字节进度接管）
+  'repo.get.stepVerify': '正在验证账号与权限',
+  'repo.get.stepFetch': '正在获取仓库数据',
   'repo.get.help':
     '两种方式：Git 克隆 = git clone（从地址复制一份到本地）；SVN 检出 = svn checkout（从服务器获取工作副本，目标目录即本地名称）。',
   'repo.get.typeGit': 'Git 克隆',
