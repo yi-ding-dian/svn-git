@@ -69,6 +69,8 @@ interface Props {
   startRel?: string | null;
   /** 远程访问（由组合根传入）：右键菜单不提供「在本机启动外部程序」 */
   remote?: boolean;
+  /** 共享只读（远程访客）：禁止拖入上传——后端同样会 403，前端提前拦下并提示原因 */
+  shareReadOnly?: boolean;
   onAction: (op: 'add' | 'revert' | 'delete' | 'commit' | 'fs-delete' | 'move' | 'fs-move', paths: string[], keep?: boolean) => void;
   onDiff: (path: string) => void;
   /** 打开历史视图：isDir 决定目录还原走反向合并（确认框/命令预览按它区分） */
@@ -827,6 +829,7 @@ export function FsView(props: Props) {
     setPendingLocate,
     onToast: props.onToast,
     onTrash: (rels) => props.onAction('fs-delete', rels),
+    shareReadOnly: props.shareReadOnly,
   });
 
   /** 菜单定位：动态估算菜单尺寸，超出屏幕右/下边界时上移/左移，保证完整显示（有 ctxPos） */
@@ -1537,8 +1540,10 @@ export function FsView(props: Props) {
           <div className="fs-drag-bar">
             <span className="spinner" style={{ width: 14, height: 14, margin: 0 }} />
             <span>
-              {/* 正在上传 {done}/{total}… */}
-              {t('fs.drop.uploading', { done: drop.progress.done, total: drop.progress.total })}
+              {/* 正在上传 {done}/{total}… / 正在上传 {done}/{total} · {pct}%…（当前文件字节进度） */}
+              {drop.progress.pct === undefined
+                ? t('fs.drop.uploading', { done: drop.progress.done, total: drop.progress.total })
+                : t('fs.drop.uploadingPct', { done: drop.progress.done, total: drop.progress.total, pct: drop.progress.pct })}
             </span>
           </div>
         )}

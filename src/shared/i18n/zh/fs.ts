@@ -299,6 +299,10 @@ export const fs = {
   // ---- 拖入上传 / 剪贴板搬运（use-file-transfer.ts / index.tsx）----
   'fs.drop.hint': '松开即复制到 {dest}',
   'fs.drop.uploading': '正在上传 {done}/{total}…',
+  // 「正在上传 1/3 · 45%」：pct 是当前文件的字节百分比（仅浏览器上传有）
+  'fs.drop.uploadingPct': '正在上传 {done}/{total} · {pct}%…',
+  // 远程共享只读：拖入被拒
+  'fs.drop.readOnly': '共享只读，不能上传',
   'fs.drop.precheckFailed': '预检失败：{msg}',
   'fs.drop.picked': '，已选中并定位',
   'fs.drop.elsewhere': '，另有 {n} 个在子文件夹里',

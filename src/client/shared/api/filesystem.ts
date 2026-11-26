@@ -379,18 +379,30 @@ export async function uploadFile(
   rel: string,
   blob: Blob,
   mode: 'overwrite' | 'rename' | 'skip',
+  /** 字节级进度（XHR 才有；fetch 拿不到上传进度）。loaded/total 都是字节数 */
+  onProgress?: (loaded: number, total: number) => void,
 ): Promise<{ ok?: boolean; savedAs?: string; skipped?: boolean; message?: string; error?: string }> {
   const qs = `dir=${encodeURIComponent(dir)}&path=${encodeURIComponent(rel)}&mode=${mode}`;
-  const r = await fetch(`/api/upload?${qs}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream' },
-    body: blob,
+  // 用 XHR 而不是 fetch：只有 xhr.upload.onprogress 能拿到上传进度。
+  // 远程共享传几十 MB 的文件时，fetch 只能干等到结束，界面看起来像卡住。
+  // 语义与原来的 fetch 版一致：无论 HTTP 状态码，都解析响应 JSON（403 等也带 {error}）。
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/upload?${qs}`);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(e.loaded, e.total);
+      };
+    }
+    xhr.onload = () => {
+      try {
+        resolve(JSON.parse(xhr.responseText) as { ok?: boolean; savedAs?: string; skipped?: boolean; message?: string; error?: string });
+      } catch {
+        resolve({ error: `HTTP ${xhr.status}` });
+      }
+    };
+    xhr.onerror = () => reject(new Error(`HTTP ${xhr.status || 'network'}`));
+    xhr.send(blob);
   });
-  return (await r.json().catch(() => ({}))) as {
-    ok?: boolean;
-    savedAs?: string;
-    skipped?: boolean;
-    message?: string;
-    error?: string;
-  };
 }

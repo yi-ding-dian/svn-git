@@ -29,8 +29,10 @@ export function useFsDrag(opts: {
   setPendingLocate: (v: { rel: string; at: number; only: string[] } | null) => void;
   onToast: (m: string, err?: boolean) => void;
   onTrash: (rels: string[]) => void;
+  /** 远程共享只读：外部文件拖入直接拒绝（后端也会 403；前端提前拦下并提示） */
+  shareReadOnly?: boolean;
 }) {
-  const { dir, mode, repoType, selected, rowsRef, rowRel, setTip, load, invalidateCache, reloadOpenNodes, setPendingLocate, onToast, onTrash } = opts;
+  const { dir, mode, repoType, selected, rowsRef, rowRel, setTip, load, invalidateCache, reloadOpenNodes, setPendingLocate, onToast, onTrash, shareReadOnly } = opts;
 
   // 浏览模式拖拽框选：拖拽起点 / 框选矩形（ref 直接操作 DOM，避免 mousemove 高频 re-render 卡顿） / 本次是否发生过拖动（供 click 判断，避免空白点击清空误伤框选结果）
   const selBoxRef = useRef<HTMLDivElement | null>(null);
@@ -108,6 +110,9 @@ export function useFsDrag(opts: {
   const drop = useDropUpload({
     dir,
     askConflict,
+    // 远程只读共享：拖入直接拒绝，松手时提示原因（不弹"松开即复制"横幅）
+    readOnly: shareReadOnly,
+    onBlocked: () => onToast(t('fs.drop.readOnly'), true),
     /** 项目内拖拽落在目录上 → 移动过去（规则与剪切粘贴同一套：版本化走 svn move / git mv） */
     onMoveDrop: (destDir) => {
       const items = dragItemsRef.current;

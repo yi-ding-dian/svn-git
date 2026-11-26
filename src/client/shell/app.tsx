@@ -494,6 +494,7 @@ export function App() {
                   active={view === 'browse'}
                   repoType={repo.type}
                   remote={shareStatus ? !shareStatus.local : false}
+                  shareReadOnly={shareStatus ? shareStatus.readOnly : false}
                   repoRoot={repo.root}
                   startRel={repo.startRel}
                   onAction={handleAction}

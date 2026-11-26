@@ -106,14 +106,19 @@ export function useDropUpload(opts: {
   askConflict: (conflicts: string[]) => Promise<ConflictChoice | null>;
   /** 一批传完回调：成功数 + 失败清单 + 成功落盘的「相对仓库根路径」（调用方据此刷新列表、选中并定位） */
   onDone: (okCount: number, failed: string[], saved: string[]) => void;
+  /** 远程共享只读：外部文件拖入直接拒绝（后端也会 403，这里提前给明确提示，别让人拖进来看一堆失败） */
+  readOnly?: boolean;
+  /** 只读时松手提示（由调用方给 toast 文案） */
+  onBlocked?: () => void;
   /** 项目内拖拽落到目录上时调用（`null` = 没落在任何目录上，松开等于取消）。
    *  拖的是哪些条目由调用方自己记着——拖拽期间浏览器的安全限制读不到 dataTransfer 的内容。 */
   onMoveDrop?: (destDir: string | null) => void;
 }) {
-  const { dir, askConflict, onDone, onMoveDrop } = opts;
+  const { dir, askConflict, onDone, readOnly, onBlocked, onMoveDrop } = opts;
   const [dragging, setDragging] = useState(false); // 外部文件悬停中（显示"松开即复制到…"横幅）
   const [hoverDir, setHoverDir] = useState<string | null>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  /** 上传进度：done/total 是文件个数；pct 是**当前文件**的字节百分比（仅浏览器上传有，copy-into 快路径没有） */
+  const [progress, setProgress] = useState<{ done: number; total: number; pct?: number } | null>(null);
   const busy = useRef(false);
 
   // 拦住浏览器默认的「拖入即用文件替换当前页面」——拖到文件区以外也不该把界面冲掉。
@@ -149,13 +154,22 @@ export function useDropUpload(opts: {
         // 逐个传：单个失败不中断整批，最后汇总（回滚已传文件反而更让人意外）
         for (let i = 0; i < items.length; i++) {
           const it = items[i]!;
+          // 当前文件的字节进度（仅浏览器上传有；copy-into 快路径没有）。
+          // onprogress 每几十毫秒就回调一次，按 1% 节流——否则整个 FsView 跟着狂重渲染。
+          let lastPct = -1;
+          const onProg = (loaded: number, totalBytes: number) => {
+            const pct = totalBytes > 0 ? Math.floor((loaded / totalBytes) * 100) : 0;
+            if (pct === lastPct) return;
+            lastPct = pct;
+            setProgress({ done: i, total: items.length, pct });
+          };
           try {
             // 用户在弹窗里给这一项改了名字 → 按新名字落盘（改名即改请求里的相对路径）
             const rel = choice.renames?.[it.path] ?? it.path;
             // 有源路径（打包版）就走复制：不传内容，顺带保留权限位与时间戳
             const r = it.srcPath
               ? await post.copyInto(targetDir, it.srcPath, rel, choice.mode)
-              : await uploadFile(targetDir, rel, it.file, choice.mode);
+              : await uploadFile(targetDir, rel, it.file, choice.mode, onProg);
             if (r.ok) {
               okCount++;
               if (r.savedAs) saved.push(r.savedAs); // rename/skip 模式下是最终落点，不是拖入时的名字
@@ -191,6 +205,15 @@ export function useDropUpload(opts: {
     onDragOver: (e: React.DragEvent) => {
       const internal = isInternalDrag(e.dataTransfer);
       if (!internal && !hasFiles(e.dataTransfer)) return;
+      // 远程只读共享：外部文件不接。仍 preventDefault 让自己成为投放目标——
+      // 松手时要能收到 drop、给一句明确原因；光标显示禁止，且**不弹**"松开即复制"横幅（那个横幅意味着可以复制）
+      if (!internal && readOnly) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'none';
+        setHoverDir(null);
+        setDragging(false);
+        return;
+      }
       e.preventDefault();
       e.dataTransfer.dropEffect = internal ? 'move' : 'copy';
       const target = dirTargetOf(e);
@@ -211,6 +234,11 @@ export function useDropUpload(opts: {
       const target = dirTargetOf(e);
       setDragging(false);
       setHoverDir(null);
+      // 共享只读：拖进来就明确告诉为什么不行，别静默吞掉（后端同样会 403，这里提前说清）
+      if (!internal && readOnly) {
+        onBlocked?.();
+        return;
+      }
       if (internal) {
         // 内部拖拽**只有落在目录上才生效**：落空白处/文件行上不猜意图，交给调用方给个说法
         onMoveDrop?.(target);
