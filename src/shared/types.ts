@@ -42,6 +42,22 @@ export const BINARY_EXTS = new Set([
  *  前端三处共用：双击打开预览 / 列表与网格的缩略图。注意 svg 不在 BINARY_EXTS 里（它是文本） */
 export const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg']);
 
+/** 常见**文本**扩展名（已知能当文本预览）——判断"未知扩展名"用：
+ *  既不在 BINARY_EXTS、也不在这里的（如自定义的 .tgg、无扩展名文件）→ 读文件头探测是否二进制，
+ *  避免把自定义二进制格式当文本读成乱码/卡界面。不在表里不影响功能，只是多一次探测请求。 */
+export const TEXT_EXTS = new Set([
+  'md', 'markdown', 'txt', 'text', 'log', 'rst', 'adoc', 'tex',
+  'json', 'jsonc', 'json5', 'yml', 'yaml', 'toml', 'ini', 'cfg', 'conf', 'env', 'properties',
+  'xml', 'html', 'htm', 'css', 'scss', 'sass', 'less',
+  'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'vue', 'svelte',
+  'py', 'rb', 'php', 'java', 'kt', 'kts', 'scala', 'groovy', 'lua', 'r', 'dart',
+  'c', 'h', 'cc', 'cpp', 'cxx', 'hpp', 'hh', 'm', 'mm', 'cs', 'go', 'rs', 'swift',
+  'sh', 'bash', 'zsh', 'fish', 'bat', 'cmd', 'ps1',
+  'sql', 'graphql', 'gql', 'proto', 'cmake', 'mk', 'gradle',
+  'csv', 'tsv', 'patch', 'diff', 'lock', 'gitignore', 'gitattributes', 'editorconfig',
+  'v', 'vhd', 'vhdl', 'tcl', 'awk', 'asm', 's',
+]);
+
 /** 文件/目录名比较（自然排序）：数字段按**数值**比，不是逐字符比。
  *  不写 numeric 时 localeCompare 会把 "v1.10" 排到 "v1.9" 前、"img10.png" 排到 "img2.png" 前（实报）。
  *  中英文的拼音/字母规则不受影响（仍跟随系统语言）。前后端共用：文件列表/树/过滤树/目录浏览都走它 */

@@ -23,7 +23,7 @@ import { useProjectHistory } from '../repo/use-project-history.js';
 import { ModalHost, onboardText } from './modal-host.js';
 import { Sidebar, type View } from './sidebar.js';
 import { IconOk, IconErr } from '../ui/icons.js';
-import { pathAutoWidth, isBinaryFile } from '../shared/utils.js';
+import { pathAutoWidth, isBinaryFile, isImageFile, isKnownTextFile } from '../shared/utils.js';
 import { translateVcsError } from '../shared/vcs/errors.js';
 import { useToast } from './use-toast.js';
 import { useAppShortcuts } from './use-app-shortcuts.js';
@@ -597,9 +597,22 @@ export function App() {
 
       {/* 右侧文件会话胶囊：切换项目后一键回到刚才的浏览/编辑现场 */}
       <FileSessionsDock
-        onOpen={(s) => {
-          // 目录书签：不进目录，在父目录里选中它并刷新一次（点条目才进入）
-          if (s.kind === 'dir') {
+        onOpen={async (s) => {
+          // 目录书签 / 已知二进制 / 未知扩展名探测为二进制 → 不进预览，在父目录里选中它并刷新一次
+          // （点条目才进入）。二进制当文本读会把大文件拖死——用户实报：右键二进制「稍后看」后
+          // 点胶囊直接卡死。图片有自己的预览（applySession 会带 img），不算在这一类。
+          let locate = s.kind === 'dir' || (!isImageFile(s.rel) && isBinaryFile(s.rel));
+          if (!locate && !isImageFile(s.rel) && !isKnownTextFile(s.rel)) {
+            if (info?.root && s.root === info.root) {
+              // 未知扩展名（如自定义 .tgg、无扩展名文件）：读文件头探测，二进制就只定位
+              const k = await get.fileKind(s.rel).catch(() => null);
+              locate = k?.binary === true;
+            } else {
+              // 跨项目时探测接口基于当前项目、用不了 → 保守定位（切过去后双击会走内容探测）
+              locate = true;
+            }
+          }
+          if (locate) {
             const parent = s.rel.includes('/') ? s.rel.slice(0, s.rel.lastIndexOf('/')) : '';
             const payload = { root: s.root, dir: parent, selectRel: s.rel };
             if (info?.root && s.root === info.root) {

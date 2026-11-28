@@ -164,6 +164,9 @@ export const getFilesystem = {
   pickDir: () => api<{ path: string | null; unsupported: boolean }>('/api/pick-dir'),
   fs: (dir?: string, force?: boolean, light?: boolean) =>
     api<FsData>(`/api/fs?dir=${encodeURIComponent(dir ?? '')}${force ? '&force=1' : ''}${light ? '&light=1' : ''}`),
+  /** 读文件头判断是否二进制（未知扩展名用）：含 NUL 字节即二进制 */
+  fileKind: (rel: string) =>
+    api<{ ok: boolean; binary?: boolean; error?: string }>(`/api/file-kind?path=${encodeURIComponent(rel)}`),
   /** 当前目录状态：deep=true 查子树（进入目录时用），否则只查直接子项（轮询用） */
   fsStatus: (dir?: string, deep = false) =>
     api<{

@@ -148,6 +148,31 @@ export async function handle(ctx: Ctx): Promise<boolean> {
     return true;
   }
 
+  if (p === '/api/file-kind') {
+    // 读文件头判断是否二进制（未知扩展名用）：含 NUL 字节即二进制（与 shared/text.ts 的探测口径一致）。
+    // 只读前 8KB，不加载整个文件——自定义二进制格式（如 .tgg）不会因为扩展名没登记而被当文本打开
+    const { repo } = vcsOf();
+    const rel = url.searchParams.get('path') || '';
+    const abs = path.resolve(repo.root, rel);
+    if (!rel || !inRepoRoot(repo.root, abs)) {
+      sendJson(res, 400, { error: MSG_PATH_OUT_OF_BOUNDS() });
+      return true;
+    }
+    try {
+      const fh = await fs.promises.open(abs, 'r');
+      try {
+        const buf = Buffer.alloc(8192);
+        const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+        sendJson(res, 200, { ok: true, binary: buf.subarray(0, bytesRead).includes(0) });
+      } finally {
+        await fh.close();
+      }
+    } catch (e) {
+      sendJson(res, 200, { ok: false, error: (e as Error).message });
+    }
+    return true;
+  }
+
   if (p === '/api/cat') {
     const { vcs, repo } = vcsOf();
     const rel = url.searchParams.get('path') || '';

@@ -37,7 +37,7 @@ import { ModuleIndexDialog } from './module-index.js';
 /** 重命名菜单项：不在版本库（?/I）→ 磁盘改名（无命令预览）；版本化 → svn/git move（占位预览，新名弹窗输入） */
 import { IgnoreModal } from './ignore-modal.js';
 import { FavDirsModal } from './fav-dirs.js';
-import { isBinaryFile, isImageFile, isImeComposing } from '../shared/utils.js';
+import { isBinaryFile, isImageFile, isKnownTextFile, isImeComposing } from '../shared/utils.js';
 import { formatFileSize } from '../shared/format-size.js';
 import { cmdOfRepo } from '../shared/cmd-preview.js';
 /** 命令预览: 多路径缩写（前 3 个 + …） */
@@ -186,9 +186,14 @@ export function FsView(props: Props) {
       if (targetDir !== dirRef.current) setDir(targetDir);
       restoreScrollRef.current = p.listScroll ?? null;
       keepPreviewRef.current = true;
+      // 兜底：二进制（pdf/zip/音视频等）不能内嵌预览——当文本读会把大文件拖死。
+      // 胶囊点击已在 app 层改走「定位并选中」，这里再拦一道，防其他恢复入口漏进来
+      if (!isImageFile(p.rel) && isBinaryFile(p.rel)) return;
       setPreview({
         name: p.name,
         rel: p.rel,
+        // 图片必须带 img：原来没传，双击能正常看的图片从胶囊打开会被当文本读（卡死）
+        ...(isImageFile(p.rel) ? { img: true } : null),
         ...(p.worktree ? { worktree: true } : null),
         restore: { mode: p.mode, line: p.line, scrollTop: p.scrollTop },
         full: p.full,
@@ -633,7 +638,7 @@ export function FsView(props: Props) {
 
   /** 打开文件：有变更 → diff；无变更/未版本化 → 原文预览（内容由 PreviewPane 自行读取渲染） */
   const openFile = useCallback(
-    (name: string, code: string, rel: string) => {
+    async (name: string, code: string, rel: string) => {
       keepPreviewRef.current = false; // 用户主动打开别的文件：恢复期的保护结束
       setTip(null); // 双击打开时关闭悬浮卡片（视图切换后不会再触发 mouseleave,需主动清）
       // 图片文件：双击直接看图（不读文本/diff,避免二进制乱码与"不支持文本对比"提示）
@@ -646,6 +651,15 @@ export function FsView(props: Props) {
         // 二进制文档：右键「打开方式…」用系统程序打开
         props.onToast(t('fs.tip.binary'), true);
         return;
+      }
+      // 未知扩展名（如自定义的 .tgg、无扩展名文件）：读文件头探测——
+      // 是二进制就按"二进制文档"处理，别当文本打开成乱码（扩展名白名单永远列不全）
+      if (!isKnownTextFile(rel)) {
+        const k = await get.fileKind(rel).catch(() => null);
+        if (k?.binary) {
+          props.onToast(t('fs.tip.binary'), true);
+          return;
+        }
       }
       if (code && code !== '?' && code !== 'I') {
         props.onDiff(rel);

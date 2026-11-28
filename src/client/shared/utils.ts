@@ -2,7 +2,7 @@
 import { useCallback, useState } from 'react';
 
 // 二进制文件扩展名集合：单一事实源在 src/shared/types.ts（server 与前端共用，避免双份维护）
-import { BINARY_EXTS, IMAGE_EXTS } from '../../shared/types.js';
+import { BINARY_EXTS, IMAGE_EXTS, TEXT_EXTS } from '../../shared/types.js';
 
 /** 弹窗宽度自适应最长文件名（mono 13px 约 7.6px/字符 + 勾选框/徽标/间距余量），钳制在 [minW, maxW] 防过窄/超宽 */
 export function pathAutoWidth(maxPathLen: number, minW = 620, maxW = 1400): number {
@@ -165,6 +165,15 @@ export function isImageFile(path: string): boolean {
   const name = path.split('/').pop() ?? '';
   const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
   return IMAGE_EXTS.has(ext);
+}
+
+/** 是否为已知能当文本看的扩展名（TEXT_EXTS）。
+ *  三种都判不出来（非图片、非已知二进制、非已知文本，如自定义 .tgg 或无扩展名文件）→
+ *  调用方应读文件头探测二进制，别直接当文本打开。 */
+export function isKnownTextFile(path: string): boolean {
+  const name = path.split('/').pop() ?? '';
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
+  return TEXT_EXTS.has(ext);
 }
 
 /** 勾选集合（checkbox 列表）：初始集合 + 单项切换 */
